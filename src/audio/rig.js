@@ -140,7 +140,8 @@ export function createRig(ac, dest, def, { speak } = {}) {
     const stall = st.stallWarning || st.stalled || now < forced.stall;
     alarm('stall', stall, now, (t) => (airliner ? sfx.stickShaker(ac, dest, t, 0.5) : sfx.stallFighter(ac, dest, t)), airliner ? 0.5 : 0.7);
     alarm('over', !!st.overspeed || now < forced.over, now, (t) => sfx.clacker(ac, dest, t), 0.5);
-    if (st.overG && !mem.over) sfx.overG(ac, dest, now + 0.02);
+    if (st.overG && !mem.over) mem.masterCaution = now;
+    alarm('overg', !!st.overG, now, (t) => sfx.overG(ac, dest, t), 1.2);
     mem.over = !!st.overG;
     if (mem.masterCaution && now - mem.masterCaution < 0.2) { mem.masterCaution = 0; sfx.masterCaution(ac, dest, now + 0.05); }
     const agl = st.agl ?? 0, aglFt = agl * FT, air = !st.onGround;

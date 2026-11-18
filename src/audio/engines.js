@@ -36,7 +36,7 @@ function lowBypass(ac, out, { pan = 0, hasAB = true, level = 1 } = {}) {
   const fan = [[1, 0.5, -7], [1, 0.5, 6], [1.5, 0.22, 0], [2, 0.18, 3]].map(([m, g, d]) => ({ m, g, o: osc(ac, 'sine', 900 * m, d), gn: gain(ac, 0) }));
   for (const v of [...hp, ...fan]) { v.o.connect(v.gn); v.gn.connect(whineBus); b.srcs.push(v.o); }
   const spool = osc(ac, 'triangle', 60), spoolG = gain(ac, 0), spoolLP = biquad(ac, 'lowpass', 420, 0.7);
-  chain(spool, spoolG, spoolLP, whineBus); b.srcs.push(spool);
+  chain(spool, spoolG, spoolLP, b.pR); b.srcs.push(spool);
   // --- starter air ----------------------------------------------------------------------------------
   const st = noiseSrc(ac, 'pink'), stF = biquad(ac, 'bandpass', 500, 1.1), stG = gain(ac, 0); chain(st, stF, stG, out.whine); b.srcs.push(st);
   // --- roar ------------------------------------------------------------------------------------------
@@ -64,8 +64,11 @@ function lowBypass(ac, out, { pan = 0, hasAB = true, level = 1 } = {}) {
     const P2 = mkPulse(17, 0.8); P2.connect(C2g.gain);
     const C3n = noiseSrc(ac, 'white'), C3f = biquad(ac, 'bandpass', 900, 0.9), C3g = gain(ac, 0); chain(C3n, C3f, C3g, b.pR);
     const P3 = mkPulse(44, 1.0); P3.connect(C3g.gain);
-    b.srcs.push(A1, A2, A3, C1n, C2n, C3n);
-    ab = { A1g, A2g, A3g, A3f, P1, P2, P3, C1g, C2g, C3g };
+    // deep ripping: random 5-20 Hz amplitude modulation of the low roar (combustion instability)
+    const AMn = noiseSrc(ac, 'pink'), AMf = biquad(ac, 'bandpass', 11, 0.8), AMpre = gain(ac, 0), AMg = gain(ac, 0); chain(AMn, AMf, AMpre, AMg); AMpre.gain.value = 14; AMg.connect(A3g.gain);
+    const AMg2 = gain(ac, 0); AMpre.connect(AMg2); AMg2.connect(A1g.gain); AMg2.gain.value = 0;
+    b.srcs.push(A1, A2, A3, C1n, C2n, C3n, AMn);
+    ab = { AMg, AMg2, A1g, A2g, A3g, A3f, P1, P2, P3, C1g, C2g, C3g };
   }
 
   function update(e, dop = 1, dt = 1 / 60) {
@@ -106,7 +109,7 @@ function lowBypass(ac, out, { pan = 0, hasAB = true, level = 1 } = {}) {
       set(ab.A1g.gain, 1.5 * Math.pow(x, 0.8) * roarK, 0.05);
       set(ab.A2g.gain, 2.2 * Math.pow(x, 1.0) * roarK, 0.05);
       set(ab.A3g.gain, 0.95 * Math.pow(x, 1.1) * roarK, 0.05);
-      set(ab.P1.gain, 0.55 * x * roarK, 0.1); set(ab.P2.gain, 1.5 * x * roarK, 0.1); set(ab.P3.gain, 0.8 * x * roarK, 0.1);
+      set(ab.P1.gain, 1.2 * x * roarK, 0.1); set(ab.P2.gain, 2.4 * x * roarK, 0.1); set(ab.P3.gain, 1.6 * x * roarK, 0.1); set(ab.AMg.gain, 0.9 * x * roarK, 0.1); set(ab.AMg2.gain, 2.0 * x * roarK, 0.1);
     }
     for (const s of b.srcs) if (s.playbackRate) set(s.playbackRate, dop, 0.08);
   }

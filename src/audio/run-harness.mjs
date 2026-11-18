@@ -18,8 +18,8 @@ await browser.close();
 if (out.err) { console.log('HARNESS ERROR', out.err); process.exit(1); }
 const pad = (s, n) => String(s).padEnd(n);
 console.log('\n' + pad('scenario', 54) + pad('peak', 8) + pad('rms dB', 9) + pad('dc', 10) + pad('nan', 5) + pad('jump', 8) + 'extra');
-for (const r of out.r.rows) console.log(pad(r.name, 54) + pad(r.peak, 8) + pad(r.rms_db, 9) + pad(r.dc, 10) + pad(r.nan, 5) + pad(r.jump, 8) + [r.stepRatio !== undefined ? 'step=' + r.stepRatio : '', r.centroid ? 'centroid=' + r.centroid : ''].join(' '));
-for (const k of ['fighter', 'interior', 'airliner', 'doppler']) if (out.r[k]) console.log('\n' + k + ':', JSON.stringify(out.r[k]));
+for (const r of out.r.rows) console.log(pad(r.name, 54) + pad(r.peak, 8) + pad(r.rms_db, 9) + pad(r.dc, 10) + pad(r.nan, 5) + pad(r.jump, 8) + [r.stepRatio !== undefined ? 'step=' + r.stepRatio : '', r.centroid ? 'centroid=' + r.centroid : '', r.bursts !== undefined ? 'bursts=' + r.bursts : ''].join(' '));
+for (const k of ['fighter', 'interior', 'airliner', 'doppler', 'crackle', 'cpu']) if (out.r[k]) console.log('\n' + k + ':', JSON.stringify(out.r[k]));
 console.log('\nchecks:'); let bad = 0;
 for (const c of out.r.checks) { if (!c.ok) bad++; console.log((c.ok ? '  PASS ' : '  FAIL ') + pad(c.name, 78) + c.detail); }
 if (errors.length) { console.log('console errors:', errors); bad++; }

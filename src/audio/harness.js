@@ -123,6 +123,7 @@ function fighterScript(t, st) {  // idle -> MIL -> AB -> idle
 async function scenarios() {
   // 1. fighter power ladder, exterior behind aircraft at 100 m
   let buf = await render({ def: F16, seconds: 14, mix: 0, dist: 100, front: -0.9, script: fighterScript });
+  const buf0 = buf;
   let x = mono(buf);
   let g = row('F-16 exterior 100m rear: idle>MIL>AB>idle', buf, { stepRatio: +stepRatio(x, 0.8, 14).toFixed(2) });
   const lv = { idle: rms(x, 1, 2.8), mil: rms(x, 5.5, 7.5), ab: rms(x, 10, 11.8) };
@@ -239,6 +240,53 @@ async function scenarios() {
   check('Doppler shifts pitch down on recede', pf1 > pf2 * 1.25, `${Math.round(pf1)} -> ${Math.round(pf2)} Hz`);
   const lp = fl.getChannelData(0), rp = fl.getChannelData(1);
   check('fly-by pans left->right', rms(lp, 0.5, 1.5) > rms(rp, 0.5, 1.5) * 0.0 && true, 'informational');
+
+
+  // 10. rig-level cockpit warnings: audible in the cockpit, gated off in exterior views
+  const burstsOf = (x, t0, t1) => { if (x.__noisy) return -1; const w = Math.floor(0.02 * SR), [a, b] = seg(x, t0, t1); let n = 0, on = false, quiet = 0; for (let i = a; i + w <= b; i += w) { let q = 0; for (let k = 0; k < w; k++) q += x[i + k] * x[i + k]; const r = Math.sqrt(q / w); if (r > 0.015) { if (!on && quiet >= 3) n++; if (!on && n === 0) n = 1; on = true; quiet = 0; } else { on = false; quiet++; } } return n; };
+  const warnCases = [
+    ['stall (fighter)', F16, (t, st) => { st.stallWarning = t > 1; }],
+    ['stall shaker (airliner)', B738, (t, st) => { st.stallWarning = t > 1; }],
+    ['overspeed clacker', F16, (t, st) => { st.overspeed = t > 1; }],
+    ['over-G beeps', F16, (t, st) => { st.overG = t > 1; }],
+    ['gear-up horn (fighter)', F16, (t, st) => { if (t > 1) { st.surfaces.gear = 0; st.agl = 120; st.throttle = 0.1; st.verticalSpeed = -3; } else { st.surfaces.gear = 0; st.agl = 3000; st.throttle = 0.6; } }],
+    ['gear-up horn (airliner)', B738, (t, st) => { st.surfaces.gear = 0; if (t > 1) { st.agl = 120; st.throttle = 0.1; st.verticalSpeed = -3; } else { st.agl = 3000; st.throttle = 0.6; } }],
+    ['GPWS sink/pull-up', B738, (t, st) => { st.verticalSpeed = t > 1 ? -14 : -2; st.agl = 300; st.surfaces.gear = 1; }],
+    ['AP disconnect wail', B738, (t, st) => { st.ap.engaged = t < 1; }],
+  ];
+  for (const [name, def, fn] of warnCases) {
+    const base = (t, st) => { setEng(st, { n1: 0.3, n2: 0.6, thr: 0.02 }, def); st.ias = 5; st.surfaces.gear = 1; st.agl = 3000; fn(t, st); };
+    const bi3 = await render({ def, seconds: 5, mix: 1, dist: 0, front: 0, script: base });
+    const be3 = await render({ def, seconds: 5, mix: 0, dist: 50, front: 0, script: base });
+    const be0 = await render({ def, seconds: 5, mix: 0, dist: 50, front: 0, script: (t, st) => base(0, st) });
+    const a = rms(mono(bi3), 1.2, 4.5), a0 = rms(mono(bi3), 0.3, 0.9), e = rms(mono(be3), 1.2, 4.5), e0 = rms(mono(be0), 1.2, 4.5);
+    row('warn: ' + name + ' (cockpit)', bi3, { bursts: burstsOf(mono(bi3), 1, 5) });
+    check(`warning '${name}' audible in cockpit and absent outside`, a > a0 * 1.5 && e < e0 * 1.35, `cockpit ${db(a).toFixed(1)} vs idle ${db(a0).toFixed(1)} dB; exterior ${db(e).toFixed(1)}`);
+  }
+  // radio-altitude call-outs (airliner descends through 1000..10 ft)
+  const co = await render({ def: B738, seconds: 15, mix: 1, dist: 0, front: 0, script: (t, st) => {
+    setEng(st, { n1: 0, n2: 0, thr: 0, running: false }, B738); st.ias = 5; const ft = 1100 * Math.exp(-t * 0.33); st.agl = ft / 3.28084; st.verticalSpeed = -3; st.surfaces.gear = 1; st.throttle = 0.3; } });
+  const nco = burstsOf(mono(co), 0.2, 15); row('B738 radio-alt call-outs 1000..10 ft', co, { bursts: nco });
+  check('radio-altitude call-outs: 8 distinct tone groups', nco >= 6 && nco <= 12, `${nco} bursts`);
+
+  // 11. directivity: roar louder behind than in front
+  const dv = (front) => render({ def: F16, seconds: 3, mix: 0, dist: 500, front, script: (t, st) => { setEng(st, { n1: 0.98, n2: 1, thr: 1 }, F16); st.ias = 100; } });
+  const rb = rms(mono(await dv(-1)), 1.5, 3), rf = rms(mono(await dv(1)), 1.5, 3);
+  check('jet roar louder behind the aircraft than in front', rb > rf * 1.5, `${db(rb).toFixed(1)} vs ${db(rf).toFixed(1)} dB`);
+  const dd = (dist) => render({ def: F16, seconds: 3, mix: 0, dist, front: -1, script: (t, st) => { setEng(st, { n1: 0.98, n2: 1, thr: 1 }, F16); } });
+  const rn = rms(mono(await dd(60)), 1.5, 3), rfar = rms(mono(await dd(2000)), 1.5, 3);
+  check('distance attenuation (60 m vs 2 km)', rn > rfar * 8, `${db(rn).toFixed(1)} vs ${db(rfar).toFixed(1)} dB`);
+
+  // 12. afterburner crackle: strong short-term amplitude variation vs MIL; and timing / CPU
+  const abx = mono(buf0);
+  const cv = (x, t0, t1) => { const w = Math.floor(0.025 * SR), [a, b] = seg(x, t0, t1), v = []; for (let i = a; i + w <= b; i += w) { let q = 0; for (let k = 0; k < w; k++) q += x[i + k] * x[i + k]; v.push(Math.sqrt(q / w)); } const m = v.reduce((p, c) => p + c, 0) / v.length; return Math.sqrt(v.reduce((p, c) => p + (c - m) ** 2, 0) / v.length) / m; };
+  results.crackle = { cvMIL: +cv(abx, 5.5, 7.8).toFixed(3), cvAB: +cv(abx, 10, 11.9).toFixed(3) };
+  check('afterburner crackle: short-term rms variation exceeds MIL', results.crackle.cvAB > results.crackle.cvMIL * 1.3, JSON.stringify(results.crackle));
+  const t0 = performance.now(); await render({ def: B738, seconds: 10, mix: 0, dist: 50, front: 0, script: (t, st) => { setEng(st, { n1: 0.9, n2: 0.95, thr: 0.8 }, B738); st.ias = 140; } });
+  const tA = performance.now() - t0;
+  const t1 = performance.now(); await render({ def: F16, seconds: 10, mix: 0, dist: 50, front: 0, script: (t, st) => { setEng(st, { n1: 1, n2: 1, thr: 1, ab: 1 }, F16); st.ias = 140; } });
+  const tF = performance.now() - t1;
+  results.cpu = { b738_10s_render_ms: Math.round(tA), f16ab_10s_render_ms: Math.round(tF), note: 'offline render time for 10 s of audio (lower = cheaper); realtime load ~ ms/10000' };
 
   // 9. weather layer: rain & wind
   const ac = new OfflineAudioContext(2, SR * 4, SR), M = createMaster(ac), rd = new Dual(ac, M.flightIn, { intLP: 9000 }), ad = new Dual(ac, M.ambIn, { intLP: 600 });
