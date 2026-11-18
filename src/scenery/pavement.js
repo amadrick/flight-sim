@@ -119,7 +119,7 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec2 cell = floor(sl / slab);
             float tone = 0.92 + 0.14 * scnHash(cell + seed);
             float j = max(scnLines(sl.x, slab, 0.03), scnLines(sl.y, slab, 0.03));
-            col = vec3(0.47, 0.46, 0.43) * tone * (0.86 + 0.22 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
+            col = (kind < 1.5 ? vec3(0.42, 0.41, 0.385) : vec3(0.36, 0.355, 0.335)) * tone * (0.86 + 0.22 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
             col *= 1.0 - 0.55 * j;
             col *= 1.0 - 0.35 * smoothstep(0.62, 0.8, nB.b) * (kind > 2.5 ? 1.0 : 0.4);      // oil / fuel stains
             col *= 1.0 - 0.4 * crack * step(0.8, scnHash(cell * 1.7 + 3.1));

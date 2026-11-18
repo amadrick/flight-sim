@@ -222,16 +222,38 @@ function layoutHub(L, F, spec) {
   for (const R of bands) {
     const s = R.side;
     const cIn = R.twyC + s * (tw / 2 + tsh);            // apron edge on the taxiway
-    const cOut = cIn + s * spec.apronDepth;            // pier face
+    // between widely spaced parallels the apron grows (remote stands); the pier faces stay ~270 m off the middle
+    const dep = R1 ? Math.max(spec.apronDepth, Math.abs(R.twyC) - tw / 2 - tsh - 270) : spec.apronDepth;
+    const cOut = cIn + s * dep;                         // pier face
     const cm = (cIn + cOut) / 2;
-    L.pave.push(rect(F, aC, cm, apronLen, spec.apronDepth + 1, 'apron', 'apron', { layer: 2 }));
-    L.aprons.push({ a: aC, c: cm, len: apronLen, dep: spec.apronDepth, side: s, cIn, cOut });
-    // apron taxilane centreline (parallel, 30 m inside the apron edge) + links to the parallel taxiway
+    L.pave.push(rect(F, aC, cm, apronLen, dep + 1, 'apron', 'apron', { layer: 2 }));
+    L.aprons.push({ a: aC, c: cm, len: apronLen, dep, side: s, cIn, cOut });
+    // apron taxilane centreline (parallel, 32 m inside the apron edge) + links to the parallel taxiway
     const cLane = cIn + s * 32;
     L.taxiLines.push({ pts: [F.P(aC - apronLen / 2 + 20, cLane), F.P(aC + apronLen / 2 - 20, cLane)], kind: 'cl' });
     for (const k of [-1, 0, 1]) {
       const a = aC + k * apronLen * 0.38;
       L.taxiLines.push({ pts: [F.P(a, R.twyC), F.P(a, cLane)], kind: 'cl' });
+    }
+    // deep apron: second taxilane in front of the pier + two rows of remote stands between the lanes
+    let cLanePier = cLane;
+    const towardPier = norm360(F.H + (s > 0 ? 90 : -90)), awayPier = norm360(towardPier + 180);
+    if (dep > 300) {
+      cLanePier = cOut - s * 112;
+      L.taxiLines.push({ pts: [F.P(aC - apronLen / 2 + 20, cLanePier), F.P(aC + apronLen / 2 - 20, cLanePier)], kind: 'cl' });
+      for (const e of [-1, 1]) L.taxiLines.push({ pts: [F.P(aC + e * (apronLen / 2 - 20), cLane), F.P(aC + e * (apronLen / 2 - 20), cLanePier)], kind: 'cl' });
+      const nR = Math.floor((apronLen - 120) / 62);
+      for (let k = 0; k < nR; k++) {
+        const a = aC - (nR - 1) * 31 + k * 62;
+        const p1 = F.P(a, cLane + s * 70);
+        L.stands.push({ x: p1.x, z: p1.z, hdg: towardPier, size: k % 4 === 2 ? 'heavy' : 'medium', paint: true, number: 100 + k + (s > 0 ? 0 : 50), leadFrom: F.P(a, cLane) });
+        const p2 = F.P(a, cLanePier - s * 65);
+        L.stands.push({ x: p2.x, z: p2.z, hdg: awayPier, size: k % 3 === 1 ? 'heavy' : 'medium', paint: true, number: 130 + k + (s > 0 ? 0 : 50), leadFrom: F.P(a, cLanePier) });
+      }
+      for (let k = 0; k < 5; k++) {
+        const p = F.P(aC - apronLen / 2 + 60 + k * (apronLen - 120) / 4, (cLane + cLanePier) / 2);
+        L.floods.push({ x: p.x, z: p.z, h: 30, aim: { x: F.r.x * s, z: F.r.z * s } });
+      }
     }
     // pier building + stands
     const pierDepth = 32;
@@ -240,23 +262,25 @@ function layoutHub(L, F, spec) {
     piers.push({ a: aC, c: cPier, len: pierLen, s, cOut });
     const nStands = Math.floor(pierLen / 68);
     const spacing = pierLen / nStands;
+    const leftA = s > 0 ? 1 : -1;      // the aircraft's left side (boarding doors) lies toward +a when nosing toward +c
     for (let k = 0; k < nStands; k++) {
       const a = aC - pierLen / 2 + spacing * (k + 0.5);
       const big = k % 3 === 1;
+      const sc = big ? 1.55 : 1;
       const noseC = cOut - s * (big ? 9 : 7);
       const p = F.P(a, noseC);
-      const hdg = norm360(F.H + (s > 0 ? 90 : -90));    // nose toward the pier
-      L.stands.push({ x: p.x, z: p.z, hdg, size: big ? 'heavy' : 'medium', paint: true, number: k + 1 + (s > 0 ? 0 : 20), bridge: true, leadFrom: F.P(a, cLane) });
-      // jet bridge: from the pier face out toward the stand
-      const pb = F.P(a + (big ? 14 : 10), cOut);
-      L.props.push({ type: 'jetbridge', x: pb.x, z: pb.z, hdg: norm360(F.H + (s > 0 ? -90 : 90)), len: big ? 32 : 24, angle: s * (big ? 16 : 22) });
+      L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: big ? 'heavy' : 'medium', paint: true, number: k + 1 + (s > 0 ? 0 : 20), bridge: true, leadFrom: F.P(a, cLanePier) });
+      // jet bridge: rotunda just off the pier face, tunnel to the forward left door
+      const rot = F.P(a + leftA * (big ? 15 : 11), cOut - s * 3);
+      const door = F.P(a + leftA * (2.0 * sc + 1.6), noseC + s * (4.6 - 6.2) * sc);
+      L.props.push({ type: 'jetbridge', x: rot.x, z: rot.z, ex: door.x, ez: door.z });
     }
-    // remote stands at the two ends of the apron (no bridges)
+    // remote stands at the two ends of the pier
     for (const e of [-1, 1]) {
       for (let k = 0; k < 2; k++) {
         const a = aC + e * (pierLen / 2 + 40 + k * 55);
         const p = F.P(a, cOut - s * 32);
-        L.stands.push({ x: p.x, z: p.z, hdg: norm360(F.H + (s > 0 ? 90 : -90)), size: 'medium', paint: true, number: 50 + k + (e > 0 ? 2 : 0) + (s > 0 ? 0 : 10), leadFrom: F.P(a, cLane) });
+        L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: 'medium', paint: true, number: 50 + k + (e > 0 ? 2 : 0) + (s > 0 ? 0 : 10), leadFrom: F.P(a, cLanePier) });
       }
     }
     // apron floodlight masts along the pier side, and at apron ends

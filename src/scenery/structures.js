@@ -210,20 +210,20 @@ function tower(B, t, kind) {
 function prop(B, p, signIndex) {
   switch (p.type) {
     case 'jetbridge': {
-      const d = dirs(p.hdg);
-      // rotunda at the pier face, tunnel angled toward the stand, drive leg near the outer end
-      const ax = p.x + d.dx * 3, az = p.z + d.dz * 3;
-      B.cylinder('plain', ax, 0, az, 0.6, 4.2, 8, C.grey);
-      B.cylinder('plain', ax, 4.2, az, 2.4, 3.2, 10, C.steel, 'plain');
-      const a = (p.hdg + p.angle) * DEG, ux = Math.sin(a), uz = -Math.cos(a);
-      const mx = ax + ux * (p.len / 2 + 2), mz = az + uz * (p.len / 2 + 2);
-      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, mx, 4.3, mz, p.hdg + p.angle, p.len, 3.4, 3.0, C.civil);
-      const ex = ax + ux * (p.len + 2), ez = az + uz * (p.len + 2);
-      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, ex + ux * 1.5, 4.1, ez + uz * 1.5, p.hdg + p.angle, 3.2, 4.2, 3.4, C.steel);
-      const lx = ax + ux * (p.len - 2), lz = az + uz * (p.len - 2);
-      const rx = -uz, rz = ux;
-      for (const s of [-1, 1]) B.box('plain', lx + rx * s * 1.3, 0, lz + rz * s * 1.3, p.hdg + p.angle, 0.4, 0.4, 4.3, C.dgrey);
-      B.box('plain', lx, 0.2, lz, p.hdg + p.angle, 1.4, 3.6, 0.9, C.dgrey);
+      // rotunda on a column at the pier, telescopic tunnel sloping to the cab at the aircraft door, drive-wheel leg
+      const dx = p.ex - p.x, dz = p.ez - p.z, len = Math.hypot(dx, dz);
+      const ux = dx / len, uz = dz / len, hdg = Math.atan2(ux, -uz) / DEG;
+      B.cylinder('plain', p.x, 0, p.z, 0.7, 4.0, 8, C.grey);
+      B.cylinder('plain', p.x, 4.0, p.z, 2.4, 3.2, 10, C.steel, 'plain');
+      const tl = Math.max(4, len - 4.2);
+      const mx = p.x + ux * (2.2 + tl / 2), mz = p.z + uz * (2.2 + tl / 2);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, mx, 4.2, mz, hdg, tl, 3.2, 2.9, C.civil);
+      B.box({ pr: 'plain', nr: 'plain' }, mx, 5.2, mz, hdg, tl * 0.96, 3.25, 0.8, C.dgrey);   // window band
+      const ex = p.ex - ux * 1.2, ez = p.ez - uz * 1.2;
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, ex, 4.0, ez, hdg, 2.6, 4.0, 3.3, C.steel);
+      const lx = p.ex - ux * 7, lz = p.ez - uz * 7, rx = -uz, rz = ux;
+      for (const s of [-1, 1]) B.box('plain', lx + rx * s * 1.2, 0.4, lz + rz * s * 1.2, hdg, 0.35, 0.35, 3.8, C.dgrey);
+      B.box('plain', lx, 0.1, lz, hdg, 1.2, 3.4, 0.8, C.dgrey);
       break;
     }
     case 'fuelfarm': {
