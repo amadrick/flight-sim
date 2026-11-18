@@ -95,11 +95,11 @@ function lowBypass(ac, out, { pan = 0, hasAB = true, level = 1 } = {}) {
     set(stF.frequency, (260 + 2200 * n2) * dop, 0.06); set(stG.gain, 0.2 * bump * level, 0.08);
     // roar
     const roarK = level;
-    set(rLg.gain, (0.12 + 1.0 * Math.pow(pa, 1.25)) * 0.55 * roarK, 0.07);
+    set(rLg.gain, (0.12 * cb + 1.0 * Math.pow(pa, 1.25)) * 0.55 * roarK, 0.07);
     set(rMf.frequency, (320 + 2300 * pa) * (1 - 0.25 * abv), 0.07);
-    const mid = (0.06 + 0.9 * Math.pow(pa, 1.5)) * (1 + 0.45 * abv) * 0.6 * roarK;
+    const mid = (0.06 * cb + 0.9 * Math.pow(pa, 1.5)) * (1 + 0.45 * abv) * 0.6 * roarK;
     set(rMg.gain, mid, 0.07); set(modG.gain, mid * 2.5, 0.2);
-    set(rHg.gain, (0.012 + 0.5 * Math.pow(pa, 2.6)) * (1 + 0.3 * abv) * 0.5 * roarK, 0.07);
+    set(rHg.gain, (0.012 * cb + 0.5 * Math.pow(pa, 2.6)) * (1 + 0.3 * abv) * 0.5 * roarK, 0.07);
     set(rHf.frequency, 2200 + 800 * pa, 0.1);
     if (ab) {
       const x = abv;
@@ -169,10 +169,10 @@ function highBypass(ac, out, { pan = 0, level = 1 } = {}) {
     const bump = smooth(0, 0.15, n2) * (1 - smooth(0.3, 0.55, n2));
     set(stF.frequency, (240 + 1800 * n2) * dop, 0.08); set(stG.gain, 0.16 * bump * level, 0.1);
     // roar
-    set(coreG.gain, (0.1 + 0.55 * Math.pow(pa, 1.2)) * 0.55 * level, 0.1); set(coreF.frequency, 300 + 800 * pa, 0.1);
-    const by = (0.04 + 0.7 * Math.pow(pa, 1.7) + 0.12 * spoolAct * pa) * 0.6 * level;
+    set(coreG.gain, (0.1 * cb + 0.55 * Math.pow(pa, 1.2)) * 0.55 * level, 0.1); set(coreF.frequency, 300 + 800 * pa, 0.1);
+    const by = (0.04 * cb + 0.7 * Math.pow(pa, 1.7) + 0.12 * spoolAct * pa) * 0.6 * level;
     set(bypG.gain, by, 0.1); set(modG.gain, by * 1.2, 0.25); set(bypF.frequency, 500 + 1500 * pa, 0.1);
-    set(hissG.gain, (0.01 + 0.2 * Math.pow(pa, 2.4)) * 0.5 * level, 0.1);
+    set(hissG.gain, (0.01 * cb + 0.2 * Math.pow(pa, 2.4)) * 0.5 * level, 0.1);
     // reverse thrust (blast forward: broadband, mid-heavy)
     const rg = rev * (0.15 + 0.85 * pa);
     set(rvG.gain, rg * 1.0 * level, 0.1); set(rv2G.gain, rg * 0.4 * level, 0.1);

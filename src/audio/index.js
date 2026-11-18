@@ -101,6 +101,8 @@ export async function createAudio(ctx) {
     set masterVolume(v) { api.setMasterVolume(v); },
     setMasterVolume(v) { volume = clamp(+v || 0, 0, 1); if (M) set(M.master.gain, volume, 0.05); },
     resume,
+    /** the live AudioContext (null until a user gesture / resume()) — for diagnostics */
+    get audioContext() { return ac; },
     update(dt) {
       if (!ac || !M || ac.state !== 'running') return;
       const rdt = clamp(ctx.time?.realDt || dt || 1 / 60, 1e-3, 0.1), now = ac.currentTime;

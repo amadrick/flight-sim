@@ -59,7 +59,7 @@ export function createMechLayer(ac, mechOut) {
       const gsn = sat(m.gs / 80);
       const og = m.onGround ? 1 : 0;
       set(rumG.gain, og * (0.25 + 0.5 * m.rough) * Math.pow(gsn, 0.8) * 0.9, 0.12);
-      set(rum2G.gain, og * m.rough * Math.pow(gsn, 0.7) * 0.5, 0.12); set(rumP.out.gain, og * (0.3 + 0.7 * gsn), 0.12);
+      set(rum2G.gain, og * m.rough * Math.pow(gsn, 0.7) * 0.5, 0.12); set(rumP.out.gain, og * (0.3 + 0.7 * gsn) * sat(m.gs / 4), 0.12);
       set(rollG.gain, og * 0.22 * Math.pow(gsn, 1.2) * (1 - 0.5 * m.rough), 0.12); set(rollF.frequency, 700 + 900 * gsn, 0.2);
       const skid = sat(m.skid);
       set(skG.gain, skid * 0.5 * og, 0.04); set(skOG.gain, skid * 0.14 * og, 0.04); set(skLfoG.gain, skid * 0.1, 0.04); set(skO.frequency, 850 + 400 * gsn, 0.05);
@@ -107,8 +107,8 @@ export function createCabinLayer(ac, cabinOut, airliner) {
     srcs: [hiss, ac1, h1, h2, h3],
     update(c) { // c: { power 0..1 (systems alive), v }
       const vs = sat(c.v / 200);
-      set(hissG.gain, c.power * (airliner ? 0.07 : 0.1) * (0.6 + 0.6 * vs), 0.3);
-      set(ac1g.gain, c.power * (airliner ? 0.22 : 0.1), 0.3);
+      set(hissG.gain, c.power * (airliner ? 0.035 : 0.08) * (0.6 + 0.6 * vs), 0.3);
+      set(ac1g.gain, c.power * (airliner ? 0.1 : 0.08), 0.3);
       set(hg.gain, c.power * (airliner ? 0.012 : 0.006), 0.3);
     },
   };

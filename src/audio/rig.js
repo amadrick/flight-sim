@@ -21,8 +21,8 @@ export function createRig(ac, dest, def, { speak } = {}) {
 
   // --- perspective stage -------------------------------------------------------------------------------
   const C = airliner
-    ? { whine: [0.5, 1700], roar: [0.42, 520], aero: [0.2, 1800], mech: [0.55, 1400], eng: 1.0 }
-    : { whine: [0.55, 2800], roar: [0.5, 850], aero: [0.75, 3600], mech: [1.0, 1900], eng: 1.0 };
+    ? { whine: [0.3, 1700], roar: [0.24, 520], aero: [0.14, 1800], mech: [0.45, 1400], eng: 2.0 }
+    : { whine: [0.4, 2800], roar: [0.34, 850], aero: [0.55, 3600], mech: [0.8, 1900], eng: 2.0 };
   const dWhine = new Dual(ac, rigOut, { intLP: C.whine[1] }), dRoar = new Dual(ac, rigOut, { intLP: C.roar[1] }), dRev = new Dual(ac, rigOut, { intLP: C.roar[1] * 1.2 });
   const dAero = new Dual(ac, rigOut, { intLP: C.aero[1] }), dMech = new Dual(ac, rigOut, { intLP: C.mech[1] });
   const cabinOut = gain(ac, 0); cabinOut.connect(rigOut);
