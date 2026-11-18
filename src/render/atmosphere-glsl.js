@@ -175,6 +175,7 @@ uniform vec3 uAtmL0Dir; uniform vec3 uAtmL0Illum;      // sun
 uniform vec3 uAtmL1Dir; uniform vec3 uAtmL1Illum;      // moon (illuminance 0 disables it)
 uniform vec3 uAtmGroundAlbedo;
 uniform vec3 uAtmAirglow;      // emission per km of sea-level air (night readability)
+uniform vec4 uAtmDeck;         // horizontally-averaged cloud deck: x: base (km), y: top (km), z: light removed below it (0..1)
 
 const vec3 ATM_BR = vec3(5.802e-3, 13.558e-3, 33.1e-3);     // Rayleigh scattering at sea level, 1/km
 const vec3 ATM_BO = vec3(0.650e-3, 1.881e-3, 0.085e-3);     // ozone absorption at the layer peak, 1/km
@@ -234,13 +235,16 @@ void atmIntegrate(float h, vec3 dir, float tMax, int n, out vec3 L, out vec3 T) 
     vec3 sR = ATM_BR * dens.x; float sM = uAtmMie.x * dens.y;
     vec3 ext = sR + vec3(uAtmMie.y * dens.y) + ATM_BO * dens.z;
     vec3 S = uAtmAirglow * dens.x;
+    // Air under a cloud deck is lit by what the deck lets through on average. Baking this into the LUTs (rather than
+    // darkening pixels afterwards) keeps terrain, water, clouds and sky consistent at the horizon on a grey day.
+    float lit = 1.0 - uAtmDeck.z * (1.0 - smoothstep(uAtmDeck.x - 0.1, uAtmDeck.y, hs));
     if (sun) {
       float m = dot(up, uAtmL0Dir);
-      S += uAtmL0Illum * (atmLightTransmittance(hs, m) * (sR * pR0 + sM * pM0) + atmMultiScat(hs, m) * (sR + sM));
+      S += uAtmL0Illum * lit * (atmLightTransmittance(hs, m) * (sR * pR0 + sM * pM0) + atmMultiScat(hs, m) * (sR + sM));
     }
     if (moon) {
       float m = dot(up, uAtmL1Dir);
-      S += uAtmL1Illum * (atmLightTransmittance(hs, m) * (sR * pR1 + sM * pM1) + atmMultiScat(hs, m) * (sR + sM));
+      S += uAtmL1Illum * lit * (atmLightTransmittance(hs, m) * (sR * pR1 + sM * pM1) + atmMultiScat(hs, m) * (sR + sM));
     }
     vec3 Ts = exp(-ext * dt);
     L += T * (S - S * Ts) / max(ext, vec3(1e-9));

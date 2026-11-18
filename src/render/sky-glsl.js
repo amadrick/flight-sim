@@ -33,9 +33,9 @@ vec3 sky_starLayer(vec3 d, float N, float density, float seed, float airmass) {
   float ang = length(normalize(vec3(uv, 1.0)) - normalize(vec3(sp, 1.0)));
   float m = sky_hash12(cell * 1.7 + face * 17.0 + seed + 3.1);
   float m3 = m * m * m;
-  float flux = 0.004 + 0.16 * pow(m, 10.0) + 0.02 * m3;
+  float flux = 0.003 + 0.20 * pow(m, 12.0) + 0.016 * m3;
   // ~1.5 px footprint whatever the resolution (brighter stars slightly larger), never wider than the cell margin
-  float R = min(2.2 * max(uSkyParams.x * 0.75, 2.0e-4) * (1.0 + 0.7 * m3), 0.4 / N);
+  float R = min(max(uSkyParams.x * 1.3, 2.5e-4) * (1.0 + 0.6 * m3), 0.4 / N);
   float k = max(1.0 - ang * ang / (R * R), 0.0);
   // scintillation: stronger through more air
   float tw = 1.0 + (0.10 + 0.5 * airmass) * sin(uTime * (5.0 + 9.0 * rnd.x) + rnd.y * 40.0) * sin(uTime * (2.3 + 3.0 * rnd.y) + rnd.x * 17.0);

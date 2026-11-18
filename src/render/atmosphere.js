@@ -139,6 +139,7 @@ export function createAtmosphere(ctx, caps) {
     uAtmL1Dir: { value: new THREE.Vector3(0, -1, 0) }, uAtmL1Illum: { value: new THREE.Vector3(0, 0, 0) },
     uAtmGroundAlbedo: { value: new THREE.Vector3(0.14, 0.15, 0.13) },
     uAtmAirglow: { value: new THREE.Vector3(0, 0, 0) },
+    uAtmDeck: { value: new THREE.Vector4(1.5, 3, 0, 0) },
   };
   const mk = (frag) => new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: false, fog: false,
@@ -148,6 +149,7 @@ export function createAtmosphere(ctx, caps) {
   const transPass = mk(TRANSMITTANCE_FRAG), msPass = mk(MULTISCAT_FRAG), skyPass = mk(SKYVIEW_FRAG), aerialPass = mk(AERIAL_FRAG);
 
   const mie = { scat: 0, ext: 0, g: 0.8, invH: 1 / 1.2 };
+  const state = { camH: 0.001, beta: 0, deck: 1 };   // deck: 0 disables the cloud-deck dimming (no cloud shadows available)
   let lutMie = -1, lutG = -1, lutInvH = -1;
 
   function setWeather(w) {
@@ -159,6 +161,9 @@ export function createAtmosphere(ctx, caps) {
     mie.invH = 1 / lerp(1.2, 1.6, clamp((ext - 0.05) / 0.5, 0, 1)); // a thick murk reaches a little higher
     model.uAtmMie.value.set(mie.scat, mie.ext, mie.g, mie.invH);
     uniforms.uAtmHaze.value = 1 / Math.max(2000, w.visibility ?? 60000);
+    // mean light removed below the cloud layer: nothing for fair-weather cumulus, ~70 % under a solid overcast
+    const base = (w.cloudBase ?? 1500) * 0.001, top = Math.max((w.cloudTop ?? 3000) * 0.001, base + 0.5);
+    model.uAtmDeck.value.set(base, Math.min(top, base + 2.5), state.deck * 0.72 * smooth(0.2, 0.92, w.cloudCoverage ?? 0), 0);
   }
 
   // ---- CPU mirror (used for the light colour at the camera; ~40 exp() per call) --------------------------------
@@ -190,7 +195,6 @@ export function createAtmosphere(ctx, caps) {
   }
 
   let refAz = 0;
-  const state = { camH: 0.001, beta: 0 };
 
   /**
    * Refresh the LUTs. p = { camAltitude (m), sunDir, moonDir, sunIllum: Vector3, moonIllum: Vector3, keyDir: Vector3, airglow: Vector3 }

@@ -35,7 +35,7 @@ const MOON_TINT = new THREE.Vector3(0.80, 0.90, 1.0);
 const AIRGLOW = new THREE.Vector3(0.55, 0.85, 1.0).multiplyScalar(2e-5);    // per km of sea-level air, × night
 const GROUND_ALBEDO = new THREE.Vector3(0.14, 0.15, 0.13);
 const MOON_RADIUS = 0.00452 * 1.7;       // drawn 1.7x larger than life, as every film does
-const MOON_DISC_RADIANCE = 0.34;
+const MOON_DISC_RADIANCE = 0.075;
 
 const HEAD = /* glsl */`
 precision highp float; precision highp sampler2D;
@@ -69,12 +69,10 @@ void main() {
     float F = 1.0 - uCloudK.x + uCloudK.x * s;
     col = mix(col, vec3(dot(col, LUMA)), 0.3 * uCloudK.x * (1.0 - s)) * F;
     col = col * (1.0 + 3.0 * uFlash.a) + uFlash.rgb * 0.012;
-    // Aerial perspective; in-scatter under cloud is dimmer and greyer.
+    // Aerial perspective. The mean dimming of the air under a cloud deck is already in the LUTs (uAtmDeck), and the
+    // in-scatter along the path does not depend on the shadow at its end point, so cloud shadows fade with distance.
     vec4 ap = atmAerialPerspective(P);
-    float sa = 0.5 * (s + uCloudK.y);
-    vec3 ins = ap.rgb * (1.0 - uCloudK.z + uCloudK.z * sa);
-    ins = mix(ins, vec3(dot(ins, LUMA)), 0.6 * uCloudK.z * (1.0 - sa));
-    col = col * ap.a + ins;
+    col = col * ap.a + ap.rgb;
   }
   if (uHasClouds > 0.5) {
     vec4 c = texture(tClouds, vUv);
@@ -245,6 +243,7 @@ export async function createPipeline(ctx) {
     const clouds = ctx.clouds;
     const glsl = typeof clouds?.shadowGLSL === 'string' && clouds.shadowGLSL.includes('cloudShadow') ? clouds.shadowGLSL : 'float cloudShadow(vec3 renderPos) { return 1.0; }';
     hasCloudShadow = glsl.length > 60;      // more than the trivial stub
+    atmosphere.state.deck = hasCloudShadow || dbgShadow >= 0 ? 1 : 0;   // no cloud shadows → do not dim the haze either
     const cu = clouds?.shadowUniforms || {};
     const mk = (uniforms, frag, extra) => new FullscreenPass(new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3, blending: THREE.NoBlending, toneMapped: false, fog: false,
@@ -300,6 +299,10 @@ export async function createPipeline(ctx) {
   // ------------------------------------------------------------------------------------------------ lighting
   function updateLighting(realDt) {
     const sunDir = ctx.env.sunDir, moonDir = ctx.env.moonDir;
+    if (dbg.moonaz !== undefined) {     // debug: ?moonaz=deg&moonel=deg place the moon (phase tests)
+      const az = +dbg.moonaz * Math.PI / 180, el = (+dbg.moonel || 30) * Math.PI / 180;
+      moonDir.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)); F.uMoonDir.value.copy(moonDir);
+    }
     const camAlt = Math.max(F.uCameraPos.value.y, 0.5), hKm = camAlt * 0.001;
     atmosphere.setWeather(ctx.weather);
     atmosphere.lightTransmittance(hKm, sunDir.y, sunT);
@@ -358,7 +361,7 @@ export async function createPipeline(ctx) {
     poleAxis.set(0, Math.sin(lat), -Math.cos(lat));
     starRot.makeRotationAxis(poleAxis, ((ctx.time.timeOfDay || 0) / 24 + (ctx.time.dayOfYear || 0) / 365.25) * Math.PI * 2);
     u.uSkyStarRot.value.setFromMatrix4(starRot);
-    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, smooth(0.45, 1, night), MOON_RADIUS, MOON_DISC_RADIANCE);
+    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, smooth(0.45, 1, night) * 16 / clamp(exposure || 16, 8, 40), MOON_RADIUS, MOON_DISC_RADIANCE);
   }
 
   function fitKeyShadows() {
@@ -704,6 +707,30 @@ export async function createPipeline(ctx) {
   updateEnvironment();
   size.h = 2;
 
+  // Debug self-test: compiles the public GLSL chunks in BOTH shader stages (the ocean calls the atmosphere API from
+  // its vertex shader) and returns the compiler logs ('' = ok).
+  function testGLSL() {
+    const gl = renderer.getContext();
+    const body = `${FRAME_UNIFORMS_GLSL}\n${ATMOSPHERE_GLSL}\n${SUN_SHADOW_API_GLSL}
+      vec3 skywardApiTest(vec3 p) {
+        vec4 ap = atmAerialPerspective(p);
+        return atmSunIlluminance(p) + atmMoonIlluminance(p) + atmSkyRadiance(normalize(p + 1.0)) + ap.rgb * ap.a
+          + atmAmbient(p, vec3(0.0, 1.0, 0.0)) * sunShadow(p, vec3(0.0, 1.0, 0.0));
+      }`;
+    const out = {};
+    for (const [name, type, main] of [
+      ['vertex', gl.VERTEX_SHADER, 'out vec3 v; void main() { v = skywardApiTest(vec3(float(gl_VertexID))); gl_Position = vec4(v, 1.0); }'],
+      ['fragment', gl.FRAGMENT_SHADER, 'in vec3 v; out vec4 o; void main() { o = vec4(skywardApiTest(v), 1.0); }'],
+    ]) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, `#version 300 es\nprecision highp float; precision highp int; precision highp sampler2DShadow;\n${body}\n${main}`);
+      gl.compileShader(sh);
+      out[name] = gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? '' : (gl.getShaderInfoLog(sh) || 'failed');
+      gl.deleteShader(sh);
+    }
+    return out;
+  }
+
   const pipeline = {
     atmosphere: { uniforms: atmosphere.uniforms, glsl: ATMOSPHERE_GLSL },
     sceneTarget, depthTexture,
@@ -714,7 +741,7 @@ export async function createPipeline(ctx) {
     get exposure() { return exposure; },
     get internalSize() { return { width: size.w, height: size.h, scale: drs }; },
     resetHistory() { taaReset = true; snapFrames = Math.max(snapFrames, 2); },
-    debug: { atmosphere, env, caps, get state() { return { exposure, logLum, occl, kDirect, Fpl, keyIsMoon, keyFade, sunVis, drs, flash, probeValid, meterValid, csm }; } },
+    debug: { atmosphere, env, caps, testGLSL, get state() { return { exposure, logLum, occl, kDirect, Fpl, keyIsMoon, keyFade, sunVis, drs, flash, probeValid, meterValid, csm }; } },
   };
   return pipeline;
 }
