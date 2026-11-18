@@ -1,0 +1,15 @@
+{
+  "name": "flightsim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "shot": "node tools/shot.mjs",
+    "test": "node --test tests/ src/"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0"
+  }
+}
