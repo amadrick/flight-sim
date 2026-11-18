@@ -69,11 +69,11 @@ export async function createEffects(ctx) {
     const engines = (g.engines || []).map((en, i) => {
       const plume = new Plume(plumeGeo, createPlumeMaterial(shared, header), en, isAB, lowBypass, i * 3.7 + 1.3);
       group.add(plume.mesh);
-      const trail = new Trail(ctx, shared, header, anchor, 2048, { life: 60, diff: 10, sink: 1.8, formStart: 0.12, formEnd: 0.6, sigma: 1, albedo: [1, 1, 1], g: 0.72, mergeTau: 14, wobble: 1, spacingMin: 3, spacingMax: 60, maxDt: 0.4 });
+      const trail = new Trail(ctx, shared, header, anchor, 2048, { life: 60, diff: 10, sink: 1.8, formStart: 0.04, formEnd: 0.3, sigma: 5, albedo: [1, 1, 1], g: 0.72, mergeTau: 14, wobble: 1, spacingMin: 3, spacingMax: 60, maxDt: 0.4 });
       return { def: en, plume, trail, acc: { v: 0 }, hazeAcc: { v: 0 }, blastAcc: { v: 0 }, wasRunning: true };
     });
-    const tips = (g.wingtips || []).map(() => new Trail(ctx, shared, header, anchor, 384, { life: 2.6, diff: 0.25, sink: 0.4, formStart: 0.0, formEnd: 0.08, sigma: 1, albedo: [1, 1, 1], g: 0.75, mergeTau: 1, wobble: 0, spacingMin: 1.5, spacingMax: 12, maxDt: 0.05 }));
-    const smokeTrail = new Trail(ctx, shared, header, anchor, 1024, { life: 25, diff: 2.5, sink: 0, formStart: 0, formEnd: 0.05, sigma: 1, albedo: [0.85, 0.85, 0.86], g: 0.4, mergeTau: 1, wobble: 0.2, spacingMin: 2, spacingMax: 25, maxDt: 0.2 });
+    const tips = (g.wingtips || []).map(() => new Trail(ctx, shared, header, anchor, 384, { life: 2.6, diff: 0.25, sink: 0.4, formStart: 0.0, formEnd: 0.08, sigma: 0.8, albedo: [1, 1, 1], g: 0.75, mergeTau: 1, wobble: 0, spacingMin: 1.5, spacingMax: 12, maxDt: 0.05 }));
+    const smokeTrail = new Trail(ctx, shared, header, anchor, 1024, { life: 25, diff: 2.5, sink: 0, formStart: 0, formEnd: 0.05, sigma: 6, albedo: [0.85, 0.85, 0.86], g: 0.4, mergeTau: 1, wobble: 0.2, spacingMin: 2, spacingMax: 25, maxDt: 0.2 });
     const vapor = createVapor(ctx, shared, header, def, group);
     lights.attach(player, group);
     P = {
@@ -193,12 +193,12 @@ export async function createEffects(ctx) {
       if (strength > 0.02) {
         const tr = e.trail, u = tr.uniforms;
         u.uLife.value = 25 + 120 * persist; tr.opts.life = u.uLife.value;
-        u.uDiff.value = 4 + 22 * persist;
+        u.uDiff.value = 1.5 + 12 * persist;
         const r0 = e.def.nozzleRadius || 0.5;
         const nx = e.def.nozzle[0];
         const vortex = (Math.PI / 8) * (P.g.span || 10);
         const merge = Math.abs(nx) > 0.5 ? Math.sign(nx) * vortex - nx : 0;
-        tr.emit(tmp, strength, Math.max(1.2, r0 * 2.6), lat, merge);
+        tr.emit(tmp, strength, Math.max(0.6, r0 * 1.1), lat, merge);
       } else e.trail.stop();
       // on-ground effects behind the nozzle
       if (s.onGround && running && thr > 0.15) {
@@ -361,7 +361,7 @@ export async function createEffects(ctx) {
       if (P) { for (const e of P.engines) e.trail.flush(); for (const t of P.tips) t.flush(); P.smokeTrail.flush(); }
     },
     stats() {
-      return { particles: ps.capacity + smoke.capacity, trails: P ? P.engines.length + P.tips.length + 1 : 0, attached: !!P, wrecks: wrecks.length };
+      return { trailHeads: P ? P.engines.map(e => [e.trail.head, e.trail.active, e.trail.array.slice(e.trail.head * 12, e.trail.head * 12 + 12)]) : null, now: ctx.time.now, particles: ps.capacity + smoke.capacity, trails: P ? P.engines.length + P.tips.length + 1 : 0, attached: !!P, wrecks: wrecks.length };
     },
     dispose() {
       detach(); for (const o of offs) o();

@@ -36,7 +36,8 @@ export function createPlumeMaterial(shared, header) {
       uniform float uFlicker; uniform float uExpand;
       in vec3 vLocal; in vec3 vWorld;
       out vec4 outColor;
-      vec3 field(vec3 p) {
+      vec4 field(vec3 p) {
+        float absorb = 0.0;
         float z = p.z, r = length(p.xy);
         float zn = z / uLen;
         vec3 col = vec3(0.0);
@@ -53,29 +54,30 @@ export function createPlumeMaterial(shared, header) {
             float rh = abs(f - 0.5) * 2.0 + r / (rc * 0.95);
             float diamond = smoothstep(1.0, 0.55, rh) * decay;
             float disc = exp(-pow((f - 0.62) / 0.06, 2.0)) * exp(-(r * r) / (rc * rc) * 4.0) * decay;
-            col += vec3(1.0, 0.78, 0.5) * core * 9.0 * (0.5 + 0.5 * smoothstep(0.0, uR0 * 2.0, z) );
-            col += vec3(1.0, 0.8, 0.72) * diamond * 26.0 + vec3(1.0, 0.92, 0.85) * disc * 60.0;
+            col += vec3(1.0, 0.66, 0.36) * core * 6.0 * (0.4 + 0.6 * smoothstep(0.0, uR0 * 1.5, z));
+            col += vec3(1.0, 0.78, 0.66) * diamond * 22.0 + vec3(1.0, 0.9, 0.82) * disc * 30.0;
           }
-          // sheath ring at the nozzle lip (blue-violet)
-          float sh = exp(-pow((r - uR0 * 0.82) / (uR0 * 0.22), 2.0)) * exp(-z / (uR0 * 3.0));
-          col += vec3(0.32, 0.36, 1.0) * sh * 10.0;
+          // sheath ring at the nozzle lip (blue-violet), strongest at full AB
+          float sh = exp(-pow((r - uR0 * 0.8) / (uR0 * 0.2), 2.0)) * exp(-z / (uR0 * 2.5));
+          col += vec3(0.38, 0.4, 1.0) * sh * 5.0 * (0.4 + 0.6 * ab);
           // turbulent flame envelope
-          float re = uR0 * (0.9 + 0.9 * zn) * uExpand;
+          float re = uR0 * (0.85 + 0.75 * zn) * uExpand;
           vec3 q = vec3(p.xy / (uR0 * 2.2), z * 0.22 - uTime * 6.5) + uSeed;
           vec4 nz = fxNoise(q * vec3(0.5, 0.5, 0.5));
           vec4 nz2 = fxNoise(q * vec3(1.2, 1.2, 1.1) + 0.37);
-          float turb = 0.35 + 1.25 * nz.r * (0.6 + 0.8 * nz2.g);
-          float env = exp(-(r * r) / (re * re) * 1.7) * pow(max(1.0 - zn, 0.0), 1.4) * turb;
-          env *= smoothstep(-0.05, uR0 * 0.6, z);
-          vec3 envCol = mix(vec3(1.0, 0.45, 0.12), vec3(0.75, 0.16, 0.30), smoothstep(0.25, 0.9, zn + (nz2.r - 0.5) * 0.3));
-          col += envCol * env * 7.0;
+          float turb = 0.3 + 1.3 * nz.r * (0.6 + 0.8 * nz2.g);
+          float env = exp(-(r * r) / (re * re) * 1.8) * pow(max(1.0 - zn, 0.0), 1.3) * turb;
+          env *= smoothstep(-0.05, uR0 * 0.5, z);
+          vec3 envCol = mix(vec3(1.0, 0.42, 0.1), vec3(0.85, 0.2, 0.1), smoothstep(0.3, 0.9, zn + (nz2.r - 0.5) * 0.3));
+                    col += envCol * env * 1.8;
+          absorb = env * 0.25 * ab;
           col *= ab * uFlicker;
         }
         if (uDry > 0.001) {
           float g = exp(-max(z, 0.0) / (uR0 * 0.5)) * exp(-(r * r) / (uR0 * uR0) * 1.5);
           col += vec3(1.0, 0.32, 0.08) * g * uDry;
         }
-        return col;
+        return vec4(col, absorb);
       }
       void main() {
         vec3 ro = uCamLocal, rd = normalize(vLocal - uCamLocal);
@@ -90,15 +92,16 @@ export function createPlumeMaterial(shared, header) {
         if (t1 <= t0) discard;
         float n = uSteps, dt = (t1 - t0) / n;
         float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uFrame * 0.618034);
-        vec3 acc = vec3(0.0);
+        vec3 acc = vec3(0.0); float tau = 0.0;
         for (int i = 0; i < 48; i++) {
           if (float(i) >= n) break;
           vec3 p = ro + rd * (t0 + (float(i) + j) * dt);
-          acc += field(p);
+          vec4 f = field(p); acc += f.rgb; tau += f.a;
         }
         acc *= dt;
+        float alpha = 1.0 - exp(-tau * dt);
         if (dot(acc, vec3(1.0)) < 1e-4) discard;
-        outColor = fxFinish(vec3(0.0), 0.0, acc, vWorld);
+        outColor = fxFinish(vec3(0.0), alpha, acc, vWorld);
       }`,
   });
 }
@@ -136,8 +139,8 @@ export class Plume {
     u.uAB.value = ab; u.uDry.value = dry;
     // flame length: min AB ~ 5 D, max ~ 11 D; spacing grows with stage (NPR)
     const D = 2 * r0;
-    u.uLen.value = D * (3.0 + 8.5 * Math.sqrt(ab)) * (0.9 + 0.35 * (expand - 1) / 0.6) + (ab < 0.01 ? D * 1.5 : 0);
-    u.uSpacing.value = D * (0.62 + 0.38 * ab) * expand;
+    u.uLen.value = D * (2.6 + 5.8 * Math.sqrt(ab)) * (0.9 + 0.35 * (expand - 1) / 0.6) + (ab < 0.01 ? D * 1.5 : 0);
+    u.uSpacing.value = D * (0.6 + 0.3 * ab) * expand;
     u.uRb.value = r0 * 2.2 * expand;
     u.uExpand.value = expand;
     u.uSteps.value = Math.round(14 + 18 * (quality ?? 1));

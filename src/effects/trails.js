@@ -134,7 +134,7 @@ void pointState(vec4 p0, vec4 p1, vec4 p2, out vec3 pos, out float r, out float 
   pos += lat * sin(ph) * amp + vec3(0.0, cos(ph * 0.9) * amp * 0.6, 0.0);
   float form = smoothstep(uForm.x, uForm.y, age);
   float fade = 1.0 - smoothstep(uLife * 0.55, uLife, age);
-  sig = p1.x * uSigma * form * fade * pow(w0 / r, 1.25);
+  sig = p1.x * uSigma * form * fade * pow(w0 / r, 0.45) / (1.7725 * r);   // uSigma = optical depth through the axis at birth
 }
 void main() {
   bool ok = b1.y > 0.5 && b0.w >= a0.w && (uTime - a0.w) < uLife && (uTime - b0.w) >= 0.0;
@@ -199,7 +199,7 @@ void main() {
   vec3 Pv = rd * tq;
   vec3 Av = A + u * (sc * L);
   vec3 Pw = (uCameraWorld * vec4(Pv, 1.0)).xyz;
-  vec3 off = mat3(uCameraWorld) * (Pv - Av);
+  vec3 off = mat3(uCameraWorld) * (Pv - (A + u * (tq * b - aU)));   // perpendicular to the axis (no axial part)
   float age = mix(vS.z, vS.w, sc);
   float dist = mix(vR.z, vR.w, sc);
   // lumpy, cauliflower structure: noise in tube space (along-trail distance, offset/r), evolving slowly
@@ -210,8 +210,8 @@ void main() {
   tau *= sig * lump * edge;
   float a = 1.0 - exp(-tau);
   if (a < 0.002) discard;
-  vec3 n = normalize(off + vec3(0.0, 0.35 * r, 0.0));
   vec3 rdw = normalize(Pw - uCameraPos);
+  vec3 n = normalize(off * ir * 0.8 - rdw * 0.6 + vec3(0.0, 0.25, 0.0));   // no singularity when looking down the axis
   vec3 lit = fxMediaLight(uAlbedo, Pw, n, rdw, clamp(tau * 0.5, 0.0, 1.0), uG);
   outColor = fxFinish(lit * a, a, uEmissive * a, Pw);
 }`;

@@ -74,10 +74,10 @@ vec3 fxMediaLight(vec3 albedo, vec3 p, vec3 n, vec3 rd, float dens, float g) {
   vec3 sun = fxSun(p);
   float ndl = dot(n, uSunDir);
   float wrap = clamp((ndl + 0.6) / 1.6, 0.0, 1.0);
-  float selfShadow = mix(1.0, 0.45, dens);
+  float selfShadow = mix(1.0, 0.72, dens);
   float cosT = dot(rd, uSunDir);
   float phase = mix(1.0 / (4.0 * FX_PI), fxHG(cosT, g), 0.6) * 4.0 * FX_PI; // 1 = isotropic
-  vec3 direct = sun * (wrap * selfShadow * mix(1.0, phase, 0.5 + 0.5 * (1.0 - dens))) / FX_PI;
+  vec3 direct = sun * (wrap * selfShadow * mix(1.0, phase, 0.35 + 0.65 * (1.0 - dens))) / FX_PI;
   vec3 amb = atmAmbient(p, n) * (0.75 + 0.25 * (1.0 - dens));
   return albedo * (direct + amb + fxLocal(p) * (0.5 + 0.5 * max(dot(n, normalize(uFxLightPos - p)), 0.0)) / FX_PI);
 }
@@ -96,6 +96,6 @@ export function premulMaterialOpts() {
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
     blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
-    fog: false, toneMapped: false,
+    fog: false, toneMapped: false, side: THREE.DoubleSide,
   };
 }

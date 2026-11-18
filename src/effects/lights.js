@@ -52,7 +52,7 @@ export function createAircraftLights(ctx, shared, header) {
         float energy = corePx < minPx ? (corePx * corePx) / (minPx * minPx) : 1.0;
         corePx = max(corePx, minPx);
         // halo / flare size in pixels grows with night and brightness, independent of distance (eye/lens glare)
-        float haloPx = corePx * 3.0 + (6.0 + 26.0 * uFxNight) * clamp(sqrt(I * energy) * 0.25, 0.0, 3.0);
+        float haloPx = corePx * 3.0 + (3.0 + 9.0 * uFxNight) * clamp(sqrt(I * energy) * 0.1, 0.0, 2.5);
         float sizePx = max(haloPx, corePx * 1.5);
         vec2 off = position.xy * sizePx / pxPerM;
         vc.xy += off;
@@ -69,8 +69,8 @@ export function createAircraftLights(ctx, shared, header) {
         if (vDist - 0.8 > sd) discard;
         float r = length(vC);
         float core = exp(-pow(r / max(vCore, 1e-3), 2.0) * 2.0);
-        float halo = exp(-r * 5.0) * (0.06 + 0.12 * uFxNight);
-        float spikes = (exp(-abs(vC.y) * 70.0) * exp(-abs(vC.x) * 2.8) + exp(-abs(vC.x) * 70.0) * exp(-abs(vC.y) * 2.8)) * 0.18 * uFxNight;
+        float halo = exp(-r * 6.0) * (0.015 + 0.04 * uFxNight);
+        float spikes = (exp(-abs(vC.y) * 70.0) * exp(-abs(vC.x) * 2.8) + exp(-abs(vC.x) * 70.0) * exp(-abs(vC.y) * 2.8)) * 0.06 * uFxNight;
         float k = core + (halo + spikes) * (1.0 - smoothstep(0.85, 1.0, r));
         vec3 e = vCol * vI * k;
         vec3 white = mix(vCol, vec3(1.0), 0.55);
@@ -168,7 +168,7 @@ export function createAircraftLights(ctx, shared, header) {
         else if (l.kind === 'strobe' || l.kind === 'strobeTail') {
           if (Ls.strobe !== false) { const ph = (t + (l.kind === 'strobeTail' ? 0.05 : 0)) % 1.25; I = (ph < 0.05 || (ph > 0.16 && ph < 0.21)) ? 900 : 0; }
         } else if (l.kind === 'beacon' || l.kind === 'beacon2') {
-          if (Ls.beacon !== false) { const ph = (t * 0.95 + (l.kind === 'beacon2' ? 0.5 : 0)) % 1; I = 160 * Math.pow(Math.max(0, Math.sin(ph * Math.PI)), 8); }
+          if (Ls.beacon !== false) { const ph = (t * 0.95 + (l.kind === 'beacon2' ? 0.5 : 0)) % 1; I = 90 * Math.pow(Math.max(0, Math.sin(ph * Math.PI)), 8); }
         } else if (l.kind === 'landing') I = (Ls.landing ? 700 : 0) + (Ls.taxi ? 200 : 0);
         array[i * STRIDE + 7] = elec ? I * (l.kind === 'nav' ? dayK : 1) : 0;
       }
