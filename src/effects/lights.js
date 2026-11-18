@@ -50,6 +50,7 @@ export function createAircraftLights(ctx, shared, header) {
         float corePx = l0.w * pxPerM;
         float minPx = 1.6;
         float energy = corePx < minPx ? (corePx * corePx) / (minPx * minPx) : 1.0;
+        energy = max(energy, mix(0.006, 0.12, uFxNight));   // perceptual floor: lights stay visible for many km at night
         corePx = max(corePx, minPx);
         // halo / flare size in pixels grows with night and brightness, independent of distance (eye/lens glare)
         float haloPx = corePx * 3.0 + (3.0 + 9.0 * uFxNight) * clamp(sqrt(I * energy) * 0.1, 0.0, 2.5);

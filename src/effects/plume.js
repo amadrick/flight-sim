@@ -47,19 +47,19 @@ export function createPlumeMaterial(shared, header) {
           float Lc = uLen * 0.55;
           float rc = uR0 * 0.82 * pow(max(1.0 - z / Lc, 0.0), 0.6) * uExpand;
           if (rc > 0.01) {
-            float core = exp(-(r * r) / (rc * rc) * 2.2);
+            float core = exp(-(r * r) / (rc * rc) * 3.2);
             float ph = z / uSpacing + 0.25;
             float n = floor(ph), f = fract(ph);
             float decay = pow(0.8, n);
-            float rh = abs(f - 0.5) * 2.0 + r / (rc * 0.95);
-            float diamond = smoothstep(1.0, 0.55, rh) * decay;
+            float rh = abs(f - 0.5) * 2.0 + r / (rc * 0.8);
+            float diamond = smoothstep(1.0, 0.7, rh) * decay;
             float disc = exp(-pow((f - 0.62) / 0.06, 2.0)) * exp(-(r * r) / (rc * rc) * 4.0) * decay;
-            col += vec3(1.0, 0.56, 0.24) * core * 4.0 * (0.4 + 0.6 * smoothstep(0.0, uR0 * 1.5, z));
+            col += vec3(1.0, 0.5, 0.2) * core * 3.0 * (0.4 + 0.6 * smoothstep(0.0, uR0 * 1.5, z));
             col += vec3(1.0, 0.74, 0.56) * diamond * 18.0 + vec3(1.0, 0.9, 0.82) * disc * 28.0;
           }
           // sheath ring at the nozzle lip (blue-violet), strongest at full AB
-          float sh = exp(-pow((r - uR0 * 0.8) / (uR0 * 0.2), 2.0)) * exp(-z / (uR0 * 2.5));
-          col += vec3(0.38, 0.4, 1.0) * sh * 5.0 * (0.4 + 0.6 * ab);
+          float sh = exp(-pow((r - uR0 * 0.78) / (uR0 * 0.14), 2.0)) * exp(-z / (uR0 * 1.8));
+          col += vec3(0.35, 0.38, 1.0) * sh * 2.2 * (0.4 + 0.6 * ab);
           // turbulent flame envelope
           float re = uR0 * (0.85 + 0.75 * zn) * uExpand;
           vec3 q = vec3(p.xy / (uR0 * 2.2), z * 0.22 - uTime * 6.5) + uSeed;
@@ -141,7 +141,7 @@ export class Plume {
     // flame length: min AB ~ 5 D, max ~ 11 D; spacing grows with stage (NPR)
     const D = 2 * r0;
     u.uLen.value = D * (2.6 + 5.8 * Math.sqrt(ab)) * (0.9 + 0.35 * (expand - 1) / 0.6) + 0;
-    u.uSpacing.value = D * (0.6 + 0.3 * ab) * expand;
+    u.uSpacing.value = D * (0.75 + 0.4 * ab) * expand;
     u.uRb.value = r0 * 2.2 * expand;
     u.uExpand.value = expand;
     u.uSteps.value = Math.round(14 + 18 * (quality ?? 1));
