@@ -280,7 +280,7 @@ export function createFighterHud() {
       g.font = fontL; g.fillText(F.tenth(gl * 10), lx, top - fs * 1.2);
       g.font = fontS;
       g.fillText('M', lx, bot + fs * 1.0); g.fillText(F.mach(Math.round(num(s.mach) * 100)), lx + cw * 1.6, bot + fs * 1.0);
-      g.fillText('α', lx, bot + fs * 2.1); g.fillText(F.tenth(Math.round(num(s.aoa) * RAD * 10)), lx + cw * 1.6, bot + fs * 2.1);
+      g.fillText('α', lx, bot + fs * 2.1); g.fillText(num(s.tas) > 25 ? F.tenth(Math.round(num(s.aoa) * RAD * 10)) : '--', lx + cw * 1.6, bot + fs * 2.1);
       g.fillText(F.tenth(Math.round(maxG * 10)), lx + cw * 1.6, bot + fs * 3.2);
       g.fillText('G', lx, bot + fs * 3.2);
     }

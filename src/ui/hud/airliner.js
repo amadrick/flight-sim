@@ -475,7 +475,7 @@ export function createAirlinerDeck(tok) {
     g.restore();
     // selected altitude (top) and baro (bottom)
     if (s.ap?.engaged) text(g, F.int(Math.round(num(s.ap.altitude) / FT / 100) * 100), x + w / 2, top - 2.6 * u, B.magenta, fonts.n, 'center');
-    text(g, '29.92', x + w / 2 - 2 * u, bot + 3 * u, B.green, fonts.n, 'center');
+    text(g, '29.92', x + w - 3.6 * u, bot + 3 * u, B.green, fonts.n, 'right');
     text(g, 'IN', x + w + 0.2 * u, bot + 3 * u, B.green, fonts.xs, 'right');
   }
 
