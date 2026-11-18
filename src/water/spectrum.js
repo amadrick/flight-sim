@@ -206,7 +206,7 @@ export function evalHeight(comps, x, z, t) {
  * Cumulative slope variance (upwind, crosswind) for |k| < K on a log grid: returns { ks, cu, cc } with
  * cu[i] = variance of components with |k| < ks[i]. Cheap (~4k spectrum evaluations).
  */
-export function slopeCDF(sea, kMin = 1e-3, kMax = 2 * Math.PI / 0.01, nk = 160, nt = 36) {
+export function slopeCDF(sea, kMin = 1e-3, kMax = 2 * Math.PI / 0.01, nk = 120, nt = 24) {
   const ks = new Float64Array(nk + 1), cu = new Float64Array(nk + 1), cc = new Float64Array(nk + 1);
   const l0 = Math.log(kMin), l1 = Math.log(kMax);
   const ca = Math.cos(sea.windAngle), sa = Math.sin(sea.windAngle);

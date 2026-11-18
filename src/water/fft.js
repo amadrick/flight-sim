@@ -186,7 +186,7 @@ export function createOceanFFT(renderer, opts) {
       if (!sea) return;
       const prevTarget = renderer.getRenderTarget();
       const tf = (t % TIME_PERIOD) / TIME_PERIOD;
-      const decay = Math.exp(-dt / 2.5);
+      const decay = Math.exp(-dt / (fft.foamLife || 2.5));
       for (const c of cascades) {
         if (c.dirty) {
           const u = pH0.material.uniforms;

@@ -147,10 +147,13 @@ void main() {
   // whitecaps: crests where the COMBINED horizontal map folds (linearised sum of the cascade Jacobians), plus
   // persistent per-cascade foam trails; when the crest field is minified, fall back to the statistical coverage
   // (Monahan & O'Muircheartaigh 1980: W = 3.84e-6 U^3.41).
-  float Jc = s0.w + s1.w + s2.w - 2.0;
+  // breaking is driven by the big waves: weight the long cascades, the short one only adds texture
+  float Jc = 1.0 + 1.3 * (s0.w - 1.0) + 1.25 * (s1.w - 1.0) + 0.45 * (s2.w - 1.0);
   float crestFoam = clamp((uFoam.x - Jc) * uFoam.y, 0.0, 1.0) * (0.5 + nm.g);
   float resolved = 1.0 - smoothstep(0.5, 2.5, lod1);
-  float cov = max(mix(uFoam.z, crestFoam, resolved), dot(vec3(s0.z, s1.z, s2.z), uFoamW));
+  float fresh = mix(uFoam.z, crestFoam, resolved);              // fresh, dense whitecap
+  float residue = clamp(dot(vec3(s0.z, s1.z, s2.z), uFoamW), 0.0, 1.0);   // decaying foam left behind
+  float cov = max(fresh, residue);
 
   // ---- large-scale sea-state variation: gust fronts, cat's paws and calm slicks (visible from altitude) ------
   vec2 nq = (xz + uOriginWrap.zw) / 32768.0 - uWindDir * (uTime * 0.0001);
@@ -160,7 +163,8 @@ void main() {
   float rough = mix(0.7, 1.3, gust) * (1.0 - 0.45 * slick);
   var *= rough;
   grad *= 1.0 - 0.15 * slick;
-  cov *= mix(0.4, 1.6, gust) * (1.0 - slick);
+  float gustF = mix(0.4, 1.6, gust) * (1.0 - slick);
+  cov *= gustF; fresh *= gustF; residue *= gustF;
 
   // ---- depth, shore calming ----------------------------------------------------------------------------------
   float depth = max(-terrainHeight(xz + uOrigin.xz), 0.0);
@@ -192,6 +196,8 @@ void main() {
   float sand = 0.8 + 0.4 * n2.b;
   vec3 bottom = vec3(0.42, 0.40, 0.31) * sand * 0.55;
   vec3 rho = rhoDeep * (1.0 - att) + bottom * att;
+  // aerated water (bubble clouds) under and around breaking crests glows turquoise-white
+  rho += vec3(0.012, 0.04, 0.042) * clamp(cov * 2.5, 0.0, 1.0);
   vec3 L = uSunDir;
   vec3 Eamb = atmAmbient(P, vec3(0.0, 1.0, 0.0));
   vec3 Lw = rho * (vSunE * max(L.y, 0.0) / PI + Eamb + vMoonE * max(uMoonDir.y, 0.0) / PI);
@@ -212,10 +218,11 @@ void main() {
   float ft = texture(tFoamTex, fuv).r * 0.65 + texture(tFoamTex, wq / 64.0 + 0.31).r * 0.35;
   float pxs = length(fwidth(fuv));
   float detailW = 1.0 - smoothstep(0.03, 0.25, pxs);
-  cov = clamp(cov, 0.0, 1.0);
-  // dense crest centres become solid white, edges break up into lace
-  float lace = smoothstep(0.2, 0.55, ft + 0.9 * cov - 0.2);
-  float wc = mix(cov * 0.8, min(1.0, cov * 1.7) * lace, detailW);
+  cov = clamp(cov, 0.0, 1.0); fresh = clamp(fresh, 0.0, 1.0);
+  // fresh crest foam: dense centres solid white, edges break up; residue: thin marbled lace that thins out as it decays
+  float freshMask = smoothstep(0.0, 0.9, fresh) * (0.35 + 0.65 * smoothstep(0.15, 0.6, ft + 0.5 * fresh - 0.1));
+  float resMask = residue * smoothstep(0.55 - 0.35 * residue, 0.75 - 0.3 * residue, ft) * 0.6;
+  float wc = mix(cov * 0.8, max(freshMask, resMask), detailW);
   // wind-aligned foam streaks (Beaufort 6+), long thin lines in the wind frame (offset wrapped on the CPU)
   vec2 sq = vec2(dot(xz, uWindDir), dot(xz, vec2(-uWindDir.y, uWindDir.x))) + uStreak.xy;
   vec4 warp = texture(tNoise, sq / 256.0);
@@ -224,7 +231,7 @@ void main() {
   float stLod = length(fwidth(stq)) * 256.0;             // texels per pixel across the streaks
   float st = texture(tNoise, stq).a * (0.35 + 0.9 * texture(tNoise, sq / 2048.0).g);
   float streak = mix(smoothstep(0.66, 0.92, st), 0.07, smoothstep(0.6, 3.0, stLod));
-  wc = max(wc, streak * uStreak.z * (0.35 + 0.65 * ft));
+  wc = max(wc, streak * uStreak.z * smoothstep(0.2, 0.6, ft) * 0.8);
   float shore = 0.0;
   if (depth < 9.0) {
     float nb = n2.b;

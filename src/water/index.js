@@ -90,7 +90,7 @@ export async function createWater(ctx) {
     uVarTail: { value: new THREE.Vector2(0.005, 0.005) },
     uWindDir: { value: new THREE.Vector2(1, 0) },
     uOriginWrap: { value: new THREE.Vector4() },
-    uFoamW: { value: new THREE.Vector3(1, 0.7, 0.25) },
+    uFoamW: { value: new THREE.Vector3(1, 0.8, 0.15) },
     uSea: { value: new THREE.Vector4(5, 1, 0.5, 8) },
     uMoonK: { value: 0 },
     uFoam: { value: new THREE.Vector3(0.35, 2.5, 0) },
@@ -147,7 +147,7 @@ export async function createWater(ctx) {
     const k = smooth(4, 17, U);
     return {
       chop: 0.85 + 0.55 * k,
-      foamBias: 0.74,      // per-cascade trail threshold (each cascade's own Jacobian rarely folds)
+      foamBias: 0.76,      // per-cascade trail threshold (each cascade's own Jacobian rarely folds)
       foamGain: 3.0,
     };
   }
@@ -161,6 +161,7 @@ export async function createWater(ctx) {
     sea = makeSeaState(U, angle);
     const sp = seaParams(U);
     fft.setSeaState(sea, sp);
+    fft.foamLife = 2 + 5 * smooth(5, 17, U);    // whitecap foam lingers longer in strong wind
     const defs = cascadeDefs.map((c) => ({ ...c, N: cfg.N }));
     const vt = varianceTables(sea, defs);
     for (let c = 0; c < 3; c++) for (let l = 0; l < LEVELS; l++) uniforms.uVar.value[c * 10 + l].set(vt.table[(c * LEVELS + l) * 2], vt.table[(c * LEVELS + l) * 2 + 1]);
@@ -169,7 +170,17 @@ export async function createWater(ctx) {
     const hs = 4 * Math.sqrt(Math.max(1e-6, estimateVarH(sea)));
     uniforms.uSea.value.set(U, hs, 0.35 + 0.65 * smooth(2, 14, U), aniso());
     uniforms.uShoreFade.value = Math.max(4, 2.2 * hs);
-    uniforms.uFoam.value.set(0.3 + 0.38 * smooth(7, 17, U), 4.0, Math.min(0.12, 3.84e-6 * Math.pow(U, 3.41)) * 2.0);
+    // Crest foam threshold from statistics: linearised J = 1 + chop·(Dxx + Dzz) and Dxx + Dzz = |k| h~, so
+    // var(J) = chop² × slope variance of each cascade (weights as in the shader). Threshold at m standard deviations,
+    // m(U) chosen so the Gaussian tail matches Monahan's whitecap fraction (0.3 % @ 7 m/s, 1.8 % @ 12, 6 % @ 17).
+    const wJ = [1.3, 1.25, 0.45];
+    let varJ = 0;
+    const T = vt.table, at = (c, l) => T[(c * LEVELS + l) * 2] + T[(c * LEVELS + l) * 2 + 1];
+    for (let c = 0; c < 3; c++) varJ += wJ[c] * wJ[c] * (at(c, LEVELS - 1) - at(c, 0));   // resolved part only
+    const sigJ = sp.chop * Math.sqrt(varJ);
+    const m = Math.min(4, Math.max(1.0, 2.9 - 0.12 * U));     // tuned against renders (mip blur, gust modulation)
+    const monahan = Math.min(0.12, 3.84e-6 * Math.pow(U, 3.41));
+    uniforms.uFoam.value.set(U < 3 ? -10 : 1 - m * sigJ, 1 / Math.max(0.02, 1.1 * sigJ), monahan * 2.0);
     comps = componentsFor(sea, defs.slice(0, 2), fft.cascades.slice(0, 2).map((c) => c.gauss), 64, 16, comps);
   }
   // height variance by radial integration (for crest normalisation / shore fade)
