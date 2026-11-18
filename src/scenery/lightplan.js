@@ -89,8 +89,8 @@ export function buildLightPlan(L, heightFn = () => 0) {
       for (let k = 1; k < n; k++) {
         const u = k * 15;
         const p = P(u, 0.6);
-        push(p.x, 0.03, p.z, ccol(Lr - u, k), 0.75, toward0, 0.55, 0, 0, 0, 0.16, 0);
-        push(p.x, 0.03, p.z, ccol(u, k), 0.75, toward1, 0.55, 0, 0, 0, 0.16, 0);
+        push(p.x, 0.03, p.z, ccol(Lr - u, k), 0.75, toward0, 0.9, 0, 0, 0, 0.16, 0);
+        push(p.x, 0.03, p.z, ccol(u, k), 0.75, toward1, 0.9, 0, 0, 0, 0.16, 0);
       }
       tally('centreline');
       // ---- touchdown zone lights: barrettes of 3, 30 m spacing, first 900 m from each threshold
@@ -99,7 +99,7 @@ export function buildLightPlan(L, heightFn = () => 0) {
         for (let u = 30; u <= 900 && u < Lr / 2; u += 30) {
           for (const sg of [-1, 1]) for (let j = 0; j < 3; j++) {
             const v = sg * (11 + j * 1.5);
-            push(E.thr.x + de.x * u + re.x * v, 0.03, E.thr.z + de.z * u + re.z * v, COLORS.white, 0.7, [-de.x, 0.06, -de.z], 0.8, 0, 0, 0, 0.16, 0);
+            push(E.thr.x + de.x * u + re.x * v, 0.03, E.thr.z + de.z * u + re.z * v, COLORS.white, 0.7, [-de.x, 0.06, -de.z], 0.9, 0, 0, 0, 0.16, 0);
           }
         }
       }

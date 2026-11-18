@@ -243,6 +243,15 @@ export async function createScenery(ctx) {
   const surfaceAt = createSurfaceProvider(AIRPORTS, layouts, () => Math.min(1, (ctx.weather.precipitation || 0) * 1.6));
   ctx.world.addSurfaceProvider(surfaceAt);
 
+  // quality: shadow casting from scenery only when the preset has shadows
+  const applyQuality = () => {
+    const sh = ctx.quality.shadows !== false;
+    for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.userData.scnCaster) o.castShadow = sh; });
+  };
+  for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.castShadow) o.userData.scnCaster = true; });
+  applyQuality();
+  ctx.events.on('quality:change', applyQuality);
+
   const debugCam = setupDebugCamera(ctx, airports);
   const camW = new THREE.Vector3();
   let sockPhase = 0;

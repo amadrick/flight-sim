@@ -105,8 +105,9 @@ function building(B, b, L) {
   switch (b.type) {
     case 'terminal': {
       B.box({ pa: 'glass', na: 'glass', pr: 'glass', nr: 'glass' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h - 2, C.glassTint);
-      // floating roof with overhang + fascia
-      B.box({ top: 'roof', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h - 2, b.z, b.hdg, b.len + 16, b.wid + 20, 2.2, C.offwhite);
+      // floating barrel-vault roof with deep overhangs + fascia slab
+      B.box({ bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h - 2, b.z, b.hdg, b.len + 16, b.wid + 20, 1.2, C.offwhite);
+      B.vault('roof', { pa: 'plain', na: 'plain' }, b.x, b.h - 0.8, b.z, b.hdg, b.len + 16, b.wid + 20, 7, C.offwhite, 14, C.offwhite);
       // landside canopy and kerb on the -along side? (terminal faces landside on -along)
       B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x - d.dx * (b.len / 2 + 12), 7, b.z - d.dz * (b.len / 2 + 12), b.hdg, 20, b.wid * 0.9, 0.8, C.white);
       for (let k = -2; k <= 2; k++) B.box('plain', b.x - d.dx * (b.len / 2 + 18) + d.rx * k * b.wid * 0.2, 0, b.z - d.dz * (b.len / 2 + 18) + d.rz * k * b.wid * 0.2, b.hdg, 0.6, 0.6, 7, C.grey);
