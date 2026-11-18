@@ -120,6 +120,7 @@ uniform float uWindScale;
 const VERT = COMMON + /* glsl */`
 in vec4 a0; in vec4 a1; in vec4 a2; in vec4 b0; in vec4 b1; in vec4 b2;
 flat out vec3 vA; flat out vec3 vB; flat out vec4 vR; flat out vec4 vS; // vR: rA rB distA distB, vS: sigA sigB ageA ageB
+flat out vec3 vSun; flat out vec3 vAmbUp; flat out vec3 vAmbDn; flat out vec4 vApA; flat out vec4 vApB;
 out vec3 vView;
 void pointState(vec4 p0, vec4 p1, vec4 p2, out vec3 pos, out float r, out float sig, out float age) {
   age = uTime - p0.w;
@@ -160,12 +161,16 @@ void main() {
   float r = (isB ? rb : ra) * 2.4;
   P.xy += (perp * position.x + dir * position.y) * r;
   vA = va; vB = vb; vR = vec4(ra, rb, a1.z, b1.z); vS = vec4(sa, sb, aa, ab);
+  vec3 pm = 0.5 * (pa + pb);
+  vSun = fxSun(pm); vAmbUp = atmAmbient(pm, vec3(0.0, 1.0, 0.0)); vAmbDn = atmAmbient(pm, vec3(0.0, -1.0, 0.0));
+  vApA = fxAP(pa); vApB = fxAP(pb);
   vView = P;
   gl_Position = projectionMatrix * vec4(P, 1.0);
 }`;
 
 const FRAG = COMMON + /* glsl */`
 flat in vec3 vA; flat in vec3 vB; flat in vec4 vR; flat in vec4 vS;
+flat in vec3 vSun; flat in vec3 vAmbUp; flat in vec3 vAmbDn; flat in vec4 vApA; flat in vec4 vApB;
 in vec3 vView;
 out vec4 outColor;
 float fxErf(float x) {
@@ -214,6 +219,6 @@ void main() {
   if (a < 0.002) discard;
   vec3 rdw = normalize(Pw - uCameraPos);
   vec3 n = normalize(off * ir * 0.8 - rdw * 0.6 + vec3(0.0, 0.25, 0.0));   // no singularity when looking down the axis
-  vec3 lit = fxMediaLight(uAlbedo, Pw, n, rdw, clamp(tau * 0.5, 0.0, 1.0), uG);
-  outColor = fxFinish(lit * a, a, uEmissive * a, Pw);
+  vec3 lit = fxMediaLightPre(uAlbedo, vSun, vAmbUp, vAmbDn, Pw, n, rdw, clamp(tau * 0.5, 0.0, 1.0), uG);
+  outColor = fxFinishAP(lit * a, a, uEmissive * a, mix(vApA, vApB, sc));
 }`;

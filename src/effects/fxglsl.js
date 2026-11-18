@@ -69,6 +69,25 @@ vec4 fxFinish(vec3 lit, float a, vec3 emis, vec3 renderPos) {
   if (uFxPreviewTM > 0.5) rgb = fxTM(lit / max(a, 1e-3)) * a + fxTM(emis) * (1.0 - a * 0.5);
   return vec4(max(rgb, 0.0), clamp(a, 0.0, 1.0));
 }
+vec4 fxAP(vec3 renderPos) { return uFxApOn > 0.5 ? atmAerialPerspective(renderPos) : vec4(0.0, 0.0, 0.0, 1.0); }
+// Same as fxFinish with a precomputed aerial perspective (per vertex / per instance).
+vec4 fxFinishAP(vec3 lit, float a, vec3 emis, vec4 ap) {
+  lit = lit * ap.a + ap.rgb * a; emis *= ap.a;
+  vec3 rgb = lit + emis;
+  if (uFxPreviewTM > 0.5) rgb = fxTM(lit / max(a, 1e-3)) * a + fxTM(emis) * (1.0 - a * 0.5);
+  return vec4(max(rgb, 0.0), clamp(a, 0.0, 1.0));
+}
+// Media lighting with sun / ambient precomputed per vertex (cheap: no atmosphere/cloud-shadow calls per pixel).
+vec3 fxMediaLightPre(vec3 albedo, vec3 sun, vec3 ambUp, vec3 ambDn, vec3 p, vec3 n, vec3 rd, float dens, float g) {
+  float ndl = dot(n, uSunDir);
+  float wrap = clamp((ndl + 0.6) / 1.6, 0.0, 1.0);
+  float selfShadow = mix(1.0, 0.72, dens);
+  float cosT = dot(rd, uSunDir);
+  float phase = mix(1.0 / (4.0 * FX_PI), fxHG(cosT, g), 0.6) * 4.0 * FX_PI;
+  vec3 direct = sun * (wrap * selfShadow * mix(1.0, phase, 0.35 + 0.65 * (1.0 - dens))) / FX_PI;
+  vec3 amb = mix(ambDn, ambUp, n.y * 0.5 + 0.5) * (0.75 + 0.25 * (1.0 - dens));
+  return albedo * (direct + amb + fxLocal(p) * (0.5 + 0.5 * max(dot(n, normalize(uFxLightPos - p)), 0.0)) / FX_PI);
+}
 // Approximate volumetric shading of a smoke/vapour puff: n = pseudo normal (world), dens = local density 0..1.
 vec3 fxMediaLight(vec3 albedo, vec3 p, vec3 n, vec3 rd, float dens, float g) {
   vec3 sun = fxSun(p);

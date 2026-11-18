@@ -85,6 +85,7 @@ in vec4 i0; in vec4 i1; in vec4 i2; in vec4 i3; in vec4 i4;
 uniform float uWindScale;
 out vec2 vUv; out vec2 vCorner; out vec3 vPos; out float vDist; out float vSize;
 out vec4 vColor; out vec4 vData; out vec4 vMask;
+flat out vec3 vSun; flat out vec3 vAmbUp; flat out vec3 vAmbDn; flat out vec4 vAP;
 void main() {
   float age = uTime - i0.w, life = i1.w, t = age / life;
   if (age < 0.0 || t >= 1.0) { gl_Position = vec4(0.0); return; }
@@ -100,6 +101,7 @@ void main() {
     float s6 = seed * 6.2832;
     p += size * 0.18 * vec3(sin(age * 0.9 + s6), 0.5 * sin(age * 0.7 + s6 * 2.0), cos(age * 0.8 + s6 * 3.0));
   }
+  vSun = fxSun(p); vAmbUp = atmAmbient(p, vec3(0.0, 1.0, 0.0)); vAmbDn = atmAmbient(p, vec3(0.0, -1.0, 0.0)); vAP = fxAP(p);
   vec4 vc = viewMatrix * vec4(p, 1.0);
   vec2 c = position.xy;
   vCorner = c;
@@ -133,6 +135,7 @@ void main() {
 const FRAG = /* glsl */`
 in vec2 vUv; in vec2 vCorner; in vec3 vPos; in float vDist; in float vSize;
 in vec4 vColor; in vec4 vData; in vec4 vMask;
+flat in vec3 vSun; flat in vec3 vAmbUp; flat in vec3 vAmbDn; flat in vec4 vAP;
 out vec4 outColor;
 void main() {
   float r2 = dot(vCorner, vCorner);
@@ -146,7 +149,7 @@ void main() {
     float core = kind == 2.0 ? exp(-vCorner.x * vCorner.x * 6.0) * (1.0 - smoothstep(0.6, 1.0, abs(vCorner.y))) : tex.a;
     float cool = kind == 2.0 ? mix(1.0, 0.35, t) : 1.0 - t;
     vec3 e = vColor.rgb * mix(vec3(1.0, 0.55, 0.3), vec3(1.0), cool) * vData.y * core * vColor.a * soft * cool;
-    outColor = fxFinish(vec3(0.0), 0.0, e, vPos);
+    outColor = fxFinishAP(vec3(0.0), 0.0, e, vAP);
     return;
   }
   float dens = dot(tex, vMask);
@@ -166,6 +169,6 @@ void main() {
     a *= mix(0.45, 1.0, smoothstep(0.05, 0.35, t));
     albedo *= mix(0.3, 1.0, smoothstep(0.1, 0.5, t));
   }
-  vec3 lit = fxMediaLight(albedo, vPos, n, rd, dens, kind == 4.0 ? 0.75 : 0.35);
-  outColor = fxFinish(lit * a, a, emis, vPos);
+  vec3 lit = fxMediaLightPre(albedo, vSun, vAmbUp, vAmbDn, vPos, n, rd, dens, kind == 4.0 ? 0.75 : 0.35);
+  outColor = fxFinishAP(lit * a, a, emis, vAP);
 }`;
