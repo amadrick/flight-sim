@@ -40,15 +40,18 @@ export function updateAutopilot(P, a, X, dt) {
     let vs = P.kh * (a.altRef - X.alt); vs = clamp(vs, -P.vsMax, P.vsMax);
     a.vsCmd = vs;
     const acc = clamp(P.kv * (vs - X.vs), -P.accMax, P.accMax);
-    const cphi = X.cphi > 0.4 ? X.cphi : 0.4;
-    // pitch rate for the demanded vertical acceleration + the pitch rate a level turn needs at this bank
-    a.qCmd = acc / (V * cphi) + (G0 / V) * (X.sphi * X.sphi) / cphi;
+    // pitch rate for the demanded vertical acceleration + the pitch rate a level turn needs at this bank;
+    // beyond ~70° of bank the autopilot unloads and lets the roll channel bring the wings back first
+    const cphi = X.cphi > 0.4 ? X.cphi : 0.4, up = X.cphi > 0.35 ? 1 : X.cphi < 0.1 ? 0 : (X.cphi - 0.1) * 4;
+    a.qCmd = up * (acc / (V * cphi) + (G0 / V) * (X.sphi * X.sphi) / cphi);
   } else { a.qCmd = 0; a.vsCmd = 0; }
   if (a.hdg) {
     let err = a.hdgRef - X.psi; err -= Math.round(err / (2 * Math.PI)) * 2 * Math.PI;
     const rate = clamp(0.35 * err, -P.turnRate, P.turnRate);
     a.bankCmd = clamp(Math.atan((V * rate) / G0), -P.bankMax, P.bankMax);
     a.pCmd = clamp(P.kPhi * (a.bankCmd - X.phi), -P.pMax, P.pMax);
+  } else if (a.alt) {
+    a.bankCmd = 0; a.pCmd = 0;
   } else { a.pCmd = 0; a.bankCmd = 0; }
   if (a.spd) {
     const rate = clamp(P.thrKi * (a.spdRef - X.ias) - P.thrKp * X.iasDot, -0.3, 0.3);

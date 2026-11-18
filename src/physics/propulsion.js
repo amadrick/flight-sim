@@ -19,6 +19,7 @@ export function thrustLapse(E, M, theta, delta, alt, out) {
   if (M > 1) rec = E.inlet === 'pitot' ? normalShockRecovery(M) : 1 - 0.075 * Math.pow(M - 1, 1.35);
   let delta0 = delta * r * r * r * Math.sqrt(r) * rec;
   if (E.altLapse !== 1) delta0 *= Math.pow(delta, E.altLapse - 1);
+  if (E.pLimit > 0 && delta0 > E.pLimit) delta0 = E.pLimit;       // compressor-discharge pressure limit at high q
   const over = theta0 > E.TR ? theta0 - E.TR : 0;
   let mil, ab;
   if (E.hb) {                       // high-bypass turbofan (Mattingly)
@@ -27,7 +28,7 @@ export function thrustLapse(E, M, theta, delta, alt, out) {
     mil = 1 - 0.16 * Math.sqrt(M) - (24 * over) / ((9 + M) * theta0);
     ab = 1 - 0.3 * (theta0 - 1) - 0.1 * Math.sqrt(M) - (1.5 * over) / theta0;
   } else {                          // low-bypass mixed-flow turbofan
-    mil = 1 - (3.8 * over) / theta0 - E.machLapse * Math.sqrt(M); ab = 1 - (3.5 * over) / theta0 - E.machLapse * Math.sqrt(M);
+    mil = 1 - (E.milLapse * over) / theta0 - E.machLapse * Math.sqrt(M); ab = 1 - (E.abLapse * over) / theta0 - E.machLapse * Math.sqrt(M);
   }
   if (E.mMax > 0 && M > E.mMax) { const k = 1 - 4 * (M - E.mMax); mil *= k > 0 ? k : 0; ab *= k > 0 ? k : 0; }
   out.mil = mil > 0 ? mil * delta0 : 0; out.ab = ab > 0 ? ab * delta0 : 0;

@@ -55,7 +55,8 @@ export function computeAero(A, i, o) {
   const sb = v / V;                                   // sin(beta)
   const beta = Math.asin(sb < -1 ? -1 : sb > 1 ? 1 : sb);
   const mach = V / i.a, qbar = 0.5 * i.rho * V2;
-  const sa = hxz > 1e-6 ? w / hxz : 0, ca = hxz > 1e-6 ? u / hxz : 1;
+  const sa = hxz > 1e-3 ? w / hxz : 0, ca = hxz > 1e-3 ? u / hxz : 1;
+  const c2b = (hxz * hxz) / V2, cb = hxz / V;          // cos²β, cosβ: in-plane share of the dynamic pressure
 
   // ---- Mach tables (uniform grid) ---------------------------------------------------------------------------------
   let mi = mach * A.mInv; if (mi > A.mN - 1.001) mi = A.mN - 1.001;
@@ -103,7 +104,7 @@ export function computeAero(A, i, o) {
 
   // ---- lift -------------------------------------------------------------------------------------------------------
   const cla = A.cla * fCla * geL;
-  const a0p = a0 * fClmax - (1 - i.slat) * A.slatDAlpha;      // stall-blend centre, positive side
+  const a0p = (a0 - (1 - i.slat) * A.slatDAlpha) * fClmax;    // stall-blend centre, positive side
   const a0n = A.a0n * fClmax;
   const sig = separation(alpha, a0p, a0n, A.sharp);
   const att = 1 - sig;
@@ -127,20 +128,21 @@ export function computeAero(A, i, o) {
   const cle = clAtt - A.clMinD;
   const cdAtt = cdProfile + kInd * kf * geK * cle * cle;
   const cdSep = cdProfile + A.cd90 * sa * sa;
-  const CD = att * cdAtt + sig * cdSep + A.cdBeta * sb * sb;
+  CL *= c2b;
+  const CD = (att * cdAtt + sig * cdSep) * c2b + A.cdBeta * sb * sb;
 
   // ---- side force -------------------------------------------------------------------------------------------------
   const drRad = i.dr * A.drMax;
   const sdir = smooth01((abs(alpha) - A.aDir0) * A.aDirInv);       // directional blanking at high alpha
-  const CY = A.cyb * sb - A.cyCross * sb * abs(sb) - A.cydr * fCtrl * drRad * (1 - A.rudLoss * sdir);
+  const CY = A.cyb * sb * cb - A.cyCross * sb * abs(sb) - A.cydr * fCtrl * drRad * (1 - A.rudLoss * sdir) * cb;
 
   // ---- moments ----------------------------------------------------------------------------------------------------
   const i2V = 1 / (2 * (V > 5 ? V : 5));
   const ph = i.p * b * i2V, qh = i.q * A.c * i2V, rh = i.r * b * i2V;
   const clw = CL > 2.5 ? 2.5 : CL < -1.5 ? -1.5 : CL;
   const sm = A.sm + dxac;
-  const Cm = A.cm0 + dcm0 + att * (-sm * cla * alpha) + sig * A.cmPost * sa
-    + A.cmq * fDamp * qh + A.cmde * fCtrl * deRad + A.cmSb * i.sb + A.cmGear * i.gear + A.cmSp * spAvg;
+  const Cm = (A.cm0 + dcm0 + att * (-sm * cla * alpha) + sig * A.cmPost * sa + A.cmde * fCtrl * deRad + A.cmSb * i.sb + A.cmGear * i.gear + A.cmSp * spAvg) * c2b
+    + A.cmq * fDamp * qh;
 
   const rollLoss = 1 - A.ailLoss * sig;
   let wd = 1 - margin * 11.5; wd = wd < 0 ? 0 : wd > 1 ? 1 : wd;            // asymmetric stall (wing drop) within ~5° of CLmax

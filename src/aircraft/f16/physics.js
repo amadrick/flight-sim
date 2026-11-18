@@ -22,8 +22,8 @@ export default {
       xac:   [0,      0,      0,      0.01,   0.03,   0.06,   0.10,   0.14,   0.16,   0.18,   0.19,   0.19,   0.18,   0.18,   0.18],
       ctrl:  [1,      1,      1,      0.98,   0.95,   0.90,   0.85,   0.80,   0.78,   0.75,   0.68,   0.60,   0.54,   0.50,   0.46],
     },
-    drag: { clMinDrag: 0.02, gear: 0.022, speedbrake: 0.045, beta: 0.9, elevator: 0.06 },
-    pitch: { cm0: 0.0, staticMargin: -0.015, cmq: -5.5, cmde: 0.65, clde: 0.45, cmPostStall: -0.35, cmGear: -0.008, cmSpeedbrake: -0.004 },
+    drag: { clMinDrag: 0.02, gear: 0.022, speedbrake: 0.045, beta: 1.1, elevator: 0.06 },
+    pitch: { cm0: 0.0, staticMargin: -0.015, cmq: -5.5, cmde: 0.80, clde: 0.45, cmPostStall: -0.35, cmGear: -0.008, cmSpeedbrake: -0.004 },
     side: { cyb: -1.1, cydr: 0.18 },
     roll: { clb: -0.07, clbCl: -0.06, clp: -0.36, clr: 0.03, clrCl: 0.15, clda: 0.092, cldt: 0.045, cldr: 0.012 },
     yaw: { cnb: 0.20, cnp: -0.01, cnpCl: -0.05, cnr: -0.38, cnda: 0.003, cndaCl: 0.012, cndr: 0.086, alphaDir: [28, 42], cnbPostStall: -0.06 },
@@ -46,7 +46,7 @@ export default {
   },
   hook: true,
   engines: {
-    type: 'turbofan-ab', inlet: 'pitot', throttleRatio: 1.09,
+    type: 'turbofan-ab', inlet: 'pitot', throttleRatio: 0.95, milLapse: 2.3, abLapse: 1.69, pressureLimit: 1.9,   // installed thrust lapse (see SCHEMA.md)
     n1Idle: 0.32, n2Idle: 0.68, spoolUp: 3.2, spoolDown: 2.4, idleThrust: 0.022, idleFuelFlow: 0.13,
     tsfc: [0.70, 0.25], tsfcAb: [1.90, 0.25], egt: [390, 880, 955], abLightTime: 1.0, startTime: 14,
   },
@@ -76,11 +76,11 @@ export default {
     maxSpeedAlt: [2.05, 0.06], maxSpeedAltitude: 12200,
     ceiling: 15240,
     rollRate: [270, 0.2], rollSpeed: 200,     // deg/s at 200 m/s
-    sustainedTurn: [18.0, 0.15], sustainedTurnSpeed: 240,   // deg/s at sea level
-    instantTurn: [25, 0.15], instantTurnSpeed: 200,
-    maxG: [9, 0.05],
+    sustainedTurn: [14.5, 0.15], sustainedTurnSpeed: 222, sustainedTurnAltitude: 4572,   // deg/s at 15 000 ft, M0.85
+    instantTurn: [25, 0.15], instantTurnSpeed: 205,           // corner speed, sea level
+    maxG: [9, 0.05], maxGSpeed: 240,
     glideRatio: [10.5, 0.2], glideSpeed: 115,
-    cruise: { altitude: 9000, mach: 0.85, fuelFlow: [3000, 0.3] },   // kg/h
+    cruise: { altitude: 9000, mach: 0.85, fuelFlow: [1250, 0.3] },   // kg/h
     approachAoA: [13, 0.2],                   // deg
   },
 };

@@ -129,14 +129,14 @@ export function resolveConfig(def) {
     cl0, cla: cla0, sharp, clPost, cd90: num(lift.cd90, 1.25),
     a0n: 0, slatDAlpha: 0, slatCd: 0, peakOff: 0,
     clMinD: num(drag.clMinDrag, 0), cdGear: num(drag.gear, 0.02), cdSb: num(drag.speedbrake, 0.04), cdSp: num(drag.spoiler, 0.05),
-    cdBeta: num(drag.beta, 0.8), cdde: num(drag.elevator, 0.08), cdda: num(drag.aileron, 0.004), cddr: num(drag.rudder, 0.002),
+    cdBeta: num(drag.beta, 1.1), cdde: num(drag.elevator, 0.08), cdda: num(drag.aileron, 0.004), cddr: num(drag.rudder, 0.002),
     cdSplit: num(drag.splitRudder, 0),
     // pitch
     cm0: num(pitch.cm0, 0), sm: num(pitch.staticMargin, heavy ? 0.2 : 0.05), cmq: num(pitch.cmq, heavy ? -16 : -6),
     cmde: num(pitch.cmde, heavy ? 1.2 : 0.65), clde: num(pitch.clde, heavy ? 0.35 : 0.45), cmPost: num(pitch.cmPostStall, -0.4),
     cmSb: num(pitch.cmSpeedbrake, 0), cmGear: num(pitch.cmGear, 0), cmSp: num(pitch.cmSpoiler, 0),
     // side
-    cyb: num(side.cyb, -0.9), cyCross: num(side.cyCross, 0.6), cydr: num(side.cydr, 0.2),
+    cyb: num(side.cyb, -0.9), cyCross: num(side.cyCross, 0), cydr: num(side.cydr, 0.2),
     // roll
     clb: num(roll.clb, heavy ? -0.1 : -0.07), clbCl: num(roll.clbCl, -0.05), clp: num(roll.clp, heavy ? -0.45 : -0.36),
     clr: num(roll.clr, 0.05), clrCl: num(roll.clrCl, 0.2), clda: num(roll.clda, 0.08), cldt: num(roll.cldt, 0),
@@ -173,6 +173,7 @@ export function resolveConfig(def) {
     takeoff: Math.min(n - 1, Math.max(0, num(fl.takeoff, 0) | 0)), landing: Math.min(n - 1, Math.max(0, num(fl.landing, n - 1) | 0)),
     autoWithGear: !!fl.autoWithGear };
   A.a0n = solveStallAlpha(clMaxNeg, cl0, cla0, 60 * DEG, sharp, clPost, 0, -1);
+  let a0Clean = 0;
   for (let i = 0; i < n; i++) {
     const d = detents[i];
     F.names[i] = d.name ?? String(i); F.deg[i] = num(d.deg, 0);
@@ -181,8 +182,18 @@ export function resolveConfig(def) {
     F.clMax[i] = num(d.clMax, clMax + 0.9 * F.dcl0[i]);
     // slat contribution is applied at runtime as -(1-slat)*slatDAlpha, so solve for the fully-slatted curve here
     const solved = solveStallAlpha(F.clMax[i], cl0, cla0, A.a0n, sharp, clPost, F.dcl0[i]);
-    if (i === 0) A.peakOff = solved - stallPeak(solved, cl0, cla0, A.a0n, sharp, clPost, F.dcl0[i], 1).alpha;
+    if (i === 0) { a0Clean = solved; A.peakOff = solved - stallPeak(solved, cl0, cla0, A.a0n, sharp, clPost, F.dcl0[i], 1).alpha; }
     F.a0[i] = solved + (1 - (sl.auto ? 1 : F.slat[i])) * A.slatDAlpha;
+  }
+  // The `clMax` Mach column is the ratio CLmax(M)/CLmax(0) (buffet / shock-stall boundary). The aero model needs the
+  // matching factor on the stall-blend angle, which also depends on the lift-curve slope at that Mach number.
+  {
+    const ms = a.mach && Array.isArray(a.mach.m) && Array.isArray(a.mach.clMax) ? a.mach.m : [0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0];
+    const fs = ms.map((M) => {
+      const j = Math.min(M_N - 1, Math.round(M / M_STEP));
+      return solveStallAlpha(F.clMax[0] * A.tClmax[j], cl0, cla0 * A.tCla[j], A.a0n, sharp, clPost, 0) / a0Clean;
+    });
+    for (let j = 0; j < M_N; j++) A.tClmax[j] = interp(ms, fs, j * M_STEP);
   }
   A.flaps = F;
   model.slatAuto = sl.auto ? { a0: num(sl.auto.alpha && sl.auto.alpha[0], 0) * DEG, a1: num(sl.auto.alpha && sl.auto.alpha[1], 20) * DEG,
@@ -239,6 +250,7 @@ export function resolveConfig(def) {
       spoolUp: num(o.spoolUp, tdef.spoolUp), spoolDown: num(o.spoolDown, tdef.spoolDown),
       idleThrust: num(o.idleThrust, tdef.idleThrust), thrustExp: num(o.thrustExp, tdef.thrustExp),
       TR: num(o.throttleRatio, tdef.TR), machLapse: num(o.machLapse, tdef.machLapse), altLapse: num(o.altLapse, 1),
+      milLapse: num(o.milLapse, 3.8), abLapse: num(o.abLapse, 3.5), pLimit: num(o.pressureLimit, 0),
       inlet: o.inlet || (hasAb ? 'ramp' : 'subsonic'), abMin: num(o.abMinFraction, 0.25), abTime: num(o.abLightTime, 1.2),
       // TSFC in 1/h (lb/lbf/h == kg/kgf/h): [static, per-Mach slope]; converted to kg/(N s)
       tsfc0: tsfc[0] / (3600 * 9.80665), tsfc1: tsfc[1] / (3600 * 9.80665),

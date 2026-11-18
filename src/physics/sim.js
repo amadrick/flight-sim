@@ -121,7 +121,7 @@ export function createSim(ctx, def, init) {
       // smooth capture: aim for the altitude the aircraft would level off at with a gentle push/pull
       const lead = clamp(X.vs * Math.abs(X.vs) / (2 * model.ap.accMax * 0.6), -600, 600);
       ap.alt = true; ap.altRef = pos.y + lead;
-    } else if (mode === 'hdg') { ap.hdg = true; ap.hdgRef = X.psi + clamp(X.phi * 0.6, -0.5, 0.5); }
+    } else if (mode === 'hdg') { ap.hdg = true; ap.hdgRef = X.psi; }
     else if (mode === 'spd') { ap.spd = true; ap.spdRef = X.ias; ap.lever = lever; lastLeverWritten = lever; }
   }
   function apOff() { ap.alt = ap.hdg = ap.spd = false; }
@@ -337,8 +337,9 @@ export function createSim(ctx, def, init) {
       const vcx = vel.x + wy * rz - wz * ry - G.vx, vcy = vel.y + wz * rx - wx * rz - G.vy, vcz = vel.z + wx * ry - wy * rx - G.vz;
       const vn = vcx * nx + vcy * ny + vcz * nz, sink = -vn;
       if (G.water) { crash('Ditched in water'); return; }
+      if (gearPos < 0.98 && P.type !== 'nose' && P.type !== 'wingtip') { crash(sink > 6 ? 'Collision with terrain' : 'Gear-up landing'); return; }
       if (P.type === 'tail') { if (sink > 2.2 || pen > 0.4) { crash('Tail strike'); return; } tailScrape = true; }
-      else if (P.type === 'belly') { crash(gearPos < 0.98 ? 'Gear-up landing' : sink > 4 || gsp > 60 ? 'Collision with terrain' : 'Hard landing'); return; }
+      else if (P.type === 'belly') { crash(sink > 4 || gsp > 60 ? 'Collision with terrain' : 'Hard landing'); return; }
       else if (P.type === 'nose') { crash(gsp > 40 || sink > 6 ? 'Collision with terrain' : 'Nose impact'); return; }
       else if (P.type === 'wingtip') { if (gsp > 8 || sink > 2) { crash('Wingtip strike'); return; } }
       else if (P.type === 'nacelle') { if (gsp > 8 || sink > 1.5) { crash('Engine pod strike'); return; } }
@@ -723,12 +724,12 @@ export function createSim(ctx, def, init) {
         quiet = true; settleBrake = true;
         const x0 = pos.x, z0 = pos.z, savedLever = lever; lever = 0;
         environment(); wind.set(0, 0, 0); turb.sigma = 0;
-        for (let k = 0; k < 720; k++) { substep(H_MAX); if (k % 60 === 59) { pos.x = x0; pos.z = z0; } }
+        for (let k = 0; k < 960; k++) substep(H_MAX);
         // remove any residual motion; keep the settled height and attitude
         const yaw = Math.atan2(-r02, r22);
         tmpQ.setFromAxisAngle(UP, yaw - hdg); Q.premultiply(tmpQ).normalize();
         pos.x = x0; pos.z = z0; vel.set(0, 0, 0); p = q = r = 0;
-        for (let k = 0; k < nW; k++) { wst[k].defLat = 0; wst[k].defLong = 0; wst[k].omega = 0; wst[k].airTime = 0; }
+        for (let k = 0; k < nW; k++) { wst[k].omega = 0; wst[k].airTime = 0; }
         quiet = false; settleBrake = false; lever = savedLever; s.crashed = false; s.crashReason = '';
         groundTime = 1; airTime = 0; fcs.law = 0; fcs.integ = 0;
         fuel = clamp(typeof i.fuel === 'number' ? (i.fuel <= 1 ? i.fuel * model.mass.fuelCap : i.fuel) : model.mass.fuelInit, 0, model.mass.fuelCap); updateMass();
