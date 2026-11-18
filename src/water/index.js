@@ -96,6 +96,7 @@ export async function createWater(ctx) {
     uMoonK: { value: 0 },
     uFoam: { value: new THREE.Vector3(0.35, 2.5, 0) },
     uStreak: { value: new THREE.Vector3() },
+    uSlickOff: { value: new THREE.Vector2() },
     uDispScale: { value: ctx.params.raw?.wdisp !== undefined ? +ctx.params.raw.wdisp : 1 },
     uDebug: { value: +(ctx.params.raw?.wdebug || 0) },
   };
@@ -213,6 +214,7 @@ export async function createWater(ctx) {
     {
       const wd = uniforms.uWindDir.value;   // streak texture periods: 512 m along wind, 32 m across, 2048 m coarse mask
       const su = o.x * wd.x + o.z * wd.y, sv = -o.x * wd.y + o.z * wd.x;
+      uniforms.uSlickOff.value.set(mod(su, 16384), mod(sv, 16384));
       uniforms.uStreak.value.set(mod(su, 2048), mod(sv, 2048), 0.9 * smooth(9, 17, uniforms.uSea.value.x));
     }
     uniforms.uOriginWrap.value.set(mod(o.x, 4096), mod(o.z, 4096), mod(o.x, 32768), mod(o.z, 32768));

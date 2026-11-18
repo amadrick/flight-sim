@@ -76,6 +76,7 @@ uniform vec2 uWindDir;          // unit, direction the wind/waves travel (world 
 uniform vec4 uOriginWrap;       // xy = origin mod 4096, zw = origin mod 32768
 uniform vec3 uFoamW;            // whitecap weight per cascade
 uniform vec4 uSea;              // x = wind m/s, y = Hs (m), z = surf strength, w = anisotropy
+uniform vec2 uSlickOff;         // wind-frame origin mod 16384
 uniform vec3 uStreak;           // xy = wind-frame origin offset (wrapped), z = streak strength
 uniform vec3 uFoam;             // x = crest Jacobian threshold, y = gain, z = mean whitecap coverage
 uniform int uDebug;
@@ -158,9 +159,12 @@ void main() {
   // ---- large-scale sea-state variation: gust fronts, cat's paws and calm slicks (visible from altitude) ------
   vec2 nq = (xz + uOriginWrap.zw) / 32768.0 - uWindDir * (uTime * 0.0001);
   vec4 n1 = texture(tNoise, nq), n2 = texture(tNoise, nq * 4.0 + vec2(0.37, 0.71));
-  float gust = smoothstep(0.15, 0.85, 0.6 * n1.r + 0.4 * n2.g);
-  float slick = smoothstep(0.62, 0.8, n2.a) * (1.0 - smoothstep(6.0, 11.0, uSea.x));
-  float rough = mix(0.7, 1.3, gust) * (1.0 - 0.45 * slick);
+  float gust = clamp(0.6 * n1.r + 0.4 * n2.g, 0.0, 1.0);
+  // surfactant slicks: long sinuous filaments stretched along the wind (wind-frame coords, origin wrapped on CPU)
+  vec2 sw = vec2(dot(xz, uWindDir), dot(xz, vec2(-uWindDir.y, uWindDir.x))) + uSlickOff;
+  float slick = smoothstep(0.72, 0.92, texture(tNoise, sw / vec2(16384.0, 4096.0)).a)
+              * smoothstep(0.3, 0.6, n1.g) * (1.0 - smoothstep(5.0, 10.0, uSea.x));
+  float rough = mix(0.75, 1.25, gust) * (1.0 - 0.5 * slick);
   var *= rough;
   grad *= 1.0 - 0.15 * slick;
   float gustF = mix(0.4, 1.6, gust) * (1.0 - slick);
@@ -169,8 +173,8 @@ void main() {
   // ---- depth, shore calming ----------------------------------------------------------------------------------
   float depth = max(-terrainHeight(xz + uOrigin.xz), 0.0);
   float calm = smoothstep(0.0, 6.0, depth);
-  grad *= mix(0.25, 1.0, calm);
-  var = mix(var * 0.5, var, calm);
+  grad *= mix(0.4, 1.0, calm);                         // long waves feel the bottom...
+  var = mix(var * 0.8, var, smoothstep(0.0, 1.5, depth)); // ...local wind ripples (most of the roughness) do not
   var = max(var, vec2(2e-4));
 
   // mean normal incl. earth curvature (sphere normal tilts away from the camera by d/R)
@@ -206,8 +210,9 @@ void main() {
   vec3 Lh = normalize(vec3(L.x, 0.0, L.z) + 1e-5);
   float lowSun = smoothstep(-0.02, 0.08, L.y) * (1.0 - smoothstep(0.15, 0.5, L.y));
   float back = pow(clamp(dot(-V, Lh), 0.0, 1.0), 4.0) * lowSun * clamp(dot(N, -Lh) * 4.0 + 0.5, 0.0, 1.0);
-  float crest = clamp(vHeight / max(uSea.y * 0.45, 0.15), 0.0, 1.0);
-  vec3 sss = vec3(0.012, 0.055, 0.048) * vSunE * crest * crest * back * (0.4 + 0.6 * calm);
+  float crest = smoothstep(0.35, 1.0, vHeight / max(uSea.y * 0.5, 0.15));
+  float steep = smoothstep(0.08, 0.3, length(grad));      // only thin, steep crest tops transmit visibly
+  vec3 sss = vec3(0.01, 0.05, 0.042) * vSunE * crest * steep * back * calm;
 
   // ---- glitter: sun + moon --------------------------------------------------------------------------------
   vec3 spec = vSunE * glitter(L, V, N, tx, ty, var);
