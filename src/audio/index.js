@@ -40,7 +40,7 @@ export async function createAudio(ctx) {
     const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); if (!AC) return null;
     try { ac = new AC({ latencyHint: 'interactive' }); } catch (e) { warn(e); ac = null; return null; }
     try {
-      M = createMaster(ac, ac.destination, volume);
+      M = createMaster(ac, ac.destination, Math.pow(volume, 1.5));
     } catch (e) { warn(e); }
     try {
       rainD = new Dual(ac, M.flightIn, { intLP: 9000 }); ambD = new Dual(ac, M.ambIn, { intLP: 600 });
@@ -61,6 +61,12 @@ export async function createAudio(ctx) {
     if (ac && ac.state === 'running') for (const n of gestureEvents) window.removeEventListener(n, onGesture, true);
   };
   if (typeof window !== 'undefined') for (const n of gestureEvents) window.addEventListener(n, onGesture, true);
+
+  // pause the audio thread entirely while the tab is hidden (rAF stops, so voices would otherwise hold their last state)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
+    if (!ac) return;
+    try { if (document.hidden) ac.suspend(); else ac.resume(); } catch {}
+  });
 
   // ---- events --------------------------------------------------------------------------------------------
   const on = (name, fn) => ev.push(ctx.events.on(name, (p) => { if (!ac || !M || ac.state !== 'running') return; try { fn(p); } catch (e) { warn(e); } }));
@@ -99,7 +105,7 @@ export async function createAudio(ctx) {
   const api = {
     get masterVolume() { return volume; },
     set masterVolume(v) { api.setMasterVolume(v); },
-    setMasterVolume(v) { volume = clamp(+v || 0, 0, 1); if (M) set(M.master.gain, volume, 0.05); },
+    setMasterVolume(v) { volume = clamp(+v || 0, 0, 1); if (M) set(M.master.gain, Math.pow(volume, 1.5), 0.05); },
     resume,
     /** the live AudioContext (null until a user gesture / resume()) — for diagnostics */
     get audioContext() { return ac; },

@@ -66,7 +66,7 @@ export function createMechLayer(ac, mechOut) {
       const bq = sat(m.brake) * smooth(3, 25, m.gs) * (1 - smooth(60, 90, m.gs)) * og;       // squeal in the mid speed range only
       set(brG.gain, bq * 0.045, 0.06); set(br2G.gain, bq * 0.018, 0.06); set(br.frequency, 1900 + 600 * (1 - smooth(3, 40, m.gs)), 0.08);
       const mot = (v, rate, base, gmax) => { const r = sat(rate); set(v.g.gain, gmax * r, 0.05); set(v.o.frequency, base * (0.85 + 0.35 * r), 0.1); set(v.o2.frequency, base * 2.003 * (0.85 + 0.35 * r), 0.1); };
-      mot(gearM, m.gearRate * 4, 150, 0.1); mot(flapM, m.flapRate * 6, 230, 0.07); mot(sbM, m.sbRate * 5, 110, 0.08);
+      mot(gearM, m.gearRate * 4, 150, 0.2); mot(flapM, m.flapRate * 6, 230, 0.13); mot(sbM, m.sbRate * 5, 110, 0.15);
     },
   };
 }

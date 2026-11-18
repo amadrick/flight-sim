@@ -10,6 +10,12 @@ const FT = 3.28084, RAD = 180 / Math.PI;
 const CALLOUTS = [1000, 500, 100, 50, 40, 30, 20, 10];
 const SPEECH = { 1000: 'one thousand', 500: 'five hundred', 100: 'one hundred', 50: 'fifty', 40: 'forty', 30: 'thirty', 20: 'twenty', 10: 'ten' };
 
+function track(mem, key, val, rateKey, gdt) {
+  if (mem[key] === null) { mem[key] = val; return; }
+  const r = Math.abs(val - mem[key]) / gdt; mem[key] = val;
+  mem[rateKey] += (r - mem[rateKey]) * (1 - Math.exp(-gdt / 0.12));
+}
+
 export function createRig(ac, dest, def, { speak } = {}) {
   const kind = def?.sound?.engine || 'jet-lowbypass';
   const airliner = kind === 'jet-highbypass' || def?.hudType === 'airliner' || def?.category === 'airliner' || def?.category === 'transport';
@@ -100,13 +106,8 @@ export function createRig(ac, dest, def, { speak } = {}) {
     set(warnOut.gain, iS, 0.12);
 
     // ---- surface movement -> motors + clunks ----
-    const track = (key, val, rateKey, gain1) => {
-      if (mem[key] === null) { mem[key] = val; return; }
-      const r = Math.abs(val - mem[key]) / gdt; mem[key] = val;
-      mem[rateKey] += (r - mem[rateKey]) * (1 - Math.exp(-gdt / 0.12));
-    };
     const gearPrevRate = mem.gearRate, flapPrevRate = mem.flapRate;
-    track('gear', sp.gear ?? 1, 'gearRate'); track('flaps', sp.flaps ?? 0, 'flapRate'); track('sb', sp.speedbrake ?? 0, 'sbRate');
+    track(mem, 'gear', sp.gear ?? 1, 'gearRate', gdt); track(mem, 'flaps', sp.flaps ?? 0, 'flapRate', gdt); track(mem, 'sb', sp.speedbrake ?? 0, 'sbRate', gdt);
     if (dt > 0) {
       const g = sp.gear ?? 1;
       if (gearPrevRate > 0.02 && mem.gearRate <= 0.02) { sfx.thunk(ac, dMech.in, now + 0.01, 1.2, 90); if (g < 0.5) sfx.thunk(ac, dMech.in, now + 0.2, 0.6, 140); }

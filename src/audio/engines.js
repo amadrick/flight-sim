@@ -89,26 +89,26 @@ function lowBypass(ac, out, { pan = 0, hasAB = true, level = 1 } = {}) {
     mem.ab = abv;
     // whine
     const fH = (1500 + 3300 * n2) * dop, fF = (480 + 1500 * n1) * dop, wsc = Math.pow(n2, 2.2) * (1 - 0.4 * thr) * (1 - 0.6 * abv) * 0.075 * level;
-    hp.forEach((v) => { set(v.o.frequency, fH * v.m, 0.03); set(v.gn.gain, v.g * wsc / v.m, 0.05); });
+    for (const v of hp) { set(v.o.frequency, fH * v.m, 0.03); set(v.gn.gain, v.g * wsc / v.m, 0.05); }
     const fsc = Math.pow(n1, 1.8) * (0.4 + 0.6 * (1 - thr * 0.5)) * 0.06 * level;
-    fan.forEach((v) => { set(v.o.frequency, fF * v.m, 0.03); set(v.gn.gain, v.g * fsc, 0.05); });
-    set(spool.frequency, (38 + 160 * n2) * dop, 0.05); set(spoolG.gain, 0.2 * Math.pow(n2, 1.5) * level, 0.08);
+    for (const v of fan) { set(v.o.frequency, fF * v.m, 0.03); set(v.gn.gain, v.g * fsc, 0.05); }
+    set(spool.frequency, (38 + 160 * n2) * dop, 0.05); set(spoolG.gain, 0.1 * Math.pow(n2, 1.5) * level, 0.08);
     // starter air
     const bump = smooth(0, 0.12, n2) * (1 - smooth(0.32, 0.6, n2));
     set(stF.frequency, (260 + 2200 * n2) * dop, 0.06); set(stG.gain, 0.2 * bump * level, 0.08);
     // roar
     const roarK = level;
-    set(rLg.gain, (0.12 * cb + 1.0 * Math.pow(pa, 1.25)) * 0.55 * roarK, 0.07);
+    set(rLg.gain, (0.12 * cb + 1.0 * Math.pow(pa, 1.25)) * 0.4 * roarK, 0.07);
     set(rMf.frequency, (320 + 2300 * pa) * (1 - 0.25 * abv), 0.07);
-    const mid = (0.06 * cb + 0.9 * Math.pow(pa, 1.5)) * (1 + 0.45 * abv) * 0.6 * roarK;
+    const mid = (0.06 * cb + 0.9 * Math.pow(pa, 1.5)) * (1 + 0.8 * abv) * 1.25 * roarK;
     set(rMg.gain, mid, 0.07); set(modG.gain, mid * 2.5, 0.2);
-    set(rHg.gain, (0.012 * cb + 0.5 * Math.pow(pa, 2.6)) * (1 + 0.3 * abv) * 0.5 * roarK, 0.07);
+    set(rHg.gain, (0.012 * cb + 0.5 * Math.pow(pa, 2.6)) * (1 + 0.6 * abv) * 0.8 * roarK, 0.07);
     set(rHf.frequency, 2200 + 800 * pa, 0.1);
     if (ab) {
       const x = abv;
-      set(ab.A1g.gain, 1.5 * Math.pow(x, 0.8) * roarK, 0.05);
-      set(ab.A2g.gain, 2.2 * Math.pow(x, 1.0) * roarK, 0.05);
-      set(ab.A3g.gain, 0.95 * Math.pow(x, 1.1) * roarK, 0.05);
+      set(ab.A1g.gain, 1.0 * Math.pow(x, 0.8) * roarK, 0.05);
+      set(ab.A2g.gain, 1.0 * Math.pow(x, 1.0) * roarK, 0.05);
+      set(ab.A3g.gain, 1.9 * Math.pow(x, 1.1) * roarK, 0.05);
       set(ab.P1.gain, 1.2 * x * roarK, 0.1); set(ab.P2.gain, 2.4 * x * roarK, 0.1); set(ab.P3.gain, 1.6 * x * roarK, 0.1); set(ab.AMg.gain, 0.9 * x * roarK, 0.1); set(ab.AMg2.gain, 2.0 * x * roarK, 0.1);
     }
     for (const s of b.srcs) if (s.playbackRate) set(s.playbackRate, dop, 0.08);
@@ -160,12 +160,12 @@ function highBypass(ac, out, { pan = 0, level = 1 } = {}) {
     mem.running = e.running;
     const f0 = (26 + 62 * n1) * dop;
     const hs = Math.pow(n1, 0.9) * 0.06 * level;
-    hum.forEach((v) => { set(v.o.frequency, f0 * v.m, 0.03); set(v.gn.gain, v.g * hs, 0.06); });
+    for (const v of hum) { set(v.o.frequency, f0 * v.m, 0.03); set(v.gn.gain, v.g * hs, 0.06); }
     const bs = Math.pow(n1, 2.2) * 0.075 * level * (1 + 0.6 * spoolAct);
-    blade.forEach((v) => { set(v.o.frequency, f0 * v.m, 0.03); set(v.gn.gain, v.g * bs, 0.06); });
+    for (const v of blade) { set(v.o.frequency, f0 * v.m, 0.03); set(v.gn.gain, v.g * bs, 0.06); }
     // buzz-saw only emerges above ~75% N1
     const bz = Math.pow(smooth(0.68, 1.0, n1), 1.4);
-    saws.forEach((s) => set(s.o.frequency, f0 * s.d, 0.03));
+    for (const sw of saws) set(sw.o.frequency, f0 * sw.d, 0.03);
     set(bzBus.gain, bz * 0.5 * level, 0.1); set(bzAMg.gain, bz * 0.22 * level, 0.1);
     set(bzBP.frequency, (1300 + 1100 * n1) * dop, 0.1);
     set(hpw.frequency, (2400 + 1500 * n2) * dop, 0.05); set(hpg.gain, 0.012 * Math.pow(n2, 2) * level, 0.06);
