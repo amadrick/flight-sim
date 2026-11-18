@@ -1,2 +1,148 @@
-// STUB audio — replaced by the audio agent. API: createAudio(ctx) -> { update(dt), setMasterVolume(v), resume() }
-export async function createAudio(ctx) { return { update() {}, setMasterVolume() {}, resume() {} }; }
+// Skyward audio: fully procedural Web Audio sound (no samples). API: createAudio(ctx) -> { update(dt), resume(), setMasterVolume(v), masterVolume }
+// The AudioContext is created lazily on the first user gesture (or resume()); until then everything is a silent no-op.
+import * as THREE from 'three';
+import { gain, set, clamp, sat } from './dsp.js';
+import { createMaster } from './master.js';
+import { createRig } from './rig.js';
+import { createWeatherLayer } from './aero.js';
+import { Dual, listenerGeometry, isInterior, distGain, distCutoff } from './perspective.js';
+import * as sfx from './sfx.js';
+
+const CLICK_CMDS = new Set(['gearToggle', 'flapsDown', 'flapsUp', 'speedbrakeToggle', 'parkingBrakeToggle', 'hookToggle', 'engineToggle', 'apToggle',
+  'apAltHold', 'apHdgHold', 'apSpdHold', 'lightsToggle', 'canopyToggle', 'wingSweepToggle', 'trimUp', 'trimDown', 'trimReset']);
+const GROUND_ROUGH = { runway: 0.2, taxiway: 0.3, apron: 0.3, deck: 0.25, terrain: 1.0, water: 0.5 };
+
+export async function createAudio(ctx) {
+  let ac = null, M = null, rig = null, wx = null, rainD = null, ambD = null, worldD = null, boomD = null;
+  let volume = 0.8, mixS = 0, dopS = 1, prevDucked = false, camPrev = null, speaking = false;
+  const tmpC = new THREE.Vector3(), camVel = new THREE.Vector3(), camW = new THREE.Vector3(), tmpG = {}, geo = { dist: 0, front: 0, pan: 0, dop: 1 };
+  const ev = [];                       // event unsubscribers
+  const warn = (e) => { try { console.warn('[audio]', e); } catch {} };
+
+  function speak(text) {
+    try {
+      const ss = typeof window !== 'undefined' && window.speechSynthesis;
+      if (!ss || typeof SpeechSynthesisUtterance === 'undefined' || !ss.getVoices || ss.getVoices().length === 0) return false;
+      if (ctx.time?.paused || ctx.menu?.isOpen || mixS < 0.5) return true;       // silenced, but do not fall back to tones
+      const u = new SpeechSynthesisUtterance(text); u.volume = clamp(volume, 0, 1) * 0.9; u.rate = 1.05; u.pitch = 0.8;
+      ss.speak(u); speaking = true; return true;
+    } catch { return false; }
+  }
+
+  function buildRig(player) {
+    if (!ac || !M) return;
+    if (rig) { rig.dispose(); rig = null; }
+    try { rig = createRig(ac, M.flightIn, player.def, { speak }); } catch (e) { warn(e); rig = null; }
+  }
+
+  function ensure() {
+    if (ac) return ac;
+    const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); if (!AC) return null;
+    try { ac = new AC({ latencyHint: 'interactive' }); } catch (e) { warn(e); ac = null; return null; }
+    try {
+      M = createMaster(ac, ac.destination, volume);
+    } catch (e) { warn(e); }
+    try {
+      rainD = new Dual(ac, M.flightIn, { intLP: 9000 }); ambD = new Dual(ac, M.ambIn, { intLP: 600 });
+      worldD = new Dual(ac, M.flightIn, { intLP: 700 }); boomD = new Dual(ac, M.flightIn, { intLP: 400 });
+      wx = createWeatherLayer(ac, rainD.in, ambD.in);
+      if (ctx.player) buildRig(ctx.player);
+    } catch (e) { warn(e); }
+    return ac;
+  }
+  function resume() {
+    const a = ensure(); if (!a) return;
+    try { if (a.state !== 'running') a.resume()?.catch?.(() => {}); } catch {}
+  }
+  // first user gesture
+  const gestureEvents = ['pointerdown', 'keydown', 'touchstart', 'mousedown'];
+  const onGesture = () => {
+    resume();
+    if (ac && ac.state === 'running') for (const n of gestureEvents) window.removeEventListener(n, onGesture, true);
+  };
+  if (typeof window !== 'undefined') for (const n of gestureEvents) window.addEventListener(n, onGesture, true);
+
+  // ---- events --------------------------------------------------------------------------------------------
+  const on = (name, fn) => ev.push(ctx.events.on(name, (p) => { if (!ac || !M || ac.state !== 'running') return; try { fn(p); } catch (e) { warn(e); } }));
+  function worldShot(build, pos, { boom = false, delayDist } = {}) {
+    // pos: world position of the source (or null = at the aircraft)
+    const p = pos || ctx.player?.state?.position; const cam = camWorld();
+    const d = p && cam ? p.distanceTo(cam) : 100;
+    const g = gain(ac, 1), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = distCutoff(d); lp.Q.value = 0.5;
+    g.connect(lp); lp.connect(boom ? boomD.in : worldD.in);
+    const delay = Math.min((delayDist ?? d) / 340, 30);
+    const dur = build(g, ac.currentTime + 0.01 + delay, d) || 5;
+    setTimeout(() => { try { g.disconnect(); lp.disconnect(); } catch {} }, (dur + delay + 1) * 1000);
+    return g;
+  }
+  on('session:start', (pl) => buildRig(pl));
+  on('session:end', () => { if (rig) { rig.dispose(); rig = null; } });
+  on('touchdown', (e) => rig?.touchdown(e, ac.currentTime));
+  on('gear:moved', () => rig?.gearMoved());
+  on('flaps:moved', () => rig?.flapsMoved());
+  on('stallWarning', () => rig?.stallWarning());
+  on('overspeed', () => rig?.overspeed());
+  on('cmd', (c) => { if (c && CLICK_CMDS.has(c.name)) rig?.click(1); });
+  on('sonicBoom', () => worldShot((g, t, d) => { g.gain.value = 1.8 / (1 + d / 400); return sfx.sonicBoom(ac, g, t, 1); }, null, { boom: true }));
+  on('crash', () => worldShot((g, t, d) => { g.gain.value = 2.2 / (1 + d / 500); return sfx.explosion(ac, g, t, 1); }));
+  on('lightning', (e) => {
+    const p = e?.worldPos ? new THREE.Vector3(e.worldPos.x, e.worldPos.y, e.worldPos.z) : null;
+    worldShot((g, t, d) => { g.gain.value = 3.0 / (1 + d / 3000); return sfx.thunder(ac, g, t, d, clamp(e?.intensity ?? 1, 0.2, 1.5)); }, p);
+  });
+
+  function camWorld() {
+    const rigC = ctx.cameraRig;
+    if (rigC?.worldPosition && isFinite(rigC.worldPosition.x)) return rigC.worldPosition;
+    tmpC.copy(ctx.camera.position); return ctx.world.toWorld(tmpC, camW);
+  }
+
+  const api = {
+    get masterVolume() { return volume; },
+    set masterVolume(v) { api.setMasterVolume(v); },
+    setMasterVolume(v) { volume = clamp(+v || 0, 0, 1); if (M) set(M.master.gain, volume, 0.05); },
+    resume,
+    update(dt) {
+      if (!ac || !M || ac.state !== 'running') return;
+      const rdt = clamp(ctx.time?.realDt || dt || 1 / 60, 1e-3, 0.1), now = ac.currentTime;
+      const paused = !!ctx.time?.paused, menuOpen = !!ctx.menu?.isOpen;
+      const ducked = paused || menuOpen;
+      set(M.flightIn.gain, paused ? 0 : menuOpen ? 0.12 : 1, paused ? 0.05 : 0.18);
+      if (ducked && speaking) { try { window.speechSynthesis.cancel(); } catch {} speaking = false; }
+      prevDucked = ducked;
+      const player = ctx.player, st = player?.state;
+      // interior mix (cockpit camera), relaxed when the canopy is open
+      const target = isInterior(ctx) ? 1 - 0.65 * sat(st?.surfaces?.canopy ?? 0) : 0;
+      mixS += (target - mixS) * (1 - Math.exp(-rdt / 0.22));
+      const eS = Math.cos(mixS * Math.PI / 2), iS = Math.sin(mixS * Math.PI / 2);
+      // weather / ambience (always alive, also under menus)
+      const w = ctx.weather || {};
+      wx?.update({ precip: w.precipitation || 0, wind: w.windSpeed || 0, speed: st?.ias || 0 });
+      rainD?.setExt(eS * 0.55, 9000); rainD?.setInt(iS * (rig?.airliner ? 0.45 : 0.9));
+      let ambK = 1;
+      if (player && st) {
+        const agl = st.agl ?? 0, p = rig?.enginePower ?? 0;
+        ambK = sat(1 - agl / 250) * (1 - 0.85 * sat(p * 1.3));
+      }
+      ambD?.setExt(eS * ambK, 12000); ambD?.setInt(iS * 0.1 * ambK + (st?.surfaces?.canopy > 0.1 ? 0.5 * iS * ambK : 0), 500);
+      set(M.ambIn.gain, paused ? 0.1 : menuOpen ? 0.55 : 1, 0.2);
+      worldD?.setExt(eS, 14000); worldD?.setInt(iS * 0.55);
+      boomD?.setExt(eS, 14000); boomD?.setInt(iS * 0.12);
+      if (!rig || !player || !st) return;
+      // ---- geometry ----
+      const rc = ctx.cameraRig; const cp = camWorld();
+      if (rc?.velocity && isFinite(rc.velocity.x)) camVel.copy(rc.velocity);
+      else {
+        if (camPrev && dt > 0) camVel.copy(cp).sub(camPrev).multiplyScalar(1 / dt); else camVel.set(0, 0, 0);
+        if (camVel.lengthSq() > 1e6) camVel.set(0, 0, 0);
+        camPrev = (camPrev || new THREE.Vector3()).copy(cp);
+      }
+      listenerGeometry(st.position, st.velocity, st.quaternion, cp, camVel, ctx.camera.quaternion, geo);
+      if (mixS > 0.9) { geo.dop = 1; }
+      dopS += (geo.dop - dopS) * (1 - Math.exp(-rdt / 0.06)); geo.dop = dopS;
+      let rough = 0.3;
+      try { const g = ctx.world.groundAt(st.position.x, st.position.z, tmpG); rough = GROUND_ROUGH[g.type] ?? 0.6; } catch {}
+      rig.update({ dt, st, mix: mixS, L: geo, now, rough, turbulence: w.turbulence || 0, muted: ducked });
+    },
+  };
+  return api;
+}
