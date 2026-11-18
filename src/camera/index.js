@@ -133,7 +133,7 @@ export async function createCameraRig(ctx) {
       this.qf.slerp(this.q1, dampK(6.5, dt));
       stepLook(this.look, dt, 175 * DEG, 70 * DEG, 25 * DEG);
 
-      const base = 1.7 * big;
+      const base = 1.5 * big;
       const gComp = 1 - 0.016 * clamp(A.g - 1, -1, 8);
       const dT = base * this.zoom * (1 + 0.16 * A.sf + 0.07 * A.ab) * gComp;
       this.dist = this.fresh ? dT : damp(this.dist, dT, 3, dt);
@@ -299,7 +299,7 @@ export async function createCameraRig(ctx) {
         if (this.age > 2 && (along > this.passDist || dist > this.D * 2.6 + 400)) this.place();
       }
       this.pos.y = Math.max(this.pos.y, groundAt(this.pos.x, this.pos.z) + 2.0);
-      track(this, this.pos, dt, out, 11, 0.22, 3.5, 55, 0.0012);
+      track(this, this.pos, dt, out, 11, 0.22, 2.5, 55, 0.0012);
       out.near = 1.0;
       this.fresh = false;
     },
@@ -351,7 +351,7 @@ export async function createCameraRig(ctx) {
       }
       this.pos.copy(this.towerFor(this.idx));
       this.pos.y = Math.max(this.pos.y, groundAt(this.pos.x, this.pos.z) + 20);
-      track(this, this.pos, dt, out, 8, 0.2, 2.2, 55, 0.0006);
+      track(this, this.pos, dt, out, 8, 0.2, 1.5, 55, 0.0006);
       out.near = 2.0;
       this.fresh = false;
     },
@@ -398,7 +398,7 @@ export async function createCameraRig(ctx) {
       const t = this.t;
       const aspect = cam.aspect || 16 / 9;
       const vfov = 32;
-      const baseD = framingDistance(0.58 * big * 1.0, vfov, aspect) * 1.18;
+      const baseD = framingDistance(0.58 * big * 1.0, vfov, aspect) * 1.0;
       const dT = baseD * (1 + 0.07 * Math.sin(t * 0.09 + 2));
       this.dist = this.fresh ? dT : damp(this.dist, dT, 1.2, dt);
       const az = 0.75 + 0.6 * Math.sin(t * 0.068);               // swings between near-front and 3/4 front
