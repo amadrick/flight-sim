@@ -11,7 +11,7 @@ const HUD_HALF_W = 14 * DEG, HUD_HALF_H = 12 * DEG;
 export function createFighterHud() {
   const D = { x: 0, y: 0, z: 0 }, D2 = { x: 0, y: 0, z: 0 }, V = { x: 0, y: 0, z: 0 };
   // per-frame frame data
-  let cx = 0, cy = 0, ca = 1, sa = 0, hw = 150, hh = 130, fs = 12, lw = 1.5, dpr = 1;
+  let cx = 0, cy = 0, ca = 1, sa = 0, hw = 150, hh = 130, fs = 12, lw = 1.5, dpr = 1, compact = false;
   let fontN = '', fontS = '', fontL = '', fontXL = '';
   let lastFs = -1, mono = 'monospace';
   let maxG = 1;
@@ -46,6 +46,7 @@ export function createFighterHud() {
     hh = clamp(fpx * Math.tan(HUD_HALF_H), Math.min(H * 0.34, 420), H * 0.47);
     hw = clamp(fpx * Math.tan(HUD_HALF_W), Math.min(hh * 1.12, W * 0.46), W * 0.47);
     fs = Math.round(clamp(Math.min(hw, hh) * 0.072, 11, 22));
+    compact = hh < fs * 15;
     setFonts(E.tok.mono);
     lw = Math.max(1, Math.round(fs / 8 * dpr)) / dpr;
     const col = E.hudColor;
@@ -146,7 +147,7 @@ export function createFighterHud() {
 
     const tb = drawTapes(g, E);
     drawHeading(g, E, s.heading * RAD, nav);
-    drawBank(g, s.roll);
+    if (!compact) drawBank(g, s.roll);
     drawBlocks(g, E, tb);
     drawWarnings(g, E, bx, by);
     g.restore();
@@ -281,8 +282,7 @@ export function createFighterHud() {
       g.font = fontS;
       g.fillText('M', lx, bot + fs * 1.0); g.fillText(F.mach(Math.round(num(s.mach) * 100)), lx + cw * 1.6, bot + fs * 1.0);
       g.fillText('α', lx, bot + fs * 2.1); g.fillText(num(s.tas) > 25 ? F.tenth(Math.round(num(s.aoa) * RAD * 10)) : '--', lx + cw * 1.6, bot + fs * 2.1);
-      g.fillText(F.tenth(Math.round(maxG * 10)), lx + cw * 1.6, bot + fs * 3.2);
-      g.fillText('G', lx, bot + fs * 3.2);
+      if (!compact) { g.fillText(F.tenth(Math.round(maxG * 10)), lx + cw * 1.6, bot + fs * 3.2); g.fillText('G', lx, bot + fs * 3.2); }
     }
     // ---- altitude ----
     const altFt = num(s.altitude) / FT;
@@ -330,7 +330,7 @@ export function createFighterHud() {
       g.beginPath(); g.moveTo(vx - fs * 0.1, cy2); g.lineTo(vx - fs * 0.55, cy2 - fs * 0.3); g.lineTo(vx - fs * 0.55, cy2 + fs * 0.3); g.closePath(); g.stroke();
       TB.right = aglFt < 5000 ? bot + fs * 2.3 : bot + fs * 0.6;
     }
-    TB.left = bot + fs * 3.4;
+    TB.left = bot + fs * (compact ? 2.2 : 3.4);
     return TB;
   }
   const TB = { left: 0, right: 0 };
@@ -392,21 +392,21 @@ export function createFighterHud() {
     if (ab > 0.02 || thr > 0.905) { g.fillText('AB', lx, y); g.fillText(F.int(clamp(Math.ceil(ab * 5), 1, 5)), lx + cw * 3, y); }
     else if (thr < 0.03) g.fillText('IDLE', lx, y);
     else { g.fillText(thr > 0.88 ? 'MIL' : 'THR', lx, y); g.fillText(F.int(Math.round(thr / 0.9 * 100)), lx + cw * 4, y); }
-    g.fillText('RPM', lx + cw * 8, y); g.fillText(F.int(rpm), lx + cw * 12, y);
+    if (!compact) { g.fillText('RPM', lx + cw * 8, y); g.fillText(F.int(rpm), lx + cw * 12, y); }
     y += fs * 1.15;
+    const yMax = hh - fs * (compact ? 1.0 : 2.3);
+    const put = (txt, val) => { if (y > yMax) return; g.fillText(txt, lx, y); if (val) g.fillText(val, lx + cw * (txt.length + 1), y); y += fs * 1.15; };
     const gear = num(s.surfaces?.gear, 0);
-    if (gear > 0.98) g.fillText('GEAR DN', lx, y); else if (gear > 0.02) { if (flash(E.t, 0.6)) g.fillText('GEAR', lx, y); } else y -= fs * 1.15;
-    y += fs * 1.15;
-    if (num(s.surfaces?.speedbrake, 0) > 0.05) { g.fillText('SPD BRK', lx, y); y += fs * 1.15; }
-    if (num(s.surfaces?.flaps, 0) > 0.05) { g.fillText('FLAPS', lx, y); g.fillText(F.int(Math.round(s.surfaces.flaps * 100)), lx + cw * 6, y); y += fs * 1.15; }
-    if (s.parkingBrake) { g.fillText('PARK BRK', lx, y); y += fs * 1.15; }
-    else if (num(s.brakes, 0) > 0.1 && s.onGround) { g.fillText('BRAKES', lx, y); y += fs * 1.15; }
-    if (num(s.surfaces?.hook, 0) > 0.5) { g.fillText('HOOK', lx, y); y += fs * 1.15; }
-    if (s.ap?.engaged) { g.fillText('A/P', lx, y); g.fillText(apLabel(s.ap), lx + cw * 4, y); y += fs * 1.15; }
+    if (gear > 0.98) put('GEAR DN'); else if (gear > 0.02) { if (flash(E.t, 0.6)) put('GEAR'); else y += fs * 1.15; }
+    if (num(s.surfaces?.speedbrake, 0) > 0.05) put('SPD BRK');
+    if (s.ap?.engaged) put('A/P', apLabel(s.ap));
+    if (s.parkingBrake) put('PARK BRK'); else if (num(s.brakes, 0) > 0.1 && s.onGround) put('BRAKES');
+    if (num(s.surfaces?.flaps, 0) > 0.05) put('FLAPS', F.int(Math.round(s.surfaces.flaps * 100)));
+    if (num(s.surfaces?.hook, 0) > 0.5) put('HOOK');
     // fuel (bottom left), lbs
     const fuelLb = num(s.fuel) / LB;
     const low = s.fuelCapacity > 0 && s.fuel < s.fuelCapacity * 0.12;
-    if (!low || flash(E.t)) { g.fillText('FUEL', lx, hh - fs * 1.1); g.fillText(F.comma(Math.round(fuelLb / 10) * 10), lx + cw * 5, hh - fs * 1.1); }
+    if ((!low && !compact) || (low && flash(E.t))) { g.fillText('FUEL', lx, hh - fs * 1.1); g.fillText(F.comma(Math.round(fuelLb / 10) * 10), lx + cw * 5, hh - fs * 1.1); }
     // steerpoint block (lower right): ident, bearing / distance, time to go; ILS data
     g.textAlign = 'right';
     let ry = tb.right + fs * 0.9;
@@ -417,7 +417,7 @@ export function createFighterHud() {
       g.fillText(nav.distNM < 100 ? F.tenth(Math.round(nav.distNM * 10)) : F.int(Math.round(nav.distNM)), rx, ry); ry += fs * 1.15;
       g.fillText(isFinite(nav.ttg) && nav.ttg < 360000 ? F.mmss(Math.round(nav.ttg)) : '--:--', rx, ry); ry += fs * 1.15;
     }
-    if (nav.ils.active) {
+    if (nav.ils.active && !compact) {
       g.fillText(nav.ils.ident, rx, ry); ry += fs * 1.15;
       g.fillText('DME', rx - cw * 5, ry); g.fillText(F.tenth(Math.round(nav.ils.dme * 10)), rx, ry);
     }
