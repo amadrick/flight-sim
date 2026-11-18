@@ -35,6 +35,43 @@ export function addCurvature(mat) {
   return mat;
 }
 
+const MAX_OBJ_POOLS = 24;
+const objPools = {
+  uObjPools: { value: Array.from({ length: MAX_OBJ_POOLS }, () => new THREE.Vector4()) },
+  uObjPoolCount: { value: 0 }, uObjNight: { value: 0 },
+};
+/** Floodlight pools on objects (aircraft, vehicles, buildings): nearest airport's apron lights, in render space. */
+export function addPools(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev?.call(mat, sh, r);
+    Object.assign(sh.uniforms, objPools);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vScnW;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        { vec4 sw = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+          sw = instanceMatrix * sw;
+          #endif
+          vScnW = (modelMatrix * sw).xyz; }`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vScnW; uniform vec4 uObjPools[${MAX_OBJ_POOLS}]; uniform int uObjPoolCount; uniform float uObjNight;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        if (uObjNight > 0.001) {
+          vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+          float e = 0.0;
+          for (int i = 0; i < ${MAX_OBJ_POOLS}; i++) {
+            if (i >= uObjPoolCount) break;
+            vec3 Lv = uObjPools[i].xyz - vScnW; float r2 = dot(Lv, Lv);
+            e += uObjPools[i].w * max(dot(nW, Lv * inversesqrt(r2)), 0.0) / r2;
+          }
+          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.9, 0.78) * e * uObjNight;
+        }`);
+  };
+  return mat;
+}
+
 export async function createScenery(ctx) {
   const t0 = performance.now();
   const noise = makePavementNoise(ctx);
@@ -57,7 +94,7 @@ export async function createScenery(ctx) {
   const signs = makeSignAtlas(ctx, [...signTexts]);
 
   // ---- shared materials
-  const std = (o) => addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, ...o }));
+  const std = (o) => addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, ...o })));
   const M = {
     glass: std({ map: facades.glass.map, emissiveMap: facades.glass.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.15, metalness: 0.15 }),
     office: std({ map: facades.office.map, emissiveMap: facades.office.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.8 }),
@@ -74,13 +111,13 @@ export async function createScenery(ctx) {
   };
   const tiles = Object.fromEntries(Object.entries(facades).map(([k, v]) => [k, v.tile]));
   const emissiveMats = [M.glass, M.office, M.garage, M.cab, M.sign];
-  const carMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.6 }));
+  const carMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.6 })));
   const carGeo = makeCarGeometry();
   const sockGeo = makeWindsockGeometry();
   const sockMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }));
 
-  const parkedMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 }));
-  const vehMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.1 }));
+  const parkedMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 })));
+  const vehMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.1 })));
   const GEO = { airliner: makeAirliner(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
   const LIVERY = [0x0b3d91, 0xc8102e, 0x00843d, 0xf2a900, 0x5b2c83, 0x0093b2, 0x1d1d1b, 0xe35205, 0x7a1f2b, 0x2e6db4];
 
@@ -177,7 +214,7 @@ export async function createScenery(ctx) {
     }));
     airports.push({
       id: ap.id, name: ap.name, kind: ap.kind, data: ap, layout: L, root, far, mid, near, lightMesh, socks,
-      towerPosition, towerHeading: F.H, parking, plan: plans[i], paveMat,
+      towerPosition, towerHeading: F.H, parking, plan: plans[i], paveMat, pools,
     });
     stats.lights += plans[i].count;
   });
@@ -200,13 +237,20 @@ export async function createScenery(ctx) {
     const res = ctx.uniforms.frame.uResolution.value;
     shared.uPixAngle.value = (2 * Math.tan((ctx.camera.fov * DEG) / 2)) / Math.max(1, res.y);
     const winK = THREE.MathUtils.smoothstep(night, 0.1, 0.8);
-    M.glass.emissiveIntensity = 1.6 * winK; M.office.emissiveIntensity = 1.4 * winK;
-    M.garage.emissiveIntensity = 1.2 * winK; M.cab.emissiveIntensity = 1.0 * winK; M.sign.emissiveIntensity = 1.5 * Math.max(winK, on * 0.6);
+    M.glass.emissiveIntensity = 0.55 * winK; M.office.emissiveIntensity = 0.9 * winK;
+    M.garage.emissiveIntensity = 0.7 * winK; M.cab.emissiveIntensity = 0.8 * winK; M.sign.emissiveIntensity = 1.5 * Math.max(winK, on * 0.6);
     ctx.world.toWorld(ctx.camera.position, camW);
     const w = ctx.weather.wind, ws = Math.hypot(w.x, w.z);
     const kt = ws / 0.514444;
     sockPhase += dt;
     const hideAll = ctx.params.raw?.snoscn === '1';
+    {
+      const A = airports.reduce((b, a) => (Math.hypot(camW.x - a.data.position.x, camW.z - a.data.position.z) < Math.hypot(camW.x - b.data.position.x, camW.z - b.data.position.z) ? a : b));
+      const o = ctx.world.origin, P = A.data.position, n = Math.min(MAX_OBJ_POOLS, A.pools.length);
+      for (let k = 0; k < n; k++) { const p = A.pools[k]; objPools.uObjPools.value[k].set(P.x + p.x - o.x, A.data.elevation + p.h, P.z + p.z - o.z, p.I); }
+      objPools.uObjPoolCount.value = n;
+      objPools.uObjNight.value = on;
+    }
     for (const A of airports) {
       A.root.visible = !hideAll;
       const dx = camW.x - A.data.position.x, dz = camW.z - A.data.position.z;

@@ -144,8 +144,8 @@ export function makeFacades(ctx) {
       for (let b = 0; b < 8; b++) {
         const x0 = b * 64;
         g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(x0 + 4, y0 + 4, 28, 168);
-        const lit = R() < 0.75;
-        const warm = 150 + R() * 80;
+        const lit = R() < 0.6;
+        const warm = (90 + R() * 120) * (f === 0 ? 1 : 0.8);
         ge.fillStyle = lit ? `rgb(${warm},${warm * 0.85},${warm * 0.6})` : 'rgb(20,18,14)';
         ge.fillRect(x0 + 3, y0 + 2, 58, 172);
       }
