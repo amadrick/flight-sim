@@ -72,7 +72,7 @@ export async function createEffects(ctx) {
       const trail = new Trail(ctx, shared, header, anchor, 2048, { life: 60, diff: 10, sink: 1.8, formStart: 0.04, formEnd: 0.3, sigma: 5, albedo: [1, 1, 1], g: 0.72, mergeTau: 14, wobble: 1, spacingMin: 3, spacingMax: 60, maxDt: 0.4 });
       return { def: en, plume, trail, acc: { v: 0 }, hazeAcc: { v: 0 }, blastAcc: { v: 0 }, wasRunning: true };
     });
-    const tips = (g.wingtips || []).map(() => new Trail(ctx, shared, header, anchor, 384, { life: 2.6, diff: 0.25, sink: 0.4, formStart: 0.0, formEnd: 0.08, sigma: 0.8, albedo: [1, 1, 1], g: 0.75, mergeTau: 1, wobble: 0, spacingMin: 1.5, spacingMax: 12, maxDt: 0.05 }));
+    const tips = (g.wingtips || []).map(() => new Trail(ctx, shared, header, anchor, 384, { life: 1.6, diff: 0.025, sink: 0.4, formStart: 0.0, formEnd: 0.08, sigma: 0.8, albedo: [1, 1, 1], g: 0.75, mergeTau: 1, wobble: 0, spacingMin: 1.5, spacingMax: 12, maxDt: 0.05 }));
     const smokeTrail = new Trail(ctx, shared, header, anchor, 1024, { life: 25, diff: 2.5, sink: 0, formStart: 0, formEnd: 0.05, sigma: 6, albedo: [0.85, 0.85, 0.86], g: 0.4, mergeTau: 1, wobble: 0.2, spacingMin: 2, spacingMax: 25, maxDt: 0.2 });
     const vapor = createVapor(ctx, shared, header, def, group);
     lights.attach(player, group);
@@ -222,7 +222,7 @@ export async function createEffects(ctx) {
     const qbar = 0.5 * 1.225 * Math.exp(-alt / 8500) * (s.tas || 0) ** 2;
     const tipK = force('vapor') ? 1 : clamp(hum * 1.3 - 0.15, 0, 1) * smooth(3.0 - hum * 1.5, 6.5 - hum * 2, gl) * smooth(2000, 9000, qbar);
     P.tips.forEach((t, i) => {
-      if (tipK > 0.03 && !crashed && !s.onGround) { E.bodyToWorld(s, P.g.wingtips[i], tmp); t.emit(tmp, tipK * 3.5, 0.18, lat, 0); }
+      if (tipK > 0.03 && !crashed && !s.onGround) { E.bodyToWorld(s, P.g.wingtips[i], tmp); t.emit(tmp, tipK * 2.5, 0.09, lat, 0); }
       else t.stop();
     });
 
@@ -282,13 +282,15 @@ export async function createEffects(ctx) {
     const s = P.player.state;
     if (!debugFired && frameN > 2) {
       debugFired = true;
-      if (force('crash')) ctx.events.emit('crash', { reason: 'test' });
+      if (force('crash')) { s.crashed = true; s.crashReason = 'test'; ctx.events.emit('crash', { reason: 'test' }); s.velocity.set(0, 0, 0); }
       if (force('touchdown')) { onTouchdown({ verticalSpeed: -3 }); }
       if (force('boom')) ctx.events.emit('sonicBoom');
     }
     if (force('lightning') && frameN % 20 === 3) {
-      const p = new THREE.Vector3().copy(s.position).add(new THREE.Vector3(1500, 0, -2500).applyAxisAngle(new THREE.Vector3(0, 1, 0), -s.heading));
-      p.y = Math.max(ctx.weather.cloudBase, 1200);
+      const cam = ctx.camera, f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));
+      f.y = 0; f.normalize();
+      const p = ctx.world.toWorld(cam.getWorldPosition(new THREE.Vector3()), new THREE.Vector3()).addScaledVector(f, 3500);
+      p.y = Math.max(ctx.weather.cloudBase || 1000, 1500);
       ctx.events.emit('lightning', { worldPos: p, intensity: 1 });
     }
     if (force('rain')) { ctx.weather.precipitation = Math.max(ctx.weather.precipitation, 0.9); ctx.weather.target.precipitation = Math.max(ctx.weather.target.precipitation || 0, 0.9); }
@@ -308,7 +310,7 @@ export async function createEffects(ctx) {
     else if (dcam === 'rear') { cam.position.copy(tmp).addScaledVector(fw, -d * 1.3).addScaledVector(rt, d * 0.35).addScaledVector(up, d * 0.18); look.addScaledVector(fw, -L * 0.3); }
     else if (dcam === 'front') { cam.position.copy(tmp).addScaledVector(fw, d).addScaledVector(rt, d * 0.4).addScaledVector(up, d * 0.15); }
     else if (dcam === 'far') { cam.position.copy(tmp).addScaledVector(rt, d * 6).addScaledVector(fw, d * 2).addScaledVector(up, -d * 0.6); look.addScaledVector(fw, -d * 4); }
-    else if (dcam === 'low') { cam.position.copy(tmp).addScaledVector(rt, d * 0.8).addScaledVector(fw, -d * 0.6); cam.position.y = Math.max(tmp.y - d, 2); look.addScaledVector(fw, -d * 0.5); }
+    else if (dcam === 'low') { cam.position.copy(tmp).addScaledVector(rt, d * 0.8).addScaledVector(fw, -d * 0.6); cam.position.y = Math.max(tmp.y - d, ctx.world.groundHeightAt(s.position.x, s.position.z) + 1.5); look.addScaledVector(fw, -d * 0.5); }
     else if (dcam === 'top') { cam.position.copy(tmp).addScaledVector(up, d).addScaledVector(fw, -L * 0.4).addScaledVector(rt, 0.01); look.addScaledVector(fw, -L * 0.4); }
     else if (dcam === 'cockpit') { cam.position.copy(tmp).add(tmp2.fromArray(P.g.pilotEye || [0, 1, -4]).applyQuaternion(s.quaternion)); cam.quaternion.copy(s.quaternion); }
     if (dcam !== 'cockpit') { cam.up.set(0, 1, 0); cam.lookAt(look); }

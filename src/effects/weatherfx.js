@@ -49,7 +49,7 @@ export function createRain(ctx, shared, header) {
         // fade near the box edge (no popping) and right at the lens
         float edge = 1.0 - smoothstep(0.32 * uBox, 0.5 * uBox, dist);
         float nearF = smoothstep(0.3, 1.5, dist);
-        vA = uAmount * edge * nearF * clamp(wPhys / w, 0.15, 1.0) * clamp(1.6 / (1.0 + L * 0.25), 0.25, 1.0);
+        vA = uAmount * edge * nearF * clamp(wPhys / w, 0.45, 1.0) * clamp(1.6 / (1.0 + L * 0.25), 0.3, 1.0);
         vW = p;
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
       }`,
@@ -60,11 +60,11 @@ export function createRain(ctx, shared, header) {
         float sd = fxSceneDist();
         float d = length(vW - uCameraPos);
         if (d > sd) discard;
-        float a = vA * exp(-vC.x * vC.x * 3.0) * (1.0 - smoothstep(0.5, 1.0, abs(vC.y))) * 0.5;
+        float a = vA * exp(-vC.x * vC.x * 3.0) * (1.0 - smoothstep(0.4, 1.0, abs(vC.y)));
         if (a < 0.002) discard;
         // drops refract the bright sky: lighter than the background by day, faintly lit at night
         vec3 L = atmAmbient(vW, vec3(0.0, 1.0, 0.0)) * 1.8 + fxSun(vW) * 0.03 + fxLocal(vW) * 0.4;
-        outColor = fxFinish(L * a, a * 0.35, vec3(0.0), vW);
+        outColor = fxFinish(L * a, a * 0.5, vec3(0.0), vW);
       }`,
   });
   const mesh = new THREE.Mesh(geo, mat);
@@ -133,7 +133,7 @@ export function createLightning(ctx, shared, header) {
         vec4 vc = viewMatrix * vec4(c, 1.0);
         float pxPerM = projectionMatrix[1][1] * 0.5 * uResolution.y / max(-vc.z, 1.0);
         float core = max(sa.w, 1.2 / pxPerM);
-        float halo = core * 7.0 + 10.0 / pxPerM;
+        float halo = core * 4.0 + 6.0 / pxPerM;
         vec3 dir = b - a; vec3 toCam = normalize(uCameraPos - c);
         vec3 side = normalize(cross(dir, toCam) + vec3(1e-6));
         vec3 p = c + side * position.x * halo + normalize(dir) * position.y * halo * 0.5;
@@ -150,7 +150,7 @@ export function createLightning(ctx, shared, header) {
         if (length(vW - uCameraPos) > sd + 50.0) discard;
         float x = abs(vC.x);
         float core = exp(-pow(x / max(vCoreFrac, 1e-3), 2.0) * 2.0);
-        float glow = exp(-x * 4.0) * 0.08;
+        float glow = exp(-x * 5.0) * 0.015;
         vec3 e = (vec3(0.85, 0.88, 1.0) * core + vec3(0.55, 0.6, 1.0) * glow) * vI;
         outColor = fxFinish(vec3(0.0), 0.0, e, vW);
       }`,

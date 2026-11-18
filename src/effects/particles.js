@@ -157,10 +157,10 @@ void main() {
   vec3 emis = vec3(0.0);
   if (kind == 1.0) {
     // fire: hot rolling core that cools (white-yellow → orange → red) and turns into dark smoke
-    float heat = exp(-t * 3.2);
-    float temp = clamp(heat * (0.35 + 0.9 * dens) * (0.7 + 0.6 * tex.g), 0.0, 1.0);
-    emis = fxFlame(temp) * vData.y * temp * temp * dens * soft * vColor.a;
-    a *= mix(0.25, 1.0, smoothstep(0.08, 0.45, t));
+    float heat = exp(-t * 3.6);
+    float temp = clamp(heat * (0.2 + 0.95 * dens) * (0.55 + 0.8 * tex.g), 0.0, 1.0);
+    emis = fxFlame(temp) * vData.y * temp * temp * temp * dens * soft * vColor.a;
+    a *= mix(0.45, 1.0, smoothstep(0.05, 0.35, t));
     albedo *= mix(0.3, 1.0, smoothstep(0.1, 0.5, t));
   }
   vec3 lit = fxMediaLight(albedo, vPos, n, rd, dens, kind == 4.0 ? 0.75 : 0.35);

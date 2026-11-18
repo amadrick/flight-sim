@@ -124,7 +124,7 @@ export function explosion(ps, smoke, pos, vel, scale, q) {
     const late = i > nf * 0.7;
     p.kind = KIND.FIRE; p.life = 2.6 + rnd() * 2.2; p.size0 = (2.5 + rnd() * 3) * scale; p.size1 = (12 + rnd() * 12) * scale;
     p.drag = 2.2; p.buoy = 7 + rnd() * 5; p.delay = late ? 0.15 + rnd() * 0.35 : rnd() * 0.06;
-    p.r = 0.16; p.g = 0.14; p.b = 0.13; p.opacity = 0.95; p.emissive = 70 + rnd() * 60; p.aux = 0;
+    p.r = 0.16; p.g = 0.14; p.b = 0.13; p.opacity = 0.95; p.emissive = 22 + rnd() * 30; p.aux = 0;
     _v.copy(_w).multiplyScalar((10 + rnd() * 26) * scale).addScaledVector(vel, 0.25);
     _p.copy(pos).addScaledVector(_w, rnd() * 5 * scale);
     ps.spawn(_p, _v);
@@ -177,7 +177,7 @@ export function wreckUpdate(ps, smoke, w, dt, q, scale) {
     w.fireAcc -= 1;
     p.kind = KIND.FIRE; p.life = 1.2 + rnd() * 1.4; p.size0 = (1.2 + rnd() * 1.5) * scale; p.size1 = (5 + rnd() * 5) * scale;
     p.drag = 2; p.buoy = 5 + rnd() * 4; p.delay = 0; p.r = 0.12; p.g = 0.1; p.b = 0.1; p.opacity = 0.75;
-    p.emissive = 35 + rnd() * 30; p.aux = 0;
+    p.emissive = 18 + rnd() * 18; p.aux = 0;
     _v.set(sgn() * 1.5, 1 + rnd() * 2, sgn() * 1.5);
     _p.copy(w.pos); _p.x += sgn() * 5 * scale; _p.z += sgn() * 5 * scale; _p.y += 0.5;
     ps.spawn(_p, _v);

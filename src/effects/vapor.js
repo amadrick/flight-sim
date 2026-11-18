@@ -83,15 +83,16 @@ vec2 density(vec3 p) {
   float u = (p.z - zLE) / c;
   float h = p.y - yW;
   if (h < -0.04 * c || u < 0.0 || u > 1.8) return vec2(0.0);
-  float thick = c * (0.05 + 0.22 * clamp(u, 0.0, 1.4));
+  float thick = c * (0.03 + 0.12 * clamp(u, 0.0, 1.4));
   float d = smoothstep(0.04, 0.3, u) * (1.0 - smoothstep(0.95, 1.7, u)) * exp(-max(h, 0.0) / thick);
   d *= smoothstep(0.0, 0.12, s) * (1.0 - smoothstep(0.8, 1.0, s));
   // streaky, fast-streaming texture
-  vec4 nz = fxNoise(vec3(p.x * 0.55, h * 1.6, p.z * 0.09 - uFlow) );
-  vec4 nz2 = fxNoise(vec3(p.x * 1.7, h * 4.0, p.z * 0.35 - uFlow * 2.3) + 0.5);
-  float tex = nz.r * 0.65 + nz2.g * 0.55;
+  vec4 nz = fxNoise(vec3(p.x * 0.6, h * 1.8, p.z * 0.08 - uFlow));
+  vec4 nz2 = fxNoise(vec3(p.x * 2.2, h * 5.0, p.z * 0.3 - uFlow * 2.3) + 0.5);
+  float tex = nz.r * 0.6 + nz2.g * 0.7 - 0.25;
   // threshold rises as the amount falls → vapour shrinks toward the dense core
-  d = clamp(d * (0.6 + tex) * 1.6 - (1.0 - uAmount) * 1.1, 0.0, 1.0);
+  d = clamp(d * (0.5 + tex) * 2.2 - (1.0 - uAmount) * 1.1, 0.0, 1.0);
+  d = smoothstep(0.05, 0.6, d);
   return vec2(d, clamp(h / thick, 0.0, 1.0));
 }`;
 
@@ -122,15 +123,17 @@ vec2 density(vec3 p) {
   float r = length(p.xy);
   if (r > uR) return vec2(0.0);
   float rn = r / uR;
-  float zf = uZc + 0.35 * uR * rn * rn;        // shock front, swept back toward the edge
+  vec4 nz = fxNoise(vec3(p.x * 0.3, p.y * 0.3, p.z * 0.1 - uFlow * 0.3));
+  vec4 nz2 = fxNoise(vec3(p.xy * 0.9, p.z * 0.45) + 0.3);
+  // conical shock front opening aft (half-angle ~55°), slightly bowed; condensation evaporates aft of it
+  float zf = uZc + r * 0.72 + 0.12 * uR * rn * rn + (nz.g - 0.5) * 0.25;
   float z = p.z - zf;
-  float front = smoothstep(-0.12, 0.08, z);
-  float depth = uDepth * (0.6 + 0.8 * rn);
+  float front = smoothstep(-0.1, 0.06, z);
+  float depth = uDepth * (0.35 + 0.8 * rn) * (0.5 + 1.0 * nz.b);
   float d = front * exp(-max(z, 0.0) / depth);
-  d *= smoothstep(1.0, 0.7, rn) * smoothstep(0.05, 0.25, rn);
-  vec4 nz = fxNoise(vec3(p.x * 0.35, p.y * 0.35, p.z * 0.12 - uFlow * 0.4));
-  vec4 nz2 = fxNoise(vec3(p.xy * 1.1, p.z * 0.5) + 0.3);
-  d *= 0.45 + 0.9 * nz.r + 0.4 * nz2.a;
+  float rim = 1.0 - smoothstep(0.62 + 0.3 * nz.r, 1.0, rn);
+  d *= rim * smoothstep(0.04, 0.2, rn);
+  d *= smoothstep(0.25, 0.8, 0.3 + 0.8 * nz.r * (0.5 + nz2.a));
   d = clamp(d * 1.3 - (1.0 - uAmount) * 1.0, 0.0, 1.0);
   return vec2(d, 0.7);
 }`;
@@ -177,10 +180,11 @@ export function createVapor(ctx, shared, header, def, group) {
   }
   // vapour cone
   const zc = (g.noseZ ?? -L * 0.55) * 0.18;
-  const R = span * 0.62 + L * 0.05;
-  const depth = L * 0.12;
+  const R = span * 0.58 + L * 0.04;
+  const depth = L * 0.07;
+  const zLen = 0.84 * R + depth * 4 + 0.8;
   const cone = addVol(CONE_GLSL, { uZc: { value: zc }, uR: { value: R }, uDepth: { value: depth } },
-    new THREE.Vector3(0, 0, zc + (0.35 * R + depth * 4) / 2 - 0.3), new THREE.Vector3(2 * R, 2 * R, 0.35 * R + depth * 4 + 0.6), 3.5);
+    new THREE.Vector3(0, 0, zc - 0.4 + zLen / 2), new THREE.Vector3(2 * R, 2 * R, zLen), 2.2);
 
   const inv = new THREE.Matrix4(), q = new THREE.Quaternion();
   let boom = 0, flow = 0;
