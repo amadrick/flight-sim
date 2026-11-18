@@ -1,0 +1,52 @@
+# HUD / flight instruments — integration notes
+
+## Files
+| file | what |
+|---|---|
+| `index.js` | `createHud(ctx)`: canvas sizing (devicePixelRatio, `resize`), visibility, mode dispatch, shared nav state, glow filter |
+| `fighter.js` | conformal F-16-style HUD (cockpit camera, `def.hudType === 'fighter'`) |
+| `airliner.js` | Boeing-style PFD / ND / upper EICAS deck (cockpit camera, `def.hudType === 'airliner'`); phone layouts |
+| `external.js` | flight-data strip for every exterior camera |
+| `notices.js` | DOM layer (`.hud-root` in `ctx.uiRoot`): toasts, crash banner, paused tag, first-flight key hint |
+| `nav.js` | pure maths: destination, bearing/distance, ILS deviations, ground-collision prediction |
+| `projection.js` | conformal projection of world directions through `ctx.camera` |
+| `hud.test.js` | `node --test src/ui/hud/` — projection, conformity of the drawn HUD, ILS, GCAS, formatters |
+| `harness.js` | dev-only entry for screenshots with a frozen, posed aircraft (not part of the main bundle) |
+
+## Public API
+```js
+const hud = await createHud(ctx);
+hud.update(dt);                 // every frame (main.js already does this)
+hud.setVisible(bool);           // same switch as the `hudToggle` command
+hud.toast(text, { tone: 'info'|'caution'|'warn', key, duration: 2.6, dedupe: 2.5 });
+hud.setDestination('KBAY');     // null → back to the automatic destination
+hud.destination;                // current destination airport object (from AIRPORTS)
+```
+Default destination: `ctx.player.airport` for `start: 'approach'`, otherwise the nearest other airport.
+
+## What it reads (all defensively — missing fields are tolerated)
+- `ctx.cameraRig.mode` (`showcase` hides everything), `ctx.cameraRig.isInterior` (falls back to `mode === 'cockpit'`),
+  `ctx.cameraRig.worldPosition` (steerpoint diamond parallax; falls back to the aircraft position).
+- `ctx.camera` matrices — the fighter HUD is projected through the real camera every frame (FOV, zoom, head look all register).
+- `ctx.menu.isOpen`, `ctx.params.hud`, `ctx.params.raw.hint === '0'` (suppress the key hint), `ctx.env.nightFactor`,
+  `ctx.weather.windFrom/windSpeed`, `ctx.time.{realDt, dt, paused, timeScale, timeOfDay}`, `ctx.world.groundHeightAt`,
+  `ctx.session.options.start`, `ctx.quality.level` (`low` drops the glow filter).
+- Events: `cmd {name:'hudToggle'}`, `session:start/end`, `resize`, `gear:moved`, `touchdown`, `camera:mode`, `crash`, `quality:change`.
+
+## Requests to other modules (no integrator-owned file needs to change)
+- **Input:** bind `U` → `cmd hudToggle` and `Backspace` → `cmd reset` (the crash banner tells the pilot to press Backspace).
+- **Physics:** the HUD works with the stub, but these make it exact:
+  - `state.flapsIndex` + `def.physics.flapDetents` (labels, e.g. `[0,1,2,5,10,15,25,30,40]`) for "FLAPS 15" toasts and the EICAS flap readout
+    (otherwise the 737 detent nearest to `surfaces.flaps` is shown).
+  - `state.ap.mode`: tokens recognised (case-insensitive substrings): `alt`, `hdg`, `vs`/`v/s`, `spd`, `loc`, `gs`, `lnav`, `vnav`, `lvl`/`chg`.
+  - `state.stallWarning`, `stalled`, `overspeed`, `overG`, `engines[].{n1, n2, egt, fuelFlow, afterburner, reverser, running}`,
+    `fuelCapacity`, `beta` (slip indicator), `touchdown { verticalSpeed }` event (toast with the sink rate).
+  - Optional `def.specs.approachAoA` (deg, default 13) for the fighter AoA bracket.
+- **Menu:** call `ctx.hud.setDestination(id)` if the menu lets the pilot pick a destination. The HUD hides itself while `ctx.menu.isOpen`.
+- **Camera:** expose `isInterior` and `worldPosition` (already in the stub contract).
+
+## Cost
+Measured in headless Chrome (software raster, so an upper bound): fighter HUD ≈ 0.2 ms/frame at 960×540, airliner deck
+≈ 0.4 ms at 1920×1080, external strip ≈ 0.07 ms. Static parts (panel, bezels, strip labels) are cached in offscreen canvases and
+rebuilt only on resize / font load; numbers come from memoised string caches (no per-frame string building). The glow is a CSS
+`drop-shadow` filter on the overlay canvas (GPU-composited, zero main-thread cost).
