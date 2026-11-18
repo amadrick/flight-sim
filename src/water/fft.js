@@ -186,7 +186,8 @@ export function createOceanFFT(renderer, opts) {
     update(t, dt) {
       if (!sea) return;
       // paused (same time, nothing to regenerate): the previous frame's textures are still exact
-      if (t === lastT && !cascades.some((c) => c.dirty)) return;
+      let dirty = false; for (let i = 0; i < cascades.length; i++) dirty = dirty || cascades[i].dirty;
+      if (t === lastT && !dirty) return;
       lastT = t;
       const prevTarget = renderer.getRenderTarget();
       const tf = (t % TIME_PERIOD) / TIME_PERIOD;

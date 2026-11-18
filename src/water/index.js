@@ -201,6 +201,7 @@ export async function createWater(ctx) {
   ctx.events.on('weather:change', () => { lastSea.t = -1e9; });
 
   const camW = new THREE.Vector3();
+  const dispU = [uniforms.tDisp0, uniforms.tDisp1, uniforms.tDisp2], slopeU = [uniforms.tSlope0, uniforms.tSlope1, uniforms.tSlope2];
   function update(dt) {
     build();
     refreshSea(false);
@@ -208,7 +209,7 @@ export async function createWater(ctx) {
     const o = ctx.world.origin;
     for (let c = 0; c < 3; c++) {
       const fc = fft.cascades[c];
-      uniforms['tDisp' + c].value = fc.disp; uniforms['tSlope' + c].value = fc.slope;
+      dispU[c].value = fc.disp; slopeU[c].value = fc.slope;
       uniforms.uCasc.value[c].set(mod(o.x, fc.L), mod(o.z, fc.L), 1 / fc.L, fc.N);
     }
     {
