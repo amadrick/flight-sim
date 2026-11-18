@@ -25,7 +25,7 @@ const CSS = `
 .inp-thr-fill{position:absolute;left:4px;right:4px;bottom:4px;border-radius:8px;background:linear-gradient(0deg,rgba(255,176,0,.25),rgba(255,176,0,.6));pointer-events:none;height:0}
 .inp-thr-knob{position:absolute;left:2px;right:2px;height:8px;margin-bottom:-4px;border-radius:4px;background:var(--accent,#ffb000);box-shadow:0 0 6px rgba(255,176,0,.8);pointer-events:none}
 .inp-thr-mil{position:absolute;left:-4px;right:-4px;border-top:2px dashed var(--ok,#4cc9f0);pointer-events:none}
-.inp-thr-mil::after{content:"MIL";position:absolute;right:calc(100% + 6px);top:-7px;font:600 10px/1 var(--font-mono,monospace);letter-spacing:.1em;color:var(--ok,#4cc9f0)}
+.inp-thr-mil::after{content:"MIL";position:absolute;right:8px;top:-13px;font:600 10px/1 var(--font-mono,monospace);letter-spacing:.1em;color:var(--ok,#4cc9f0)}
 .inp-lbl{position:absolute;left:0;right:0;top:-18px;text-align:center;font-size:12px;letter-spacing:.18em;color:var(--fg-dim,#8fa1b3);pointer-events:none;text-transform:uppercase}
 .inp-thr-pct{position:absolute;left:0;right:0;top:6px;text-align:center;font:600 12px/1 var(--font-mono,monospace);color:var(--fg,#e6edf3);pointer-events:none}
 .inp-rud{left:50%;transform:translateX(-50%);bottom:max(16px,env(safe-area-inset-bottom,0px));width:clamp(140px,30vw,240px);height:46px}
@@ -264,7 +264,7 @@ export async function createInput(ctx) {
       <div class="inp-zone"></div>
       <div class="inp-hint">ROLL / PITCH</div>
       <div class="inp-base"></div><div class="inp-knob"></div>
-      <div class="inp-pnl inp-thr"><div class="inp-lbl">Throttle</div><div class="inp-thr-fill"></div><div class="inp-thr-mil" hidden></div><div class="inp-thr-knob"></div><div class="inp-thr-pct">0</div></div>
+      <div class="inp-pnl inp-thr"><div class="inp-lbl">THR</div><div class="inp-thr-fill"></div><div class="inp-thr-mil" hidden></div><div class="inp-thr-knob"></div><div class="inp-thr-pct">0</div></div>
       <div class="inp-pnl inp-rud"><div class="inp-rud-lbl">RUDDER</div><div class="inp-rud-knob"></div></div>
       <div class="inp-btns"></div>
       <div class="inp-top"></div>`;
