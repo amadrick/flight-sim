@@ -41,7 +41,8 @@ float donelanBanner(float w, float wp, float th) {
 float psi(vec2 k) {
   float kl = length(k);
   float w = sqrt(G * kl), dwdk = G / (2.0 * w);
-  float th = atan(k.y, k.x);
+  // explicit axis cases: some GPUs (SwiftShader) mishandle atan(-0.0, x < 0), which breaks the Hermitian pairing
+  float th = abs(k.y) < 1e-12 ? (k.x < 0.0 ? PI : 0.0) : atan(k.y, k.x);
   float sw = jonswap(w, uWind.y, uWind.z, uWind.w) * (donelanBanner(w, uWind.y, wrapPi(th - uWind.x)) * (1.0 - SPREAD_BLEND) + SPREAD_BLEND / (2.0 * PI));
   float ss = jonswap(w, uSwell.y, uSwell.z, 3.3) * uSwell.w * pow(abs(cos(wrapPi(th - uSwell.x) * 0.5)), 2.0 * uSwellS);
   return (sw + ss) * dwdk / kl;
@@ -172,7 +173,7 @@ export function createOceanFFT(renderer, opts) {
   });
   // texture objects the surface material binds: we swap the .out targets, so expose stable getters via update()
 
-  let sea = null;
+  let sea = null, lastT = -1;
   const fft = {
     N, cascades, floatOK,
     /** sea: from makeSeaState(); per-cascade choppiness & foam settings applied in finalize */
@@ -184,6 +185,9 @@ export function createOceanFFT(renderer, opts) {
     /** t = simulated seconds (double), dt = frame step (foam decay) */
     update(t, dt) {
       if (!sea) return;
+      // paused (same time, nothing to regenerate): the previous frame's textures are still exact
+      if (t === lastT && !cascades.some((c) => c.dirty)) return;
+      lastT = t;
       const prevTarget = renderer.getRenderTarget();
       const tf = (t % TIME_PERIOD) / TIME_PERIOD;
       const decay = Math.exp(-dt / (fft.foamLife || 2.5));

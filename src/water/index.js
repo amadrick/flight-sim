@@ -5,7 +5,8 @@
 // noise/foam), harness.js (isolated test entry). See INTEGRATION.md for costs and integration notes.
 import * as THREE from 'three';
 import { createOceanFFT } from './fft.js';
-import { makeSeaState, varianceTables, componentsFor, evalHeight, LEVELS } from './spectrum.js';
+import * as Spectrum from './spectrum.js';
+const { makeSeaState, varianceTables, componentsFor, evalHeight, LEVELS } = Spectrum;
 import { waterVertexShader, waterFragmentShader } from './shaders.js';
 import { makeNoiseTexture, makeFoamTexture } from './textures.js';
 
@@ -238,6 +239,7 @@ export async function createWater(ctx) {
     object3D, update, heightAt,
     get seaState() { return sea; },
     get _fft() { return fft; },
+    get _debug() { return { fft, Spectrum, sea, cascadeDefs, time: ctx.time.now }; },
     get stats() { return { N: cfg.N, vertices: meshInfo.vertices, triangles: meshInfo.triangles, floatFFT: fft.floatOK }; },
     dispose() { fft.dispose(); mesh?.geometry.dispose(); material.dispose(); noiseTex.dispose(); foamTex.dispose(); ctx.scene.remove(object3D); },
   };
