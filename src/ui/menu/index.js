@@ -313,6 +313,8 @@ export async function createMenu(ctx) {
     fsBtn('menu-fullscreen-fly'),
     h('button', { class: 'menu-iconbtn menu-fab', id: 'menu-fab', type: 'button', 'aria-label': 'Open menu', onclick: () => open() }, h('span', { class: 'menu-ico-menu', 'aria-hidden': 'true' }), 'Menu'));
   corner.hidden = true;
+  // Corner buttons must not keep focus during flight, or Space (wheel brakes) / Enter would re-trigger them.
+  corner.addEventListener('click', (e) => { const b = e.target.closest?.('button'); if (b) setTimeout(() => b.blur(), 0); });
   const crashReason = h('div', { class: 'menu-crash-r' });
   const crash = h('div', { class: 'menu-crash', role: 'alertdialog', 'aria-label': 'Flight ended', 'aria-modal': 'false' },
     h('div', { class: 'menu-crash-t', text: 'Flight ended' }), crashReason,
