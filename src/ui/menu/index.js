@@ -34,6 +34,13 @@ function h(tag, attrs, ...kids) {
   return el;
 }
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+/** Scroll `el` into view inside its own scroll container only (never scrolls the page or other ancestors). */
+function reveal(el) {
+  const box = el?.closest?.('.menu-scroll'); if (!box) return;
+  const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+  if (r.top < b.top) box.scrollTop -= b.top - r.top + 4;
+  else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 4;
+}
 
 function phaseOf(hr) {
   if (hr < 4.6 || hr >= 20.2) return 'Night';
@@ -183,7 +190,7 @@ export async function createMenu(ctx) {
     const phase = h('div', { class: 'menu-tod-phase' });
     const range = h('input', { class: 'menu-range', type: 'range', id: prefix + 'tod', min: '0', max: '24', step: '0.25', 'aria-label': 'Time of day (local hours)' });
     range.addEventListener('input', () => setTod(+range.value % 24));
-    const chips = navGroup(h('div', { class: 'menu-chips', 'aria-label': 'Time of day presets' }), 'radiogroup');
+    const chips = navGroup(h('div', { class: 'menu-todchips', 'aria-label': 'Time of day presets' }), 'radiogroup');
     for (const p of TOD_PRESETS) chips.append(item(h('button', { class: 'menu-chip', type: 'button', id: prefix + 'tod-' + p.id, 'data-h': p.h, onclick: () => setTod(p.h) }, p.label), 'radio', false));
     const wx = navGroup(h('div', { class: 'menu-wx', 'aria-label': 'Weather' }), 'radiogroup');
     for (const [k, p] of Object.entries(WEATHER_PRESETS)) {
@@ -428,6 +435,8 @@ export async function createMenu(ctx) {
     if (v === 'pause') syncPause();
     root.classList.remove('menu-anim'); void root.offsetWidth; root.classList.add('menu-anim');
   }
+  // Audio may only start after a user gesture: the first interaction with the menu wakes it (hangar idle sound).
+  root.addEventListener('pointerdown', () => { try { ctx.audio?.resume?.(); } catch {} }, { once: true });
   function focusView() {
     let el;
     if (view === 'main') el = acList.querySelector('[tabindex="0"]');
@@ -459,6 +468,7 @@ export async function createMenu(ctx) {
     const was = menu.isOpen;
     menu.isOpen = true; root.hidden = false; corner.hidden = true;
     show(v); sync(); focusView();
+    if (v === 'main') { reveal(acList.querySelector('[aria-selected="true"]')); reveal(aptList.querySelector('[aria-selected="true"]')); }
     if (!was) ev.emit('menu:open');
   }
   function close() {
@@ -509,7 +519,7 @@ export async function createMenu(ctx) {
       if (e.key === 'Home') i = 0; else if (e.key === 'End') i = items.length - 1;
       else i = clamp(i + (/Down|Right/.test(e.key) ? 1 : -1), 0, items.length - 1);
       const n = items[i];
-      if (n && n !== t) { n.click(); try { n.focus({ preventScroll: true }); n.scrollIntoView({ block: 'nearest' }); } catch {} }
+      if (n && n !== t) { n.click(); try { n.focus({ preventScroll: true }); reveal(n); } catch {} }
       e.preventDefault(); return;
     }
     if (e.key === 'Enter' && view === 'main' && !e.repeat) {

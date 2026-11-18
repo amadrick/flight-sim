@@ -87,9 +87,11 @@ export const CSS = /* css */`
 .menu-panel::after { right: -1px; bottom: -1px; border-width: 0 1px 1px 0; }
 .menu-scroll { overflow-y: auto; overflow-x: hidden; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--m-hair-2) transparent; }
 .menu-scroll::-webkit-scrollbar { width: 6px; }
-.menu-panel-plan > .menu-scroll { padding-bottom: 8px; }
+.menu-panel-plan > .menu-scroll { padding-bottom: 20px; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent); }
+.menu-todchips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.menu-todchips .menu-chip { padding: 0 6px; min-height: 30px; font-size: 13px; }
 .menu-scroll::-webkit-scrollbar-thumb { background: var(--m-hair-2); }
-.menu-sec { padding: 14px 16px 16px; }
+.menu-sec { padding: 13px 16px 14px; }
 .menu-sec + .menu-sec { border-top: 1px solid var(--m-hair); }
 .menu-h {
   display: flex; align-items: center; gap: 10px; margin: 0 0 10px;
@@ -161,7 +163,7 @@ export const CSS = /* css */`
 .menu-rwy:hover { color: var(--fg, #e6edf3); border-color: var(--fg-dim, #8fa1b3); }
 .menu-rwy[aria-checked="true"] { background: #000; color: var(--accent, #ffb000); border: 2px solid var(--accent, #ffb000); }
 .menu-rwyinfo { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--fg-dim, #8fa1b3); margin-top: 8px; letter-spacing: 0.03em; }
-.menu-aptdesc { font-size: 12.5px; color: var(--fg-dim, #8fa1b3); line-height: 1.4; margin: 8px 0 12px; }
+.menu-aptdesc { font-size: 12.5px; color: var(--fg-dim, #8fa1b3); line-height: 1.4; margin: 8px 0 0; }
 
 /* time of day */
 .menu-tod-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -171,10 +173,12 @@ export const CSS = /* css */`
 .menu-slider { position: relative; padding: 6px 0 2px; }
 .menu-range { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; background: transparent; cursor: pointer; display: block; touch-action: none; }
 .menu-range::-webkit-slider-runnable-track { height: 28px; background:
+  linear-gradient(to right, #142040 0%, #142040 17%, #6a4a7a 19.5%, #e8955a 21.5%, #8fb8dc 27%, #b8d8ef 50%, #8fb8dc 72%, #f0a050 78.5%, #7a4060 80.5%, #142040 84%, #142040 100%) 0 100% / 100% 3px no-repeat,
   linear-gradient(var(--m-hair-2), var(--m-hair-2)) 0 50% / 100% 1px no-repeat,
   repeating-linear-gradient(to right, var(--m-hair-2) 0 1px, transparent 1px calc(100% / 24)) 0 50% / calc(100% - 1px) 9px no-repeat,
   repeating-linear-gradient(to right, var(--fg-dim, #8fa1b3) 0 1px, transparent 1px calc(100% / 4)) 0 50% / calc(100% - 1px) 15px no-repeat; }
 .menu-range::-moz-range-track { height: 28px; background:
+  linear-gradient(to right, #142040 0%, #142040 17%, #6a4a7a 19.5%, #e8955a 21.5%, #8fb8dc 27%, #b8d8ef 50%, #8fb8dc 72%, #f0a050 78.5%, #7a4060 80.5%, #142040 84%, #142040 100%) 0 100% / 100% 3px no-repeat,
   linear-gradient(var(--m-hair-2), var(--m-hair-2)) 0 50% / 100% 1px no-repeat,
   repeating-linear-gradient(to right, var(--m-hair-2) 0 1px, transparent 1px calc(100% / 24)) 0 50% / calc(100% - 1px) 9px no-repeat,
   repeating-linear-gradient(to right, var(--fg-dim, #8fa1b3) 0 1px, transparent 1px calc(100% / 4)) 0 50% / calc(100% - 1px) 15px no-repeat; }
@@ -212,12 +216,14 @@ export const CSS = /* css */`
 .menu-fly-key { position: absolute; right: 12px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; letter-spacing: 0.08em; font-weight: 700; opacity: 0.55; border: 1px solid currentColor; padding: 1px 5px; }
 
 /* hero placard (wide screens only) */
-.menu-hero { pointer-events: none !important; align-self: end; justify-self: center; text-align: center; max-width: 760px; padding-bottom: 2px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 24px rgba(0, 0, 0, 0.45); }
+.menu-hero { pointer-events: none !important; align-self: end; justify-self: center; text-align: center; min-width: 0; max-width: min(760px, 100%); padding-bottom: 2px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 24px rgba(0, 0, 0, 0.45); }
 .menu-hero-kicker { text-wrap: balance; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(230, 237, 243, 0.82); }
 .menu-hero-name { font-family: var(--font-display, 'Saira Condensed', 'Arial Narrow', Arial, sans-serif); font-weight: 600; font-size: clamp(38px, 3.9vw, 68px); line-height: 0.98; letter-spacing: 0.03em; text-transform: uppercase; margin: 6px 0 6px; }
 .menu-hero-tag { font-size: 15px; color: rgba(230, 237, 243, 0.85); margin: 0 0 12px; }
 .menu-hero-metar { display: inline-flex; align-items: stretch; border: 1px solid var(--m-hair-2); background: rgba(5, 8, 12, 0.6); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); text-shadow: none; }
-.menu-hero-metar > span { padding: 5px 9px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; letter-spacing: 0.04em; white-space: nowrap; }
+.menu-hero-metar { max-width: 100%; text-align: left; }
+.menu-hero-metar > span { padding: 5px 9px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; letter-spacing: 0.04em; line-height: 1.45; }
+.menu-hero-metar > span:first-child { display: flex; align-items: center; }
 .menu-hero-metar > span:first-child { color: #000; background: var(--fg-dim, #8fa1b3); font-weight: 700; letter-spacing: 0.12em; }
 
 /* ---------- main (hangar) layout ------------------------------------------------------------ */
@@ -394,6 +400,7 @@ export const CSS = /* css */`
   .menu-sheet .menu-sec { padding-left: 0; padding-right: 0; }
   .menu-sheet .menu-scroll, .menu-panel-ac .menu-aclist { overflow: visible; max-height: none; flex: none; }
   .menu-sheet .menu-aclist { padding: 0 !important; }
+  .menu-sheet .menu-scroll.menu-aclist { max-height: 228px; overflow-y: auto; overscroll-behavior: auto; border-bottom: 1px solid var(--m-hair); }
   .menu-sheet .menu-panel-plan { border-top: 1px solid var(--m-hair); }
   .menu-grab { display: block; flex: none; width: 40px; height: 4px; border-radius: 2px; background: var(--m-hair-2); margin: 8px auto 2px; }
   .menu-sheet > .menu-flybar { position: sticky; bottom: 0; z-index: 2; margin: 0 calc(-1 * var(--m-gr)) 0 calc(-1 * var(--m-gl)); padding: 10px var(--m-gr) var(--m-gb) var(--m-gl); background: rgba(8, 12, 17, 0.96); border-top: 1px solid var(--m-hair-2); flex: none; }
