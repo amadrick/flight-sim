@@ -82,7 +82,7 @@ export function findIls(x, y, z, headingDeg, preferAirportId, out = createIlsRes
     if (dx * dx + dz * dz > ILS_RANGE * ILS_RANGE) continue;
     ilsFor(r, x, y, z, _tmp);
     if (_tmp.along > r.length * 0.9) continue;                 // past the far end
-    if (_tmp.along > -400 && _tmp.height > 150) continue;      // overflying the field, not on an approach
+    if (_tmp.gsDev + GS_ANGLE > 12) continue;                  // far above the glidepath sector: overflying, not approaching
     if (Math.abs(_tmp.locDev) > 35) continue;
     if (Math.abs(wrap180(headingDeg - r.heading)) > 60) continue;
     let score = _tmp.dist + Math.abs(_tmp.locDev) * 400;

@@ -75,7 +75,7 @@ export function createFighterHud() {
 
     // ---- conformal layer, clipped to the combiner's field of view ------------------------------------
     g.save();
-    g.beginPath(); rrect(g, -hw, -hh, hw * 2, hh * 2, fs * 2.2); g.clip();
+    g.beginPath(); rrect(g, -hw, -hh + fs * 3.9, hw * 2, hh * 2 - fs * 3.9, fs * 2.2); g.clip();
     const gs = Math.hypot(vx, vz);
     const az = gs > 8 ? Math.atan2(vx, -vz) : s.heading;
     drawLadder(g, proj, az, lfx - fx, fpmVis && !fpmLimited ? 0 : 0);
