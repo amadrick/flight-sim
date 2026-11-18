@@ -36,14 +36,15 @@ export function createAirlinerDeck(tok) {
 
   function layout(W, H) {
     const pad = 16;
-    const deckH = H * 0.4;
+    let deckH = H * 0.4;
+    if (deckH - 18 < 230) deckH = Math.min(H * 0.45, 248);       // small windows: a little more height for legibility
     const gap = Math.max(8, Math.round(W * 0.008));
     let S = Math.min(deckH - 18, (W - pad * 2 - gap * 2) / 2.85);
     let mode = 'full';
-    if (S < 230) {                      // too small for three legible displays: PFD + compact engine strip
+    if (S < 190) {                      // too small for three legible displays: PFD + compact engine strip
       mode = 'compact';
-      S = Math.min(W - pad * 2, H * 0.46, 520);
-      if (W > H * 1.3) S = Math.min(H * 0.5, (W - pad * 2) * 0.6);
+      S = Math.min(W - pad * 2, H * 0.44, 520);
+      if (W > H * 1.3) S = Math.min(H * 0.46, (W - pad * 2) * 0.6);
     }
     S = Math.floor(S);
     const eW = Math.floor(S * 0.82);

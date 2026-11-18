@@ -3,7 +3,7 @@
 import { num, FPM } from './common.js';
 
 const CSS = `
-.hud-root{position:absolute;inset:0;pointer-events:none!important;overflow:hidden;font-family:var(--font-mono,'B612 Mono',ui-monospace,Menlo,Consolas,monospace);color:var(--fg,#e6edf3);z-index:5}
+.hud-root{position:absolute;inset:0;pointer-events:none!important;overflow:hidden;font-family:var(--font-mono,'B612 Mono',ui-monospace,Menlo,Consolas,monospace);color:var(--fg,#e6edf3)}
 .hud-root[hidden]{display:none}
 .hud-toasts{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 max(16px,env(safe-area-inset-left,0px))}
 .hud-toast{display:flex;align-items:center;gap:10px;max-width:100%;box-sizing:border-box;padding:7px 14px 7px 12px;background:rgba(9,14,20,.78);border:1px solid rgba(143,161,179,.22);border-left:2px solid var(--hud,#5dff9b);border-radius:3px;

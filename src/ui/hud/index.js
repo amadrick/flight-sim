@@ -51,6 +51,7 @@ export async function createHud(ctx) {
     return nearestAirport(s.position.x, s.position.z, p.airport?.id) || p.airport || AIRPORTS[0];
   }
   let gcasTick = 0;
+  const groundHeight = (x, z) => (ctx.world?.groundHeightAt ? ctx.world.groundHeightAt(x, z) : 0);
   function updateNav(p) {
     const s = p.state;
     if (nav.destOverride) nav.dest = nav.destOverride;
@@ -64,10 +65,7 @@ export async function createHud(ctx) {
       nav.ttg = gs > 15 ? (nav.distNM * NM) / gs : Infinity;
     }
     findIls(s.position.x, s.position.y, s.position.z, num(s.heading) * RAD, d?.id, nav.ils);
-    if ((gcasTick++ % 3) === 0) {
-      const gh = ctx.world?.groundHeightAt ? (x, z) => ctx.world.groundHeightAt(x, z) : () => 0;
-      predictGroundCollision(s, gh, p.def.hudType === 'fighter' ? 5 : 1.6, nav.gcas);
-    }
+    if ((gcasTick++ % 3) === 0) predictGroundCollision(s, groundHeight, p.def.hudType === 'fighter' ? 5 : 1.6, nav.gcas);
   }
   ctx.events.on('session:start', (p) => { nav.dest = null; nav.gcas.pullUp = false; fighter.resetSession(); notices.onSession(p); });
   ctx.events.on('session:end', () => { notices.onSession(null); });
