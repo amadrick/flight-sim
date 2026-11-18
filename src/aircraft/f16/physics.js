@@ -52,7 +52,7 @@ export default {
   },
   gear: {
     nose: { travel: 0.26 }, main: { travel: 0.30 },
-    retractTime: 5, steerMaxLow: 32, steerMaxHigh: 3, brakeMu: 0.42, maxSinkRate: 3.6, crashSinkRate: 7,
+    retractTime: 5, steerMax: 32, steerLatG: 0.30, brakeMu: 0.50, maxSinkRate: 3.6, crashSinkRate: 7,
   },
   structure: { tailStrikeDeg: 14.5, bellyY: -0.75 },
   limits: { vmo: 411.5, mmo: 2.05 },                   // 800 KCAS / Mach 2.05

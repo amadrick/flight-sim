@@ -229,11 +229,11 @@ export function createSim(ctx, def, init) {
     const upn = r01 * nx + r11 * ny + r21 * nz;
     const brake = settleBrake || parkingBrake ? 1 : brakeCmd;
     const gsp = Math.hypot(vel.x - G.vx, vel.z - G.vz);
-    const steerMax = GR.steerLow + (GR.steerHigh - GR.steerLow) * sstep(GR.steerV0, GR.steerV1, gsp);
+    let steerMax = Math.atan(GR.wheelbase * GR.steerLatAcc / (gsp * gsp + 1)); if (steerMax > GR.steerMax) steerMax = GR.steerMax;
     let main = false, any = false;
     for (let i = 0; i < nW; i++) {
       const W = wheels[i], t = wst[i];
-      if (W.steerable) t.steer = toward(t.steer, stick.yaw * steerMax, GR.steerRate * h);
+      if (W.steerable) t.steer = toward(t.steer, fcs.steerCmd * steerMax, GR.steerRate * h);
       const by = W.py - W.x0;
       const rx = r00 * W.px + r01 * by + r02 * W.pz, ry = r10 * W.px + r11 * by + r12 * W.pz, rz = r20 * W.px + r21 * by + r22 * W.pz;
       const Xw = pos.x + rx, Zw = pos.z + rz;
@@ -261,7 +261,9 @@ export function createSim(ctx, def, init) {
         }
         t.onGround = true; t.airTime = 0;
       }
-      let N = W.k * x + (xd > 0 ? W.cC : W.cR) * xd * (x < 0.04 ? x * 25 : 1);
+      let N = x < W.xCap ? (W.fExt * W.gasL) / (W.gasL - x) : W.fCap + W.kCap * (x - W.xCap);
+      if (x < W.xTyre) N *= x / W.xTyre;                 // the tyre takes up the strut preload over its first centimetres
+      N += (xd > 0 ? W.cC : W.cR) * xd * (x < 0.04 ? x * 25 : 1);
       if (x > W.travel) N += 30 * W.k * (x - W.travel) + 2 * W.cC * (xd > 0 ? xd : 0);
       if (N < 0) N = 0;
       t.x = x; t.N = N;
@@ -294,10 +296,13 @@ export function createSim(ctx, def, init) {
       // lateral: relaxation-length brush model (exact exponential update), pure spring at rest
       const a = avl / W.relax;
       if (a * h < 1e-3) t.defLat += vlat * h; else { const ss = vlat / a; t.defLat = ss + (t.defLat - ss) * Math.exp(-a * h); }
-      let Flat = -(W.kt * t.defLat + W.ct * vlat / (1 + 0.25 * vlong * vlong));
+      // cornering stiffness grows with wheel load (keeps the loaded outside wheel gripping in a turn)
+      let lf = N / W.load; lf = lf < 0.3 ? 0.3 : lf > 3 ? 3 : lf;
+      const ktl = W.kt * lf;
+      let Flat = -(ktl * t.defLat + W.ct * vlat / (1 + 0.25 * vlong * vlong));
       let rem = muN * muN - Fl * Fl; rem = rem > 0 ? Math.sqrt(rem) : 0;
       let sat = 0;
-      if (Flat > rem) { Flat = rem; t.defLat = -rem / W.kt; sat = 1; } else if (Flat < -rem) { Flat = -rem; t.defLat = rem / W.kt; sat = 1; }
+      if (Flat > rem) { Flat = rem; t.defLat = -rem / ktl; sat = 1; } else if (Flat < -rem) { Flat = -rem; t.defLat = rem / ktl; sat = 1; }
       if (Fl > muN) Fl = muN; else if (Fl < -muN) Fl = -muN;
       const sk = Math.max(slip, locked, sat * clamp((Math.abs(vlat) - 1) / 4, 0, 1));
       t.skid += (sk - t.skid) * Math.min(1, h * 12);
@@ -429,7 +434,7 @@ export function createSim(ctx, def, init) {
     X.V = ao.V; X.mach = ao.mach; X.qbar = ao.qbar; X.alpha = ao.V > 8 ? ao.alpha : 0; X.beta = ao.V > 8 ? ao.beta : 0;
     X.p = p; X.q = q; X.r = r; X.nz = nzAero; X.theta = Math.asin(clamp(sth, -1, 1)); X.phi = phi; X.sth = sth; X.cth = cth;
     X.cphi = Math.cos(phi); X.sphi = Math.sin(phi); X.psi = Math.atan2(-r02, r22); X.vs = vel.y; X.alt = pos.y;
-    X.wow = wowMain; X.gearHandle = gearTarget > 0.5; X.iyy = iyy; X.ixx = ixx; X.izz = izz; X.fCtrl = ao.fCtrl; X.fCla = ao.fCla;
+    X.gs = Math.hypot(vel.x - G.vx, vel.z - G.vz); X.stallMargin = ao.V > 20 ? ao.stallMargin : 1; X.wow = wowMain; X.gearHandle = gearTarget > 0.5; X.iyy = iyy; X.ixx = ixx; X.izz = izz; X.fCtrl = ao.fCtrl; X.fCla = ao.fCla;
     if (ap.alt || ap.hdg || ap.spd) { updateAutopilot(model.ap, ap, X, h); if (ap.spd) lever = ap.lever; }
     updateFcs(model, fcs, X, stick, ap, h);
 

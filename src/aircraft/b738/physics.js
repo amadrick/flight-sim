@@ -56,7 +56,7 @@ export default {
   },
   gear: {
     nose: { travel: 0.38 }, main: { travel: 0.45 },
-    retractTime: 8, steerMaxLow: 65, steerMaxHigh: 5, brakeMu: 0.45, maxSinkRate: 3.05, crashSinkRate: 6,
+    retractTime: 8, steerMax: 70, steerLatG: 0.22, brakeMu: 0.45, maxSinkRate: 3.05, crashSinkRate: 6,
   },
   structure: { tailStrikeDeg: 11, bellyY: -1.45 },
   limits: { vmo: 175, mmo: 0.82, gearSpeed: 139 },      // 340 KCAS / M0.82

@@ -13,7 +13,7 @@ export function createFcsState() {
   return {
     de: 0, da: 0, dr: 0, trim: 0, trimTarget: 0, integ: 0, law: 0,
     deCmd: 0, daCmd: 0, drCmd: 0, qCmd: 0, pCmd: 0, tvec: 0,
-    alphaProt: false, apPitchPrev: false,
+    alphaProt: false, apPitchPrev: false, yawInt: 0, steerCmd: 0,
   };
 }
 
@@ -136,9 +136,18 @@ export function updateFcs(model, f, X, stick, a, dt) {
     deCmd = clamp(s * feel, -1, 1);
     f.qCmd = 0; f.alphaProt = false;
     // trim follow-up: a held column is trimmed out, as a pilot would with the thumb switch
-    if (fc.trimFollow > 0 && law > 0.99 && Math.abs(stick.pitch) > 0.04) {
+    // (never further nose-up once the stall warning is on, so that releasing the column always recovers)
+    if (fc.trimFollow > 0 && law > 0.99 && Math.abs(stick.pitch) > 0.04 && !(s > 0 && X.stallMargin < A.warnMargin + 0.035)) {
       f.trimTarget = clamp(f.trimTarget + s * feel * fc.trimFollow * dt * (A.deMax / A.trimMax), -C.trimAuth, C.trimAuth);
     }
+  }
+  if (fc.rotAssist && law < 1 && deCmd > 0 && !apPitch) {
+    // rotation assist: on the wheels a held-back stick is limited to a sensible rotation rate and kept short of the
+    // tail-strike attitude (fades out with the flight-law blend after lift-off)
+    let qLim = 2 * (fc.rotPitchMax - X.theta); if (qLim > fc.rotRate) qLim = fc.rotRate;
+    const lim = clamp(1 + 18 * (qLim - X.q), -0.35, 1);
+    const dl = deCmd + (lim - deCmd) * (1 - law);
+    if (dl < deCmd) deCmd = dl;
   }
   if (!useRateLoop || fc.fbw) {
     // manual trim commands (trimTarget is stepped by the sim) run at the trim motor rate
@@ -168,7 +177,8 @@ export function updateFcs(model, f, X, stick, a, dt) {
     const Kp = Math.min(fc.kpRollMax, fc.wp / (Ld > 1e-3 ? Ld : 1e-3));
     const ff = (-A.clp * X.fCla * A.b * pCmd) / (2 * Veff * clTot * fCtrl);
     const flight = clamp(ff + Kp * (pCmd - X.p), -1, 1);
-    const direct = clamp(stick.roll * 0.6, -1, 1);
+    // on the wheels: direct stick plus a wings-level assist that works against roll-over in fast turns
+    const direct = clamp(stick.roll * 0.6 - (fc.fbw ? 3 * X.phi + 0.8 * X.p : 0), -1, 1);
     daCmd = direct + (flight - direct) * law;
   } else {
     const feel = fc.rollFeelQ > 0 ? clamp(fc.rollFeelQ / (qbar > 1 ? qbar : 1), 0.25, 1) : 1;
@@ -188,6 +198,20 @@ export function updateFcs(model, f, X, stick, a, dt) {
     sas = clamp(sas, -fc.sasAuthority, fc.sasAuthority);
     drCmd += sas * law;
   }
+  f.steerCmd = stick.yaw;
+  if (law < 1 && fc.groundYaw && X.gs > 8) {
+    // ground yaw law (weight on wheels, above taxi speed): the pedals command a yaw rate that is limited to a
+    // comfortable lateral acceleration; pedals centred it holds the heading against weathervaning and asymmetric
+    // thrust within the rudder authority. It hands back to direct pedals below 8..16 m/s and at lift-off.
+    const fade = clamp((X.gs - 8) / 8, 0, 1) * (1 - law);
+    const rCmd = (stick.yaw * 0.9 * model.gear.steerLatAcc) / X.gs;
+    const Nd = (qbar * A.S * A.b * A.cndr * fCtrl * A.drMax) / X.izz;
+    const Kp = Math.min(50, 6 / (Nd > 1e-3 ? Nd : 1e-3)), e = rCmd - X.r;
+    f.yawInt = clamp(f.yawInt + 2 * Kp * e * dt * fade, -0.8, 0.8);
+    const cmd = clamp(Kp * e + f.yawInt, -1, 1);
+    drCmd += (cmd - drCmd) * fade;
+    f.steerCmd += (clamp(stick.yaw + f.yawInt, -1, 1) - stick.yaw) * fade;
+  } else f.yawInt = 0;
   drCmd = clamp(drCmd, -blow, blow);
 
   // ------------------------------------------------------------------ actuators

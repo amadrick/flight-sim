@@ -271,6 +271,7 @@ export function resolveConfig(def) {
     const travel = num(o.travel, Math.min(0.6, Math.max(0.2, 0.12 * g.cgHeight + 0.1)));
     return { name: w.name, px: w.pos[0], py: w.pos[1], pz: w.pos[2], radius: w.wheelRadius, steerable: !!w.steerable, braked: !!w.braked,
       travel, x0: num(o.staticDeflection, 0.65 * travel), zeta: num(o.damping, 0.55), zetaReb: num(o.reboundDamping, 1.0),
+      gasRatio: Math.max(1.05, num(o.gasRatio, 4)), gasL: 0, fExt: 0, xCap: 0, fCap: 0, kCap: 0, xTyre: 0.1 * w.wheelRadius,
       load: 0, k: 0, cC: 0, cR: 0, kt: 0, ct: 0, relax: num(o.relaxation, 1.2 * w.wheelRadius) };
   });
   // static load split between the nose group (ahead of the CG) and the main group
@@ -282,15 +283,23 @@ export function resolveConfig(def) {
   const cs = num(cg.corneringStiffness, 7);
   for (const w of wheels) {
     w.k = w.load / w.x0;
+    // oleo-pneumatic air spring F = fExt * gasL / (gasL - x): static load at x0, load / gasRatio fully extended; beyond
+    // 5x the static load the curve continues as a straight line (bottoming)
+    w.gasL = (w.x0 * w.gasRatio) / (w.gasRatio - 1); w.fExt = w.load / w.gasRatio;
+    w.xCap = w.gasL * (1 - 1 / (5 * w.gasRatio)); w.fCap = 5 * w.load; w.kCap = (w.fExt * w.gasL) / ((w.gasL - w.xCap) * (w.gasL - w.xCap));
+    if (w.travel < w.xCap) w.travel = w.xCap;
     const mEff = w.load / 9.80665, cc = 2 * Math.sqrt(w.k * mEff);
     w.cC = w.zeta * cc; w.cR = w.zetaReb * cc;
     w.kt = (cs * w.load) / w.relax;                     // tyre carcass stiffness [N/m]
     w.ct = 1.1 * w.load;                                // low-speed carcass damping [N s/m]
   }
+  const mainZ = nr ? zr : 0;
   model.gear = {
     wheels, retractTime: num(cg.retractTime, heavy ? 9 : 5), extendTime: num(cg.extendTime, num(cg.retractTime, heavy ? 9 : 5) * 1.2),
-    steerLow: num(cg.steerMaxLow, heavy ? 65 : 32) * DEG, steerHigh: num(cg.steerMaxHigh, heavy ? 5 : 4) * DEG,
-    steerV0: num(cg.steerSpeedLow, 6), steerV1: num(cg.steerSpeedHigh, 30), steerRate: num(cg.steerRate, 50) * DEG,
+    // nose-wheel steering: full pedal = steerMax at walking pace, reduced with speed so that the commanded turn never
+    // exceeds steerLatG of lateral acceleration (kinematic turn: ay = V² tan(delta) / wheelbase)
+    steerMax: num(cg.steerMax, heavy ? 70 : 32) * DEG, steerLatAcc: num(cg.steerLatG, heavy ? 0.22 : 0.30) * 9.80665,
+    wheelbase: Math.max(1, Math.abs((wheels.find(w => w.steerable) || wheels[0]).pz - mainZ)), steerRate: num(cg.steerRate, heavy ? 40 : 60) * DEG,
     brakeMu: num(cg.brakeMu, 0.45), antiskid: cg.antiskid !== false, rollMu: num(cg.rollingMu, 0.018),
     maxSink: num(cg.maxSinkRate, heavy ? 3.05 : 3.6), crashSink: num(cg.crashSinkRate, heavy ? 6 : 8),
     arrestDecel: num(cg.arrestDecel, 30), catapult: cg.catapult ? { accel: num(cg.catapult.accel, 32), stroke: num(cg.catapult.stroke, 90) } : null,
@@ -298,7 +307,7 @@ export function resolveConfig(def) {
 
   // ------------------------------------------------------------------ structure contact points (three-style body axes)
   const st = cfg.structure || {};
-  const mainZ = nr ? zr : 0, bellyY = num(st.bellyY, -0.5 * g.cgHeight);
+  const bellyY = num(st.bellyY, -0.5 * g.cgHeight);
   const tailDeg = num(st.tailStrikeDeg, heavy ? 11 : 14), tz = num(st.tailZ, g.tailZ * 0.86);
   const pts = [];
   pts.push({ name: 'nose', type: 'nose', x: 0, y: num(st.noseY, bellyY * 0.5), z: g.noseZ });
@@ -346,6 +355,9 @@ export function resolveConfig(def) {
     yawDamper: num(f.yawDamper, 1), wr: num(f.yawBandwidth, 2.5), krMax: num(f.yawGainMax, heavy ? 4 : 2), kBeta: num(f.betaGain, heavy ? 1.5 : 3),
     sasAuthority: num(f.sasAuthority, ftype === 'conventional' ? 0.25 : 1), ari: num(f.ari, 0),
     pedalAuthority: num(f.pedalAuthority, 1), groundPitchGain: num(f.groundPitchGain, 1),
+    // rotation assist (weight on wheels): soft pitch-rate and pitch-attitude limits that keep a held-back key off the tail
+    groundYaw: f.groundYawAssist !== false,
+    rotAssist: f.rotationAssist !== false, rotRate: num(f.rotationRate, heavy ? 3.2 : 9) * DEG, rotPitchMax: num(f.rotationPitchMax, tailDeg - (heavy ? 2.2 : 2.5)) * DEG,
   };
 
   // ------------------------------------------------------------------ autopilot
