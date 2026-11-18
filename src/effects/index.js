@@ -18,7 +18,7 @@ import { Trail } from './trails.js';
 import { Plume, createPlumeMaterial, createPlumeGeometry } from './plume.js';
 import { createAircraftLights } from './lights.js';
 import { createVapor } from './vapor.js';
-import { createRain, createLightning } from './weatherfx.js';
+import { createRain, createLightning, createCanopyRain } from './weatherfx.js';
 import * as E from './emitters.js';
 
 const DEG = Math.PI / 180;
@@ -48,6 +48,7 @@ export async function createEffects(ctx) {
   const lights = createAircraftLights(ctx, shared, header);
   const rain = createRain(ctx, shared, header);
   const lightning = createLightning(ctx, shared, header);
+  const canopy = createCanopyRain(ctx, shared, header);
 
   // ---- per-session state ----
   let P = null;          // attached player rig
@@ -363,6 +364,8 @@ export async function createEffects(ctx) {
       shared.uFxLightColor.value.copy(fxLight.color).multiplyScalar(fxLight.intensity * 0.5);
       lights.update(dt, P?.player?.state || null, night);
       rain.update(dt, P?.player?.state || null);
+      const cockpit = !!P && (dcam === 'cockpit' || (!dcam && ctx.cameraRig?.mode === 'cockpit'));
+      canopy.update(dt, P?.player?.state || null, cockpit, rain.amount);
       ps.flush(); smoke.flush();
       if (P) { for (const e of P.engines) e.trail.flush(); for (const t of P.tips) t.flush(); P.smokeTrail.flush(); }
     },
@@ -372,7 +375,7 @@ export async function createEffects(ctx) {
     dispose() {
       detach(); for (const o of offs) o();
       ps.dispose(); smoke.dispose(); plumeGeo.dispose(); ctx.scene.remove(fxLight);
-      lights.dispose(); rain.dispose(); lightning.dispose(); tex.noise3D.dispose(); tex.puff.dispose();
+      lights.dispose(); rain.dispose(); lightning.dispose(); canopy.dispose(); tex.noise3D.dispose(); tex.puff.dispose();
     },
   };
   return fx;

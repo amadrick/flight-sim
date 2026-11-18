@@ -73,6 +73,7 @@ export function createRain(ctx, shared, header) {
   const camW = new THREE.Vector3(), prevCam = new THREE.Vector3(), camVel = new THREE.Vector3(), dv = new THREE.Vector3(), tv = new THREE.Vector3();
   let first = true;
   return {
+    amount: 0,
     update(dt, s) {
       const w = ctx.weather;
       ctx.camera.getWorldPosition(camW); ctx.world.toWorld(camW, camW);
@@ -90,6 +91,7 @@ export function createRain(ctx, shared, header) {
       const n = Math.round(MAXN * Math.min(1, amt * 1.1) * Math.min(1, ctx.quality?.particles ?? 1));
       geo.instanceCount = n;
       mesh.visible = n > 10;
+      this.amount = amt;
       if (!mesh.visible) return;
       // drop velocity (terminal ~9 m/s + wind) relative to the camera
       const vy = -9 - 2 * (w.precipitation || 0);
@@ -239,6 +241,95 @@ export function createLightning(ctx, shared, header) {
     },
     flashPos,
     clear() { t = 1e9; mesh.visible = false; },
+    dispose() { ctx.scene.remove(mesh); geo.dispose(); mat.dispose(); },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Canopy / lens rain (cockpit view only): procedural screen-space water — beads that sit and slowly slide at low
+// speed, blown into streaks that race up and outward over the canopy at speed. One fullscreen triangle, no scene
+// colour needed (drops are shaded as small lenses refracting the sky: bright interior, dark rim, specular glint).
+export function createCanopyRain(ctx, shared, header) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+  const u = { ...shared, uAmt: { value: 0 }, uSpeedK: { value: 0 }, uAspect: { value: 1.7 }, uT: { value: 0 } };
+  const mat = new THREE.ShaderMaterial({
+    ...premulMaterialOpts(), depthTest: false, uniforms: u,
+    vertexShader: /* glsl */`out vec2 vUv; void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: '#define FX_FRAG\n' + header + /* glsl */`
+      uniform float uAmt; uniform float uSpeedK; uniform float uAspect; uniform float uT;
+      in vec2 vUv; out vec4 outColor;
+      vec2 h22(vec2 p) { vec3 a = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); a += dot(a, a.yzx + 33.33); return fract((a.xx + a.yz) * a.zy); }
+      // returns (coverage, rim, highlight)
+      vec3 beads(vec2 p, float sc, float seed) {
+        vec2 g = p * sc, id = floor(g), f = fract(g) - 0.5;
+        vec2 h = h22(id + seed);
+        if (h.x > uAmt * 0.7) return vec3(0.0);
+        float life = fract(uT * (0.05 + 0.1 * h.y) + h.x * 7.0);
+        float r = (0.12 + 0.22 * h.y) * smoothstep(0.0, 0.15, life) * (1.0 - smoothstep(0.85, 1.0, life));
+        vec2 c = (h22(id + seed + 3.1) - 0.5) * 0.5;
+        c.y += (life - 0.5) * 0.3 * (1.0 - uSpeedK);           // slow sliding at low speed
+        vec2 d = f - c; d.y *= 1.0 + 0.4 * uSpeedK;
+        float l = length(d) / max(r, 1e-3);
+        if (l > 1.0) return vec3(0.0);
+        float cov = 1.0 - smoothstep(0.8, 1.0, l);
+        float rim = smoothstep(0.55, 0.95, l) * cov;
+        float hi = pow(max(0.0, 1.0 - length(d / max(r, 1e-3) - vec2(-0.3, 0.35)) * 2.2), 3.0);
+        return vec3(cov, rim, hi);
+      }
+      vec3 streaks(vec2 p, float sc, float seed) {
+        // flow frame: up and outward from the screen centre
+        vec2 g = vec2(p.x * sc, p.y * sc * 0.25);
+        float col = floor(g.x); vec2 h = h22(vec2(col, seed));
+        if (h.x > uAmt) return vec3(0.0);
+        float x = fract(g.x) - 0.5 - (h.y - 0.5) * 0.5;
+        float speed = 0.6 + 1.6 * h.y;
+        float head = fract(uT * speed * uSpeedK * 0.7 + h.x * 13.0) * 1.6 - 0.3;
+        float y = fract(g.y) ;
+        float len = 0.1 + 0.5 * uSpeedK;
+        float along = (head - y) / len;
+        if (along < 0.0 || along > 1.0) return vec3(0.0);
+        float w = 0.09 * (1.0 - along * 0.6);
+        float cov = (1.0 - smoothstep(w * 0.4, w, abs(x))) * (1.0 - along * 0.7);
+        float rim = cov * (0.45 + 0.55 * smoothstep(0.0, w, abs(x)));
+        return vec3(cov, rim, cov * (1.0 - along) * (1.0 - along) * 0.9 * step(abs(x), w * 0.35));
+      }
+      void main() {
+        if (uAmt < 0.01) discard;
+        vec2 p = vec2((vUv.x - 0.5) * uAspect, vUv.y - 0.5);
+        // airflow: streaks run up and slightly outward
+        vec2 q = vec2(p.x / (1.0 + max(p.y + 0.5, 0.0) * 0.6), p.y);
+        vec3 a = beads(p, 7.0, 1.0) * (1.0 - uSpeedK * 0.85);
+        vec3 b = beads(p + 0.37, 13.0, 9.0) * (1.0 - uSpeedK * 0.6);
+        vec3 s1 = streaks(q, 22.0, 4.0) * smoothstep(0.1, 0.4, uSpeedK);
+        vec3 s2 = streaks(q + 0.21, 37.0, 11.0) * smoothstep(0.1, 0.4, uSpeedK);
+        vec3 m = max(max(a, b), max(s1, s2));
+        if (m.x < 0.003) discard;
+        vec3 dir = viewRay(vUv);
+        vec3 sky = atmSkyRadiance(normalize(vec3(dir.x, abs(dir.y) + 0.3, dir.z)));
+        vec3 amb = atmAmbient(uCameraPos, vec3(0.0, 1.0, 0.0));
+        vec3 lit = (sky * 0.55 + amb * 0.3) * (1.0 - m.y * 0.8) + (fxSun(uCameraPos) * 0.2 + sky * 1.5) * m.z;
+        float alpha = m.x * (0.14 + 0.45 * m.y) * min(uAmt * 1.5, 1.0);
+        outColor = fxFinish(lit * alpha, alpha, vec3(0.0), uCameraPos + dir);
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false; mesh.layers.set(LAYERS.POST); mesh.renderOrder = 200; mesh.name = 'fx-canopy-rain'; mesh.visible = false;
+  ctx.scene.add(mesh);
+  let wet = 0;
+  return {
+    update(dt, s, cockpit, rainAmt) {
+      // water builds up quickly in rain and dries/blows off slowly
+      const target = cockpit ? rainAmt : 0;
+      wet += (target - wet) * Math.min(1, dt * (target > wet ? 0.8 : 0.25));
+      if (!cockpit) wet = Math.min(wet, rainAmt);
+      mesh.visible = cockpit && wet > 0.01;
+      if (!mesh.visible) return;
+      u.uAmt.value = wet;
+      u.uSpeedK.value = Math.min(1, Math.max(0, ((s?.tas || 0) - 15) / 70));
+      u.uAspect.value = ctx.camera.aspect || 1.7;
+      u.uT.value = ctx.time.now;
+    },
     dispose() { ctx.scene.remove(mesh); geo.dispose(); mat.dispose(); },
   };
 }
