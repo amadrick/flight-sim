@@ -24,12 +24,14 @@ uniform vec4 uCasc[3];          // xy = origin mod L, z = 1/L, w = N
 uniform vec4 uMesh;             // xy = mesh centre (render space), z = scale, w = max reach (m)
 uniform vec2 uGrid;             // x = core cell size, y = relative ring spacing (alpha)
 uniform float uShoreFade;       // depth (m) at which waves reach full amplitude
-out vec3 vPos; out vec2 vXZ; out vec3 vSunE; out float vHeight; out float vFade;
+uniform float uDispScale;
+uniform float uMoonK;           // moon visibility factor (elevation × night)
+out vec3 vPos; out vec2 vXZ; out vec3 vSunE; out float vHeight; out float vFade; out vec3 vMoonE;
 
 vec3 dispAt(sampler2D t, vec4 c, vec2 xz, float spacing) {
   vec2 uv = (xz + c.xy) * c.z + 0.5 / c.w;
-  // filter wavelengths shorter than ~2.5 vertex spacings (vertex-level band limiting, prevents swimming / aliasing)
-  float lod = log2(max(2.5 * spacing * c.z * c.w, 1.0));
+  // filter wavelengths shorter than ~4 vertex spacings (vertex-level band limiting, prevents swimming / aliasing)
+  float lod = log2(max(4.0 * spacing * c.z * c.w, 1.0));
   return textureLod(t, uv, lod).xyz;
 }
 
@@ -46,13 +48,16 @@ void main() {
   vec3 d = vec3(0.0);
   if (fade > 0.0 && spacing < 400.0) {
     d = dispAt(tDisp0, uCasc[0], xz, spacing) + dispAt(tDisp1, uCasc[1], xz, spacing) + dispAt(tDisp2, uCasc[2], xz, spacing);
-    d *= fade;
+    d *= fade * uDispScale;
   }
   vec3 p = vec3(xz.x + d.x, d.y, xz.y + d.z);
   p.y = min(p.y, uCameraPos.y - 0.3);                 // never let a crest swallow the camera
   p.y -= curvatureDrop(length(p.xz - uCameraPos.xz));
   vPos = p; vXZ = xz; vHeight = d.y; vFade = fade;
   vSunE = atmSunIlluminance(vec3(p.x, max(p.y, 0.0), p.z));
+  // moon irradiance ≈ 25·π × zenith sky radiance of a moonlit night (keeps the glitter path consistent with
+  // whatever night sky/exposure the atmosphere produces)
+  vMoonE = uMoonK > 0.0 ? uMoonK * 25.0 * 3.14159 * atmSkyRadiance(vec3(0.0, 1.0, 0.0)) * vec3(0.85, 0.92, 1.0) : vec3(0.0);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 }
@@ -71,11 +76,10 @@ uniform vec2 uWindDir;          // unit, direction the wind/waves travel (world 
 uniform vec4 uOriginWrap;       // xy = origin mod 4096, zw = origin mod 32768
 uniform vec3 uFoamW;            // whitecap weight per cascade
 uniform vec4 uSea;              // x = wind m/s, y = Hs (m), z = surf strength, w = anisotropy
-uniform vec3 uMoonE;            // moon irradiance (linear)
 uniform vec3 uStreak;           // xy = wind-frame origin offset (wrapped), z = streak strength
 uniform vec3 uFoam;             // x = crest Jacobian threshold, y = gain, z = mean whitecap coverage
 uniform int uDebug;
-in vec3 vPos; in vec2 vXZ; in vec3 vSunE; in float vHeight; in float vFade;
+in vec3 vPos; in vec2 vXZ; in vec3 vSunE; in float vHeight; in float vFade; in vec3 vMoonE;
 layout(location = 0) out vec4 outColor;
 
 const float PI = 3.14159265358979;
@@ -129,12 +133,22 @@ void main() {
   vec4 s0 = texture(tSlope0, uv0), s1 = texture(tSlope1, uv1), s2 = texture(tSlope2, uv2);
   float lod0 = mipLod(uv0, uCasc[0].w), lod1 = mipLod(uv1, uCasc[1].w), lod2 = mipLod(uv2, uCasc[2].w);
   vec2 var = uVarTail + unresolvedVar(0, lod0) + unresolvedVar(1, lod1) + unresolvedVar(2, lod2);
-  vec2 grad = s0.xy + s1.xy + s2.xy;
+  // Fine cascades repeat every 137 m / 19 m: once minified, their regular lattice becomes visible. Fade their
+  // resolved slopes out with LOD and move the removed slope energy into the BRDF variance (energy-conserving).
+  float w0 = 1.0 - 0.7 * smoothstep(3.0, 5.5, lod0);
+  float w1 = 1.0 - smoothstep(2.0, 4.5, lod1), w2 = 1.0 - smoothstep(1.5, 3.5, lod2);
+  var += (1.0 - w0 * w0) * (uVar[9] - unresolvedVar(0, lod0))
+       + (1.0 - w1 * w1) * (uVar[19] - unresolvedVar(1, lod1)) + (1.0 - w2 * w2) * (uVar[29] - unresolvedVar(2, lod2));
+  // per-cascade large-scale amplitude modulation hides FFT tile repetition (Tessendorf-style patch tiling is very
+  // visible from altitude otherwise)
+  vec4 nm = texture(tNoise, (xz + uOriginWrap.xy) / 4096.0);
+  vec3 cm = vec3(0.55) + 0.9 * nm.rgb;
+  vec2 grad = s0.xy * (cm.x * w0) + s1.xy * (cm.y * w1) + s2.xy * (cm.z * w2);
   // whitecaps: crests where the COMBINED horizontal map folds (linearised sum of the cascade Jacobians), plus
   // persistent per-cascade foam trails; when the crest field is minified, fall back to the statistical coverage
   // (Monahan & O'Muircheartaigh 1980: W = 3.84e-6 U^3.41).
   float Jc = s0.w + s1.w + s2.w - 2.0;
-  float crestFoam = clamp((uFoam.x - Jc) * uFoam.y, 0.0, 1.0);
+  float crestFoam = clamp((uFoam.x - Jc) * uFoam.y, 0.0, 1.0) * (0.5 + nm.g);
   float resolved = 1.0 - smoothstep(0.5, 2.5, lod1);
   float cov = max(mix(uFoam.z, crestFoam, resolved), dot(vec3(s0.z, s1.z, s2.z), uFoamW));
 
@@ -180,7 +194,7 @@ void main() {
   vec3 rho = rhoDeep * (1.0 - att) + bottom * att;
   vec3 L = uSunDir;
   vec3 Eamb = atmAmbient(P, vec3(0.0, 1.0, 0.0));
-  vec3 Lw = rho * (vSunE * max(L.y, 0.0) / PI + Eamb + uMoonE * max(uMoonDir.y, 0.0) / PI);
+  vec3 Lw = rho * (vSunE * max(L.y, 0.0) / PI + Eamb + vMoonE * max(uMoonDir.y, 0.0) / PI);
 
   // light scattered through thin, sunlit wave crests (seen looking toward a low sun)
   vec3 Lh = normalize(vec3(L.x, 0.0, L.z) + 1e-5);
@@ -191,7 +205,7 @@ void main() {
 
   // ---- glitter: sun + moon --------------------------------------------------------------------------------
   vec3 spec = vSunE * glitter(L, V, N, tx, ty, var);
-  if (uMoonDir.y > -0.02) spec += uMoonE * glitter(uMoonDir, V, N, tx, ty, var);
+  if (uMoonDir.y > -0.02) spec += vMoonE * glitter(uMoonDir, V, N, tx, ty, var);
 
   // ---- foam: whitecaps (FFT Jacobian, persistent), shoreline foam and breaking bands -------------------------
   vec2 fuv = wq / 16.0;
@@ -200,16 +214,16 @@ void main() {
   float detailW = 1.0 - smoothstep(0.03, 0.25, pxs);
   cov = clamp(cov, 0.0, 1.0);
   // dense crest centres become solid white, edges break up into lace
-  float lace = smoothstep(0.3, 0.62, ft + 0.75 * cov - 0.2);
+  float lace = smoothstep(0.2, 0.55, ft + 0.9 * cov - 0.2);
   float wc = mix(cov * 0.8, min(1.0, cov * 1.7) * lace, detailW);
   // wind-aligned foam streaks (Beaufort 6+), long thin lines in the wind frame (offset wrapped on the CPU)
   vec2 sq = vec2(dot(xz, uWindDir), dot(xz, vec2(-uWindDir.y, uWindDir.x))) + uStreak.xy;
-  vec4 warp = texture(tNoise, sq / 512.0);
-  sq.y += (warp.r - 0.5) * 60.0 + (warp.b - 0.5) * 14.0;
-  vec2 stq = sq * vec2(1.0 / 256.0, 1.0 / 32.0);
+  vec4 warp = texture(tNoise, sq / 256.0);
+  sq.y += (warp.r - 0.5) * 18.0 + (warp.b - 0.5) * 5.0;
+  vec2 stq = sq * vec2(1.0 / 64.0, 1.0 / 8.0);
   float stLod = length(fwidth(stq)) * 256.0;             // texels per pixel across the streaks
-  float st = texture(tNoise, stq).a * (0.4 + 0.9 * texture(tNoise, sq / 2048.0).g);
-  float streak = mix(smoothstep(0.62, 0.9, st), 0.06, smoothstep(0.5, 3.0, stLod));
+  float st = texture(tNoise, stq).a * (0.35 + 0.9 * texture(tNoise, sq / 2048.0).g);
+  float streak = mix(smoothstep(0.66, 0.92, st), 0.07, smoothstep(0.6, 3.0, stLod));
   wc = max(wc, streak * uStreak.z * (0.35 + 0.65 * ft));
   float shore = 0.0;
   if (depth < 9.0) {
@@ -221,7 +235,7 @@ void main() {
     shore = s * mix(0.55, smoothstep(0.15, 0.6, ft), detailW);
   }
   float foam = clamp(max(wc, shore), 0.0, 1.0);
-  vec3 foamRad = 0.8 * (vSunE * max(dot(N, L), 0.0) / PI + atmAmbient(P, N) + uMoonE * max(uMoonDir.y, 0.0) / PI);
+  vec3 foamRad = 0.8 * (vSunE * max(dot(N, L), 0.0) / PI + atmAmbient(P, N) + vMoonE * max(uMoonDir.y, 0.0) / PI);
 
   vec3 col = F * sky + (1.0 - F) * (Lw + sss) + spec;
   col = mix(col, foamRad, foam);

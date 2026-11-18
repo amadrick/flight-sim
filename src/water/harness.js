@@ -34,12 +34,15 @@ async function boot() {
   };
   window.addEventListener('resize', resize); resize();
 
+  // pre=<m>: on the first frame put the camera <m> east so the floating origin snaps elsewhere (origin invariance test)
+  let pre = num('pre', 0);
   function frame(realDt) {
     ctx.renderer.info.reset();
     ctx.time.advance(realDt);
     const dt = ctx.time.dt;
     ctx.weather.update(dt);
     camWorld.x += Math.sin(hdg) * speed * dt; camWorld.z -= Math.cos(hdg) * speed * dt;
+    if (pre) { camWorld.x += pre; ctx.world.updateOrigin(camWorld); camWorld.x -= pre; pre = 0; }
     ctx.world.updateOrigin(camWorld);
     ctx.world.toRender(camWorld, ctx.camera.position);
     ctx.camera.rotation.set(0, 0, 0); ctx.camera.rotation.order = 'YXZ';

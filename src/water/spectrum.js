@@ -18,6 +18,7 @@ export const G = 9.81;
 export const TIME_PERIOD = 1000;                 // s; dispersion is quantised to multiples of 2pi/T
 export const OMEGA0 = (2 * Math.PI) / TIME_PERIOD;
 export const FETCH = 150000;                     // m (open-ocean wind fetch)
+export const SPREAD_BLEND = 0.2;                 // Horvath 2015 'spread blend' toward isotropic: short-crested seas
 
 /** quantised deep-water dispersion (integer multiple of OMEGA0, returned as the integer multiplier) */
 export function dispersionIndex(k) { return Math.floor(Math.sqrt(G * k) / OMEGA0); }
@@ -50,7 +51,7 @@ export function donelanBanner(w, wp, theta) {
 }
 
 // cos^{2s}(theta/2) spreading for swell, normalised numerically
-const SWELL_S = 20;
+const SWELL_S = 6;
 let swellNorm = 0;
 { const n = 2048; let sum = 0; for (let i = 0; i < n; i++) { const t = -Math.PI + ((i + 0.5) / n) * 2 * Math.PI; sum += Math.pow(Math.abs(Math.cos(t / 2)), 2 * SWELL_S); } swellNorm = 1 / (sum * (2 * Math.PI / n)); }
 const swellD = (theta) => swellNorm * Math.pow(Math.abs(Math.cos(theta / 2)), 2 * SWELL_S);
@@ -68,8 +69,8 @@ export function makeSeaState(windSpeed, windAngle) {
   const U = Math.max(0.5, windSpeed);
   const wind = jonswapParams(U);
   // Swell: long, narrow, from ~35 deg off the local wind, present even on calm days (open-ocean look).
-  const swellHs = 0.55 + 0.035 * U;
-  const swell = { wp: Math.sqrt((G * 2 * Math.PI) / 170), alpha: 1, gamma: 6 };
+  const swellHs = 0.5 + 0.03 * U;
+  const swell = { wp: Math.sqrt((G * 2 * Math.PI) / 170), alpha: 1, gamma: 3.3 };
   swell.alpha = (swellHs / 4) ** 2 / jonswapM0(swell);
   const swellAngle = windAngle + 0.6;
   const psi = (kx, kz) => {
@@ -78,7 +79,7 @@ export function makeSeaState(windSpeed, windAngle) {
     const w = Math.sqrt(G * k);
     const dwdk = G / (2 * w);
     const th = Math.atan2(kz, kx);
-    const sw = jonswap(w, wind) * donelanBanner(w, wind.wp, wrapPi(th - windAngle));
+    const sw = jonswap(w, wind) * (donelanBanner(w, wind.wp, wrapPi(th - windAngle)) * (1 - SPREAD_BLEND) + SPREAD_BLEND / (2 * Math.PI));
     const ss = jonswap(w, swell) * swellD(wrapPi(th - swellAngle));
     return (sw + ss) * dwdk / k;
   };

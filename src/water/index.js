@@ -60,9 +60,16 @@ export async function createWater(ctx) {
   const terrainGLSL = ctx.terrain?.heightGLSL || 'float terrainHeight(vec2 w) { return -1000.0; }';
   const terrainUniforms = ctx.terrain?.heightUniforms || {};
 
+  // SwiftShader (headless tests) implements anisotropic filtering with axis-aligned streak artifacts: disable there.
+  let software = false;
+  try {
+    const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+    software = /swiftshader|llvmpipe|software/i.test(String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)));
+  } catch { /* ignore */ }
+  const aniso = () => (ctx.params.raw?.waniso ? +ctx.params.raw.waniso : software ? 1 : Math.min(16, ctx.quality.anisotropy || 4));
   const noiseTex = makeNoiseTexture(256, (ctx.params.seed | 0) + 11);
   const foamTex = makeFoamTexture(256, (ctx.params.seed | 0) + 23);
-  noiseTex.anisotropy = foamTex.anisotropy = Math.min(8, ctx.quality.anisotropy || 4);
+  noiseTex.anisotropy = foamTex.anisotropy = Math.min(8, aniso());
 
   const cascadeDefs = CASCADE_L.map((L, i) => ({
     L,
@@ -85,9 +92,10 @@ export async function createWater(ctx) {
     uOriginWrap: { value: new THREE.Vector4() },
     uFoamW: { value: new THREE.Vector3(1, 0.7, 0.25) },
     uSea: { value: new THREE.Vector4(5, 1, 0.5, 8) },
-    uMoonE: { value: new THREE.Vector3() },
+    uMoonK: { value: 0 },
     uFoam: { value: new THREE.Vector3(0.35, 2.5, 0) },
     uStreak: { value: new THREE.Vector3() },
+    uDispScale: { value: ctx.params.raw?.wdisp !== undefined ? +ctx.params.raw.wdisp : 1 },
     uDebug: { value: +(ctx.params.raw?.wdebug || 0) },
   };
 
@@ -109,7 +117,7 @@ export async function createWater(ctx) {
     if (cfg && next.N === cfg.N && next.S === cfg.S && next.c0 === cfg.c0) return;
     if (!cfg || next.N !== cfg.N) {
       fft?.dispose();
-      fft = createOceanFFT(renderer, { N: next.N, cascades: cascadeDefs, seed: ctx.params.seed | 0, anisotropy: Math.min(16, ctx.quality.anisotropy || 4) });
+      fft = createOceanFFT(renderer, { N: next.N, cascades: cascadeDefs, seed: ctx.params.seed | 0, anisotropy: aniso() });
       lastSea.U = -1;
     }
     if (!cfg || next.S !== cfg.S || next.c0 !== cfg.c0) {
@@ -159,9 +167,9 @@ export async function createWater(ctx) {
     uniforms.uVarTail.value.set(vt.tail[0], vt.tail[1]);
     uniforms.uWindDir.value.set(Math.cos(angle), Math.sin(angle));
     const hs = 4 * Math.sqrt(Math.max(1e-6, estimateVarH(sea)));
-    uniforms.uSea.value.set(U, hs, 0.35 + 0.65 * smooth(2, 14, U), Math.min(16, ctx.quality.anisotropy || 4));
+    uniforms.uSea.value.set(U, hs, 0.35 + 0.65 * smooth(2, 14, U), aniso());
     uniforms.uShoreFade.value = Math.max(4, 2.2 * hs);
-    uniforms.uFoam.value.set(0.38, 2.5, Math.min(0.1, 3.84e-6 * Math.pow(U, 3.41)) * 1.5);
+    uniforms.uFoam.value.set(0.3 + 0.38 * smooth(7, 17, U), 4.0, Math.min(0.12, 3.84e-6 * Math.pow(U, 3.41)) * 2.0);
     comps = componentsFor(sea, defs.slice(0, 2), fft.cascades.slice(0, 2).map((c) => c.gauss), 64, 16, comps);
   }
   // height variance by radial integration (for crest normalisation / shore fade)
@@ -204,10 +212,7 @@ export async function createWater(ctx) {
     // moon: irradiance scaled against the night sky so its glitter path reads at night
     const moonUp = smooth(-0.02, 0.1, ctx.env.moonDir.y);
     const night = ctx.env.nightFactor ?? 0;
-    const sky = ctx.env.ambientSky;
-    const ref = Math.max(0.02, (sky.r + sky.g + sky.b) / 3) * Math.PI;
-    const me = moonUp * night * ref * 3.0;
-    uniforms.uMoonE.value.set(me * 0.85, me * 0.92, me);
+    uniforms.uMoonK.value = moonUp * night;
   }
 
   function heightAt(x, z) {

@@ -7,7 +7,7 @@
 // Cost (N = 256, 3 cascades): 3 × 18 fullscreen 256² passes ≈ 3.5 M fragments/frame, ~1 ms on a mid-range GPU.
 import * as THREE from 'three';
 import { FULLSCREEN_VERT, FullscreenPass } from '../core/glsl.js';
-import { gaussianField, OMEGA0, TIME_PERIOD } from './spectrum.js';
+import { gaussianField, OMEGA0, TIME_PERIOD, SPREAD_BLEND } from './spectrum.js';
 
 const COMMON = /* glsl */`
 precision highp float; precision highp int;
@@ -23,6 +23,7 @@ uniform vec4 uSwell;  // angle, wp, alpha, normalisation
 uniform float uSwellS;
 in vec2 vUv; layout(location = 0) out vec4 outH0;
 const float G = 9.81;
+const float SPREAD_BLEND = ${SPREAD_BLEND.toFixed(4)};
 float jonswap(float w, float wp, float alpha, float gamma) {
   if (w < 1e-4) return 0.0;
   float sigma = w <= wp ? 0.07 : 0.09;
@@ -41,8 +42,8 @@ float psi(vec2 k) {
   float kl = length(k);
   float w = sqrt(G * kl), dwdk = G / (2.0 * w);
   float th = atan(k.y, k.x);
-  float sw = jonswap(w, uWind.y, uWind.z, uWind.w) * donelanBanner(w, uWind.y, wrapPi(th - uWind.x));
-  float ss = jonswap(w, uSwell.y, uSwell.z, 6.0) * uSwell.w * pow(abs(cos(wrapPi(th - uSwell.x) * 0.5)), 2.0 * uSwellS);
+  float sw = jonswap(w, uWind.y, uWind.z, uWind.w) * (donelanBanner(w, uWind.y, wrapPi(th - uWind.x)) * (1.0 - SPREAD_BLEND) + SPREAD_BLEND / (2.0 * PI));
+  float ss = jonswap(w, uSwell.y, uSwell.z, 3.3) * uSwell.w * pow(abs(cos(wrapPi(th - uSwell.x) * 0.5)), 2.0 * uSwellS);
   return (sw + ss) * dwdk / kl;
 }
 float amp(vec2 m) {
