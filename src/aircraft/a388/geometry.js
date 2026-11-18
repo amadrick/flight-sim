@@ -1,0 +1,24 @@
+// Airbus A380-800 — reference geometry in BODY axes: origin = nominal CG, +X right wing, +Y up, -Z nose. Metres.
+// Shared contract between the visual model and the physics config (see f16/geometry.js for the rules).
+// Source: docs/aircraft/a388.md (published figures + proportion-derived estimates, see its confidence notes).
+export default {
+  length: 72.72, span: 79.75, height: 24.09, wingArea: 845,
+  noseZ: -37.5, tailZ: 35.22,
+  cgHeight: 5.7,
+  pilotEye: [-0.55, 2.4, -31.5],
+  gear: [
+    { name: 'nose', pos: [0, -5.7, -28.4], wheelRadius: 0.55, steerable: true, braked: false },
+    { name: 'left', pos: [-6.25, -5.7, 0.8], wheelRadius: 0.6, steerable: false, braked: true },
+    { name: 'right', pos: [6.25, -5.7, 0.8], wheelRadius: 0.6, steerable: false, braked: true },
+    { name: 'bodyLeft', pos: [-2.65, -5.7, 4.9], wheelRadius: 0.6, steerable: false, braked: true },
+    { name: 'bodyRight', pos: [2.65, -5.7, 4.9], wheelRadius: 0.6, steerable: false, braked: true },
+  ],
+  engines: [
+    { nozzle: [-25.2, -3.4, 7.8], intake: [-25.2, -3.4, 1], nozzleRadius: 1 },
+    { nozzle: [-12.7, -3.2, -2.5], intake: [-12.7, -3.2, -9.3], nozzleRadius: 1 },
+    { nozzle: [12.7, -3.2, -2.5], intake: [12.7, -3.2, -9.3], nozzleRadius: 1 },
+    { nozzle: [25.2, -3.4, 7.8], intake: [25.2, -3.4, 1], nozzleRadius: 1 },
+  ],
+  wingtips: [[-39.875, 2.1, 14.5], [39.875, 2.1, 14.5]],
+  lights: { navLeft: [-39.8, 2.1, 14], navRight: [39.8, 2.1, 14], tail: [0, 10, 34.7], strobe: [0, 5.5, 22.5], beacon: [0, -3.6, -7.5], landing: [-6, -2.9, -3.5] },
+};
