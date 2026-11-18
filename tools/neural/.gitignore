@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+data/
+runs/
+*.npz
+*.npy
+*.pt
+*.nbi
+*.nbc
