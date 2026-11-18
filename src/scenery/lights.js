@@ -165,7 +165,7 @@ export function createLightSystem(ctx) {
     uniforms.uGain.value = 140 * gainMul;
     const night = ctx.env.nightFactor ?? 0;
     const vis = ctx.weather.visibility ?? 60000;
-    const lowVis = 1 - THREE.MathUtils.smoothstep(vis, 3000, 9000);   // lights on by day in low visibility
+    const lowVis = Math.max(1 - THREE.MathUtils.smoothstep(vis, 5000, 10000), Math.min(1, (ctx.weather.precipitation || 0) * 1.2));   // on by day in low visibility / rain
     uniforms.uOn.value = Math.max(THREE.MathUtils.smoothstep(night, 0.15, 0.7), lowVis);
     uniforms.uVis.value = Math.max(800, vis);
   }

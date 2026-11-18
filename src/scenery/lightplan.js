@@ -161,7 +161,7 @@ export function buildLightPlan(L, heightFn = () => 0) {
       for (const u of E.papi) {
         for (const off of [-0.45, 0.45]) {
           const xx = u.x + E.left.x * off, zz = u.z + E.left.z * off;
-          push(xx, 0.8, zz, COLORS.white, 2.6, [-de.x, 0.05, -de.z], 0.8, MODE.PAPI, u.angle * DEG, 0, 0.3, 0.55);
+          push(xx, 0.8, zz, COLORS.white, 2.6, [-de.x, 0.05, -de.z], 0.8, MODE.PAPI, u.angle * DEG, 0, 0.3, 0.3);
         }
       }
     }

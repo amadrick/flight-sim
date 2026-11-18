@@ -14,7 +14,7 @@ const dirs = (hdg) => { const h = hdg * DEG; return { dx: Math.sin(h), dz: -Math
 
 export function buildStructures(L, B, signIndex, poles) {
   for (const b of L.buildings) building(B, b, L);
-  if (L.tower) tower(B, L.tower, L.kind);
+  if (L.tower) tower(B, L.tower, L.tower.kind);
   for (const p of L.props) prop(B, p, signIndex, L);
   // PAPI boxes
   for (const R of L.runways) for (const E of R.ends) for (const u of E.papi) {
@@ -31,6 +31,9 @@ export function buildStructures(L, B, signIndex, poles) {
     for (const sg of [-1, 1]) {
       const x = h.x + d.rx * sg * (h.wid / 2 + 9), z = h.z + d.rz * sg * (h.wid / 2 + 9);
       sign(B, x, z, h.hdg, 2.8, 0.9, txt, signIndex, false);
+      // collocated taxiway location sign (yellow on black), outboard of the holding position sign
+      const lx = x + d.rx * sg * 2.4, lz = z + d.rz * sg * 2.4;
+      sign(B, lx, lz, h.hdg, 1.4, 0.9, 'loc:' + h.twyName, signIndex, false);
     }
   }
   // approach light stanchions and crossbars
@@ -145,7 +148,7 @@ function building(B, b, L) {
       const wallCol = b.mil ? C.mil : C.civil;
       const wallH = b.mil ? b.h * 0.55 : b.h * 0.82;
       B.box({ pa: 'metal', na: 'metal', pr: 'metal', nr: 'door' }, b.x, 0, b.z, b.hdg, b.len, b.wid, wallH, wallCol, { cols: { nr: b.mil ? C.milDark : C.grey } });
-      if (b.mil) B.vault('metal', { pa: 'metal', na: 'metal' }, b.x, wallH, b.z, b.hdg + 90, b.wid, b.len, b.h - wallH, C.milDark, 12);
+      if (b.mil) B.vault('metal', { pa: 'metal', na: 'metal' }, b.x, wallH, b.z, b.hdg + 90, b.wid, b.len, b.h - wallH, C.mil, 12);
       else B.gable('roof', 'metal', b.x, wallH, b.z, b.hdg, b.len, b.wid, b.h - wallH, C.grey, wallCol);
       // door frame header
       B.box('plain', b.x - d.rx * (b.wid / 2 + 0.3), wallH - 2.2, b.z - d.rz * (b.wid / 2 + 0.3), b.hdg, b.len + 0.6, 0.8, 2.4, b.mil ? C.milDark : C.blue);

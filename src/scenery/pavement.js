@@ -103,7 +103,7 @@ export function makePavementMaterial(ctx, shared, pools) {
         float gWetMask; float gRough; float gHeight;`)
       .replace('#include <map_fragment>', `
         {
-          float kind = vInfo.x; float plen = vInfo.y; float pwid = vInfo.z; float seed = vInfo.w;
+          float kind = floor(vInfo.x + 0.5); float plen = vInfo.y; float pwid = vInfo.z; float seed = floor(vInfo.w + 0.5);
           vec2 F = vField;
           vec4 nA = texture(tNoise, F / 3.1);
           vec4 nB = texture(tNoise, F / 37.0 + 0.31);
@@ -118,9 +118,9 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec2 sl = vLocal + vec2(plen, pwid) * 0.5;
             vec2 cell = floor(sl / slab);
             float tone = 0.92 + 0.14 * scnHash(cell + seed);
-            float j = max(scnLines(sl.x, slab, 0.03), scnLines(sl.y, slab, 0.03));
+            float j = max(scnLines(sl.x, slab, 0.025), scnLines(sl.y, slab, 0.025));
             col = (kind < 1.5 ? vec3(0.42, 0.41, 0.385) : vec3(0.36, 0.355, 0.335)) * tone * (0.86 + 0.22 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
-            col *= 1.0 - 0.55 * j;
+            col *= 1.0 - 0.4 * j;
             col *= 1.0 - 0.35 * smoothstep(0.62, 0.8, nB.b) * (kind > 2.5 ? 1.0 : 0.4);      // oil / fuel stains
             col *= 1.0 - 0.4 * crack * step(0.8, scnHash(cell * 1.7 + 3.1));
             hgt -= j * 0.01;
@@ -132,7 +132,7 @@ export function makePavementMaterial(ctx, shared, pools) {
             float lane = kind < 2.5 ? 7.5 : 5.0;
             float seam = scnLines(vLocal.y + pwid * 0.5 + lane * 0.5, lane, 0.12);
             col *= 1.0 - 0.3 * seam;
-            vec2 pc = floor((vLocal + vec2(plen, pwid) * 0.5) / vec2(55.0, lane));
+            vec2 pc = floor((vLocal + vec2(plen, pwid) * 0.5) / vec2(55.0, lane)) + 0.5;
             float patchK = step(0.9, scnHash(pc + seed * 1.3));
             col *= mix(1.0, 0.72 + 0.1 * nB.r, patchK);
             col *= 1.0 - 0.4 * crack * (1.0 - patchK);
@@ -159,7 +159,7 @@ export function makePavementMaterial(ctx, shared, pools) {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         normal = scnBump(-vViewPosition, normal, gHeight);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += diffuseColor.rgb * poolLight(vField) * uNight;`);
+        if (uNight > 0.001) totalEmissiveRadiance += diffuseColor.rgb * poolLight(vField) * uNight;`);
   };
   mat.customProgramCacheKey = () => 'scn-pave';
   return mat;
@@ -176,7 +176,7 @@ export function buildPavementGeometry(L) {
     const h = r.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
     const nl = Math.max(1, Math.ceil(r.len / 120)), nw = Math.max(1, Math.ceil(r.wid / 120));
     const base = pos.length / 3;
-    const seed = (seedN++ * 7.31) % 97;
+    const seed = (seedN++ * 7) % 97;
     for (let j = 0; j <= nw; j++) for (let i = 0; i <= nl; i++) {
       const a = -r.len / 2 + (i / nl) * r.len, c = -r.wid / 2 + (j / nw) * r.wid;
       pos.push(r.x + dx * a + rx * c, y, r.z + dz * a + rz * c);
@@ -197,6 +197,13 @@ export function buildPavementGeometry(L) {
     }
   }
   for (const P of L.parkingLots) addRect({ ...P }, 'lot', LAYER_Y[0] + 0.002);
+  for (const t of L.fillets) {
+    const base = pos.length / 3;
+    for (const p of t) { pos.push(p.x, LAYER_Y[3] - 0.002, p.z); loc.push(0, 0); info.push(KIND_ID.twy, 1, 1, 3); }
+    // keep the winding facing up
+    const cr = (t[1].x - t[0].x) * (t[2].z - t[0].z) - (t[1].z - t[0].z) * (t[2].x - t[0].x);
+    if (cr < 0) idx.push(base, base + 1, base + 2); else idx.push(base, base + 2, base + 1);
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
@@ -314,7 +321,7 @@ export function makePaintMaterial(ctx, shared, poolsLocal) {
         }`)
       .replace('#include <roughnessmap_fragment>', `float roughnessFactor = mix(roughness, 0.15, uWet);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += diffuseColor.rgb * poolLight(vField) * uNight;`);
+        if (uNight > 0.001) totalEmissiveRadiance += diffuseColor.rgb * poolLight(vField) * uNight;`);
   };
   mat.customProgramCacheKey = () => 'scn-paint';
   return mat;

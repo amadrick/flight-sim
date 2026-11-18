@@ -90,6 +90,7 @@ export async function createScenery(ctx) {
   for (const L of layouts) {
     for (const p of L.props) if (p.type === 'drsign') { signTexts.add('dr:' + p.a); signTexts.add('dr:' + p.b); }
     for (const R of L.runways) signTexts.add('hold:' + R.ends.map((e) => e.digits + e.letter).join('-'));
+    for (const h of L.holds) signTexts.add('loc:' + h.twyName);
   }
   const signs = makeSignAtlas(ctx, [...signTexts]);
 
@@ -121,6 +122,9 @@ export async function createScenery(ctx) {
   const GEO = { airliner: makeAirliner(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
   const LIVERY = [0x0b3d91, 0xc8102e, 0x00843d, 0xf2a900, 0x5b2c83, 0x0093b2, 0x1d1d1b, 0xe35205, 0x7a1f2b, 0x2e6db4];
 
+  const fixtureGeo = (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.035, 0.28, 6, lin(0x9a9a40)); B.cylinder('b', 0, 0.28, 0, 0.07, 0.09, 8, [1, 1, 1], 'b', 0.05); return B.build().b; })();
+  const fixtureMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.1 }));
+
   const airports = [];
   let stats = { drawables: 0, triangles: 0, lights: 0, instances: 0 };
   AIRPORTS.forEach((ap, i) => {
@@ -137,6 +141,8 @@ export async function createScenery(ctx) {
     pave.receiveShadow = true; far.add(pave);
     const paint = new THREE.Mesh(buildPaintGeometry(L, markings[i]), makePaintMaterial(ctx, shared, paveMat.userData.pools));
     paint.receiveShadow = true; paint.renderOrder = 1; far.add(paint);
+    if (ctx.params.raw?.shide?.includes('paint')) paint.visible = false;
+    if (ctx.params.raw?.shide?.includes('mid')) mid.visible = false;
     // structures
     const B = new MultiBuilder(tiles);
     buildStructures(L, B, signs.index, plans[i].poles);
@@ -203,8 +209,22 @@ export async function createScenery(ctx) {
       near.add(s); socks.push(s);
     }
     // lights
+    // elevated edge-light fixtures (runway + taxiway), visible by day
+    {
+      const d = plans[i].data, seen = new Set(), list = [];
+      for (let k = 0; k < plans[i].count; k++) {
+        const o = k * 16, y = d[o + 1];
+        if (d[o + 11] !== 0 || y < 0.3 || y > 0.4) continue;
+        const key = Math.round(d[o] * 10) + ',' + Math.round(d[o + 2] * 10);
+        if (seen.has(key)) continue; seen.add(key);
+        const blue = d[o + 5] > d[o + 3];
+        list.push({ x: d[o], z: d[o + 2], hdg: 0, color: blue ? 0x3050ff : 0xfff2c0 });
+      }
+      if (list.length) near.add(instances(fixtureGeo, fixtureMat, list));
+    }
     const lightMesh = lights.build(plans[i]);
     root.add(lightMesh);
+    if (ctx.params.raw?.shide?.includes('lights')) lightMesh.layers.set(5);
 
     const F = L.frame;
     const towerPosition = L.tower ? new THREE.Vector3(ap.position.x + L.tower.x, ap.elevation + L.tower.h + 1.7, ap.position.z + L.tower.z) : null;

@@ -64,7 +64,7 @@ export function buildLayout(airport) {
     id: airport.id, kind: airport.kind, spec, frame: F, elevation: airport.elevation,
     radius: airport.flattenRadius,
     runways: [], pave: [], taxiLines: [], holds: [], stands: [], buildings: [], props: [],
-    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [],
+    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [],
   };
 
   // ---------------- runways ----------------
@@ -133,10 +133,14 @@ export function buildLayout(airport) {
     if (airport.kind === 'military') conn.push(R.a, R.a - 0.27 * R.len, R.a + 0.27 * R.len);
     else if (airport.kind === 'international') conn.push(R.a, R.a - 0.3 * R.len, R.a + 0.3 * R.len);
     else conn.push(R.a);
-    for (const a of conn) {
+    conn.sort((p, q) => p - q);
+    const letter = 'ABCD'[R.i] || 'A';
+    R.twyName = letter;
+    conn.forEach((a, ci) => {
+      const twyName = letter + (ci + 1);
       const isEnd = Math.abs(Math.abs(a - R.a) - eA) < 1;
       const cMid = (R.c + ct) / 2;
-      addTwy(a, cMid, tw, spec.T, F.H + 90, { connector: true });
+      addTwy(a, cMid, spec.T, tw, F.H + 90, { connector: true });
       // centreline from taxiway into the runway, with lead-on/off curves
       const rad = Math.min(spec.T * 0.4, airport.kind === 'international' || airport.kind === 'military' ? 55 : 35);
       const pts = [F.P(a, ct), F.P(a, R.c + s * (R.wid / 2 + rad))];
@@ -146,9 +150,18 @@ export function buildLayout(airport) {
       for (const da of dirs) L.taxiLines.push({ arc: arcPts(F, a, R.c + s * (R.wid / 2 + rad), da, s, rad, R.wid / 2 + rad), kind: 'lead' });
       // holding position marking (pattern A): across the connector at `hold` metres from the runway centreline
       const ph = F.P(a, R.c + s * spec.hold);
-      L.holds.push({ x: ph.x, z: ph.z, hdg: norm360(F.H + (s > 0 ? 90 : -90)), wid: tw, rwy: R.i, rwyName: R.id });
-      L.connectors.push({ rwy: R.i, a, isEnd });
-    }
+      L.holds.push({ x: ph.x, z: ph.z, hdg: norm360(F.H + (s > 0 ? 90 : -90)), wid: tw, rwy: R.i, rwyName: R.id, twyName });
+      L.connectors.push({ rwy: R.i, a, isEnd, name: twyName });
+      // junction fillets (triangles) where the connector meets the runway shoulder and the parallel taxiway
+      const f = airport.kind === 'international' || airport.kind === 'military' ? 24 : 14;
+      const cR = R.c + s * (R.wid / 2 + R.shoulder), cT = ct - s * (tw / 2 + tsh);
+      for (const sa of [-1, 1]) {
+        if (isEnd && Math.sign(R.a - a) !== sa) continue;   // no fillet beyond the runway end
+        const a0 = a + sa * tw / 2;
+        L.fillets.push([F.P(a0, cR), F.P(a0 + sa * f, cR), F.P(a0, cR + s * f)]);
+        L.fillets.push([F.P(a0, cT), F.P(a0 + sa * f, cT), F.P(a0, cT - s * f)]);
+      }
+    });
     // rapid exit taxiways (30°) for each landing direction
     if (spec.ret) {
       const ang = 30 * DEG;

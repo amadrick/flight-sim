@@ -3,8 +3,9 @@ import * as THREE from 'three';
 
 // ---------- tileable value noise helpers ----------
 function hash2(ix, iy, seed) {
-  let h = (ix * 374761393 + iy * 668265263 + seed * 2147483647) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  let h = Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul(iy | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b9);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 function tileNoise(x, y, period, seed) {

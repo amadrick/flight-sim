@@ -66,6 +66,13 @@ test('surface: parallel taxiway and apron are reported; runway wins where they o
       const p = L.frame.P(R.a, R.twyC);
       assert.equal(q(ap.position.x + p.x, ap.position.z + p.z).type, 'taxiway', ap.id + ' twy');
     }
+    for (const c of L.connectors) {
+      const R = L.runways[c.rwy];
+      for (const t of [0.35, 0.5, 0.8]) {
+        const p = L.frame.P(c.a, R.c + (R.twyC - R.c) * t);
+        assert.equal(q(ap.position.x + p.x, ap.position.z + p.z).type, 'taxiway', ap.id + ' connector ' + c.name);
+      }
+    }
     for (const A of L.aprons) {
       const p = L.frame.P(A.a, A.c);
       assert.equal(q(ap.position.x + p.x, ap.position.z + p.z).type, 'apron', ap.id + ' apron');
