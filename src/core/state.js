@@ -67,8 +67,8 @@ export function createControls() {
     throttle: 0,   // 0..1 lever. Aircraft with afterburner: 0..0.9 = idle..MIL, 0.9..1 = min..max AB. Others: 1 = TOGA
     brakes: 0,     // 0..1 wheel brakes (held)
     speedbrake: 0, // 0..1 commanded (input toggles this between 0 and 1)
-    lookX: 0, lookY: 0,  // head/camera look, -1..1
-    zoom: 0,       // -1..1
+    lookX: 0, lookY: 0,  // head/camera look deflection, -1..1 (+X = look right, +Y = look UP)
+    zoom: 0,       // -1..1 zoom rate (+ = zoom IN)
     // Discrete actions are NOT here — they are events: ctx.events.emit('cmd', { name }) — see ARCHITECTURE.md §Commands
   };
 }

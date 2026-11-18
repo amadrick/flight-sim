@@ -53,7 +53,7 @@ export async function createInput(ctx) {
     bindings: BINDINGS,
     gamepadBindings: GAMEPAD_BINDINGS,
     lookDelta: { x: 0, y: 0 },   // px this frame (right-drag + right stick), for orbit-style cameras
-    zoomDelta: 0,                // wheel notches this frame, + = scroll toward you (zoom out)
+    zoomDelta: 0,                // wheel notches this frame, + = zoom IN (scroll away from you)
     mouseYoke: false,
     touchEnabled: false,
     gamepadConnected: false,
@@ -446,12 +446,13 @@ export async function createInput(ctx) {
     if (Math.abs(pad.lookX) > ANALOG_EPS) lx = pad.lookX;
     if (Math.abs(pad.lookY) > ANALOG_EPS) ly = pad.lookY;
     if (open) { lx = 0; ly = 0; }
-    c.lookX = lx; c.lookY = ly;
-    input.lookDelta.x = mouse.pendX + pad.lookX * 700 * dt; input.lookDelta.y = mouse.pendY + pad.lookY * 700 * dt;
+    // Integrator: canonical convention (shared with the camera rig) is lookY/lookDelta.y > 0 = look UP, zoom/zoomDelta > 0 = zoom IN.
+    c.lookX = lx; c.lookY = -ly;
+    input.lookDelta.x = mouse.pendX + pad.lookX * 700 * dt; input.lookDelta.y = -(mouse.pendY + pad.lookY * 700 * dt);
     mouse.pendX = mouse.pendY = 0;
 
     // zoom impulses
-    input.zoomDelta = open ? 0 : mouse.zoomPend; mouse.zoomPend = 0;
+    input.zoomDelta = open ? 0 : -mouse.zoomPend; mouse.zoomPend = 0;
     c.zoom = clamp(approach(c.zoom + input.zoomDelta * 0.25, 0, 3 * dt), -1, 1);
 
     if (touchVisible) updateTouchUI();
