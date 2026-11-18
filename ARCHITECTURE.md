@@ -178,6 +178,10 @@ perspective, a = transmittance; composite is `scene * a + rgb`), `ctx.clouds.sha
 `float cloudShadow(vec3 renderPos)` → sun transmittance through the cloud layer, 1 = clear) and `ctx.clouds.shadowUniforms`.
 The pipeline compiles its composite lazily on first render so it can include `shadowGLSL`.
 
+**Terrain ↔ other shaders:** `ctx.terrain.heightGLSL` defines `float terrainHeight(vec2 worldXZ)` (metres MSL, negative under
+the sea; cheap GPU approximation of `heightAt`, e.g. a baked macro height texture) with uniforms `ctx.terrain.heightUniforms`
+— used by the ocean for depth colour and shoreline foam.
+
 ## 7. UI conventions
 
 - DOM UI goes inside `ctx.uiRoot`; inject one `<style>` per module with class names prefixed by the module (`.menu-…`, `.hud-…`,
@@ -215,3 +219,30 @@ node tools/shot.mjs --out shots/x.png --params "aircraft=f16&start=air&tod=17.5&
 - Final report (your last message, it is read by the integrator, not the user): (1) what you built, (2) public API and any
   contract deviations, (3) how you verified it (tests run, screenshots you looked at — give paths), (4) known issues / what you
   would do next, (5) any change you need in integrator-owned files.
+
+## 10. Default controls (input implements them, the menu documents them — keep both in sync with this table)
+
+| Action | Keys | | Action | Keys |
+|---|---|---|---|---|
+| Pitch (nose up / down) | `S` or `↓` / `W` or `↑` | | Landing gear | `G` |
+| Roll left / right | `A` or `←` / `D` or `→` | | Flaps retract / extend one notch | `[` / `]` |
+| Rudder left / right | `Q` / `E` | | Speedbrake / spoilers | `B` |
+| Throttle up / down | `R` or `=` or `PageUp` / `F` or `-` or `PageDown` | | Wheel brakes (hold) | `Space` |
+| Throttle idle / MIL / max | `1` / `9` / `0` | | Parking brake | `K` |
+| Pitch trim nose down / up | `,` / `.` | | Autopilot (hold altitude + heading) | `T` |
+| Engines start / stop | `I` | | Arrestor hook | `H` |
+| Lights (landing) | `L` | | Camera next / previous | `C` / `Shift+C` |
+| Mouse yoke on/off | `M` | | Camera look | right-drag or gamepad right stick; wheel = zoom |
+| HUD on/off | `U` | | Pause | `P` |
+| Menu | `Esc` | | Restart flight | `Backspace` |
+
+Never bind `Ctrl`/`Alt`/`Meta` combinations (browser shortcuts such as Ctrl+W cannot be cancelled). Flight keys are ignored
+while `ctx.menu?.isOpen`.
+
+## 11. Roster (ids)
+
+Now: `f16` (F-16C Fighting Falcon), `b738` (Boeing 737-800). Next wave, built on the aircraft kit:
+military `f22` F-22A Raptor, `f35` F-35A Lightning II, `fa18` F/A-18E Super Hornet, `f15` F-15E Strike Eagle, `f14` F-14D Tomcat,
+`a10` A-10C Thunderbolt II, `sr71` SR-71A Blackbird, `b2` B-2A Spirit, `c17` C-17A Globemaster III;
+commercial `b748` Boeing 747-8, `b77w` Boeing 777-300ER, `b789` Boeing 787-9, `a320` Airbus A320neo, `a388` Airbus A380-800.
+Airline liveries are fictional (no real airline names, logos or trademarks).

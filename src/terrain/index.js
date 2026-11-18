@@ -1,5 +1,7 @@
 // STUB terrain — the terrain agent replaces this. API to keep:
-//   createTerrain(ctx) -> { heightAt(x, z), update(dt), object3D }
+//   createTerrain(ctx) -> { heightAt(x, z), update(dt), object3D, heightGLSL, heightUniforms }
+//   heightGLSL defines `float terrainHeight(vec2 worldXZ)` (metres MSL, negative under the sea; a cheap GPU approximation of
+//   heightAt good to ~100 m horizontally) for other modules' shaders (ocean depth/shoreline); heightUniforms are its uniforms.
 // and it must call ctx.world.setTerrainHeightFn(heightAt).
 import * as THREE from 'three';
 import { AIRPORTS } from '../data/airports.js';
@@ -37,5 +39,8 @@ export async function createTerrain(ctx) {
   rebuild();
   ctx.events.on('originShift', rebuild);
   ctx.world.setTerrainHeightFn(stubHeight);
-  return { object3D: mesh, heightAt: stubHeight, update() {} };
+  const heightGLSL = /* glsl */`float terrainHeight(vec2 w) {
+    return 60.0 + 220.0 * sin(w.x * 0.00021 + 1.3) * cos(w.y * 0.00017) + 90.0 * sin(w.x * 0.0011) * sin(w.y * 0.0009 + 0.5)
+      + max(0.0, -w.y - 30000.0) * 0.03 - max(0.0, w.y - 9000.0) * 0.02; }`;
+  return { object3D: mesh, heightAt: stubHeight, heightGLSL, heightUniforms: {}, update() {} };
 }
