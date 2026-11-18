@@ -11,13 +11,14 @@ export const TILE_SCALES = [
   { period: 23, angle: 1.87 }, { period: 4.1, angle: 2.93 }, { period: 0.71, angle: 0.47 },
 ];
 
-/** GLSL shared by the vertex and fragment stages (and by the public terrainHeight hook): clipmap addressing. */
+/** GLSL shared by the vertex and fragment stages (and by the public terrainHeight hook): clipmap addressing.
+ *  Valid in both stages: explicit LOD lookups only, no derivatives, explicit highp so VS/FS declarations always match. */
 export function clipmapGLSL(L) {
   return /* glsl */`
 uniform highp sampler2DArray tTerrH;
-uniform vec3 uTerrLvl[${L}];     // per level: xy = uv offset (origin fraction + half texel), z = 1 / (N * texel spacing)
-uniform vec4 uTerrCam;           // xyz = camera position (render space), w = LOD clearance Hd
-uniform vec4 uTerrLod;           // x = LOD range of level 0, y = finest valid level, z = top level, w = morph start
+uniform highp vec3 uTerrLvl[${L}];   // per level: xy = uv offset (origin fraction + half texel), z = 1 / (N * texel spacing)
+uniform highp vec4 uTerrCam;         // xyz = camera position (render space), w = LOD clearance Hd
+uniform highp vec4 uTerrLod;         // x = LOD range of level 0, y = finest valid level, z = top level, w = morph start
 float terrMorph(float x) { return clamp((x - uTerrLod.w) / (0.96 - uTerrLod.w), 0.0, 1.0); }
 vec4 terrTexH(vec2 rxz, float lvl) { vec3 l = uTerrLvl[int(lvl)]; return textureLod(tTerrH, vec3(rxz * l.z + l.xy, lvl), 0.0); }
 float terrLodDist(vec2 rxz) { vec2 q = rxz - uTerrCam.xz; return sqrt(dot(q, q) + uTerrCam.w * uTerrCam.w); }

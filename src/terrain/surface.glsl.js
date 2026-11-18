@@ -8,7 +8,8 @@ uniform mediump sampler2DArray tTerrD;
 uniform sampler2D tTerrNoise;
 uniform sampler2D tTerrNorm;
 uniform vec2 uTerrTile[7];       // uv offsets of the noise scales (floating-origin compensation)
-uniform vec4 uTerrAp[5];         // airports: xy = render-space xz, z = flatten radius, w = kind
+uniform vec4 uTerrRw[8];         // runways: xy = centre (render-space xz), zw = unit direction
+uniform float uTerrRwL[8];       // runway half lengths (0 = unused slot)
 uniform vec3 uOrigin;
 uniform vec3 uSunDir;
 uniform float uTerrShadowOn;
@@ -95,69 +96,86 @@ TerrSurf terrSurface(vec3 rp) {
   float macro = n0.r * 0.6 + n1.r * 0.4;              // 0..1 large-scale variation
   float macro2 = n0.g * 0.6 + n1.g * 0.4;
 
-  // ---- airports: keep fields and woods off the pads --------------------------------------------------------
-  float pad = 0.0;
-  for (int i = 0; i < 5; i++) {
-    float da = distance(rp.xz, uTerrAp[i].xy);
-    pad = max(pad, 1.0 - ss(uTerrAp[i].z * 0.98, uTerrAp[i].z * 1.18, da));
+  // ---- airfields: keep fields and woods clear of the runways (the scenery module builds on this ground) --------
+  float rwd = 1.0e6;
+  for (int i = 0; i < 8; i++) {
+    if (uTerrRwL[i] > 0.0) {
+      vec2 q = rp.xz - uTerrRw[i].xy;
+      float al = dot(q, uTerrRw[i].zw);
+      vec2 perp = q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 250.0, uTerrRwL[i] + 250.0);
+      rwd = min(rwd, length(perp));
+    }
   }
+  float pad = 1.0 - ss(760.0, 1000.0, rwd + 260.0 * (n1.r - 0.5) + 120.0 * (n2.r - 0.5));
 
   // ---- climate lines ---------------------------------------------------------------------------------------
-  float treeline = 2150.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (n1.r - 0.5) + 90.0 * (n2.g - 0.5);
-  float snowline = 2720.0 + 2.5 * clamp(latK + 95.0, -200.0, 200.0) + 320.0 * (n1.g - 0.5) + 140.0 * (n2.r - 0.5)
-                 + 420.0 * n.z - 2600.0 * curv * step(0.0, curv) - 500.0 * conc;
+  float treeline = 2180.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (n1.r - 0.5) + 90.0 * (n2.g - 0.5);
+  // summer snow line: lower on north faces and in gullies / cirques where drifts survive
+  float snowline = 3080.0 + 2.5 * clamp(latK + 95.0, -200.0, 200.0) + 380.0 * (n1.g - 0.5) + 160.0 * (n2.r - 0.5)
+                 + 520.0 * n.z - 1500.0 * clamp(curv, 0.0, 0.25) - 900.0 * clamp(conc, -0.1, 0.4) - 1400.0 * clamp(concW, -0.05, 0.3);
 
   // ---- ground: grass / steppe / desert ---------------------------------------------------------------------
-  vec3 grass = mix(vec3(0.050, 0.090, 0.026), vec3(0.105, 0.140, 0.048), ss(0.25, 0.75, n1.g * 0.5 + n2.r * 0.5));
-  grass = mix(grass, vec3(0.16, 0.17, 0.07), ss(0.55, 0.9, n2.g) * 0.5);
-  vec3 dryGrass = mix(vec3(0.25, 0.21, 0.10), vec3(0.19, 0.17, 0.08), n2.r);
-  float dryness = clamp(ss(0.08, 0.5, arid) + 0.5 * (macro - 0.5) + ss(1200.0, 2100.0, h) * 0.5, 0.0, 1.0);
+  vec3 grass = mix(vec3(0.046, 0.082, 0.024), vec3(0.092, 0.128, 0.042), ss(0.25, 0.75, n1.g * 0.5 + n2.r * 0.5));
+  grass = mix(grass, vec3(0.150, 0.160, 0.066), ss(0.55, 0.9, n2.g * 0.6 + n4.g * 0.4) * 0.45);
+  vec3 dryGrass = mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), n2.r);
+  float dryness = clamp(ss(0.08, 0.5, arid) + 0.5 * (macro - 0.5) + ss(1300.0, 2200.0, h) * 0.45, 0.0, 1.0);
   grass = mix(grass, dryGrass, dryness);
-  grass *= 0.82 + 0.36 * n4.r;
-  vec3 sand = mix(vec3(0.36, 0.27, 0.18), vec3(0.47, 0.385, 0.265), ss(0.3, 0.7, n1.g * 0.45 + n2.r * 0.35 + n4.g * 0.2));
-  vec3 redEarth = vec3(0.37, 0.205, 0.125);
+  grass *= (0.80 + 0.40 * n4.r) * (0.86 + 0.28 * n5.g) * (0.88 + 0.24 * n6.r);
+  // bare soil showing through thin turf close up
+  grass = mix(grass, vec3(0.150, 0.115, 0.080), ss(0.62, 0.80, n5.r * 0.6 + n4.a * 0.4) * 0.35 * ss(3.0, 0.3, px));
+  vec3 sand = mix(vec3(0.285, 0.210, 0.138), vec3(0.395, 0.318, 0.215), ss(0.3, 0.7, n1.g * 0.45 + n2.r * 0.35 + n4.g * 0.2));
+  vec3 redEarth = vec3(0.315, 0.170, 0.100);
   float redness = ss(0.45, 0.7, n0.r * 0.7 + n1.r * 0.3) * 0.75;
   vec3 desert = mix(sand, redEarth, redness);
-  desert *= 0.88 + 0.24 * n5.r;
+  desert *= (0.88 + 0.24 * n5.r) * (0.92 + 0.16 * n6.g);
+  // desert pavement / darker gravel flats and pale alluvium in a mottled pattern
+  desert = mix(desert, desert * vec3(0.72, 0.70, 0.70), ss(0.50, 0.68, n2.a * 0.6 + n1.a * 0.4) * 0.6);
   float desertAmt = ss(0.42, 0.85, arid + 0.25 * (n1.r - 0.5) + 0.1 * (n3.r - 0.5));
   vec3 col = mix(grass, desert, desertAmt);
   float rough = mix(0.92, 0.86, desertAmt);
   // desert scrub: dark dots (creosote / sagebrush), denser along washes
-  float shrubDens = desertAmt * (1.0 - playa) * ss(0.30, 0.10, slope) * (0.35 + 0.65 * ss(0.3, 0.7, n2.g) + 6.0 * max(curv, 0.0));
-  float shrub = (1.0 - ss(0.10, 0.26, n4.b)) * clamp(shrubDens, 0.0, 1.0);
-  col = mix(col, vec3(0.085, 0.095, 0.045), shrub * 0.75);
+  float shrubDens = desertAmt * (1.0 - playa) * ss(0.30, 0.10, slope) * (0.30 + 0.60 * ss(0.3, 0.7, n2.g) + 8.0 * max(curv, 0.0));
+  float shrub = (1.0 - ss(0.10, 0.27, n4.b)) * clamp(shrubDens, 0.0, 1.0);
+  col = mix(col, vec3(0.080, 0.090, 0.042), shrub * 0.75);
   // dry washes: pale sand where water runs (concave lines) in arid country
-  col = mix(col, vec3(0.52, 0.45, 0.33), desertAmt * ss(0.006, 0.03, curv) * 0.6);
+  col = mix(col, vec3(0.44, 0.38, 0.28), desertAmt * ss(0.004, 0.025, curv) * 0.6);
 
   // ---- alpine tundra above the tree line ----------------------------------------------------------------------
-  float alpine = ss(treeline - 150.0, treeline + 200.0, h) * (1.0 - desertAmt * 0.7);
-  vec3 tundra = mix(vec3(0.14, 0.135, 0.075), vec3(0.20, 0.185, 0.14), n3.r);
+  float alpine = ss(treeline - 150.0, treeline + 220.0, h) * (1.0 - desertAmt * 0.7);
+  vec3 tundra = mix(vec3(0.120, 0.120, 0.062), vec3(0.185, 0.170, 0.125), n3.r * 0.6 + n4.g * 0.4);
   col = mix(col, tundra, alpine);
 
   // ---- forest -------------------------------------------------------------------------------------------------
-  float forestPot = (1.0 - ss(0.28, 0.62, arid)) * ss(treeline + 60.0, treeline - 260.0, h) * (1.0 - ss(0.30, 0.52, slope))
-                  * ss(1.5, 7.0, h) * (1.0 - pad) * (1.0 - water);
-  float hills = ss(30.0, 420.0, h) * 0.30 + ss(0.01, 0.10, slope) * 0.30;
-  float fnoise = n1.r * 0.50 + n2.g * 0.28 + n0.r * 0.34 + n3.r * 0.10 + hills + max(curv, 0.0) * 4.0;
-  float forest = ss(0.60, 0.66, fnoise) * forestPot;
+  float forestPot = (1.0 - ss(0.28, 0.62, arid)) * ss(treeline + 60.0, treeline - 260.0, h) * (1.0 - ss(0.30, 0.50, slope))
+                  * ss(2.5, 6.0, h) * (1.0 - pad) * (1.0 - water);
+  float wild = ss(0.50, 0.42, macro2 * 0.75 + n0.a * 0.25);          // country that is not farmed: more woodland
+  float cover = clamp(0.14 + 0.62 * ss(0.006, 0.07, slope) + 0.14 * ss(80.0, 500.0, h) + 5.0 * max(curv, 0.0)
+              + 0.30 * wild * ss(0.40, 0.60, n0.r) + 0.35 * tropic, 0.0, 0.93);
+  float fnoise = 0.5 + (n1.r - 0.5) * 1.1 + (n2.g - 0.5) * 0.7 + (n0.r - 0.5) * 0.8 + (n3.r - 0.5) * 0.22;
+  float fthr = mix(0.86, 0.06, cover);
+  float forest = ss(fthr - 0.025, fthr + 0.025, fnoise) * forestPot;
   float conifer = ss(600.0, 1500.0, h + 500.0 * (n1.g - 0.5) - 6.0 * latK);
-  vec3 fcol = mix(vec3(0.040, 0.072, 0.024), vec3(0.020, 0.040, 0.019), conifer);
+  vec3 fcol = mix(vec3(0.044, 0.078, 0.027), vec3(0.027, 0.049, 0.023), conifer);
   fcol = mix(fcol, fcol * vec3(1.35, 1.2, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.6);
+  fcol = mix(fcol, vec3(0.030, 0.050, 0.016), tropic * 0.5);
   float crown = 1.0 - n3.b;                           // cell centres = crown tops
-  fcol *= 0.45 + 1.0 * crown * crown + 0.25 * n4.r;
-  col = mix(col, fcol, forest);
-  rough = mix(rough, 0.95, forest);
+  fcol *= 0.42 + 1.05 * crown * crown + 0.25 * n4.r;
 
   // ---- cropland patchwork ---------------------------------------------------------------------------------------
-  float cropPot = (1.0 - ss(0.30, 0.50, arid)) * ss(0.014, 0.005, slope) * ss(3.0, 7.0, h) * ss(520.0, 380.0, h)
-                * (1.0 - pad) * (1.0 - water) * ss(0.40, 0.47, macro2 * 0.75 + n0.r * 0.25);
+  float cropPot = (1.0 - ss(0.30, 0.50, arid)) * ss(0.014, 0.005, slope) * ss(9.0, 16.0, h) * ss(520.0, 380.0, h)
+                * (1.0 - pad) * (1.0 - water) * ss(0.43, 0.49, macro2 * 0.75 + n0.a * 0.25);
+  // wooded creeks winding through the farmland (iso-lines of the macro noise)
+  float creekV = abs(n0.g + 0.10 * (n1.g - 0.5) + 0.03 * (n2.g - 0.5) - 0.5);
+  float creek = (1.0 - ss(0.006, 0.014, creekV)) * forestPot;
   if (cropPot > 0.001) {
-    vec2 q = w + (n1.rg - 0.5) * 240.0;               // the survey grid is not perfectly straight
+    vec2 q = w + (n1.rg - 0.5) * 260.0;               // the survey grid is not perfectly straight
     q = vec2(0.978 * q.x - 0.208 * q.y, 0.208 * q.x + 0.978 * q.y);
     vec2 b = q / 1340.0, bi = floor(b), bf = b - bi;
     vec2 hb = terrHash2(bi + 4096.0);
+    vec2 hb2 = terrHash2(bi + 5120.0);
     vec2 nsub = vec2(2.0 + floor(hb.x * 3.0), 1.0 + floor(hb.y * 3.0));
-    if (fract(hb.x * 7.0) > 0.5) nsub = nsub.yx;
+    if (hb2.x > 0.72) nsub = vec2(5.0 + floor(hb.x * 4.0), 1.0 + floor(hb.y * 2.0));   // strip fields
+    if (hb2.y > 0.5) nsub = nsub.yx;
     vec2 f = bf * nsub, fi = floor(f), ff = f - fi;
     vec2 hf = terrHash2(bi * 7.0 + fi + 8192.0);
     vec2 cell = 1340.0 / nsub;
@@ -165,30 +183,39 @@ TerrSurf terrSurface(vec3 rp) {
     float edge = min(de.x, de.y);
     vec2 db = min(bf, 1.0 - bf) * 1340.0;
     float road = min(db.x, db.y);
-    float t = hf.x;
-    vec3 c = t < 0.26 ? vec3(0.075, 0.150, 0.040)       // green crop
-           : t < 0.44 ? vec3(0.300, 0.245, 0.105)       // ripe grain
-           : t < 0.58 ? vec3(0.150, 0.105, 0.070)       // ploughed earth
-           : t < 0.76 ? vec3(0.095, 0.135, 0.050)       // pasture
-           : t < 0.90 ? vec3(0.250, 0.215, 0.125)       // stubble
-           :            vec3(0.120, 0.200, 0.045);      // bright young crop
-    c *= 0.78 + 0.44 * hf.y;
-    c *= 0.86 + 0.28 * n3.r;                            // uneven growth within a field
+    float t = pow(hf.x, mix(0.55, 1.8, ss(0.3, 0.7, n0.b * 0.5 + n1.a * 0.5)));   // regional crop mix
+    vec3 c = t < 0.30 ? vec3(0.062, 0.122, 0.034)       // green crop
+           : t < 0.42 ? vec3(0.255, 0.210, 0.098)       // ripe grain
+           : t < 0.54 ? vec3(0.135, 0.098, 0.056)       // ploughed earth
+           : t < 0.76 ? vec3(0.082, 0.120, 0.044)       // pasture
+           : t < 0.88 ? vec3(0.215, 0.190, 0.115)       // stubble / hay
+           :            vec3(0.105, 0.172, 0.042);      // bright young crop
+    c *= 0.80 + 0.40 * hf.y;
+    c *= (0.84 + 0.32 * n3.r) * (0.92 + 0.16 * n2.r); // uneven growth, soil moisture
     // crop rows along the long side of the field (fade out before they can alias)
     float rowc = cell.x > cell.y ? q.y : q.x;
     float rowsF = 0.5 + 0.5 * sin(rowc * 6.2831853 / 4.5);
-    c *= 1.0 - 0.22 * rowsF * ss(2.2, 0.7, px) * step(t, 0.9);
+    c *= 1.0 - 0.22 * rowsF * ss(2.2, 0.7, px) * step(t, 0.88);
     float rowsC = 0.5 + 0.5 * sin(rowc * 6.2831853 / 36.0 + 6.0 * n3.g);
     c *= 1.0 - 0.10 * rowsC * ss(18.0, 6.0, px);
+    c *= (0.88 + 0.24 * n5.g) * (0.9 + 0.2 * n6.r);
     // hedgerows / field margins and gravel section roads
-    float hedge = (1.0 - ss(2.0, 4.5 + px, edge)) * clamp(5.0 / px, 0.0, 1.0);
-    c = mix(c, vec3(0.045, 0.070, 0.030) * (0.6 + 0.8 * n4.r), hedge * 0.85);
+    float hedge = (1.0 - ss(1.5 + 3.0 * hb2.x, 4.5 + 3.0 * hb2.x + px, edge)) * clamp(6.0 / px, 0.0, 1.0);
+    c = mix(c, vec3(0.040, 0.064, 0.027) * (0.6 + 0.8 * n4.r), hedge * (0.45 + 0.5 * hb2.y));
     float rd = (1.0 - ss(3.0, 4.0 + px, road)) * clamp(7.0 / px, 0.0, 1.0);
-    c = mix(c, vec3(0.30, 0.275, 0.235), rd);
+    c = mix(c, vec3(0.27, 0.25, 0.215), rd);
+    // farmsteads: a yard and a shelter belt near some block corners
+    vec2 fpos = (bf - vec2(0.12 + 0.2 * hb.y, 0.10 + 0.2 * hb2.x)) * 1340.0;
+    float fd = length(fpos) + 25.0 * (n3.g - 0.5);
+    float farm = step(0.45, hb.x) * (1.0 - ss(55.0, 75.0 + px, fd));
+    c = mix(c, mix(vec3(0.24, 0.215, 0.18), vec3(0.035, 0.060, 0.022), ss(0.35, 0.55, n3.b + 0.3 * step(30.0, fd))), farm);
     col = mix(col, c, cropPot);
     rough = mix(rough, 0.9, cropPot);
-    forest *= 1.0 - cropPot;
+    forest *= 1.0 - cropPot * (1.0 - farm * 0.0);
   }
+  forest = max(forest, creek * ss(0.3, 0.7, n3.r + 0.4));
+  col = mix(col, fcol, forest);
+  rough = mix(rough, 0.95, forest);
   // centre-pivot irrigation in the dry margins
   float pivPot = ss(0.30, 0.45, arid) * ss(0.92, 0.75, arid) * ss(0.010, 0.004, slope) * ss(4.0, 10.0, h) * ss(900.0, 700.0, h)
                * (1.0 - pad) * (1.0 - playa) * (1.0 - water) * ss(0.50, 0.56, n0.g * 0.5 + n1.r * 0.5);
@@ -198,45 +225,58 @@ TerrSurf terrSurface(vec3 rp) {
     float r = length(bf) * 830.0;
     float disc = (1.0 - ss(385.0 - px, 390.0 + px, r)) * step(hp.x, 0.8);
     float ang = atan(bf.y, bf.x);
-    vec3 c = mix(vec3(0.070, 0.145, 0.040), vec3(0.27, 0.23, 0.11), step(0.62, hp.y));
+    vec3 c = mix(vec3(0.066, 0.135, 0.038), vec3(0.25, 0.215, 0.10), step(0.62, hp.y));
     c *= 0.85 + 0.2 * step(0.5, fract(ang * 0.159 * 3.0 + hp.x * 4.0)) * step(hp.y, 0.3);
     c *= 0.9 + 0.2 * n3.r;
     col = mix(col, c, disc * pivPot);
   }
+  // airport turf: mown grass where the climate grows any (elsewhere the pad keeps its natural surface)
+  float turf = pad * (1.0 - desertAmt) * (1.0 - ss(1.0, 3.0, 4.0 - h));
+  vec3 turfCol = vec3(0.070, 0.112, 0.036) * (0.86 + 0.28 * n3.r) * (0.9 + 0.2 * n5.g) * (0.9 + 0.2 * n6.r);
+  turfCol *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);      // mowing stripes
+  turfCol = mix(turfCol, dryGrass * 0.9, ss(0.5, 0.75, n2.r * 0.6 + n4.g * 0.4) * 0.35);
+  col = mix(col, turfCol, turf * 0.85);
 
   // ---- bare rock, scree -----------------------------------------------------------------------------------------
-  float rockN = slope + 0.20 * (n2.a - 0.5) + 0.10 * (n4.a - 0.5) - 0.05 * forest;
-  float rockAmt = ss(0.20, 0.36, rockN);
-  float strata = sin(h * 0.085 + n1.r * 14.0 + n2.r * 3.0);
-  vec3 granite = mix(vec3(0.165, 0.160, 0.155), vec3(0.290, 0.275, 0.255), ss(0.2, 0.8, n2.r * 0.6 + n4.g * 0.4));
+  float rockN = slope + 0.20 * (n2.a - 0.5) + 0.10 * (n4.a - 0.5) - 0.05 * forest + 0.13 * alpine - 1.5 * clamp(curv, -0.05, 0.05) * alpine;
+  float rockAmt = ss(0.20, 0.34, rockN);
+  float dh = abs(dFdx(h)) + abs(dFdy(h)) + 0.001;     // metres of height per pixel: strata must fade before they alias
+  float strata = sin(h * 0.085 + n1.r * 14.0 + n2.r * 3.0) * ss(30.0, 9.0, dh);
+  vec3 granite = mix(vec3(0.150, 0.146, 0.142), vec3(0.275, 0.262, 0.245), ss(0.2, 0.8, n2.r * 0.6 + n4.g * 0.4));
   granite *= 0.90 + 0.10 * strata;
   granite = mix(granite, granite * vec3(0.62, 0.60, 0.58), ss(0.55, 0.85, n3.a) * 0.6);   // dark seepage / lichen
+  granite *= 0.9 + 0.2 * n5.a;
   // sandstone: colour bands follow elevation (sedimentary layers)
   float band = h / 38.0 + n1.g * 2.5 + n3.r * 0.35;
   float bi2 = floor(band), bfr = band - bi2;
   vec2 hs = terrHash2(vec2(bi2, 7.0));
-  vec3 sandstone = mix(vec3(0.30, 0.135, 0.075), vec3(0.52, 0.33, 0.20), hs.x);
-  sandstone = mix(sandstone, vec3(0.60, 0.50, 0.38), step(0.82, hs.y));
+  vec3 sandstone = mix(vec3(0.290, 0.130, 0.072), vec3(0.50, 0.315, 0.19), hs.x);
+  sandstone = mix(sandstone, vec3(0.58, 0.48, 0.36), step(0.82, hs.y));
   sandstone *= 0.86 + 0.14 * ss(0.0, 0.12, bfr) * ss(1.0, 0.88, bfr) + 0.12 * (n5.r - 0.5);
+  sandstone = mix(vec3(0.39, 0.215, 0.125), sandstone, ss(16.0, 5.0, dh));   // layers merge to their mean far away
   vec3 rockCol = mix(granite, sandstone, ss(0.45, 0.75, arid));
-  float scree = ss(0.10, 0.20, rockN) * (1.0 - rockAmt) * max(alpine, desertAmt * 0.8);
-  col = mix(col, mix(rockCol * 1.12, vec3(0.30, 0.285, 0.265), 0.35) * (0.85 + 0.3 * n5.g), scree * 0.8);
+  float scree = ss(0.08, 0.20, rockN) * (1.0 - rockAmt) * max(alpine, desertAmt * 0.8);
+  col = mix(col, mix(rockCol * 1.12, vec3(0.29, 0.275, 0.255), 0.35) * (0.85 + 0.3 * n5.g), scree * 0.8);
   col = mix(col, rockCol, rockAmt);
   rough = mix(rough, 0.82, max(rockAmt, scree));
 
   // ---- snow and glacier ice -------------------------------------------------------------------------------------
-  float snow = ss(-110.0, 130.0, h - snowline) * (1.0 - ss(0.26, 0.50, slope + 0.08 * (n4.r - 0.5)));
-  snow = max(snow, ss(-60.0, 200.0, h - snowline - 500.0) * 0.85);       // the highest summits stay white
-  vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.94 + 0.08 * n4.r);
-  float ice = snow * ss(0.004, 0.02, conc) * ss(snowline + 100.0, snowline + 500.0, h + 800.0 * conc) * 0.0;
-  snowCol = mix(snowCol, vec3(0.52, 0.66, 0.74), ice);
+  float snow = ss(-140.0, 140.0, h - snowline) * (1.0 - ss(0.13, 0.30, slope + 0.10 * (n3.r - 0.5) + 0.06 * (n4.r - 0.5)));
+  snow = max(snow, ss(-80.0, 250.0, h - snowline - 650.0) * (1.0 - ss(0.22, 0.42, slope)));   // the highest summits stay white
+  vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.95 + 0.07 * n4.r);
+  // old firn / glacier ice shows through in the big hollows
+  float ice = snow * ss(0.03, 0.12, concW) * ss(0.10, 0.02, slope);
+  snowCol = mix(snowCol, vec3(0.56, 0.68, 0.75) * (0.9 + 0.2 * n3.a), ice * 0.6);
   col = mix(col, snowCol, snow);
   rough = mix(rough, 0.62, snow);
 
+  float wsurf0 = ss(0.3, 0.8, water);
   // ---- shore: beaches, wet sand, seabed -------------------------------------------------------------------------
-  vec3 beachCol = mix(vec3(0.47, 0.41, 0.30), vec3(0.70, 0.66, 0.55), tropic) * (0.92 + 0.16 * n4.r);
-  float beach = ss(3.4 + 2.0 * n3.r, 1.0, h) * ss(0.16, 0.05, slope);
-  col = mix(col, beachCol, beach);
+  vec3 beachCol = mix(vec3(0.43, 0.375, 0.275), vec3(0.62, 0.585, 0.485), tropic) * (0.92 + 0.16 * n4.r);
+  // dune grass behind the beach, then the sand itself
+  col = mix(col, mix(dryGrass * 1.15, beachCol, 0.35 + 0.3 * n3.r), ss(4.2 + 1.0 * n2.r, 2.6, h) * ss(0.2, 0.06, slope) * (1.0 - wsurf0) * 0.7);
+  float beach = ss(2.5 + 1.2 * n3.r, 1.3, h) * ss(0.16, 0.05, slope);
+  col = mix(col, beachCol, beach * (1.0 - wsurf0));
   float wet = ss(0.9, 0.1, h) * ss(-1.2, -0.3, h);
   col *= 1.0 - 0.38 * wet; rough = mix(rough, 0.35, wet * 0.8);
   if (h < 0.5) {
@@ -251,8 +291,11 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- playa (dry lake) and open fresh water -------------------------------------------------------------------
   if (playa > 0.001) {
-    vec3 pc = mix(vec3(0.50, 0.44, 0.35), vec3(0.64, 0.60, 0.52), ss(0.25, 0.75, n1.r * 0.5 + n2.g * 0.3 + n0.g * 0.3));
-    pc *= 0.94 + 0.10 * n4.r;
+    vec3 pc = mix(vec3(0.385, 0.335, 0.262), vec3(0.510, 0.470, 0.395), ss(0.25, 0.75, n1.r * 0.45 + n2.g * 0.25 + n0.g * 0.3));
+    // damp, darker clay where the last water stood; pale salt crust elsewhere; wind streaks
+    pc = mix(pc, pc * vec3(0.70, 0.68, 0.66), ss(0.52, 0.66, n1.a * 0.6 + n0.r * 0.4) * 0.7);
+    pc *= 0.93 + 0.07 * sin((w.x * 0.8 + w.y * 0.6) * 0.004 + n1.g * 9.0);
+    pc *= (0.95 + 0.10 * n4.r) * (1.0 - 0.10 * ss(0.78, 0.95, n3.b));             // giant desiccation polygons
     // desiccation polygons, visible close up
     float crack = ss(0.80, 0.97, n5.b) * ss(3.0, 0.4, px) * 0.45 + ss(0.84, 0.98, n6.b) * ss(0.5, 0.05, px) * 0.35;
     pc *= 1.0 - crack;
@@ -260,13 +303,10 @@ TerrSurf terrSurface(vec3 rp) {
     rough = mix(rough, 0.8, playa);
   }
   // gravel bars beside the channel, then the water itself
-  col = mix(col, vec3(0.33, 0.31, 0.28) * (0.85 + 0.3 * n5.r), ss(0.02, 0.4, water) * (1.0 - ss(0.5, 0.8, water)) * 0.8);
+  col = mix(col, vec3(0.31, 0.295, 0.265) * (0.85 + 0.3 * n5.r), ss(0.02, 0.4, water) * (1.0 - ss(0.5, 0.8, water)) * 0.8 * ss(10.0, 2.5, px));
   float wsurf = ss(0.5, 0.8, water);
   col = mix(col, vec3(0.020, 0.034, 0.030), wsurf);
   rough = mix(rough, 0.07, wsurf);
-
-  // ---- airport turf ---------------------------------------------------------------------------------------------
-  // (mown grass where the climate grows any; elsewhere the pad keeps its natural surface: playa, sand, meadow)
 
   // ---- detail normals -------------------------------------------------------------------------------------------
   float hard = clamp(max(rockAmt, scree * 0.7) + desertAmt * 0.35, 0.0, 1.0);

@@ -9,7 +9,7 @@
 //   material.js      MeshStandardMaterial with clipmap displacement and
 //   surface.glsl.js  the procedural biome / material shader, AO and height-field self-shadowing
 import * as THREE from 'three';
-import { AIRPORTS } from '../data/airports.js';
+import { AIRPORTS, headingVector } from '../data/airports.js';
 import { heightAt, heightAtLod, sampleTerrain } from './height.gen.js';
 import { createClipmap, SNAP, EDGE } from './clipmap.js';
 import { createLodSelector } from './lod.js';
@@ -17,6 +17,14 @@ import { createTerrainMaterial, clipmapGLSL, TILE_SCALES } from './material.js';
 import { createNoiseTextures } from './noisetex.js';
 
 export { heightAt };
+
+// Runway centre lines for the shader (max 8): the land cover keeps clear of them.
+const RUNWAYS = [];
+for (const a of AIRPORTS) for (const r of a.runways) {
+  const d = headingVector(r.heading);
+  if (RUNWAYS.length < 8) RUNWAYS.push({ x: r.center.x, z: r.center.z, dx: d.x, dz: d.z, half: r.length / 2 });
+}
+while (RUNWAYS.length < 8) RUNWAYS.push({ x: 0, z: 0, dx: 1, dz: 0, half: 0 });
 
 const P = 32;            // quads per patch side
 const L = 13;            // clipmap / LOD levels: vertex spacing 1 m .. 4096 m
@@ -51,7 +59,7 @@ export async function createTerrain(ctx) {
     uTerrCam: { value: new THREE.Vector4(0, 1000, 0, 1000) },
     uTerrLod: { value: new THREE.Vector4(cfg.k * S0, L - 1, L - 1, cfg.m0) },
     uTerrTile: { value: TILE_SCALES.map(() => new THREE.Vector2()) },
-    uTerrAp: { value: AIRPORTS.slice(0, 5).map(() => new THREE.Vector4()) },
+    uTerrRw: { value: RUNWAYS.map(() => new THREE.Vector4()) }, uTerrRwL: { value: RUNWAYS.map((r) => r.half) },
     uTerrShadowOn: { value: 1 },
     uTerrWin: { value: 1 }, uTerrOrg: { value: new THREE.Vector3() }, uTerrCurv: { value: 1 },
     uOrigin: F.uOrigin, uSunDir: F.uSunDir,
@@ -113,6 +121,7 @@ export async function createTerrain(ctx) {
   // Debug URL params (screenshots / tooling only):
   //   terrCam=dx,dy,dz,pitch,yaw   camera at player + offset (m), looking pitch/yaw degrees (yaw = true heading)
   //   terrCurv=0                   no earth-curvature drop     terrN=256|512|1024, terrShadow=<steps>
+  //   terrHideWater=1              hide ctx.water.object3D (to look at the seabed)
   const raw = ctx.params.raw || {};
   const dbgCam = raw.terrCam ? raw.terrCam.split(',').map(Number) : null;
   if (raw.terrCurv !== undefined) uniforms.uTerrCurv.value = +raw.terrCurv;
@@ -178,10 +187,8 @@ export async function createTerrain(ctx) {
       const u = (c * org.x - sn * org.z) / s.period, v = (sn * org.x + c * org.z) / s.period;
       uniforms.uTerrTile.value[i].set(u - Math.floor(u), v - Math.floor(v));
     }
-    for (let i = 0; i < uniforms.uTerrAp.value.length; i++) {
-      const a = AIRPORTS[i];
-      uniforms.uTerrAp.value[i].set(a.position.x - org.x, a.position.z - org.z, a.flattenRadius, i);
-    }
+    for (let i = 0; i < 8; i++) { const r = RUNWAYS[i]; uniforms.uTerrRw.value[i].set(r.x - org.x, r.z - org.z, r.dx, r.dz); }
+    if (raw.terrHideWater && ctx.water?.object3D) ctx.water.object3D.visible = false;
     uniforms.uTerrWin.value = (N / 2 - SNAP - EDGE - 1) * cfg.t0;
     uniforms.uTerrOrg.value.copy(org);
   }
@@ -190,8 +197,9 @@ export async function createTerrain(ctx) {
   // Samples the same height pyramid the terrain is drawn from: metre-accurate near the camera, coarser with distance.
   const heightGLSL = /* glsl */`
 ${clipmapGLSL(L)}
-uniform float uTerrWin;          // trusted half-extent of the level-0 window, metres
-uniform vec3 uTerrOrg;           // world position of the render origin
+uniform highp float uTerrWin;    // trusted half-extent of the level-0 window, metres
+uniform highp vec3 uTerrOrg;     // world position of the render origin
+// Works in vertex AND fragment shaders (textureLod only, no derivatives); 1 fetch, 2 in the narrow blend band.
 float terrainHeight(vec2 worldXZ) {
   vec2 rxz = worldXZ - uTerrOrg.xz;
   vec2 q = abs(rxz - uTerrCam.xz);
@@ -233,6 +241,33 @@ float terrainHeight(vec2 worldXZ) {
       }
       return { level, spacing: lv.t, samples: n, max, mean: sum / Math.max(n, 1), at };
     },
+  };
+
+  /**
+   * Self-test of the public GLSL hook: evaluates terrainHeight() in a vertex shader AND a fragment shader at world
+   * points near the camera and compares with heightAt. Returns [{ x, z, cpu, vs, fs }].
+   */
+  debug.testHook = (offsets = [[0, 0], [300, -200], [-2500, 1800], [9000, 7000], [-40000, 30000]]) => {
+    const rt = new THREE.WebGLRenderTarget(2, 1, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false });
+    const m = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+      uniforms: { ...heightUniforms, uP: { value: new THREE.Vector2() } },
+      vertexShader: `${heightGLSL}\nuniform vec2 uP; out float vH; void main() { vH = terrainHeight(uP); gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: `precision highp float; ${heightGLSL}\nuniform vec2 uP; in float vH; out vec4 o; void main() { o = vec4(vH, terrainHeight(uP), 0.0, 1.0); }`,
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+    const sc = new THREE.Scene(), ms = new THREE.Mesh(g, m); ms.frustumCulled = false; sc.add(ms);
+    const cam2 = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), prev = renderer.getRenderTarget(), buf = new Float32Array(8), out = [];
+    const cx = ctx.camera.position.x + ctx.world.origin.x, cz = ctx.camera.position.z + ctx.world.origin.z;
+    for (const [dx, dz] of offsets) {
+      m.uniforms.uP.value.set(cx + dx, cz + dz);
+      renderer.setRenderTarget(rt); renderer.render(sc, cam2);
+      renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, buf);
+      out.push({ x: cx + dx, z: cz + dz, cpu: heightAt(cx + dx, cz + dz), vs: buf[0], fs: buf[1] });
+    }
+    renderer.setRenderTarget(prev); rt.dispose(); m.dispose(); g.dispose();
+    return out;
   };
 
   return {

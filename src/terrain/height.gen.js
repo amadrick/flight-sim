@@ -14,8 +14,9 @@ function hashI(ix, iy) {
 function ss(a, b, x) { let t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
 function smin(a, b, k) { let h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
 function smax(a, b, k) { let h = max(k - abs(a - b), 0.0) / k; return max(a, b) + h * h * k * 0.25; }
-// band limit: 1 while a feature of wavelength w is resolved by the current level, fading to 0 at Nyquist
-function bl(w) { return 1.0 - ss(w * 0.25, w * 0.5, gLod); }
+// band limit: 1 while a feature of wavelength w spans >= 8 texels of the current level, 0 below 4 texels
+// (central-difference normals need that much headroom to stay free of grid artefacts)
+function bl(w) { return 1.0 - ss(w * 0.125, w * 0.25, gLod); }
 
 // Gradient noise, quintic interpolant, value ~[-0.8, 0.8]; analytic derivative in gDx, gDz.
 function noised(x, z) {
@@ -52,14 +53,14 @@ function coastFbm(x, z) {
 
 // Mountain relief 0..~1: two ridged octaves (the range-scale crest lines) plus damped smooth octaves, after a
 // domain warp. Derivative damping (Quilez) keeps detail off steep faces. Gradient (1/m) in gMx, gMz.
-function mount(x, z) {
-  let px = x * 0.0000333, pz = z * 0.0000333;
+function mount(x, z, f0) {
+  let px = x * f0, pz = z * f0;
   let w1 = noised(px * 0.6 + 5.2, pz * 0.6 + 1.3);
   let w2 = noised(px * 0.6 - 8.4, pz * 0.6 + 9.1);
   px += 0.45 * w1; pz += 0.45 * w2;
   let sum = 0.0, amp = 0.56, fr = 1.0, ax = 0.0, az = 0.0, gx = 0.0, gz = 0.0, rc = 1.0, rs = 0.0;
   for (let i = 0; i < 5; i++) {
-    let f = bl(15000.0 / fr);
+    let f = bl(0.5 / (f0 * fr));
     if (f > 0.0) {
       let n = noised(px, pz);
       let v = 0.0, e = 0.0;
@@ -84,7 +85,7 @@ function mount(x, z) {
     let nrc = 0.8 * rc - 0.6 * rs;
     rs = 0.6 * rc + 0.8 * rs; rc = nrc;
   }
-  gMx = gx * 0.0000333; gMz = gz * 0.0000333;
+  gMx = gx * f0; gMz = gz * f0;
   return sum;
 }
 
@@ -115,7 +116,7 @@ function gully(px, pz, dirx, dirz) {
 // Fluvial dissection: 5 octaves of gully noise (cells 6 km .. 375 m), each octave's stripes following the slope
 // left by the base relief plus the previous octaves (=> tributaries join trunk valleys at acute angles).
 // (sx, sz) = slope of the surface being eroded. Returns ~[-1.9, 1.9]; negative = valley.
-function dissect(x, z, sx, sz, f0) {
+function dissect(x, z, sx, sz, f0, gain) {
   let sl = sqrt(sx * sx + sz * sz) + 0.0001;
   let dirx = sz / sl, dirz = -sx / sl;
   let ea = 1.0, ef = f0, es = 0.0, ex = 0.0, ez = 0.0;
@@ -126,7 +127,7 @@ function dissect(x, z, sx, sz, f0) {
       es += g * ea * f;
       ex += gEx * ea * f * 0.8; ez += gEz * ea * f * 0.8;
     }
-    ea *= 0.5; ef *= 2.0;
+    ea *= gain; ef *= 2.0;
   }
   return es;
 }
@@ -163,7 +164,7 @@ function islands(X, Z, cw) {
   let dx = X + 85.0, dz = Z - 85.0;
   if (abs(dx) < 30.0 && abs(dz) < 30.0) {
     let u = dx * 0.866 + dz * 0.5, v = dz * 0.866 - dx * 0.5;
-    let e = sqrt(u * u / 27.0 + v * v / 13.0) + 0.07 * cw;
+    let e = sqrt(u * u / 27.0 + v * v / 13.0) + 0.09 * cw + 0.05 * noised(X * 0.8 + 3.0, Z * 0.8 - 5.0);
     let hi = atoll(e, 5.0) + 75.0 * exp(-((u + 1.3) * (u + 1.3) + (v + 2.95) * (v + 2.95)) / 0.7) * ss(1.02, 0.8, e);
     h = max(h, hi);
   }
@@ -221,7 +222,7 @@ function terrain(x, z) {
   let L1 = noised(x * 0.0000111 + 3.1, z * 0.0000111 - 7.7);      // 90 km climate / province noise
   let l1x = gDx, l1z = gDz;                                        // (its derivatives double as warp fields)
   let L2 = noised(x * 0.000025 - 5.3, z * 0.000025 + 2.4);        // 40 km
-  let l2x = gDx;
+  let l2x = gDx, l2z = gDz;
   let cw = coastFbm(x, z);
   gSpec = 0.0; gRivD = 100000.0; gRivW = 0.0;
 
@@ -262,14 +263,15 @@ function terrain(x, z) {
     let Ah = (220.0 + 520.0 * ss(-0.25, 0.45, L2)) * plainMask * (1.0 - D) * ss(7.0, 20.0, dKB);
     let mdx = X - 190.0, mdz = Z + 88.0;
     let Ms = D * (1.0 - ss(26.0, 60.0, sqrt(mdx * mdx + mdz * mdz) + 14.0 * L2)) * (1.0 - M);   // mesa country
-    let A = 25.0 + 3100.0 * M + Ah * (1.0 - M) + 900.0 * W + D * (1.0 - M) * (450.0 + 950.0 * ss(-0.2, 0.4, L1)) * Bk * (1.0 - 0.8 * Ms);
-    let U = 1500.0 * M * sqrt(M) + 1000.0 * Pn * (1.0 - 0.4 * M) + 740.0 * D * (1.0 - 0.5 * Pn) + 120.0 * W + 60.0 * plainMask + 330.0 * Ms;
+    let A = 25.0 + 2650.0 * M + Ah * (1.0 - M) + 900.0 * W + D * (1.0 - M) * (450.0 + 950.0 * ss(-0.2, 0.4, L1)) * Bk * (1.0 - 0.8 * Ms);
+    let U = 1450.0 * M * sqrt(M) + 1000.0 * Pn * (1.0 - 0.4 * M) + 740.0 * D * (1.0 - 0.5 * Pn) + 120.0 * W + 60.0 * plainMask + 330.0 * Ms;
     let fade = ss(0.0, 10.0, c);
 
     // rivers (km polylines, meandered by a low-frequency warp)
     let mw = noised(x * 0.00031 + 9.1, z * 0.00031 + 4.4);
     let rX = X + 0.55 * mw, rZ = Z + 0.55 * gDx * 0.6;
-    if (rX > -4.0 && rX < 24.0 && rZ > -56.0 && rZ < 22.0) {
+    if (rX > -4.0 && rX < 24.0 && rZ > -60.0 && rZ < 22.0) {
+      seg(rX, rZ, 1.645, -56.69, 4.06, -51.15, 55.0);
       seg(rX, rZ, 4.06, -51.15, 8.5, -41.0, 55.0);
       seg(rX, rZ, 8.5, -41.0, 13.5, -29.0, 55.0);
       seg(rX, rZ, 13.5, -29.0, 12.2, -18.0, 55.0);
@@ -296,21 +298,26 @@ function terrain(x, z) {
     let tt = 0.0, wf = 1.0;
     if (inV > 0.5) {
       tt = vt - 1.5 * sin(vs * 0.11 + 0.4) * ss(4.0, 14.0, abs(vs));
-      wf = 2.2 + 1.3 * exp(-vs * vs / 40.0);
+      wf = 1.4 + 1.6 * exp(-vs * vs / 40.0);
       if (vs > -24.0 && vs < 50.5) {
         let k = exp(-vs * vs / 30.0);
         let tr = 3.1 * k + (1.0 - k) * 0.5 * wf * sin(vs * 0.45);
-        let dr = abs(tt - tr) * 1000.0 + 400.0 * ss(-16.0, -24.0, vs);
-        if (dr < gRivD) { gRivD = dr; gRivW = 26.0; }
+        let dr = abs(tt - tr) * 1000.0 + 4000.0 * ss(-14.0, -24.0, vs) + 4000.0 * ss(45.0, 50.5, vs);
+        if (dr < gRivD) { gRivD = dr; gRivW = 17.0; }
       }
     }
     let corridor = exp(-gRivD * gRivD / 1100000.0);                 // relief is subdued along river corridors
 
-    // relief: basin-and-range country stretches the noise domain east-west (ranges trend north-south)
-    let tD = clamp((X - 45.0) / 60.0, 0.0, 1.0);
-    let stretch = x + 1.3 * (60000.0 * (tD * tD * tD - 0.5 * tD * tD * tD * tD) + max(X - 105.0, 0.0) * 1000.0);
-    let B = mount(stretch, z);
-    let sx = A * gMx * (1.0 + 1.3 * ss(45.0, 105.0, X)), sz = A * gMz;
+    // relief: alpine / hill country uses 16 km massifs; basin-and-range country uses longer wavelengths squeezed
+    // east-west (ranges trend north-south). The two styles cross-fade over the rain-shadow transition.
+    let Dm = ss(50.0, 100.0, X);
+    let B = 0.0, sx = 0.0, sz = 0.0;
+    if (Dm < 0.999) { B = mount(x, z, 0.0000625); sx = gMx; sz = gMz; }
+    if (Dm > 0.001) {
+      let Bd = mount(x * 2.3 + 51000.0, z, 0.0000385);
+      B = mix(B, Bd, Dm); sx = mix(sx, gMx * 2.3, Dm); sz = mix(sz, gMz, Dm);
+    }
+    sx *= A; sz *= A;
     // desert basins fill with alluvium: flat floors, dry lakes at the lowest points
     let b0 = 0.17 * D;
     let fill = b0 - B;
@@ -319,16 +326,16 @@ function terrain(x, z) {
     let sl = sqrt(sx * sx + sz * sz) * (1.0 - basin);
     rough = ss(0.06, 0.5, sl);
     let relief = A * B;
-    if (A > 120.0 && sl > 0.015 && gLod < 3000.0) {
-      relief += (dissect(x, z, sx, sz, 0.0001667) - 0.55) * ss(0.004, 0.05, sl) * min(A, 2800.0) * 0.16;
+    if (A > 100.0 && sl > 0.004 && gLod < 3000.0) {
+      relief += (dissect(x, z, sx, sz, 0.0003125, 0.5) - 0.55) * ss(0.004, 0.05, sl) * min(A - 100.0, 2600.0) * 0.16;
     }
     relief *= 1.0 - 0.92 * corridor;
     h = 8.0 * (1.0 - exp(-max(c, 0.0) / 0.5)) + 36.0 * (1.0 - exp(-max(c, 0.0) / 80.0)) + fade * (U + relief);
 
     // red-rock mesa country: a tilted plateau dissected by a dendritic canyon system with benched walls
     if (Ms > 0.002) {
-      let es = dissect(x + 31000.0, z - 7000.0, 0.05 + 0.6 * sx, 0.07 + 0.6 * sz, 0.000143);
-      let q = 3.0 * ss(0.25, -1.0, es);
+      let es = dissect(x + 31000.0, z - 7000.0, 0.02 + 0.10 * l2x + 0.3 * sx, 0.03 + 0.10 * l2z + 0.3 * sz, 0.000125, 0.36);
+      let q = 3.0 * ss(0.12, -0.42, es);
       let fq = q - floor(q);
       h -= 140.0 * (floor(q) + ss(0.25, 0.6, fq)) * Ms * fade;
       rough = max(rough, Ms * ss(0.2, -0.3, es) * 0.7);
@@ -342,14 +349,15 @@ function terrain(x, z) {
     if (inV > 0.5) {
       let q = abs(vs);
       let zf = vs > 0.0 ? 1650.0 - 21.0 * vs : 1650.0 + 9.0 * q - 31.0 * (q - 28.0) * ss(24.0, 34.0, q);
-      let wv = (1.0 - ss(wf, wf + 5.5, abs(tt) + 1.3 * mw * ss(1.6, 3.6, abs(tt)))) * (1.0 - ss(38.0, 58.0, q));
-      let fl = zf + 45.0 * min(tt * tt / (wf * wf), 4.0) * (1.0 - exp(-vs * vs / 40.0));
+      let wv = (1.0 - ss(wf, wf + 4.2, abs(tt) + 1.1 * mw * ss(1.2, 3.2, abs(tt)))) * (1.0 - ss(38.0, 58.0, q));
+      let fl = zf + (45.0 * min(tt * tt / (wf * wf), 4.0) + 14.0 * mw + 9.0 * L2) * (1.0 - exp(-vs * vs / 40.0));
       h = mix(h, fl, wv);
       rough *= 1.0 - 0.8 * wv;
     }
     // river beds: a broad shallow valley and an incised channel that carries water
     if (gRivD < 4000.0) {
-      let ch = 1.0 - ss(gRivW - 7.0, gRivW + 7.0, gRivD);
+      let re = max(7.0, gLod);                                       // band-limited channel edge
+      let ch = (1.0 - ss(gRivW - re, gRivW + re, gRivD)) * min(1.0, 2.5 * gRivW / max(gLod, 1.0));
       h -= (5.0 * exp(-gRivD * gRivD / 500000.0) + 1.6 * ch) * ss(0.0, 1.5, c + 1.0);
       gSpec = mix(gSpec, 1.0, ch * ss(-0.4, 0.3, h));
       rough *= 1.0 - ch;
