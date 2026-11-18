@@ -135,6 +135,7 @@ uniform vec4 uLensSun;     // xy: sun position in uv, z: glare visibility (0..1)
 uniform vec3 uLensColor;   // sun irradiance at the camera (tints the glare)
 uniform vec4 uGrade;       // x: AgX look power (contrast), y: saturation, z: 8-bit dither amplitude (0 = float target), w: frame
 uniform float uDebug;
+uniform float uNightGrade; // 0..1: rod-vision grade for dark-adapted scenes
 
 vec3 agxContrast(vec3 x) {
   vec3 x2 = x * x, x4 = x2 * x2;
@@ -167,11 +168,11 @@ vec3 lens(vec2 uv) {
   vec2 dv = p - sp; float r = length(dv);
   // glare spread: tight core + wide veil (roughly 1/r^2..3 like real lens/eye scatter)
   float core = 1.0 / (1.0 + pow(r / 0.022, 2.6));
-  float veil = 0.045 / (1.0 + pow(r / 0.16, 2.0)) + 0.012 / (1.0 + pow(r / 0.5, 2.0));
+  float veil = 0.016 / (1.0 + pow(r / 0.16, 2.0)) + 0.004 / (1.0 + pow(r / 0.5, 2.0));
   // 6-blade diffraction spikes, fading with distance
   float ang = atan(dv.y, dv.x);
-  float spikes = pow(abs(cos(ang * 3.0 + 0.4)), 60.0) * 0.5 / (1.0 + pow(r / 0.11, 2.0));
-  vec3 g = uLensColor * (core * 1.3 + veil + spikes * 0.16);
+  float spikes = pow(abs(cos(ang * 3.0 + 0.4)), 90.0) / (1.0 + pow(r / 0.045, 2.2));
+  vec3 g = uLensColor * (core * 1.3 + veil + spikes * 0.05);
   // ghosts on the axis through the image centre
   vec3 gh = vec3(0.0);
   gh += vec3(0.45, 0.8, 1.0) * smoothstep(0.075, 0.03, length(p + sp * 0.42));
@@ -179,7 +180,7 @@ vec3 lens(vec2 uv) {
   gh += vec3(0.5, 1.0, 0.6) * smoothstep(0.16, 0.10, length(p + sp * 1.35)) * 0.35;
   gh += vec3(0.8, 0.6, 1.0) * smoothstep(0.02, 0.012, length(p - sp * 0.35)) * 1.1;
   float halo = smoothstep(0.03, 0.0, abs(length(p + sp * 0.12) - 0.42));
-  gh += vec3(0.9, 0.7, 0.5) * halo * 0.25;
+  gh += vec3(0.9, 0.7, 0.5) * halo * 0.07;
   g += uLensColor * gh * (0.0045 * uLensSun.w);
   return g * uLensSun.z;
 }
@@ -192,6 +193,12 @@ void main() {
   vec2 q = (vUv - 0.5) * 2.0;
   c *= 1.0 - uTone.z * pow(dot(q, q) * 0.5, 1.4);
   if (uDebug > 0.5) { outColor = vec4(oetf(clamp(c, 0.0, 1.0)), 1.0); return; }
+  if (uNightGrade > 0.0) {
+    // Night vision is rod vision: dim surfaces lose colour and shift blue (Purkinje); lights keep their colour.
+    float y = dot(c, LUMA);
+    float w = uNightGrade * (1.0 - smoothstep(0.04, 0.7, y));
+    c = mix(c, y * vec3(0.62, 0.84, 1.24), 0.78 * w);
+  }
   c = oetf(agx(c));
   if (uGrade.z > 0.0) {   // 8-bit intermediate: triangular dither here too
     float n = hash12(gl_FragCoord.xy + uGrade.w * 7.31) + hash12(gl_FragCoord.yx * 1.37 + uGrade.w * 3.17 + 19.0) - 1.0;
@@ -284,7 +291,7 @@ export function createPostPasses(ctx) {
   const tonemap = mat({
     tHDR: { value: null }, tBloom: { value: null },
     uTone: { value: new THREE.Vector4(1, 0.05, 0.2, 1.777) }, uLensSun: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
-    uLensColor: { value: new THREE.Vector3() }, uGrade: { value: new THREE.Vector4(1.18, 1.16, 0, 0) }, uDebug: { value: 0 },
+    uLensColor: { value: new THREE.Vector3() }, uGrade: { value: new THREE.Vector4(1.18, 1.16, 0, 0) }, uDebug: { value: 0 }, uNightGrade: { value: 0 },
   }, TONEMAP_FRAG);
   const final = mat({ tLDR: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uFinal: { value: new THREE.Vector4(0, 0.5, 0, 1 / 255) } }, FINAL_FRAG);
   const copy = mat({ tSrc: { value: null } }, COPY_FRAG);

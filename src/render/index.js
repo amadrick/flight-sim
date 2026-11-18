@@ -28,11 +28,11 @@ const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t
 const lum3 = (v) => 0.2126 * v.x + 0.7152 * v.y + 0.0722 * v.z;
 const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
 
-// Night is compressed (a real full moon is 1e-6 of the sun): the moon delivers ~1% of the sun and auto-exposure
-// opens up ~4 stops, which keeps half-float precision and other modules' emissive values in a sane range.
-const MOON_FULL = 0.011;
+// Night is compressed (a real full moon is 1e-6 of the sun): the moon delivers 0.4% of the sun and auto-exposure
+// opens up ~5 stops, which keeps half-float precision and other modules' emissive values in a sane range.
+const MOON_FULL = 0.004;
 const MOON_TINT = new THREE.Vector3(0.80, 0.90, 1.0);
-const AIRGLOW = new THREE.Vector3(0.55, 0.85, 1.0).multiplyScalar(1.5e-5);  // per km of sea-level air, × night
+const AIRGLOW = new THREE.Vector3(0.55, 0.85, 1.0).multiplyScalar(2e-5);    // per km of sea-level air, × night
 const GROUND_ALBEDO = new THREE.Vector3(0.14, 0.15, 0.13);
 const MOON_RADIUS = 0.00452 * 1.7;       // drawn 1.7x larger than life, as every film does
 const MOON_DISC_RADIANCE = 0.34;
@@ -358,7 +358,7 @@ export async function createPipeline(ctx) {
     poleAxis.set(0, Math.sin(lat), -Math.cos(lat));
     starRot.makeRotationAxis(poleAxis, ((ctx.time.timeOfDay || 0) / 24 + (ctx.time.dayOfYear || 0) / 365.25) * Math.PI * 2);
     u.uSkyStarRot.value.setFromMatrix4(starRot);
-    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, night > 0.02 ? Math.min(1, night * 1.5) : 0, MOON_RADIUS, MOON_DISC_RADIANCE);
+    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, smooth(0.45, 1, night), MOON_RADIUS, MOON_DISC_RADIANCE);
   }
 
   function fitKeyShadows() {
@@ -419,8 +419,8 @@ export async function createPipeline(ctx) {
   function exposureFor(L) {
     // Partial adaptation: bright scenes stay bright, dark scenes stay dark (the eye does not grey-card the world).
     const Lr = 0.2;
-    const e = L > Lr ? Math.pow(L / Lr, -0.6) : Math.pow(L / Lr, -0.84);
-    return clamp(e * 0.95, 0.22, 18);
+    const e = L > Lr ? Math.pow(L / Lr, -0.6) : Math.pow(L / Lr, -0.8);
+    return clamp(e * 0.95, 0.22, 40);
   }
   function applyProbe(v, early) {
     for (let i = 0; i < 16; i++) if (!Number.isFinite(v[i])) return;
@@ -678,6 +678,7 @@ export async function createPipeline(ctx) {
       u.uLensColor.value.copy(sunE);
       u.uGrade.value.set(1.16, 1.14, caps.float ? 0 : 1 / 255, frameNo % 64);
       u.uDebug.value = dbg.rdebug === 'notonemap' ? 1 : 0;
+      u.uNightGrade.value = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));
       post.tonemap.render(renderer, ldrTarget);
     }
 

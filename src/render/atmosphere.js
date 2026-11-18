@@ -77,14 +77,10 @@ void main() {
 
 const SKYVIEW_FRAG = HEAD + /* glsl */`
 void main() {
-  vec3 dir = atmXYToDir(vUv, ATM_SKY_SIZE);
+  vec3 dir = atmSkyUVToDir(vUv);
   float h = uAtmView.w;
-  float tTop = atmDistToTop(h, dir.y);
-  bool upper = vUv.y < 0.5;
   vec3 L, T;
-  // rows above the horizon: the real sky to space. Rows below: in-scatter ignoring the ground, capped at the
-  // aerial-perspective range — the reference the aerial volume is normalised against.
-  atmIntegrate(h, dir, upper ? tTop : min(tTop, ATM_AP_DMAX), upper ? 36 : 28, L, T);
+  atmIntegrate(h, dir, atmDistToTop(h, dir.y), 40, L, T);
   outColor = vec4(atmEncode(L), dot(T, vec3(0.3333333)));
 }`;
 
@@ -98,11 +94,12 @@ void main() {
   float w = (k + 0.5) / ${ATM.AP_N}.0;
   float tEnd = min(ATM_AP_DMAX * w * w, atmDistToTop(h, dir.y));
   float tG = atmDistToGround(h, dir.y);
-  if (tG >= 0.0) tEnd = min(tEnd, tG);
+  if (tG >= 0.0) tEnd = min(tEnd, tG);            // below the horizon the volume saturates at the ground
   vec3 L, T;
   atmIntegrate(h, dir, tEnd, int(clamp(4.0 + k * 0.75, 4.0, 26.0)), L, T);
-  vec3 ref = atmSkyRef(dir);
-  outColor = vec4(clamp(L / max(ref, vec3(1e-10)), 0.0, 1.0), dot(T, vec3(0.3333333)));
+  vec3 ratio = L / max(atmSkyRef(dir), vec3(1e-10));
+  // 8-bit fallback stores ratio / 4
+  outColor = vec4(uAtmEnc.x > 0.5 ? clamp(ratio * 0.25, 0.0, 1.0) : clamp(ratio, 0.0, 16.0), dot(T, vec3(0.3333333)));
 }`;
 
 export function createAtmosphere(ctx, caps) {

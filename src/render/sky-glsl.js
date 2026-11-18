@@ -19,7 +19,7 @@ float sky_noise3(vec3 p) {
 float sky_fbm3(vec3 p) { return 0.5 * sky_noise3(p) + 0.25 * sky_noise3(p * 2.03 + 11.0) + 0.125 * sky_noise3(p * 4.01 + 23.0) + 0.0625 * sky_noise3(p * 8.05 + 5.0); }
 
 // One layer of stars on a cube-face grid: at most one star per cell, kept away from the cell border so no
-// neighbour lookups are needed. Returns radiance.
+// neighbour lookups are needed (the kernel has compact support). Returns radiance.
 vec3 sky_starLayer(vec3 d, float N, float density, float seed, float airmass) {
   vec3 a = abs(d); vec3 q; float face;
   if (a.x >= a.y && a.x >= a.z) { q = vec3(d.y, d.z, d.x); face = d.x > 0.0 ? 0.0 : 1.0; }
@@ -29,27 +29,32 @@ vec3 sky_starLayer(vec3 d, float N, float density, float seed, float airmass) {
   vec2 g = (uv * 0.5 + 0.5) * N, cell = min(floor(g), N - 1.0);
   vec3 rnd = sky_hash32(cell + face * 131.0 + seed);
   if (rnd.z > density) return vec3(0.0);
-  vec2 sp = (cell + 0.18 + 0.64 * rnd.xy) / N * 2.0 - 1.0;
+  vec2 sp = (cell + 0.22 + 0.56 * rnd.xy) / N * 2.0 - 1.0;
   float ang = length(normalize(vec3(uv, 1.0)) - normalize(vec3(sp, 1.0)));
   float m = sky_hash12(cell * 1.7 + face * 17.0 + seed + 3.1);
-  float flux = 0.012 + 0.9 * pow(m, 11.0) + 0.07 * pow(m, 3.0);
-  float sigma = max(uSkyParams.x * 0.8, 2.2e-4) * (1.0 + 0.9 * m * m * m);
-  float core = exp(-0.5 * ang * ang / (sigma * sigma));
-  // scintillation: stronger and slower through more air
+  float m3 = m * m * m;
+  float flux = 0.004 + 0.16 * pow(m, 10.0) + 0.02 * m3;
+  // ~1.5 px footprint whatever the resolution (brighter stars slightly larger), never wider than the cell margin
+  float R = min(2.2 * max(uSkyParams.x * 0.75, 2.0e-4) * (1.0 + 0.7 * m3), 0.4 / N);
+  float k = max(1.0 - ang * ang / (R * R), 0.0);
+  // scintillation: stronger through more air
   float tw = 1.0 + (0.10 + 0.5 * airmass) * sin(uTime * (5.0 + 9.0 * rnd.x) + rnd.y * 40.0) * sin(uTime * (2.3 + 3.0 * rnd.y) + rnd.x * 17.0);
   float temp = sky_hash12(cell * 3.3 + face * 7.0 + seed);
   vec3 tint = temp < 0.5 ? mix(vec3(1.0, 0.62, 0.38), vec3(1.0, 0.93, 0.85), temp * 2.0) : mix(vec3(1.0, 0.96, 0.92), vec3(0.68, 0.80, 1.0), temp * 2.0 - 1.0);
-  return tint * (flux * core * max(tw, 0.2));
+  return tint * (flux * k * k * max(tw, 0.2));
 }
 vec3 sky_stars(vec3 dir) {
   vec3 d = uSkyStarRot * dir;
   float airmass = pow(1.0 - clamp(dir.y, 0.0, 1.0), 5.0);
-  vec3 c = sky_starLayer(d, 52.0, 0.24, 0.0, airmass) + sky_starLayer(d.zxy, 120.0, 0.30, 57.0, airmass) * 0.35;
+  vec3 c = sky_starLayer(d, 40.0, 0.26, 0.0, airmass);
+  // the faint, dense layer only when pixels are small enough to resolve it
+  float fine = 1.0 - smoothstep(0.0009, 0.0016, uSkyParams.x);
+  if (fine > 0.0) c += sky_starLayer(d.zxy, 110.0, 0.30, 57.0, airmass) * (0.4 * fine);
   // Milky Way: a soft noisy band along a great circle
   float b = dot(d, vec3(0.2873, 0.1916, 0.9385));
   float band = exp(-b * b * 16.0);
   float n = sky_fbm3(d * 5.0 + 3.0);
-  c += vec3(0.80, 0.86, 1.0) * (band * (0.25 + 1.6 * n * n * n) * 9e-4);
+  c += vec3(0.80, 0.86, 1.0) * (band * (0.25 + 1.6 * n * n * n) * 3.2e-4);
   return c * uSkyParams.y;
 }
 
@@ -98,7 +103,7 @@ vec3 sky_radiance(vec3 dir) {
   if (uSkyParams.y > 0.0) {
     // stars drown in sky glow: visible once the sky itself is darker than them
     float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    float vis = exp(-lum / 0.0045) * (1.0 - moon.a);
+    float vis = exp(-lum * lum / 9e-6) * (1.0 - moon.a);
     if (vis > 0.002) col += sky_stars(dir) * T * vis;
   }
   return col;

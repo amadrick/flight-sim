@@ -6,10 +6,9 @@
 //
 //   tAtmTransmittance  256x64   T(altitude, cos zenith) to the top of the atmosphere          (on weather change)
 //   multi-scattering   32x32    Psi(cos sun zenith, altitude), isotropic 2nd+ order            (on weather change)
-//   tAtmSkyView        256x128  sky radiance around the camera; rows above the horizon are the real sky, rows
-//                               below it hold the *unterminated* in-scatter used as the aerial-perspective reference (per frame)
+//   tAtmSkyView        256x128  sky radiance around the camera, zenith → horizon (a = mean transmittance to space)  (per frame)
 //   tAtmAerial         256x128  8x4 atlas of 32x32 tiles = 32 distance slices of a camera-centred SPHERICAL froxel
-//                               volume: rgb = inscatter(d) / reference(dir), a = transmittance(d)                (per frame)
+//                               volume: rgb = inscatter(d) / sky reference(dir), a = transmittance(d)            (per frame)
 //
 // The aerial-perspective volume stores a *ratio* against the sky-view LUT rather than radiance. The phase function
 // is constant along a view ray, so the ratio is smooth in direction even where the sky has a sharp Mie peak around
@@ -77,34 +76,53 @@ vec3 atmLightTransmittance(float h, float mu) {
   return atmTransmittanceLUT(h, max(mu, muH)) * smoothstep(-0.006, 0.006, mu - muH);
 }
 
-// ---- direction <-> LUT coordinates shared by the sky-view LUT and the aerial-perspective tiles -----------------
-// Elevation is measured from the horizon with a sqrt distribution on each side (most texels at the horizon,
-// Hillaire 2020 §5.3); azimuth is measured from the key light with a sqrt distribution (most texels near the sun).
+// ---- direction <-> LUT coordinates ------------------------------------------------------------------------------
+// Azimuth is measured from the key light with a sqrt distribution (most texels near the sun, where the Mie peak is).
+float atmAzToX(vec3 dir) {
+  vec2 hd = vec2(dir.x * uAtmView.y + dir.z * uAtmView.z, dir.z * uAtmView.y - dir.x * uAtmView.z);
+  float a = (abs(hd.x) + abs(hd.y)) < 1e-7 ? 0.0 : atan(hd.y, hd.x);
+  return 0.5 + 0.5 * sign(a) * sqrt(abs(a) / ATM_PI);
+}
+vec3 atmDirFromAzEl(float x, float el) {
+  float s = clamp(x, 0.0, 1.0) * 2.0 - 1.0, a = sign(s) * s * s * ATM_PI;
+  vec2 hd = vec2(cos(a), sin(a)) * cos(el);
+  return vec3(hd.x * uAtmView.y - hd.y * uAtmView.z, sin(el), hd.x * uAtmView.z + hd.y * uAtmView.y);
+}
+// Sky-view LUT: every row is above the horizon (row 0 = zenith, last row = the horizon itself), sqrt distribution
+// in elevation so most texels sit at the horizon (Hillaire 2020 §5.3). Directions below the horizon clamp to it.
+vec2 atmSkyUV(vec3 dir) {
+  float beta = uAtmView.x;
+  float e = max(asin(clamp(dir.y, -1.0, 1.0)) + beta, 0.0);
+  float c = sqrt(min(e / (1.5707963 + beta), 1.0));
+  return (0.5 + vec2(atmAzToX(dir), 1.0 - c) * (ATM_SKY_SIZE - 1.0)) / ATM_SKY_SIZE;
+}
+vec3 atmSkyUVToDir(vec2 uv) {
+  float beta = uAtmView.x;
+  vec2 x = clamp((uv * ATM_SKY_SIZE - 0.5) / (ATM_SKY_SIZE - 1.0), 0.0, 1.0);
+  float c = 1.0 - x.y;
+  return atmDirFromAzEl(x.x, c * c * (1.5707963 + beta) - beta);
+}
+// Aerial-perspective tiles: elevation measured from the horizon with a sqrt distribution on each side (upper half
+// of the tile above the horizon, lower half below it).
 vec2 atmDirToXY(vec3 dir, vec2 size) {
   float beta = uAtmView.x, halfRows = size.y * 0.5;
   float e = asin(clamp(dir.y, -1.0, 1.0)) + beta;
   float y;
   if (e >= 0.0) y = (0.5 + (1.0 - sqrt(clamp(e / (1.5707963 + beta), 0.0, 1.0))) * (halfRows - 1.0)) / size.y;
   else y = (halfRows + 0.5 + sqrt(clamp(-e / (1.5707963 - beta), 0.0, 1.0)) * (halfRows - 1.0)) / size.y;
-  vec2 hd = vec2(dir.x * uAtmView.y + dir.z * uAtmView.z, dir.z * uAtmView.y - dir.x * uAtmView.z);
-  float a = (abs(hd.x) + abs(hd.y)) < 1e-7 ? 0.0 : atan(hd.y, hd.x);
-  float xa = 0.5 + 0.5 * sign(a) * sqrt(abs(a) / ATM_PI);
-  return vec2((0.5 + xa * (size.x - 1.0)) / size.x, y);
+  return vec2((0.5 + atmAzToX(dir) * (size.x - 1.0)) / size.x, y);
 }
 vec3 atmXYToDir(vec2 uv, vec2 size) {
   float beta = uAtmView.x, halfRows = size.y * 0.5;
   float row = uv.y * size.y - 0.5, e;
   if (row < halfRows - 0.5) { float c = 1.0 - clamp(row / (halfRows - 1.0), 0.0, 1.0); e = c * c * (1.5707963 + beta); }
   else { float c = clamp((row - halfRows) / (halfRows - 1.0), 0.0, 1.0); e = -c * c * (1.5707963 - beta); }
-  float el = e - beta;
-  float s = clamp((uv.x * size.x - 0.5) / (size.x - 1.0), 0.0, 1.0) * 2.0 - 1.0;
-  float a = sign(s) * s * s * ATM_PI;
-  vec2 hd = vec2(cos(a), sin(a)) * cos(el);
-  return vec3(hd.x * uAtmView.y - hd.y * uAtmView.z, sin(el), hd.x * uAtmView.z + hd.y * uAtmView.y);
+  return atmDirFromAzEl((uv.x * size.x - 0.5) / (size.x - 1.0), e - beta);
 }
 
-// Reference radiance for dir (above the horizon: the sky itself).
-vec3 atmSkyRef(vec3 dir) { return atmDecode(texture(tAtmSkyView, atmDirToXY(dir, ATM_SKY_SIZE)).rgb); }
+// Reference radiance the aerial-perspective volume is normalised against: the sky along dir, or — for directions
+// below the horizon — the sky at the horizon in the same azimuth (smooth in elevation, keeps the Mie peak in azimuth).
+vec3 atmSkyRef(vec3 dir) { return atmDecode(texture(tAtmSkyView, atmSkyUV(dir)).rgb); }
 
 // In-scatter (rgb) and transmittance (a) over distKm kilometres from the camera along unit dir. 3 fetches.
 vec4 atmAerialAt(vec3 dir, float distKm) {
@@ -117,7 +135,7 @@ vec4 atmAerialAt(vec3 dir, float distKm) {
   vec4 a = mix(a0, a1, clamp(s - k0, 0.0, 1.0));
   // before the first slice centre: in-scatter grows linearly from the camera
   if (s < 0.0) a = mix(vec4(0.0, 0.0, 0.0, 1.0), a0, clamp(distKm / (ATM_AP_DMAX * ${f(0.25 / (ATM.AP_N * ATM.AP_N))}), 0.0, 1.0));
-  return vec4(a.rgb * atmSkyRef(dir), a.a);
+  return vec4(a.rgb * (uAtmEnc.x > 0.5 ? 4.0 : 1.0) * atmSkyRef(dir), a.a);
 }
 
 // ================================= public API (names/signatures are a contract) =================================
