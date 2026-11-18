@@ -42,10 +42,14 @@ export function casFromMach(M, p) {
   return A0 * Mc;
 }
 
-/** Mach number from calibrated airspeed [m/s] and static pressure [Pa] (subsonic CAS only; used by tools/trim). */
+/** Mach number from calibrated airspeed [m/s] and static pressure [Pa] (exact inverse of casFromMach). */
 export function machFromCas(cas, p) {
-  const qc = P0 * (Math.pow(1 + 0.2 * (cas / A0) * (cas / A0), 3.5) - 1);
-  return Math.sqrt(5 * (Math.pow(qc / p + 1, 2 / 7) - 1));
+  if (!(cas > 0)) return 0;
+  const x = impactPressureRatio(cas / A0) * P0 / p;   // qc / p
+  if (x <= 0.892929) return Math.sqrt(5 * (Math.pow(x + 1, 2 / 7) - 1));
+  let M = 1 + (x - 0.892929) * 0.4;
+  for (let i = 0; i < 12; i++) M = 0.881285 * Math.sqrt((x + 1) * Math.pow(1 - 1 / (7 * M * M), 2.5));
+  return M;
 }
 
 /** Normal-shock total pressure recovery (pitot intake) for M >= 1. */

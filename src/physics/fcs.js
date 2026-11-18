@@ -81,7 +81,9 @@ export function updateFcs(model, f, X, stick, a, dt) {
   const Md = (qbar * A.S * A.c * A.cmde * fCtrl * A.deMax) / X.iyy;      // rad/s² per unit command
   if (useRateLoop) {
     let qCmd;
-    const aMax = gearDn && fc.gdAlphaMax > 0 ? fc.gdAlphaMax : fc.alphaMax;
+    let aMax = gearDn && fc.gdAlphaMax > 0 ? fc.gdAlphaMax : fc.alphaMax;
+    // optional: keep the limit a fixed margin below the current stall angle (follows flaps, slats and Mach)
+    if (fc.alphaStallMargin > 0 && X.alphaStall - fc.alphaStallMargin < aMax) aMax = X.alphaStall - fc.alphaStallMargin;
     const qGam = (G0 / Veff) * (X.nz - grav);
     let qUp = fc.kAlpha * (aMax - X.alpha) + qGam, qDn = fc.kAlpha * (fc.alphaMin - X.alpha) + qGam;
     let qMax = gearDn && fc.gdQMax > 0 ? fc.gdQMax : fc.qMax;

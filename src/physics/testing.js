@@ -34,7 +34,7 @@ export function createMockContext(opts = {}) {
     },
     log: [],
   };
-  for (const n of ['crash', 'touchdown', 'sonicBoom', 'gear:moved', 'flaps:moved']) events.on(n, (p) => ctx.log.push({ name: n, ...(p || {}) }));
+  for (const n of ['crash', 'touchdown', 'sonicBoom', 'gear:moved', 'flaps:moved']) events.on(n, (p) => ctx.log.push({ ...(p || {}), name: n }));
   return ctx;
 }
 

@@ -341,6 +341,7 @@ export function resolveConfig(def) {
     type: ftype, fbw: ftype !== 'conventional', airliner: fbwAir,
     nzMax: num(f.nzMax, fbwAir ? 2.5 : model.limits.gMax), nzMin: num(f.nzMin, fbwAir ? -1 : model.limits.gMin),
     alphaMax: num(f.alphaMax, heavy ? 14 : 25) * DEG, alphaMin: num(f.alphaMin, heavy ? -6 : -10) * DEG,
+    alphaStallMargin: num(f.alphaStallMargin, fbwAir ? 2 : 0) * DEG,
     kAlpha: num(f.alphaGain, 2.5), kNz: num(f.nzGain, 1.2), qMax: num(f.pitchRateMax, heavy ? 8 : 60) * DEG,
     wq: num(f.pitchBandwidth, heavy ? 3.5 : 7), wi: num(f.pitchIntegral, heavy ? 1.5 : 3), kpMax: num(f.pitchGainMax, heavy ? 6 : 2.5),
     rollRate: num(f.rollRate, heavy ? 15 : 270) * DEG, wp: num(f.rollBandwidth, heavy ? 3 : 6), kpRollMax: num(f.rollGainMax, heavy ? 4 : 1.2),

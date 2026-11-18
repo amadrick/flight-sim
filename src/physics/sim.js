@@ -146,7 +146,7 @@ export function createSim(ctx, def, init) {
     t.water = false; t.deck = false;
     if (type === 'terrain') { t.mu = 0.55 * (1 - 0.3 * wet); t.rollF = 4.5; t.rough = 0.03; }
     else if (type === 'water') { t.mu = 0.3; t.rollF = 20; t.rough = 0; t.water = true; }
-    else { t.mu = 0.8 * (1 - 0.4 * wet); t.rollF = 1; t.rough = 0; t.deck = type === 'deck'; }
+    else { t.mu = 0.8 * (1 - 0.55 * wet); t.rollF = 1; t.rough = 0; t.deck = type === 'deck'; }
     if (typeof friction === 'number' && friction > 0) t.mu = friction;
   }
   function sampleGround() {
@@ -434,7 +434,7 @@ export function createSim(ctx, def, init) {
     X.V = ao.V; X.mach = ao.mach; X.qbar = ao.qbar; X.alpha = ao.V > 8 ? ao.alpha : 0; X.beta = ao.V > 8 ? ao.beta : 0;
     X.p = p; X.q = q; X.r = r; X.nz = nzAero; X.theta = Math.asin(clamp(sth, -1, 1)); X.phi = phi; X.sth = sth; X.cth = cth;
     X.cphi = Math.cos(phi); X.sphi = Math.sin(phi); X.psi = Math.atan2(-r02, r22); X.vs = vel.y; X.alt = pos.y;
-    X.gs = Math.hypot(vel.x - G.vx, vel.z - G.vz); X.stallMargin = ao.V > 20 ? ao.stallMargin : 1; X.wow = wowMain; X.gearHandle = gearTarget > 0.5; X.iyy = iyy; X.ixx = ixx; X.izz = izz; X.fCtrl = ao.fCtrl; X.fCla = ao.fCla;
+    X.gs = Math.hypot(vel.x - G.vx, vel.z - G.vz); X.stallMargin = ao.V > 20 ? ao.stallMargin : 1; X.alphaStall = ao.alphaStall - A.peakOff; X.wow = wowMain; X.gearHandle = gearTarget > 0.5; X.iyy = iyy; X.ixx = ixx; X.izz = izz; X.fCtrl = ao.fCtrl; X.fCla = ao.fCla;
     if (ap.alt || ap.hdg || ap.spd) { updateAutopilot(model.ap, ap, X, h); if (ap.spd) lever = ap.lever; }
     updateFcs(model, fcs, X, stick, ap, h);
 
@@ -729,11 +729,12 @@ export function createSim(ctx, def, init) {
         quiet = true; settleBrake = true;
         const x0 = pos.x, z0 = pos.z, savedLever = lever; lever = 0;
         environment(); wind.set(0, 0, 0); turb.sigma = 0;
+        vel.set(G.vx, G.vy, G.vz);                        // ride a moving surface (carrier deck)
         for (let k = 0; k < 960; k++) substep(H_MAX);
         // remove any residual motion; keep the settled height and attitude
         const yaw = Math.atan2(-r02, r22);
         tmpQ.setFromAxisAngle(UP, yaw - hdg); Q.premultiply(tmpQ).normalize();
-        pos.x = x0; pos.z = z0; vel.set(0, 0, 0); p = q = r = 0;
+        pos.x = x0; pos.z = z0; vel.set(G.vx, G.vy, G.vz); p = q = r = 0;
         for (let k = 0; k < nW; k++) { wst[k].omega = 0; wst[k].airTime = 0; }
         quiet = false; settleBrake = false; lever = savedLever; s.crashed = false; s.crashReason = '';
         groundTime = 1; airTime = 0; fcs.law = 0; fcs.integ = 0;
