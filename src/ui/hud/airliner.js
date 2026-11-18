@@ -17,13 +17,14 @@ const fmt = {
   k1: strCache((k) => (k / 10).toFixed(1)),
   alt5: strCache((k) => String(k)),
   mach3: strCache((k) => (k >= 1000 ? Math.floor(k / 1000) : '') + '.' + String(k % 1000).padStart(3, '0')),
+  wind: strCache((k) => { const d = Math.floor(k / 1000) % 360; return String(d === 0 ? 360 : d).padStart(3, '0') + '°/' + (k % 1000); }),
   baro: strCache((k) => (k / 100).toFixed(2)),
   hhmm: strCache((k) => { const h = Math.floor(k / 600) % 24, m = (k % 600) / 10; return String(h).padStart(2, '0') + String(Math.floor(m)).padStart(2, '0') + '.' + (Math.floor(m * 10) % 10) + 'z'; }),
 };
 
 export function createAirlinerDeck(tok) {
   const mono = tok.mono;
-  let key = '', layer = null, Lyt = null;
+  let key = -1, layer = null, Lyt = null;
   // filtered speed trend
   let lastIas = null, accel = 0;
   // FMA change-highlight timers
@@ -96,7 +97,7 @@ export function createAirlinerDeck(tok) {
 
   function draw(g, E) {
     const { W, H, dpr, s } = E;
-    const k = W + 'x' + H + '@' + dpr;
+    const k = (W * 8192 + H) * 8 + Math.round(dpr * 2);
     if (k !== key || !layer) { key = k; Lyt = layout(W, H); buildLayer(W, H, dpr); }
     g.drawImage(layer, 0, Lyt.layerTop, layer.width / dpr, layer.height / dpr);
     // speed trend (filtered dIAS/dt over sim time)
@@ -106,6 +107,7 @@ export function createAirlinerDeck(tok) {
     if (dt > 0) { const a = (ias - lastIas) / dt; accel += (clamp(a, -20, 20) - accel) * Math.min(1, dt * 1.5); lastIas = ias; }
     if (s.onGround && ias < 30) accel = 0;
     E.accel = accel;
+    E.windshear = !s.onGround && num(s.agl, 1e9) / FT < 1500 && accel < -4 && num(s.throttle) > 0.6;
     pfd(g, Lyt.pfd, E);
     if (Lyt.nd) nd(g, Lyt.nd, E);
     if (Lyt.eicas) eicas(g, Lyt.eicas, E);
@@ -231,7 +233,7 @@ export function createAirlinerDeck(tok) {
     const raFt = num(s.agl, 1e9) / FT;
     if (raFt < 2500) {
       const v = raFt > 100 ? Math.round(raFt / 10) * 10 : Math.round(Math.max(0, raFt) / 2) * 2;
-      text(g, F.int(v), ax, ay + ah * 0.6, raFt < num(E.minimums, 200) ? B.amber : B.white, fonts.l, 'center');
+      text(g, F.int(v), ax, ay + ah * 0.6, raFt < num(E.minimums, 200) && !s.onGround ? B.amber : B.white, fonts.l, 'center');
     }
     // ---- alerts ----
     if (nav.gcas.pullUp) { if (flash(t, 0.6)) alertBox(g, 'PULL UP', ax, ay + ah * 0.35, B.red); }
@@ -339,9 +341,17 @@ export function createAirlinerDeck(tok) {
     if (s.onGround && ias < vr + 30) { bugs.push(['V1', vr - 6], ['VR', vr], ['V2', vr + 9]); }
     else if (num(s.surfaces?.gear, 0) > 0.5 || flaps > 0.3) { bugs.push(['REF', vapp - 5], ['+20', vapp + 15]); }
     g.lineWidth = lw;
+    let off = 0;
     for (const [lab, v] of bugs) {
       const y = yOf(v);
-      if (y < top || y > bot) continue;
+      if (y < top) {   // off-scale above: digital readout at the top of the tape
+        const yy = top + 3 * u + off * 4 * u; off++;
+        g.fillStyle = B.black; g.fillRect(x, yy - 2 * u, w, 4 * u);
+        text(g, lab, x + 0.8 * u, yy, B.green, fonts.xs, 'left');
+        text(g, F.int(Math.round(v)), x + w - 0.6 * u, yy, B.green, fonts.xs, 'right');
+        continue;
+      }
+      if (y > bot) continue;
       g.strokeStyle = B.green; g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w + 1.6 * u, y); g.stroke();
       text(g, lab, x + w + 1.8 * u, y, B.green, fonts.xs, 'left');
     }
@@ -459,7 +469,7 @@ export function createAirlinerDeck(tok) {
       const h2 = hund + k;
       const th = Math.floor(h2 / 10), hd = h2 % 10;
       const yy = cy + (rollH - k) * bh * 0.8 + 0.2 * u;
-      text(g, F.int(hd), drX - u * 5.6, yy, B.white, fonts.n, 'right');
+      if (h2 > 0 || neg) text(g, F.int(hd), drX - u * 5.6, yy, B.white, fonts.n, 'right');
       if (th > 0 || neg) text(g, (neg ? '-' : '') + F.int(th), drX - u * 8.6, yy, B.white, fonts.l, 'right');
     }
     g.restore();
@@ -645,7 +655,7 @@ export function createAirlinerDeck(tok) {
     const w = ctx.weather;
     if (w && num(w.windSpeed) > 0.5) {
       const wf = num(w.windFrom), ws = num(w.windSpeed) / KT;
-      text(g, F.deg3(Math.round(wf)) + '°/' + F.int(ws), 2 * u, 9 * u, B.white, fonts.s, 'left');
+      text(g, fmt.wind(Math.round(wf) * 1000 + Math.round(ws)), 2 * u, 9 * u, B.white, fonts.s, 'left');
       const a = (wf + 180 - trk) * DEG;    // arrow: direction the wind blows, track-up
       const cx = 6 * u, cy = 15.5 * u, L = 3.2 * u;
       g.strokeStyle = B.white; g.lineWidth = Math.max(1, u * 0.4);
@@ -664,7 +674,7 @@ export function createAirlinerDeck(tok) {
     }
     if (nav.ils.active) {
       text(g, nav.ils.ident, 98 * u, 92 * u, B.white, fonts.s, 'right');
-      text(g, 'DME ' + '', 85 * u, 96.5 * u, B.white, fonts.xs, 'right');
+      text(g, 'DME', 85 * u, 96.5 * u, B.white, fonts.xs, 'right');
       text(g, F.tenth(Math.round(nav.ils.dme * 10)), 98 * u, 96.5 * u, B.white, fonts.s, 'right');
     }
     text(g, 'MAP', 2 * u, 96.5 * u, B.green, fonts.xs, 'left');
@@ -757,7 +767,7 @@ export function createAirlinerDeck(tok) {
     setScale({ w: d.vertical ? d.h : d.w });
     g.save(); g.translate(d.x, d.y);
     const items = [];
-    for (let i = 0; i < Math.min(2, en.length); i++) items.push(['N1 ' + (i + 1), F.tenth(Math.round(num(en[i].n1) * 1000)), B.white]);
+    for (let i = 0; i < Math.min(2, en.length); i++) items.push([i ? 'N1 2' : 'N1 1', F.tenth(Math.round(num(en[i].n1) * 1000)), B.white]);
     const gear = num(s.surfaces?.gear, 1);
     items.push(['GEAR', gear > 0.98 ? 'DOWN' : gear < 0.02 ? 'UP' : 'TRANS', gear > 0.98 ? B.green : gear < 0.02 ? B.white : B.amber]);
     items.push(['FLAPS', flapDetent(num(s.surfaces?.flaps, 0)), B.green]);
@@ -774,5 +784,5 @@ export function createAirlinerDeck(tok) {
     g.restore();
   }
 
-  return { draw, invalidate() { key = ''; } };
+  return { draw, invalidate() { key = -1; } };
 }

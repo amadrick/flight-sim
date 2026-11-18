@@ -1,13 +1,13 @@
 // External-view overlay: a compact typographic flight-data strip docked at the bottom, with a small attitude ball and compass.
 // Static parts (panel, labels, dividers) are cached in an offscreen layer; per frame only values are drawn.
-import { KT, FT, FPM, RAD, DEG, clamp, num, F, rrect, makeLayer, wrap180, flash } from './common.js';
+import { KT, FT, FPM, RAD, DEG, clamp, num, F, strCache, rrect, makeLayer, wrap180, flash } from './common.js';
 import { apLabel } from './fighter.js';
 
 const C = { fg: '#e9eef3', dim: 'rgba(196,208,220,0.62)', faint: 'rgba(196,208,220,0.18)', green: '#6dfc9f', amber: '#ffb000', red: '#ff5a3c', cyan: '#4cc9f0',
   sky: '#2f78c4', ground: '#7a5530' };
 
 export function createExternalOverlay(tok) {
-  let layer = null, key = '', L = null;
+  let layer = null, key = -1, L = null;
   const mono = tok.mono, disp = tok.display;
   C.amber = tok.accent; C.red = tok.warn; C.cyan = tok.ok;
 
@@ -86,7 +86,7 @@ export function createExternalOverlay(tok) {
   function draw(g, E) {
     const { s, def, W, H, dpr, nav, t } = E;
     const airliner = def.hudType === 'airliner';
-    const k = W + 'x' + H + '@' + dpr + (airliner ? 'A' : 'F');
+    const k = ((W * 8192 + H) * 8 + Math.round(dpr * 2)) * 2 + (airliner ? 1 : 0);
     if (k !== key || !layer) { key = k; L = layout(W, H, airliner); buildLayer(W, H, dpr); }
     g.drawImage(layer, L.px - 1, L.py - 1, layer.width / dpr, layer.height / dpr);
     const by = L.byId;
@@ -110,7 +110,7 @@ export function createExternalOverlay(tok) {
     if (aglFt < 2500) { sub(by.alt, 'AGL'); sub(by.alt, F.comma(Math.max(0, Math.round(aglFt))), C.fg, L.fsS * 2.2); }
 
     const hdg = num(s.heading) * RAD;
-    val(by.hdg, F.deg3(Math.round(hdg)) + '°', C.fg, '');
+    val(by.hdg, F.hdg(Math.round(hdg)), C.fg, '');
     if (nav.dest) { sub(by.hdg, nav.dest.id); sub(by.hdg, nav.distNM < 100 ? F.tenth(Math.round(nav.distNM * 10)) : F.int(nav.distNM), C.fg, L.fsS * 0.6 * 5); }
 
     const vs = num(s.verticalSpeed) / FPM;
@@ -156,13 +156,13 @@ export function createExternalOverlay(tok) {
       const gear = num(s.surfaces?.gear, 1);
       flag(gear > 0.98 ? 'GEAR DN' : gear < 0.02 ? 'GEAR UP' : 'GEAR', gear > 0.98 ? C.green : gear < 0.02 ? C.dim : (flash(t, 0.6) ? C.amber : C.dim), y1);
       const fl = num(s.surfaces?.flaps, 0);
-      flag(fl > 0.02 ? 'FLAPS ' + (airliner ? flapDetent(fl) : F.int(Math.round(fl * 100))) : 'FLAPS UP', fl > 0.02 ? C.fg : C.dim, y1);
+      flag(fl > 0.02 ? (airliner ? FLAPS_DET(+flapDetent(fl)) : FLAPS_PCT(Math.round(fl * 100))) : 'FLAPS UP', fl > 0.02 ? C.fg : C.dim, y1);
       x = c.x;
       let any = false;
       if (num(s.surfaces?.speedbrake, 0) > 0.05) { flag('SPD BRK', C.amber, y2); any = true; }
       if (s.parkingBrake) { flag('PARK', C.amber, y2); any = true; }
       else if (num(s.brakes, 0) > 0.1) { flag('BRK', C.amber, y2); any = true; }
-      if (s.ap?.engaged) { flag('AP ' + apLabel(s.ap), C.cyan, y2); any = true; }
+      if (s.ap?.engaged) { flag(AP_STR(apLabel(s.ap)), C.cyan, y2); any = true; }
       else if (s.ap?.autothrottle) { flag('A/T', C.cyan, y2); any = true; }
       if (!any && s.onGround) flag('ON GROUND', C.dim, y2);
     }
@@ -237,8 +237,11 @@ export function createExternalOverlay(tok) {
     g.textBaseline = 'alphabetic';
   }
 
-  return { draw, invalidate() { key = ''; } };
+  return { draw, invalidate() { key = -1; } };
 }
 
 const DET = [0, 1, 2, 5, 10, 15, 25, 30, 40];
+const FLAPS_DET = strCache((k) => 'FLAPS ' + k), FLAPS_PCT = strCache((k) => 'FLAPS ' + k + '%');
+const _ap = new Map();
+const AP_STR = (l) => { let v = _ap.get(l); if (!v) { v = 'AP ' + l; _ap.set(l, v); } return v; };
 export function flapDetent(v) { let b = 0; for (const d of DET) if (Math.abs(d / 40 - v) < Math.abs(b / 40 - v)) b = d; return F.int(b); }

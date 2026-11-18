@@ -454,8 +454,15 @@ export function createFighterHud() {
   return { draw, resetSession };
 }
 
+const _apl = new Map();
 export function apLabel(ap) {
-  const m = String(ap.mode || '').toLowerCase();
+  const key = ap.mode || '';
+  let v = _apl.get(key);
+  if (v === undefined) { v = apLabelRaw(key); if (_apl.size > 64) _apl.clear(); _apl.set(key, v); }
+  return v;
+}
+function apLabelRaw(mode) {
+  const m = String(mode || '').toLowerCase();
   if (!m) return 'ALT HDG';
   let out = '';
   if (m.includes('alt')) out += 'ALT ';

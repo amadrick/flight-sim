@@ -42,4 +42,6 @@ function apply() {
   s.agl = s.position.y - ctx.world.groundHeightAt(s.position.x, s.position.z) - p.def.geometry.cgHeight;
   if (raw.night) ctx.env.nightFactor = 1;
   if (raw.fuel) s.fuel = +raw.fuel;
+  if (raw.crash) { s.crashed = true; s.crashReason = 'Hard impact: 1,850 fpm, gear up'; }
+  if (raw.paused) ctx.time.paused = true;
 }

@@ -55,6 +55,7 @@ export const F = {
   hundredth: strCache((k) => (k < 0 ? '-' : '') + Math.floor(Math.abs(k) / 100) + '.' + pad(Math.abs(k) % 100, 2)), // k = value×100
   mach: strCache((k) => (k >= 100 ? Math.floor(k / 100) : '') + '.' + pad(k % 100, 2)),                             // k = M×100, ".85" / "1.20"
   mmss: strCache((k) => { const m = Math.floor(k / 60), s = k % 60; return (m >= 60 ? Math.floor(m / 60) + ':' + pad(m % 60, 2) : m) + ':' + pad(s, 2); }),
+  hdg: strCache((k) => { const v = ((k % 360) + 360) % 360; return pad(v === 0 ? 360 : v, 3) + '°'; }),
   deg3: strCache((k) => pad(((k % 360) + 360) % 360 === 0 ? 360 : ((k % 360) + 360) % 360, 3)),                     // 001..360
 };
 
