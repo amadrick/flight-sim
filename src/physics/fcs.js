@@ -143,13 +143,19 @@ export function updateFcs(model, f, X, stick, a, dt) {
       f.trimTarget = clamp(f.trimTarget + s * feel * fc.trimFollow * dt * (A.deMax / A.trimMax), -C.trimAuth, C.trimAuth);
     }
   }
-  if (fc.rotAssist && law < 1 && deCmd > 0 && !apPitch) {
-    // rotation assist: on the wheels a held-back stick is limited to a sensible rotation rate and kept short of the
-    // tail-strike attitude (fades out with the flight-law blend after lift-off)
-    let qLim = 2 * (fc.rotPitchMax - X.theta); if (qLim > fc.rotRate) qLim = fc.rotRate;
-    const lim = clamp(1 + 18 * (qLim - X.q), -0.35, 1);
-    const dl = deCmd + (lim - deCmd) * (1 - law);
-    if (dl < deCmd) deCmd = dl;
+  if (fc.rotAssist && deCmd > 0 && !apPitch) {
+    // rotation / flare assist: on the wheels a held-back stick is limited to a sensible rotation rate and kept short
+    // of the tail-strike attitude; the attitude limit also covers the last metres of a landing flare. It fades out
+    // with the flight-law blend after lift-off and with height.
+    const low = gearDn ? 1 - clamp((X.agl - 2) / 8, 0, 1) : 0;
+    const w = 1 - law > low ? 1 - law : low;
+    if (w > 0) {
+      const cap = law < 0.5 ? fc.rotRate : 2.5 * fc.rotRate;
+      let qLim = 2 * (fc.rotPitchMax - X.theta); if (qLim > cap) qLim = cap;
+      const lim = clamp(1 + 18 * (qLim - X.q), -0.35, 1);
+      const dl = deCmd + (lim - deCmd) * w;
+      if (dl < deCmd) deCmd = dl;
+    }
   }
   if (!useRateLoop || fc.fbw) {
     // manual trim commands (trimTarget is stepped by the sim) run at the trim motor rate

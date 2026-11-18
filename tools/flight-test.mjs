@@ -15,6 +15,21 @@ const args = process.argv.slice(2);
 const id = args.find((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--only');
 const verbose = args.includes('--verbose');
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
+if (!id && process.env.NODE_TEST_CONTEXT) {
+  // picked up by `node --test` (the file name matches its *-test.mjs pattern): run every aircraft that has a tuned
+  // physics config and report through the exit code
+  const { spawnSync } = await import('node:child_process');
+  const { readdirSync, readFileSync } = await import('node:fs');
+  let bad = 0;
+  for (const d of readdirSync(resolve(root, 'src/aircraft'))) {
+    const pf = resolve(root, `src/aircraft/${d}/physics.js`);
+    if (!existsSync(pf) || !/schema:/.test(readFileSync(pf, 'utf8'))) continue;
+    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), d], { encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: '' } });
+    console.log(r.stdout.split('\n').filter((l) => /FAIL|passed/.test(l)).map((l) => `${d}: ${l}`).join('\n'));
+    if (r.status !== 0) bad++;
+  }
+  process.exit(bad ? 1 : 0);
+}
 if (!id) { console.log('usage: node tools/flight-test.mjs <aircraftId> [--verbose] [--only test[,test]] [--list] [--json]'); process.exit(2); }
 if (!existsSync(resolve(root, `src/aircraft/${id}/index.js`))) { console.log(`unknown aircraft "${id}" (no src/aircraft/${id}/index.js)`); process.exit(2); }
 

@@ -434,7 +434,7 @@ export function createSim(ctx, def, init) {
     X.V = ao.V; X.mach = ao.mach; X.qbar = ao.qbar; X.alpha = ao.V > 8 ? ao.alpha : 0; X.beta = ao.V > 8 ? ao.beta : 0;
     X.p = p; X.q = q; X.r = r; X.nz = nzAero; X.theta = Math.asin(clamp(sth, -1, 1)); X.phi = phi; X.sth = sth; X.cth = cth;
     X.cphi = Math.cos(phi); X.sphi = Math.sin(phi); X.psi = Math.atan2(-r02, r22); X.vs = vel.y; X.alt = pos.y;
-    X.gs = Math.hypot(vel.x - G.vx, vel.z - G.vz); X.stallMargin = ao.V > 20 ? ao.stallMargin : 1; X.alphaStall = ao.alphaStall - A.peakOff; X.wow = wowMain; X.gearHandle = gearTarget > 0.5; X.iyy = iyy; X.ixx = ixx; X.izz = izz; X.fCtrl = ao.fCtrl; X.fCla = ao.fCla;
+    X.gs = Math.hypot(vel.x - G.vx, vel.z - G.vz); X.stallMargin = ao.V > 20 ? ao.stallMargin : 1; X.alphaStall = ao.alphaStall - A.peakOff; X.agl = pos.y - G.h0 - model.cgHeight; X.wow = wowMain; X.gearHandle = gearTarget > 0.5; X.iyy = iyy; X.ixx = ixx; X.izz = izz; X.fCtrl = ao.fCtrl; X.fCla = ao.fCla;
     if (ap.alt || ap.hdg || ap.spd) { updateAutopilot(model.ap, ap, X, h); if (ap.spd) lever = ap.lever; }
     updateFcs(model, fcs, X, stick, ap, h);
 
