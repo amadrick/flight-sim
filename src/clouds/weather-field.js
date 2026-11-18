@@ -101,17 +101,19 @@ export function deriveWeatherParams(w, out = {}) {
   // local coverage c = saturate(covBias + (map.r - 0.5) * covAmp): the map modulates strongly in broken skies,
   // weakly when overcast; gated to zero for clear skies.
   out.covAmp = lerp(1.0, 0.3, smoothstep(0.3, 0.95, cov));
-  out.covBias = (cov * 0.9 + 0.12) * smoothstep(0.0, 0.12, cov);
-  // least-developed clouds: humilis ~450 m thick in fair weather, thicker decks when overcast / raining
-  const minTopM = Math.min(th, lerp(450 + 500 * cov, 0.7 * th, stratus) + w.precipitation * 1500);
+  out.covBias = (cov * 0.9 + 0.06) * smoothstep(0.0, 0.12, cov);
+  // local layer depth available to the least-developed cells (their actual height then follows the noise peak)
+  const minTopM = Math.min(th, lerp(900 + 700 * cov, 0.7 * th, stratus) + w.precipitation * 1500);
   out.topMin = minTopM / th;
+  out.taperLo = lerp(0.42, 0.3, stratus);                 // height penalty for undeveloped / fully developed cells
+  out.taperHi = lerp(0.3, 0.14, convective);
   // development thresholds on map.g: few towers in fair weather, many when convective
   out.devLo = lerp(lerp(0.5, 0.38, smoothstep(0.2, 0.7, cov)), 0.52, convective);
   out.devHi = lerp(0.98, 0.8, convective);
   out.anvil = convective;
   out.baseRamp = lerp(90, 260, stratus);                 // metres over which the base fades in (flat cumulus bases, ragged stratus)
   out.sigma = lerp(0.028, 0.016, stratus) * (1 + 0.5 * convective);   // extinction (1/m) at density 1
-  out.erosion = lerp(0.42, 0.25, stratus);
+  out.erosion = lerp(0.24, 0.14, stratus);       // surface displacement by the detail noise, in shape units
   out.precip = saturate(w.precipitation);
   out.streets = (1 - smoothstep(0.45, 0.7, cov)) * smoothstep(0.05, 0.2, cov);
   out.cirrus = saturate(w.cirrus);
@@ -132,10 +134,9 @@ export function densityFromField(p, wf, shape, y) {
   if (cov < 0.01 || hN >= topN) return 0;
   const hRel = hN / topN;
   const anvil = p.anvil * smoothstep(0.7, 1.0, dev) * smoothstep(0.62, 0.88, hRel);
-  const roundTop = lerp(lerp(0.8, 0.3, p.stratus), 0.3, dev * p.anvil);
-  const bottom = saturate((hN * p.thickness) / p.baseRamp);
-  const topR = lerp(saturate((1 - hRel) / roundTop), saturate((1 - hRel) / 0.1), anvil);
   cov = Math.pow(cov, lerp(1, 0.35, anvil));
-  const s = shape * bottom * topR;
-  return saturate((s - (1 - cov)) / Math.max(cov, 0.05));
+  const bottom = saturate((hN * p.thickness) / p.baseRamp);
+  let prof = lerp(hRel * hRel, smoothstep(0.65, 1.0, hRel), p.stratus);
+  prof = prof * lerp(p.taperLo, p.taperHi, dev) * (1 - anvil) + 2 * saturate((hRel - 0.9) * 10);
+  return saturate((shape * bottom - (1 - cov) - prof) / 0.06);
 }

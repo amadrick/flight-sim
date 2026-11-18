@@ -12,7 +12,7 @@ import { createSession } from '../core/session.js';
 import { createPipeline } from '../render/index.js';
 import { createTerrain } from '../terrain/index.js';
 import { createClouds } from './index.js';
-import { FULLSCREEN_VERT, FullscreenPass } from '../core/glsl.js';
+import { FULLSCREEN_VERT, FullscreenPass, FRAME_UNIFORMS_GLSL, DEPTH_GLSL } from '../core/glsl.js';
 
 const sim = (window.__sim = { ready: false, error: null, ctx: null, step: null });
 
@@ -63,13 +63,34 @@ async function boot() {
   const view = raw.view;
   const viewPass = view ? new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
-    uniforms: { tex: { value: null }, uMode: { value: 0 } }, vertexShader: FULLSCREEN_VERT,
-    fragmentShader: `precision highp float; in vec2 vUv; out vec4 o; uniform sampler2D tex; uniform float uMode;
+    uniforms: { tex: { value: null }, tex3: { value: null }, uMode: { value: 0 }, uLod: { value: num('lod', 0) } }, vertexShader: FULLSCREEN_VERT,
+    fragmentShader: `precision highp float; precision highp sampler3D; in vec2 vUv; out vec4 o; uniform sampler2D tex; uniform sampler3D tex3; uniform float uMode, uLod;
       void main() { vec4 c = texture(tex, vUv);
-        if (uMode < 0.5) o = vec4(c.rgb, 1.0);
+        if (uMode > 2.5) { vec4 v = textureLod(tex3, vec3(vUv * vec2(1.7778, 1.0), 0.3), uLod); o = vec4(vUv.x < 0.5 ? v.rrr : (vUv.y < 0.5 ? v.ggg : v.bbb), 1.0); }
+        else if (uMode < 0.5) o = vec4(c.rgb, 1.0);
         else if (uMode < 1.5) o = vec4(1.0 - exp(-c.r * 0.2), c.g, c.b * 3.0, 1.0);
         else o = vec4(pow(c.rgb / (1.0 + c.rgb), vec3(0.45)) * (1.0 - c.a) + vec3(0.0, 0.0, 0.3) * c.a, 1.0); }`,
   })) : null;
+
+  // harness composite (replaces the stub pipeline's final image): adds cloud shadows on the terrain and an exposure control
+  const comp = new FullscreenPass(new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+    uniforms: { ...ctx.uniforms.frame, ...ctx.pipeline.atmosphere.uniforms, ...ctx.clouds.shadowUniforms,
+      tScene: { value: ctx.pipeline.sceneTarget.texture }, tClouds: { value: null }, uExposure: { value: num('exp', 0.7) }, uNoClouds: { value: raw.noclouds === '1' ? 1 : 0 } },
+    vertexShader: FULLSCREEN_VERT,
+    fragmentShader: `precision highp float; in vec2 vUv; out vec4 outColor;
+      uniform sampler2D tScene, tClouds; uniform float uExposure, uNoClouds;
+      ${FRAME_UNIFORMS_GLSL} ${DEPTH_GLSL} ${ctx.pipeline.atmosphere.glsl} ${ctx.clouds.shadowGLSL}
+      vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+      void main() {
+        float d = sceneDepthRaw(vUv); vec3 col;
+        if (depthIsSky(d)) { vec3 dir = viewRay(vUv); col = atmSkyRadiance(dir) + uSunColor * 40.0 * smoothstep(0.99996, 0.99999, dot(dir, uSunDir)); }
+        else { vec3 rp = renderPosFromDepth(vUv, d); col = texture(tScene, vUv).rgb * mix(0.25 * cloudDiffuseTransmittance(rp) + 0.1, 1.0, cloudShadow(rp));
+          vec4 ap = atmAerialPerspective(rp); col = col * ap.a + ap.rgb; }
+        if (uNoClouds < 0.5) { vec4 c = texture(tClouds, vUv); col = col * c.a + c.rgb; }
+        outColor = vec4(pow(aces(col * uExposure), vec3(1.0 / 2.2)), 1.0);
+      }`,
+  }));
 
   const wxSwitch = raw.wx, wxAt = num('wxAt', 3);
   function frame(realDt) {
@@ -85,11 +106,13 @@ async function boot() {
     ctx.terrain.update?.(dt);
     ctx.clouds.update(dt);
     ctx.pipeline.render(dt);
+    comp.material.uniforms.tClouds.value = ctx.clouds.texture; comp.render(ctx.renderer, null);
     if (viewPass) {
       const d = ctx.clouds.debug;
       const t = view === 'weather' ? d.weatherRT.texture : view === 'shadow' ? d.shadowRT.texture : view === 'march' ? d.marchRT.textures[0] : ctx.clouds.texture;
       viewPass.material.uniforms.tex.value = t;
-      viewPass.material.uniforms.uMode.value = view === 'weather' ? 0 : view === 'shadow' ? 1 : 2;
+      viewPass.material.uniforms.uMode.value = view === 'weather' ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail') ? 3 : 2;
+      viewPass.material.uniforms.tex3.value = view === 'detail' ? d.noise3.detail : d.noise3.base;
       viewPass.render(ctx.renderer, null);
     }
   }

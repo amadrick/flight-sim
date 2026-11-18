@@ -58,8 +58,10 @@ uniform vec4 uClWx;        // xy = map centre (air-mass m), z = 1 / map size (1/
 uniform vec4 uClLayer;     // x = base altitude, y = top altitude, z = 1 / thickness, w = thickness (m)
 uniform vec4 uClShape;     // x = coverage bias, y = coverage amplitude, z = min top fraction, w = stratus (0..1)
 uniform vec4 uClShape2;    // x = dev lo, y = dev hi, z = anvil amount, w = base ramp (m)
+uniform vec4 uClShape3;    // x = height taper (undeveloped cells), y = height taper (developed cells)
 uniform vec4 uClNoise;     // x = base noise scale (1/m), y = detail scale (1/m), z = erosion strength, w = extinction at density 1 (1/m)
 uniform vec4 uClNoiseOfs;  // xyz = base-noise scroll (noise units), w = detail scroll
+uniform vec4 uClDebug;
 uniform vec4 uClRain;      // x = rain extinction (1/m), y = cell threshold lo, z = cell threshold hi, w = reach toward the ground (0..1)
 
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
@@ -68,52 +70,63 @@ vec4 clWeather(vec2 airXZ, float lod) {
   return textureLod(tClWeather, (airXZ - uClWx.xy) * uClWx.z + 0.5, lod);
 }
 
-// Low-frequency cloud density in [0,1] at air-mass position pa (xz metres, y = altitude), before detail erosion.
+// Cloud "shape excess" at air-mass position pa (xz metres, y = altitude): > 0 inside the cloud, in units of the base
+// noise (≈ 1 per kilometre across a cloud edge), before detail erosion. Density = saturate(excess / edgeWidth).
 // info: x = height fraction within this cloud (0 base .. 1 its own top), y = local cloud-top altitude (m),
 //       z = base-noise mid Worley (reused for erosion), w = density scale for this altitude.
 // [Schneider15]: density = remap(shape * heightGradient, 1 - coverage, 1, 0, 1); the weather map supplies coverage and
 // cloud type, here as a continuous "vertical development" instead of three discrete types.
-float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
+float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float hN = (pa.y - uClLayer.x) * uClLayer.z;
   info = vec4(0.0, uClLayer.y, 0.5, 1.0);
-  if (hN <= 0.0 || hN >= 1.0) return 0.0;
+  if (hN <= 0.0 || hN >= 1.0) return -1.0;
   float cov = clSat(uClShape.x + (wx.r - 0.5) * uClShape.y);
   float dev = smoothstep(uClShape2.x, uClShape2.y, wx.g);
   float topN = mix(uClShape.z, 1.0, dev);
-  if (cov < 0.01 || hN >= topN) return 0.0;
+  if (cov < 0.01 || hN >= topN) return -1.0;
   float hRel = hN / topN;
   // anvil: fully developed cells spread out under the tropopause
   float anvil = uClShape2.z * smoothstep(0.7, 1.0, dev) * smoothstep(0.62, 0.88, hRel);
-  // vertical profile: flat base, cauliflower top (cumulus) or flat top (stratus / anvil)
-  float roundTop = mix(mix(0.8, 0.3, uClShape.w), 0.3, dev * uClShape2.z);
-  float bottom = clSat(hN * uClLayer.w / uClShape2.w);
-  float top = mix(clSat((1.0 - hRel) / roundTop), clSat((1.0 - hRel) / 0.1), anvil);
   cov = pow(cov, mix(1.0, 0.35, anvil));
-  vec3 q = pa * uClNoise.x + uClNoiseOfs.xyz;
+  vec3 q = pa * uClNoise.x * vec3(1.0, uClDebug.w, 1.0) + uClNoiseOfs.xyz;
   vec4 n = textureLod(tClBase, q, lod);
-  float shape = n.r * bottom * top;
+  // billows: the volume's own mid / high Worley fbm bulges the low-frequency shape (they fade to their mean with
+  // the mip LOD, so distant clouds keep their size while losing detail)
+  float s = n.r * (1.0 + (n.g - 0.48) * uClDebug.x + (n.b - 0.48) * uClDebug.y);
+  // vertical profile. Flat base: the shape fades in over a few tens of metres above the condensation level.
+  // Top: a height penalty is SUBTRACTED from the shape, so every cell's height follows the strength of its
+  // noise peak (big cells are tall, small ones stay humilis) and the outline is a dome: r(h) ~ peak - k h^2.
+  float bottom = clSat(hN * uClLayer.w / uClShape2.w);
+  float prof = mix(hRel * hRel, smoothstep(0.65, 1.0, hRel), uClShape.w);        // cumulus dome / flat stratus deck
+  prof = prof * mix(uClShape3.x, uClShape3.y, dev) * (1.0 - anvil) + 2.0 * clSat((hRel - 0.9) * 10.0);
   info = vec4(hRel, uClLayer.x + topN * uClLayer.w, n.g, 1.0);
   // water content grows with height above the base (adiabatic), glaciated anvils are thinner
   info.w = mix(0.45, 1.0, clSat(hRel * 2.5 + 0.1)) * mix(1.0, 0.45, anvil) * mix(0.75, 1.15, wx.a);
-  return clSat((shape - (1.0 - cov)) / max(cov, 0.05));
+  return s * bottom - (1.0 - cov) - prof;
+}
+// Cheap density (no detail), used by the light march and the shadow map.
+float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
+  return clSat(clShape(pa, wx, lod, info) / 0.06);
 }
 
-// Full density: erode the base density with high-frequency Worley fbm, distorted by curl noise near the base
-// ([Schneider15] sec. "detail"): wispy at the bottom, billowy on top.
-float clDensityFull(vec3 pa, float dBase, vec4 info, float lodD, float nearK) {
+// Full density: displace the cloud surface with high-frequency Worley fbm, distorted by curl noise near the base
+// ([Schneider15] sec. "detail"): wispy at the bottom, billowy on top. edge = width of the density ramp in
+// shape units (tied to the march step: crisp close to the camera, softer far away).
+#define CL_EROSION_BIAS 0.3
+float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, float edge) {
   vec3 q = pa * uClNoise.y;
   vec2 curl = textureLod(tClCurl, pa.xz * 1.9e-4, 0.0).xy * 2.0 - 1.0;
-  q.xz += curl * (1.0 - info.x) * 0.35;
+  q.xz += curl * (1.0 - info.x) * 0.07;
   q.y -= uClNoiseOfs.w; q.x += uClNoiseOfs.w * 0.4;
   vec4 dn = textureLod(tClDetail, q, lodD);
   float hf = dn.r;
   if (nearK > 0.0) {                         // extra octave close to the camera (flying through cloud)
     float fine = textureLod(tClDetail, q * 5.3 + 0.37, 0.0).g;
-    hf = mix(hf, hf * 0.72 + fine * 0.28, nearK);
+    hf = mix(hf, hf * 0.7 + fine * 0.3, nearK);
   }
   float m = mix(hf, 1.0 - hf, clSat(info.x * 5.0));
-  m = mix(m, info.z, 0.25) * uClNoise.z;     // a little of the base volume's mid Worley keeps erosion alive far away
-  return clSat((dBase - m) / (1.0 - m));
+  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z;
+  return clSat((excess - m) / edge);
 }
 
 // Rain / virga below the cloud base (air-mass position pa with pa.y < base). Returns relative density 0..1.
@@ -156,9 +169,9 @@ float cloudSunScatter(float tauSun, float tauUp, float cosTheta) {
   //     Weighted by a "powder" term [Schneider15]: thin wisps and the outermost skin have had no path length to
   //     build up multiply-scattered light, which gives the dark creases / bright bulges of cumulus.
   float depth = tauSun + 0.35 * tauUp;
-  float powder = 1.0 - exp(-1.6 * depth - 0.12);
+  float powder = 1.0 - 0.55 * exp(-0.8 * depth);
   float fwd = mix(1.0, 12.566 * clHG(cosTheta, 0.35), 0.55 * exp(-0.12 * tauSun));
-  float diffuse = 0.2546 / (1.0 + 0.1125 * tauSun) * powder * fwd;
+  float diffuse = 0.2546 * (0.5 / (1.0 + 0.1125 * tauSun) + 0.5 * exp(-0.3 * tauSun)) * powder * fwd;
   return single + 0.5 * ms * powder + diffuse;
 }
 `;
@@ -194,7 +207,6 @@ uniform vec4 uClLightSel;    // x = sun weight, y = ground-bounce scale, z = amb
 uniform vec3 uClMoonE;       // moon irradiance (zero while the sun is the light)
 uniform vec4 uClFlash[2];    // lightning: xyz = render-space position, w = intensity
 uniform vec4 uClCirrus;      // x = altitude (m), y = amount (0..1), zw = render-space -> cirrus air-mass offset
-uniform vec4 uClDebug;
 
 const float CL_R = 6371000.0;
 
@@ -225,7 +237,7 @@ float clTauLight(vec3 pa, float lod, float jit) {
     float u = (float(j) + 1.0) / float(CL_LIGHT_STEPS);
     float d1 = 1000.0 * u * u;                                     // segment ends: 62, 250, 562, 1000 m (4 steps)
     float dl = d1 - d0;
-    vec3 pl = pa + uClLightDir * (d0 + dl * jit);
+    vec3 pl = pa + uClLightDir * (d0 + dl * (0.3 + 0.4 * jit));
     vec4 wx = clWeather(pl.xz, max(lod - 1.0, 0.0));
     float d = clDensityBase(pl, wx, lod + 1.0 + float(j) * 0.5, info);
     tau += d * info.w * dl;
@@ -348,15 +360,16 @@ void main() {
 
         float lod = clamp(log2(ds / (voxel * 2.0)), 0.0, 2.5);
         vec4 info;
-        float dB = clDensityBase(pa, wx, lod, info);
+        float ex = clShape(pa, wx, lod, info) + CL_EROSION_BIAS * uClNoise.z;   // conservative: erosion can also add
         if (!fine && !farField) {
-          if (dB > 0.0) { fine = true; zeros = 0; continue; }     // hit: re-march this interval with fine steps
+          if (ex > 0.0) { fine = true; zeros = 0; continue; }     // hit: re-march this interval with fine steps
           t += ds; continue;
         }
         float d = 0.0;
-        if (dB > 0.0) {
+        if (ex > 0.0) {
           float lodD = clamp(log2(ds / voxelD), 0.0, 4.0);
-          d = clDensityFull(pa, dB, info, lodD, clSat(1.0 - ts / 2500.0)) * info.w * fadeFar;
+          float edge = clamp(ds * 0.0007, 0.012, 0.06);
+          d = clDensityFull(pa, ex - CL_EROSION_BIAS * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
         }
         if (d > 0.0) {
           zeros = 0;

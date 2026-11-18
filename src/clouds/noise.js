@@ -231,7 +231,10 @@ in vec2 vUv; out vec4 o; uniform float uZ;
 void main() {
   vec3 p = vec3(vUv, uZ);
   float a = worley(p, 3, 31), b = worley(p, 6, 32), c = worley(p, 12, 33);
-  o = vec4(a * 0.625 + b * 0.25 + c * 0.125, b * 0.6 + c * 0.4, c, 0.5 + 0.5 * gnoise(p, 4, 34));
+  // contrast-stretched so each channel spans ~[0,1] (inverted Worley fbm is otherwise bunched around 0.45)
+  float r = clamp((a * 0.45 + b * 0.33 + c * 0.22 - 0.24) / 0.46, 0.0, 1.0);
+  float g = clamp((b * 0.6 + c * 0.4 - 0.2) / 0.55, 0.0, 1.0);
+  o = vec4(r, g, c, 0.5 + 0.5 * gnoise(p, 4, 34));
 }`;
 
 // Copies the low mip of the base volume into a 2D atlas for a single CPU read-back (used by densityAt()).

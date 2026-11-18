@@ -96,7 +96,7 @@ export async function createClouds(ctx) {
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
     tClNoise2D: { value: noise2.noise2D },
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
-    uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
+    uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
     uClLightDir: { value: new THREE.Vector3(0, 1, 0) }, uClLightSel: v4(1, 1, 1, 0), uClMoonE: { value: new THREE.Vector3() },
     uClFlash: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uClCirrus: v4(10000, 0, 0, 0), uClDebug: v4(),
@@ -307,12 +307,14 @@ export async function createClouds(ctx) {
     U.uClLayer.value.set(P.base, P.top, 1 / P.thickness, P.thickness);
     U.uClShape.value.set(P.covBias, P.covAmp, P.topMin, P.stratus);
     U.uClShape2.value.set(P.devLo, P.devHi, P.anvil, P.baseRamp);
+    U.uClShape3.value.set(dbg('clTaper', P.taperLo), P.taperHi, 0, 0);
     U.uClNoise.value.set(1 / dbg('clBase', BASE_NOISE_PERIOD), 1 / dbg('clDetail', DETAIL_NOISE_PERIOD), dbg('clErosion', P.erosion), dbg('clSigma', P.sigma));
     // slow internal evolution: the base volume drifts upward through the shapes, detail scrolls faster
     U.uClNoiseOfs.value.set(0, -animTime * 0.6 / BASE_NOISE_PERIOD, 0, (animTime * 2.5 / DETAIL_NOISE_PERIOD) % 1);
     const rainOn = P.precip > 0.02 && P.coverage > 0.3;
     U.uClRain.value.set(rainOn ? P.precip * 0.0011 : 0, lerp(0.75, 0.2, P.precip), lerp(1.0, 0.6, P.precip), P.precip);
     U.uClOriginAir.value.set(o.x - windOffset.x, 0, o.z - windOffset.y);
+    U.uClDebug.value.set(dbg('clA', 1.0), dbg('clB', 0.6), dbg('clC', 0.25), dbg('clD', 0.4));
     U.uClLightDir.value.copy(lightDir);
     U.uClLightSel.value.set(sunW, lerp(1, 0.35, P.coverage * P.coverage), 1, animTime);
     const mE = 0.05 * moonW;                         // artistic moonlight (same units as uSunColor ≈ 4 at noon)
@@ -327,7 +329,10 @@ export async function createClouds(ctx) {
     U.uClFullRes.value.set(fullW, fullH, N / focalPx, 0);
     U.uClStep.value.set(dbg('clKf', 0.9 / steps), dbg('clMinFine', 1200 / steps), dbg('clMinCoarse', 110), maxDist);
     const j = jitterSeq[jitterIdx % jitterSeq.length];
-    U.uClJitter.value.set(j[0], j[1], (frameCount * GOLDEN) % 1, volumetricOn() ? 1 : 0);
+    // blue-noise phase: stratified inside one NxN cycle (the neighbours blended by the upsample get evenly spaced
+    // offsets), golden-ratio sequence from cycle to cycle (each pixel's own samples are well distributed over time)
+    const nn = jitterSeq.length, sub = jitterIdx % nn, cycle = Math.floor(jitterIdx / nn);
+    U.uClJitter.value.set(j[0], j[1], (cycle * GOLDEN + sub / nn) % 1, volumetricOn() ? 1 : 0);
     U.uClWindVel.value.set(wind.x * (frame.dt || 0), 0, wind.z * (frame.dt || 0), focalPx);
   }
 
@@ -376,7 +381,7 @@ export async function createClouds(ctx) {
     const write = histA, read = histB;
     U.tClMarch.value = marchRT.textures[0]; U.tClMarchAux.value = marchRT.textures[1];
     U.tClHist.value = read.textures[0]; U.tClHistAux.value = read.textures[1];
-    U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.07), dbg('clAlphaExact', 0.28), Math.min(moved, 600));
+    U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.07), dbg('clAlphaExact', 0.2), Math.min(moved, 600));
     resolvePass.render(r, write);
     // 3. output
     U.tClHist.value = write.textures[0];
@@ -429,7 +434,7 @@ export async function createClouds(ctx) {
     params: P,
     get windOffset() { return windOffset; },
     weatherAt(worldX, worldZ, out = {}) { return weatherField(worldX - windOffset.x, worldZ - windOffset.y, bake, out); },
-    debug: { noise3, noise2, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, U },
+    debug: { noise3, noise2, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
   };
   return api;
 }
