@@ -69,8 +69,8 @@ export function createAircraftLights(ctx, shared, header) {
         if (vDist - 0.8 > sd) discard;
         float r = length(vC);
         float core = exp(-pow(r / max(vCore, 1e-3), 2.0) * 2.0);
-        float halo = exp(-r * 6.0) * (0.015 + 0.04 * uFxNight);
-        float spikes = (exp(-abs(vC.y) * 70.0) * exp(-abs(vC.x) * 2.8) + exp(-abs(vC.x) * 70.0) * exp(-abs(vC.y) * 2.8)) * 0.06 * uFxNight;
+        float halo = exp(-r * 8.0) * (0.006 + 0.02 * uFxNight);
+        float spikes = (exp(-abs(vC.y) * 70.0) * exp(-abs(vC.x) * 2.8) + exp(-abs(vC.x) * 70.0) * exp(-abs(vC.y) * 2.8)) * 0.03 * uFxNight;
         float k = core + (halo + spikes) * (1.0 - smoothstep(0.85, 1.0, r));
         vec3 e = vCol * vI * k;
         vec3 white = mix(vCol, vec3(1.0), 0.55);
@@ -160,15 +160,16 @@ export function createAircraftLights(ctx, shared, header) {
       t += dt;
       if (!player || !s) { spot.intensity = 0; return; }
       const Ls = s.lights || {};
-      const elec = !s.crashed && (s.engines?.some?.(e => e.running !== false) ?? true);
+      let elec = !s.crashed && !(s.engines?.length > 0);
+      if (!s.crashed && s.engines) for (let i = 0; i < s.engines.length; i++) if (s.engines[i].running !== false) elec = true;
       const dayK = 0.25 + 0.75 * night;   // apparent brightness relative to surroundings is handled by exposure;
       for (let i = 0; i < lamps.length; i++) {
         const l = lamps[i]; let I = 0;
-        if (l.kind === 'nav') I = Ls.nav !== false ? 30 : 0;
+        if (l.kind === 'nav') I = Ls.nav !== false ? 22 : 0;
         else if (l.kind === 'strobe' || l.kind === 'strobeTail') {
-          if (Ls.strobe !== false) { const ph = (t + (l.kind === 'strobeTail' ? 0.05 : 0)) % 1.25; I = (ph < 0.05 || (ph > 0.16 && ph < 0.21)) ? 900 : 0; }
+          if (Ls.strobe !== false) { const ph = (t + (l.kind === 'strobeTail' ? 0.05 : 0)) % 1.25; I = (ph < 0.05 || (ph > 0.16 && ph < 0.21)) ? 650 : 0; }
         } else if (l.kind === 'beacon' || l.kind === 'beacon2') {
-          if (Ls.beacon !== false) { const ph = (t * 0.95 + (l.kind === 'beacon2' ? 0.5 : 0)) % 1; I = 90 * Math.pow(Math.max(0, Math.sin(ph * Math.PI)), 8); }
+          if (Ls.beacon !== false) { const ph = (t * 0.95 + (l.kind === 'beacon2' ? 0.5 : 0)) % 1; I = 45 * Math.pow(Math.max(0, Math.sin(ph * Math.PI)), 8); }
         } else if (l.kind === 'landing') I = (Ls.landing ? 700 : 0) + (Ls.taxi ? 200 : 0);
         array[i * STRIDE + 7] = elec ? I * (l.kind === 'nav' ? dayK : 1) : 0;
       }

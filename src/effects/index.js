@@ -51,7 +51,8 @@ export async function createEffects(ctx) {
 
   // ---- per-session state ----
   let P = null;          // attached player rig
-  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), camW = new THREE.Vector3();
+  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), tmp4 = new THREE.Vector3(), tmp5 = new THREE.Vector3();
+  const DUST = [0.55, 0.47, 0.36], DIRT = [0.52, 0.45, 0.35];
   const vFwd = new THREE.Vector3(), vRight = new THREE.Vector3(), vUp = new THREE.Vector3(), lat = new THREE.Vector3();
   const ground = {};
   const wrecks = [];     // burning wrecks { t, pos, fireAcc, smokeAcc, scale }
@@ -81,6 +82,8 @@ export async function createEffects(ctx) {
       gearAcc: (g.gear || []).map(() => ({ v: 0 })), dustAcc: (g.gear || []).map(() => ({ v: 0 })),
       sparkAcc: { v: 0 }, sprayAcc: { v: 0 }, wasOnGround: player.state.onGround, prevMach: player.state.mach || 0,
       crashed: false, scale: clamp((g.length || 15) / 15, 0.6, 3),
+      smokePt: [0, 0, (g.tailZ || 6) + 1], bellyPt: [0, -(g.cgHeight || 1.5) * 0.8, 0],
+      abLightPt: engines.length ? [engines[0].def.nozzle[0] * 0.5, engines[0].def.nozzle[1] - 0.5, engines[0].def.nozzle[2] + 4] : [0, 0, 0],
     };
     anchor.update();
   }
@@ -172,6 +175,7 @@ export async function createEffects(ctx) {
     const hum = humidity(alt, overWater);
     const crashed = s.crashed || P.crashed;
     if (force('ab')) ctx.controls.throttle = 1;
+    if (raw.fxthr != null) ctx.controls.throttle = +raw.fxthr;
 
     // ---- engines: plumes, contrails, haze, jet-blast dust ----
     const isaT = Math.max(-56.5, 15 - 6.5 * alt / 1000);
@@ -186,7 +190,7 @@ export async function createEffects(ctx) {
       const thr = clamp((en?.thrust ?? 0) / thrustRef, 0, 1.6);
       const running = en ? en.running !== false : true;
       E.bodyToWorld(s, e.def.nozzle, tmp);
-      if (running && !e.wasRunning) E.engineStartPuff(ps, tmp, vFwd.clone().negate(), q);
+      if (running && !e.wasRunning) E.engineStartPuff(ps, tmp, tmp2.copy(vFwd).negate(), q);
       e.wasRunning = running;
       // contrail
       const strength = crashed || s.onGround || !running ? 0 : contrailForm * clamp(0.3 + 0.8 * thr, 0, 1.3);
@@ -203,17 +207,17 @@ export async function createEffects(ctx) {
       // on-ground effects behind the nozzle
       if (s.onGround && running && thr > 0.15) {
         const back = tmp2.set(0, 0, 1).applyQuaternion(s.quaternion); back.y = 0; back.normalize();
-        const behind = tmp.clone().addScaledVector(back, 6 + 14 * thr);
+        const behind = tmp4.copy(tmp).addScaledVector(back, 6 + 14 * thr);
         ctx.world.groundAt(behind.x, behind.z, ground);
         behind.y = ground.height + 0.6;
-        if (ground.type === 'terrain' && thr > 0.45) E.dust(ps, behind, back.clone().multiplyScalar(12 + 20 * thr), 40 * thr, dt, q, e.blastAcc, [0.55, 0.47, 0.36], 1.2);
-        else if (thr > 0.6) E.jetExhaustHaze(ps, behind, back.clone().multiplyScalar(14 * thr), 18 * thr, dt, q, e.blastAcc);
+        if (ground.type === 'terrain' && thr > 0.45) E.dust(ps, behind, tmp5.copy(back).multiplyScalar(12 + 20 * thr), 40 * thr, dt, q, e.blastAcc, DUST, 1.2);
+        else if (thr > 0.6) E.jetExhaustHaze(ps, behind, tmp5.copy(back).multiplyScalar(14 * thr), 18 * thr, dt, q, e.blastAcc);
       }
     }
 
     // ---- display smoke (debug / airshow toggle) ----
     if (force('smoke') && !crashed && !s.onGround) {
-      E.bodyToWorld(s, [0, 0, (P.g.tailZ || 6) + 1], tmp);
+      E.bodyToWorld(s, P.smokePt, tmp);
       P.smokeTrail.emit(tmp, 1.2, 0.8, lat, 0);
     } else P.smokeTrail.stop();
 
@@ -221,10 +225,11 @@ export async function createEffects(ctx) {
     const gl = Math.abs(s.gLoad ?? 1), aoa = Math.abs(s.aoa || 0);
     const qbar = 0.5 * 1.225 * Math.exp(-alt / 8500) * (s.tas || 0) ** 2;
     const tipK = force('vapor') ? 1 : clamp(hum * 1.3 - 0.15, 0, 1) * smooth(3.0 - hum * 1.5, 6.5 - hum * 2, gl) * smooth(2000, 9000, qbar);
-    P.tips.forEach((t, i) => {
+    for (let i = 0; i < P.tips.length; i++) {
+      const t = P.tips[i];
       if (tipK > 0.03 && !crashed && !s.onGround) { E.bodyToWorld(s, P.g.wingtips[i], tmp); t.emit(tmp, tipK * 2.5, 0.09, lat, 0); }
       else t.stop();
-    });
+    }
 
     // ---- body vapour volumes (overwing, LERX, vapour cone) ----
     const fighter = ['fighter', 'attack'].includes(P.def.category);
@@ -246,11 +251,11 @@ export async function createEffects(ctx) {
       ctx.world.groundAt(tmp.x, tmp.z, ground); tmp.y = ground.height;
       const skid = force('touchdown') ? 0 : (gs?.skid || 0);
       if (skid > 0.15 && s.groundSpeed > 3) E.skidSmoke(ps, s, tmp, skid, dt, q, P.gearAcc[i]);
-      if (ground.type === 'terrain' && s.groundSpeed > 6) E.dust(ps, tmp, tmp2.copy(s.velocity).multiplyScalar(0.2), clamp(s.groundSpeed, 0, 60) * 0.7, dt, q, P.dustAcc[i], [0.52, 0.45, 0.35], 0.7);
+      if (ground.type === 'terrain' && s.groundSpeed > 6) E.dust(ps, tmp, tmp2.copy(s.velocity).multiplyScalar(0.2), clamp(s.groundSpeed, 0, 60) * 0.7, dt, q, P.dustAcc[i], DIRT, 0.7);
     }
     // belly slide sparks (gear up on the ground) or forced
     if ((s.onGround && (s.surfaces?.gear ?? 1) < 0.3 && s.groundSpeed > 4 && !overWater) || force('sparks')) {
-      E.bodyToWorld(s, [0, -(P.g.cgHeight || 1.5) * 0.8, 0], tmp);
+      E.bodyToWorld(s, P.bellyPt, tmp);
       E.sparks(ps, tmp, s.velocity, 120 + s.groundSpeed * 2, dt, q, P.sparkAcc);
     }
     // water spray / rooster tail when very low over water
@@ -350,8 +355,7 @@ export async function createEffects(ctx) {
         ctx.world.toRender(firePos, fxLight.position); fxLight.position.y += 4;
         fxLight.color.setRGB(1, 0.5, 0.2); fxLight.intensity = 4000 * fire * (0.8 + 0.3 * Math.random()); fxLight.distance = 400;
       } else if (abSum > 0.01 && P) {
-        const e0 = P.engines[0].def;
-        E.bodyToWorld(P.player.state, [e0.nozzle[0] * 0.5, e0.nozzle[1] - 0.5, e0.nozzle[2] + 4], tmp);
+        E.bodyToWorld(P.player.state, P.abLightPt, tmp);
         ctx.world.toRender(tmp, fxLight.position);
         fxLight.color.setRGB(1, 0.55, 0.25); fxLight.intensity = 60 * abSum * (0.9 + 0.2 * Math.random()); fxLight.distance = 80;
       } else fxLight.intensity = 0;
@@ -363,7 +367,7 @@ export async function createEffects(ctx) {
       if (P) { for (const e of P.engines) e.trail.flush(); for (const t of P.tips) t.flush(); P.smokeTrail.flush(); }
     },
     stats() {
-      return { trailHeads: P ? P.engines.map(e => [e.trail.head, e.trail.active, e.trail.array.slice(e.trail.head * 12, e.trail.head * 12 + 12)]) : null, now: ctx.time.now, particles: ps.capacity + smoke.capacity, trails: P ? P.engines.length + P.tips.length + 1 : 0, attached: !!P, wrecks: wrecks.length };
+      return { particles: ps.capacity + smoke.capacity, trails: P ? P.engines.length + P.tips.length + 1 : 0, attached: !!P, wrecks: wrecks.length };
     },
     dispose() {
       detach(); for (const o of offs) o();

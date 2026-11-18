@@ -54,8 +54,8 @@ export function createPlumeMaterial(shared, header) {
             float rh = abs(f - 0.5) * 2.0 + r / (rc * 0.95);
             float diamond = smoothstep(1.0, 0.55, rh) * decay;
             float disc = exp(-pow((f - 0.62) / 0.06, 2.0)) * exp(-(r * r) / (rc * rc) * 4.0) * decay;
-            col += vec3(1.0, 0.66, 0.36) * core * 6.0 * (0.4 + 0.6 * smoothstep(0.0, uR0 * 1.5, z));
-            col += vec3(1.0, 0.78, 0.66) * diamond * 22.0 + vec3(1.0, 0.9, 0.82) * disc * 30.0;
+            col += vec3(1.0, 0.56, 0.24) * core * 4.0 * (0.4 + 0.6 * smoothstep(0.0, uR0 * 1.5, z));
+            col += vec3(1.0, 0.74, 0.56) * diamond * 18.0 + vec3(1.0, 0.9, 0.82) * disc * 28.0;
           }
           // sheath ring at the nozzle lip (blue-violet), strongest at full AB
           float sh = exp(-pow((r - uR0 * 0.8) / (uR0 * 0.2), 2.0)) * exp(-z / (uR0 * 2.5));
@@ -74,8 +74,9 @@ export function createPlumeMaterial(shared, header) {
           col *= ab * uFlicker;
         }
         if (uDry > 0.001) {
-          float g = exp(-max(z, 0.0) / (uR0 * 0.5)) * exp(-(r * r) / (uR0 * uR0) * 1.5);
-          col += vec3(1.0, 0.32, 0.08) * g * uDry;
+          // hot nozzle interior / turbine seen through the exit: a thin glowing disc just inside the lip
+          float g = exp(-max(z, 0.0) / 0.06) * smoothstep(uR0 * 0.92, uR0 * 0.55, r) * (1.0 - 0.35 * smoothstep(0.0, uR0 * 0.7, r));
+          col += vec3(1.0, 0.28, 0.06) * g * uDry * 9.0;
         }
         return vec4(col, absorb);
       }
@@ -139,7 +140,7 @@ export class Plume {
     u.uAB.value = ab; u.uDry.value = dry;
     // flame length: min AB ~ 5 D, max ~ 11 D; spacing grows with stage (NPR)
     const D = 2 * r0;
-    u.uLen.value = D * (2.6 + 5.8 * Math.sqrt(ab)) * (0.9 + 0.35 * (expand - 1) / 0.6) + (ab < 0.01 ? D * 1.5 : 0);
+    u.uLen.value = D * (2.6 + 5.8 * Math.sqrt(ab)) * (0.9 + 0.35 * (expand - 1) / 0.6) + 0;
     u.uSpacing.value = D * (0.6 + 0.3 * ab) * expand;
     u.uRb.value = r0 * 2.2 * expand;
     u.uExpand.value = expand;
