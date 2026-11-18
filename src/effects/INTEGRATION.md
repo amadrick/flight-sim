@@ -1,0 +1,78 @@
+# Effects module — integration notes
+
+API (unchanged): `createEffects(ctx) → { update(dt), stats(), dispose() }`.
+Attaches to the player on `session:start`, detaches and clears all live particles/trails on `session:end`
+(verified: scene children / geometry counts are identical after repeated restarts and aircraft swaps).
+
+## Files
+| file | what |
+|---|---|
+| `index.js` | orchestration: session attach/detach, emitter logic (contrail physics, vapour thresholds, ground/crash), fx light, debug params |
+| `fxglsl.js` | shared uniforms + GLSL header (frame uniforms, depth helpers, atmosphere API, cloud shadow, media lighting, `fxFinish`) |
+| `particles.js` | GPU particle system (instanced quads, analytic motion in the VS, ring buffer, one draw) |
+| `trails.js` | volumetric tube trails (contrails, wingtip vortices, display smoke): analytic gaussian-tube optical depth per segment |
+| `plume.js` | ray-marched afterburner plume / dry nozzle glow (body-fixed) |
+| `vapor.js` | ray-marched body-fixed condensation: over-wing sheet, LERX vortices, transonic vapour cone |
+| `lights.js` | nav / strobe / beacon / landing-lamp HDR sprites (one draw) + landing/taxi `SpotLight` + beam shaft |
+| `weatherfx.js` | rain streaks around the camera, lightning bolts, canopy rain overlay (cockpit view) |
+| `emitters.js` | CPU spawn recipes (tyre smoke, dust, spray, sparks, explosion, wreck fire/smoke column, shock ring…) |
+| `anchor.js` | anchored float32 storage that survives `originShift` (rebases only every ~12 km) |
+| `noise.js` | 32³ tileable 3D noise + 128² smoke-puff atlas, generated at boot (~20 ms) |
+
+## Rendering contract notes / requests for the render pipeline
+1. **Everything is on `LAYERS.POST`**, outputs linear HDR radiance with **premultiplied alpha**
+   (blend `ONE, ONE_MINUS_SRC_ALPHA`): lit media write `(L·a, a)`, pure emitters `(E, 0)`. Emissive radiance is
+   10–300 (plume core/diamonds, strobes, lightning, explosion flash) so bloom picks it up.
+2. **Depth**: every effect does its own occlusion + soft fade by reading scene depth through `DEPTH_GLSL`
+   (`sceneDistance`). The sampler is `tFxDepth`, bound to the *same uniform holder* as `ctx.uniforms.frame.tSceneDepth`
+   (or `ctx.pipeline.postDepthUniform` if the pipeline provides one). **The POST pass must not have that depth texture
+   attached to the bound framebuffer** (WebGL2 feedback loop). Either copy depth for the POST pass and expose the copy
+   as `ctx.pipeline.postDepthUniform = { value: copyTexture }`, or draw POST into a colour-only attachment — my shaders
+   occlude themselves, so a hardware depth test is optional. `depthTest: true, depthWrite: false` is set on all materials.
+3. **Aerial perspective**: POST objects are drawn after the composite, so the pipeline cannot fog them by depth. My
+   shaders apply `atmAerialPerspective()` themselves (contrails 10+ km away need it). If the pipeline ever fogs POST
+   objects itself, set `ctx.pipeline.postAerialPerspective = true` **before** effects are created and I skip it.
+4. Screen uv for depth reads = `gl_FragCoord.xy / uResolution` → the POST pass must render at the `uResolution`
+   size (the main HDR target size).
+5. Cloud shadows: if `ctx.clouds.shadowGLSL/shadowUniforms` exist at effects creation, contrails/smoke are shadowed by
+   clouds (`cloudShadow()`); otherwise unshadowed.
+6. Two lights are added to `ctx.scene` **once at boot and never removed** (`fx-light` PointLight for afterburner glow,
+   wreck fire, explosion flash and lightning; `fx-landing-light` SpotLight). Intensity is 0 when unused, so the light
+   count — and therefore every material's program — never changes. Both are on layer 0 (MAIN). No shadows.
+   Units follow the contract (irradiance = intensity / d²).
+
+## Events consumed
+`session:start`, `session:end`, `touchdown {verticalSpeed, gear}` (per-gear tyre smoke; a fallback fires on the
+ground-contact transition until physics emits a real `touchdown`), `crash {reason}` (explosion + lingering wreck fire
+and smoke column when near the ground, splash on water/ditching), `sonicBoom` (shock ring + vapour-cone flash),
+`lightning {worldPos, intensity}` (bolt + flash), `cmd {name:'smokeToggle'}` (airshow smoke trail — not bound to a key
+yet; input/menu may bind it).
+
+## State fields read (all optional / defensive)
+`state.position, quaternion, velocity, tas, mach, aoa, gLoad, altitude, verticalSpeed, groundSpeed, onGround,
+crashed, engines[i].{running, thrust, afterburner, egt, n1}, gear[i].{onGround, skid}, surfaces.gear, lights.{nav,
+strobe, beacon, landing, taxi}`; `def.geometry.{engines[].nozzle/nozzleRadius, wingtips, lights, gear, span, length,
+height, wingArea, noseZ, tailZ, cgHeight, pilotEye}`, `def.specs.{engineType, thrustDry, thrustMax}`, `def.category`.
+`ctx.weather.{cloudCoverage, cloudBase, cloudTop, cirrus, precipitation, visibility, wind, windAt}`,
+`ctx.env.{nightFactor, sunDir}`, `ctx.water?.heightAt`, `ctx.world.groundAt`, `ctx.cameraRig?.mode` (canopy rain only in
+`'cockpit'`), `ctx.quality.particles`.
+
+## Budgets (worst case: twin-engine AB jet, everything active)
+* **Draw calls**: particles 1 + long-smoke 1 + plume ×engines + contrail ×engines + wingtip 2 + display smoke 1 +
+  vapour 3 + lights 1 + beam 1 + rain 1 + lightning 1 + canopy 1 → **≤ 17**, typically **3–6** in cruise
+  (each system hides itself when nothing is alive).
+* **Particles**: 12 288 general + 3 072 long-lived smoke instances (allocated once; ~1.2 MB). Spawn rates × `quality.particles`.
+  Only the slice written this frame is uploaded (`addUpdateRange`); zero per-frame allocations.
+* **Trails**: 2 048 segments per engine contrail (≈ 80+ km of trail at cruise), 384 per wingtip, 1 024 display smoke.
+  Fragment cost: one analytic erf integral + 1 noise fetch per covered pixel.
+* **Ray-marched volumes**: plume 14–32 steps (2 noise fetches/step), vapour 10–24 steps (2–3 fetches/step); only drawn
+  when their amount > 0 and only over their screen footprint. Step counts scale with `quality.particles`.
+* **Rain**: ≤ 9 000 streak quads × precipitation × quality. Canopy rain: 1 fullscreen triangle, ~40 ALU ops/pixel.
+* **Lights**: ≤ 12 sprites (1 draw); 1 SpotLight + 1 PointLight shared by the scene.
+
+## Debug URL params (headless testing only; harmless in production)
+`fx=ab,contrail,vapor,cone,crash,touchdown,rain,lights,lightning,spray,sparks,smoke,boom,all` forces effects;
+`fxtm=1` tone-maps in-shader (the stub pipeline draws POST after its tone map); `fxexp=<x>` preview exposure;
+`fxcam=side|front|rear|far|low|top|cockpit`, `fxdist=<m>` debug camera; `fxthr=<0..1>` force throttle;
+`fxlevel=1` hold altitude (stub physics sinks).
+Example: `node tools/shot.mjs --params "aircraft=f16&start=air&tod=23&fx=ab&fxtm=1&fxcam=side&fxdist=9"`.

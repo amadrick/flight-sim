@@ -110,6 +110,8 @@ export async function createEffects(ctx) {
   offs.push(ctx.events.on('crash', (e) => onCrash(e || {})));
   offs.push(ctx.events.on('sonicBoom', () => onBoom()));
   offs.push(ctx.events.on('lightning', (e) => lightning.strike(e || {})));
+  let displaySmoke = false;   // airshow smoke (cmd 'smokeToggle', not bound by default)
+  offs.push(ctx.events.on('cmd', (c) => { if (c?.name === 'smokeToggle') displaySmoke = !displaySmoke; }));
   if (ctx.player) attach(ctx.player);
 
   function onTouchdown(e) {
@@ -177,6 +179,10 @@ export async function createEffects(ctx) {
     const crashed = s.crashed || P.crashed;
     if (force('ab')) ctx.controls.throttle = 1;
     if (raw.fxthr != null) ctx.controls.throttle = +raw.fxthr;
+    if (raw.fxlevel === '1' && !s.onGround && !crashed) {   // debug: hold altitude (stub physics sinks)
+      if (P.levelAlt == null) P.levelAlt = s.position.y;
+      s.position.y = P.levelAlt; s.velocity.y = 0;
+    }
 
     // ---- engines: plumes, contrails, haze, jet-blast dust ----
     const isaT = Math.max(-56.5, 15 - 6.5 * alt / 1000);
@@ -194,7 +200,7 @@ export async function createEffects(ctx) {
       if (running && !e.wasRunning) E.engineStartPuff(ps, tmp, tmp2.copy(vFwd).negate(), q);
       e.wasRunning = running;
       // contrail
-      const strength = crashed || s.onGround || !running ? 0 : contrailForm * clamp(0.3 + 0.8 * thr, 0, 1.3);
+      const strength = crashed || s.onGround || !running ? 0 : contrailForm * clamp(0.45 + 0.7 * thr, 0, 1.3);
       if (strength > 0.02) {
         const tr = e.trail, u = tr.uniforms;
         u.uLife.value = 25 + 120 * persist; tr.opts.life = u.uLife.value;
@@ -217,7 +223,7 @@ export async function createEffects(ctx) {
     }
 
     // ---- display smoke (debug / airshow toggle) ----
-    if (force('smoke') && !crashed && !s.onGround) {
+    if ((displaySmoke || force('smoke')) && !crashed && !s.onGround) {
       E.bodyToWorld(s, P.smokePt, tmp);
       P.smokeTrail.emit(tmp, 1.2, 0.8, lat, 0);
     } else P.smokeTrail.stop();

@@ -19,7 +19,7 @@ export class ParticleSystem {
     this.ctx = ctx; this.anchor = anchor; this.capacity = capacity;
     this.array = new Float32Array(capacity * STRIDE);
     for (let i = 0; i < capacity; i++) this.array[i * STRIDE + 3] = -1e9; // dead
-    this.head = 0; this.pending = 0; this.full = false;
+    this.head = 0; this.pending = 0; this.full = false; this.maxDeath = -1;
     const buf = this.buffer = new THREE.InstancedInterleavedBuffer(this.array, STRIDE, 1);
     buf.setUsage(THREE.DynamicDrawUsage);
     const g = new THREE.InstancedBufferGeometry();
@@ -50,11 +50,13 @@ export class ParticleSystem {
     a[o + 8] = p.size0; a[o + 9] = p.size1; a[o + 10] = p.drag; a[o + 11] = p.buoy;
     a[o + 12] = p.r; a[o + 13] = p.g; a[o + 14] = p.b; a[o + 15] = p.opacity;
     a[o + 16] = p.emissive; a[o + 17] = Math.random(); a[o + 18] = p.kind; a[o + 19] = p.aux;
+    const death = a[o + 3] + p.life; if (death > this.maxDeath) this.maxDeath = death;
     this.head = (i + 1) % this.capacity; this.pending++;
     return i;
   }
   /** upload the slice written this frame */
   flush() {
+    this.mesh.visible = this.ctx.time.now < this.maxDeath;   // skip the draw entirely when nothing is alive
     const n = this.pending; if (!n) return;
     const buf = this.buffer; buf.clearUpdateRanges();
     if (n >= this.capacity) buf.addUpdateRange(0, this.capacity * STRIDE);
@@ -71,6 +73,7 @@ export class ParticleSystem {
     this.pending = this.capacity;
   }
   clear() {
+    this.maxDeath = -1;
     for (let i = 0; i < this.capacity; i++) this.array[i * STRIDE + 3] = -1e9;
     this.pending = this.capacity;
   }

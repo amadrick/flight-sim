@@ -47,7 +47,7 @@ export class Trail {
     this.head = 0;            // index of the LIVE point (being moved with the emitter)
     this.active = false;
     this.lastPos = new THREE.Vector3(); this.lastTime = 0; this.dist = 0;
-    this.dirty = []; this.full = false;
+    this.dirty = []; this.full = false; this.lastEmit = -1e9;
     this._v = new THREE.Vector3();
   }
   _write(i, wp, strength, connect, w0, lat, merge) {
@@ -62,6 +62,7 @@ export class Trail {
    *  lat: world lateral unit vector (for merge/wobble), merge: lateral metres to migrate toward the vortex. */
   emit(wp, strength, w0, lat, merge = 0) {
     const now = this.ctx.time.now, o = this.opts;
+    this.lastEmit = now;
     if (!this.active) {
       this.active = true; this.dist = 0;
       this.head = (this.head + 1) % this.capacity;
@@ -91,6 +92,7 @@ export class Trail {
   /** End the current trail (the last point stays where it is). */
   stop() { this.active = false; }
   flush() {
+    this.mesh.visible = this.active || this.ctx.time.now < this.lastEmit + this.uniforms.uLife.value;
     if (!this.dirty.length) return;
     const buf = this.buffer; buf.clearUpdateRanges();
     if (this.full) buf.addUpdateRange(0, (this.capacity + 1) * STRIDE);
@@ -104,7 +106,7 @@ export class Trail {
   }
   clear() {
     for (let i = 0; i <= this.capacity; i++) this.array[i * STRIDE + 3] = -1e9;
-    this.active = false; this.full = true; this.dirty.push(0);
+    this.active = false; this.full = true; this.dirty.push(0); this.lastEmit = -1e9;
   }
   dispose() { this._unreg(); this.ctx.scene.remove(this.mesh); this.geometry.dispose(); this.material.dispose(); }
 }
