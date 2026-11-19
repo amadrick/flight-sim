@@ -69,7 +69,7 @@ export default {
     type: 'fbw-airliner',
     nzMax: 2.5, nzMin: -1, alphaMax: 15, pitchRateMax: 7,
     rollRate: 15, gearDown: { nzMax: 2.0, alphaMax: 15, rollRate: 12, pitchRateMax: 6 },
-    betaGain: 3, ari: 0.1, rollBandwidth: 4.0, rollGainMax: 6, yawBandwidth: 3.0, yawGainMax: 6, ari: 0.3, bankNeutral: 60, pitchBandwidth: 5,
+    betaGain: 3, rollBandwidth: 4.0, rollGainMax: 6, yawBandwidth: 3.0, yawGainMax: 6, ari: 0.3, bankNeutral: 60, pitchBandwidth: 5,
   },
   autopilot: { bankMax: 25, vsMax: 10, turnRate: 3 },
   targets: {
