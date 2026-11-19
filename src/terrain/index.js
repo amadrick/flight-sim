@@ -15,6 +15,7 @@ import { createClipmap, SNAP, EDGE } from './clipmap.js';
 import { createLodSelector } from './lod.js';
 import { createTerrainMaterial, clipmapGLSL, TILE_SCALES } from './material.js';
 import { createNoiseTextures } from './noisetex.js';
+import { createTrees } from './trees.js';
 
 export { heightAt };
 
@@ -40,7 +41,10 @@ function configFor(ctx) {
   const k = Math.max(48, Math.min(kMax, Math.round(200 * (q.terrainDetail ?? 1))));   // LOD range in vertex spacings
   const m0 = Math.max(0.62, (1 + 1.45 * P / k) / 2 + 0.01);    // geomorph starts here (fraction of the level's range)
   const steps = raw.terrShadow !== undefined ? +raw.terrShadow : ({ low: 8, medium: 14, high: 20, ultra: 28 }[q.level] ?? 16);
-  return { N, TPV, k, m0, t0: S0 / TPV, shadowSteps: steps };
+  // 3D trees: cells per side of the camera-centred grid (0 = off), 7 m cells
+  let treeG = { low: 0, medium: 96, high: 112, ultra: 144 }[q.level] ?? 96;
+  if (raw.terrTrees !== undefined) treeG = Math.max(0, Math.min(256, +raw.terrTrees | 0));
+  return { N, TPV, k, m0, t0: S0 / TPV, shadowSteps: steps, treeG, treeCell: 7 };
 }
 
 export async function createTerrain(ctx) {
@@ -60,7 +64,7 @@ export async function createTerrain(ctx) {
     uTerrLod: { value: new THREE.Vector4(cfg.k * S0, L - 1, L - 1, cfg.m0) },
     uTerrTile: { value: TILE_SCALES.map(() => new THREE.Vector2()) },
     uTerrRw: { value: RUNWAYS.map(() => new THREE.Vector4()) }, uTerrRwL: { value: RUNWAYS.map((r) => r.half) },
-    uTerrShadowOn: { value: 1 },
+    uTerrShadowOn: { value: 1 }, uTerrTree: { value: new THREE.Vector4(0, 300, 400, 0) },
     uTerrWin: { value: 1 }, uTerrOrg: { value: new THREE.Vector3() }, uTerrCurv: { value: 1 },
     uOrigin: F.uOrigin, uSunDir: F.uSunDir,
   };
@@ -94,9 +98,16 @@ export async function createTerrain(ctx) {
   mesh.matrixAutoUpdate = false;
   ctx.scene.add(mesh);
 
+  let trees = null;
+  function makeTrees() {
+    if (trees) { ctx.scene.remove(trees.object3D); trees.dispose(); trees = null; }
+    if (cfg.treeG > 0) { trees = createTrees(ctx, { L, G: cfg.treeG, cell: cfg.treeCell, uniforms }); ctx.scene.add(trees.object3D); }
+  }
+  makeTrees();
+
   ctx.world.setTerrainHeightFn(heightAt);
 
-  const stats = { patches: 0, triangles: 0, minLevel: L - 1, texelsThisFrame: 0, clearance: 0, drawCalls: 1 };
+  const stats = { patches: 0, triangles: 0, treeTriangles: 0, minLevel: L - 1, texelsThisFrame: 0, clearance: 0, drawCalls: 1 };
   const vp = new THREE.Matrix4();
   let frameNo = 0;
   const RING = [[1, 0], [0.707, 0.707], [0, 1], [-0.707, 0.707], [-1, 0], [-0.707, -0.707], [0, -1], [0.707, -0.707]];
@@ -113,6 +124,7 @@ export async function createTerrain(ctx) {
     mesh.material = material;
     noiseTex.noise.anisotropy = noiseTex.norm.anisotropy = ctx.quality.anisotropy ?? 4;
     noiseTex.noise.needsUpdate = noiseTex.norm.needsUpdate = true;
+    makeTrees();
     frameNo = 0;
   }
   ctx.events.on('quality:change', rebuild);
@@ -191,6 +203,9 @@ export async function createTerrain(ctx) {
     if (raw.terrHideWater && ctx.water?.object3D) ctx.water.object3D.visible = false;
     uniforms.uTerrWin.value = (N / 2 - SNAP - EDGE - 1) * cfg.t0;
     uniforms.uTerrOrg.value.copy(org);
+    if (trees) trees.update(wx, wz, org, Hd, minLevel);
+    stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
+    stats.drawCalls = stats.treeTriangles ? 2 : 1;
   }
 
   // ---- public GLSL hook for other shaders (ocean depth, shoreline foam) -------------------------------------

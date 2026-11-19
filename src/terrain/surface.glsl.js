@@ -3,18 +3,17 @@
 // world position (latitude, altitude) and two small tileable noise textures sampled at seven rotated scales.
 // Albedos are linear and physically plausible (grass 0.08-0.16, forest 0.03-0.07, soil 0.15-0.2, dry sand 0.35-0.45,
 // playa 0.55, fresh snow 0.88). No fog, no tone mapping here (the pipeline does aerial perspective).
-export const SURFACE_GLSL = /* glsl */`
+// Part 1 — VS-safe helpers shared by the surface shader and the 3D tree placement (trees.js): no derivatives,
+// explicit-LOD lookups only. terrCover() decides where forest / farmland / airfield turf is.
+export const COVER_GLSL = /* glsl */`
 uniform mediump sampler2DArray tTerrD;
 uniform sampler2D tTerrNoise;
-uniform sampler2D tTerrNorm;
 uniform vec2 uTerrTile[7];       // uv offsets of the noise scales (floating-origin compensation)
 uniform vec4 uTerrRw[8];         // runways: xy = centre (render-space xz), zw = unit direction
 uniform float uTerrRwL[8];       // runway half lengths (0 = unused slot)
 uniform vec3 uOrigin;
 uniform vec3 uSunDir;
 uniform float uTerrShadowOn;
-
-struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; };
 
 vec2 terrHash2(vec2 p) {
   uvec2 q = uvec2(ivec2(p));
@@ -26,19 +25,62 @@ vec2 terrUV(vec3 T, vec2 off, vec2 p) { return vec2(T.x * p.x - T.y * p.y, T.y *
 vec2 terrUnrot(vec3 T, vec2 g) { return vec2(T.x * g.x + T.y * g.y, T.x * g.y - T.y * g.x); }
 vec4 terrTexD(vec2 rxz, float lvl) { vec3 l = uTerrLvl[int(lvl)]; return textureLod(tTerrD, vec3(rxz * l.z + l.xy, lvl), 0.0); }
 float ss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
+vec3 terrDecodeN(vec2 enc) {
+  vec2 e = enc * 2.0 - 1.0;
+  vec3 n; n.xz = sign(e) * e * e; n.y = sqrt(max(1.0 - dot(n.xz, n.xz), 0.0004));
+  return n;
+}
+
+struct TerrCover { float pad; float treeline; float tropic; float forest; float conifer; float crop; };
+// n0..n3 = tTerrNoise at scales 0..3 at this point; n = terrain normal; curv = clipmap curvature; water = river mask
+TerrCover terrCover(vec2 rxz, float h, vec3 n, float curv, float arid, float water, vec4 n0, vec4 n1, vec4 n2, vec4 n3) {
+  TerrCover C;
+  float latK = (rxz.y + uOrigin.z) * 0.001;           // km south of the origin
+  float slope = 1.0 - n.y;
+  C.tropic = ss(35.0, 70.0, latK);
+  float macro2 = n0.g * 0.6 + n1.g * 0.4;
+  // airfields: keep fields and woods clear of the runways (the scenery module builds on this ground)
+  float rwd = 1.0e6;
+  for (int i = 0; i < 8; i++) {
+    if (uTerrRwL[i] > 0.0) {
+      vec2 q = rxz - uTerrRw[i].xy;
+      float al = dot(q, uTerrRw[i].zw);
+      vec2 perp = q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 250.0, uTerrRwL[i] + 250.0);
+      rwd = min(rwd, length(perp));
+    }
+  }
+  float padR = mix(760.0, 230.0, C.tropic);           // small islands: only the strip itself is kept clear
+  C.pad = 1.0 - ss(padR, padR * 1.32, rwd + mix(260.0, 70.0, C.tropic) * (n1.r - 0.5) + mix(120.0, 60.0, C.tropic) * (n2.r - 0.5));
+  C.treeline = 2180.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (n1.r - 0.5) + 90.0 * (n2.g - 0.5);
+  float forestPot = (1.0 - ss(0.28, 0.62, arid)) * ss(C.treeline + 60.0, C.treeline - 260.0, h) * (1.0 - ss(0.30, 0.50, slope))
+                  * ss(mix(2.5, 1.8, C.tropic), mix(6.0, 3.6, C.tropic), h) * (1.0 - C.pad) * (1.0 - water);
+  float wild = ss(0.50, 0.42, macro2 * 0.75 + n0.a * 0.25);          // country that is not farmed: more woodland
+  float cover = clamp(0.14 + 0.62 * ss(0.006, 0.07, slope) + 0.14 * ss(80.0, 500.0, h) + 5.0 * max(curv, 0.0)
+              + 0.30 * wild * ss(0.40, 0.60, n0.r) + 0.35 * C.tropic, 0.0, 0.93);
+  float fnoise = 0.5 + (n1.r - 0.5) * 1.1 + (n2.g - 0.5) * 0.7 + (n0.r - 0.5) * 0.8 + (n3.r - 0.5) * 0.22;
+  float fthr = mix(0.86, 0.06, cover);
+  float forest = ss(fthr - 0.025, fthr + 0.025, fnoise) * forestPot;
+  C.conifer = ss(600.0, 1500.0, h + 500.0 * (n1.g - 0.5) - 6.0 * latK);
+  C.crop = (1.0 - ss(0.30, 0.50, arid)) * ss(0.014, 0.005, slope) * ss(9.0, 16.0, h) * ss(520.0, 380.0, h)
+         * (1.0 - C.pad) * (1.0 - water) * ss(0.43, 0.49, macro2 * 0.75 + n0.a * 0.25);
+  // wooded creeks winding through the farmland (iso-lines of the macro noise)
+  float creekV = abs(n0.g + 0.10 * (n1.g - 0.5) + 0.03 * (n2.g - 0.5) - 0.5);
+  float creek = (1.0 - ss(0.006, 0.014, creekV)) * forestPot;
+  C.forest = max(forest * (1.0 - C.crop), creek * ss(0.3, 0.7, n3.r + 0.4));
+  return C;
+}
 
 // Terrain self-shadow: march toward the sun through the height pyramid with geometrically growing steps, taking
 // each sample from the level whose texels match the step length (coarse levels are band-limited = prefiltered).
-float terrShadow(vec3 rp, float lvl0) {
-#if TERR_SHADOW_STEPS > 0
-  if (uTerrShadowOn < 0.5 || uSunDir.y <= 0.0) return 1.0;
+float terrShadow(vec3 rp, float lvl0, int steps) {
+  if (steps <= 0 || uTerrShadowOn < 0.5 || uSunDir.y <= 0.0) return 1.0;
   float tex0 = 1.0 / (uTerrLvl[0].z * float(textureSize(tTerrH, 0).x));     // texel spacing of level 0
   float t = tex0 * exp2(lvl0) * 2.5;
-  float grow = pow(40000.0 / t, 1.0 / float(TERR_SHADOW_STEPS));
+  float grow = pow(40000.0 / t, 1.0 / float(steps));
   grow = clamp(grow, 1.25, 2.2);
   float res = 1.0;
   vec3 o = rp + vec3(0.0, tex0 * exp2(lvl0) * 0.35, 0.0);
-  for (int i = 0; i < TERR_SHADOW_STEPS; i++) {
+  for (int i = 0; i < steps; i++) {
     vec3 p = o + uSunDir * t;
     float lv = clamp(max(ceil(log2(max(terrLodDist(p.xz), 1.0) / uTerrLod.x)), floor(log2(t / (tex0 * 5.0)))), uTerrLod.y, uTerrLod.z);
     vec4 s = terrTexH(p.xz, lv);
@@ -48,10 +90,15 @@ float terrShadow(vec3 rp, float lvl0) {
     t *= grow;
   }
   return smoothstep(0.0, 1.0, res);
-#else
-  return 1.0;
-#endif
 }
+`;
+
+// Part 2 — the fragment-stage surface shader.
+export const SURFACE_GLSL = /* glsl */`
+uniform sampler2D tTerrNorm;
+uniform vec4 uTerrTree;          // 3D trees: x = on, y = full radius, z = end radius
+
+struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; };
 
 TerrSurf terrSurface(vec3 rp) {
   TerrSurf S;
@@ -67,8 +114,7 @@ TerrSurf terrSurface(vec3 rp) {
     float kb = terrMorph(d / (uTerrLod.x * exp2(lf)));
     if (kb > 0.0) { D = mix(D, terrTexD(rp.xz, lf + 1.0), kb); G = mix(G, terrTexH(rp.xz, lf + 1.0), kb); }
   }
-  vec2 e = D.xy * 2.0 - 1.0;
-  vec3 n; n.xz = sign(e) * e * e; n.y = sqrt(max(1.0 - dot(n.xz, n.xz), 0.0004));
+  vec3 n = terrDecodeN(D.xy);
   float curv = (D.z - 0.5) / 1.25;                    // > 0 concave (gully), < 0 convex (spur), per texel of this level
   float conc = (D.w - 0.5) / 1.5;                     // > 0 hollow at ~4 texel scale
   float arid = G.z, spec = G.w;
@@ -96,20 +142,10 @@ TerrSurf terrSurface(vec3 rp) {
   float macro = n0.r * 0.6 + n1.r * 0.4;              // 0..1 large-scale variation
   float macro2 = n0.g * 0.6 + n1.g * 0.4;
 
-  // ---- airfields: keep fields and woods clear of the runways (the scenery module builds on this ground) --------
-  float rwd = 1.0e6;
-  for (int i = 0; i < 8; i++) {
-    if (uTerrRwL[i] > 0.0) {
-      vec2 q = rp.xz - uTerrRw[i].xy;
-      float al = dot(q, uTerrRw[i].zw);
-      vec2 perp = q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 250.0, uTerrRwL[i] + 250.0);
-      rwd = min(rwd, length(perp));
-    }
-  }
-  float pad = 1.0 - ss(760.0, 1000.0, rwd + 260.0 * (n1.r - 0.5) + 120.0 * (n2.r - 0.5));
+  TerrCover C = terrCover(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3);
+  float pad = C.pad, treeline = C.treeline, forest = C.forest, conifer = C.conifer, cropPot = C.crop;
 
   // ---- climate lines ---------------------------------------------------------------------------------------
-  float treeline = 2180.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (n1.r - 0.5) + 90.0 * (n2.g - 0.5);
   // summer snow line: lower on north faces and in gullies / cirques where drifts survive
   float snowline = 3080.0 + 2.5 * clamp(latK + 95.0, -200.0, 200.0) + 380.0 * (n1.g - 0.5) + 160.0 * (n2.r - 0.5)
                  + 520.0 * n.z - 1500.0 * clamp(curv, 0.0, 0.25) - 900.0 * clamp(conc, -0.1, 0.4) - 1400.0 * clamp(concW, -0.05, 0.3);
@@ -146,29 +182,20 @@ TerrSurf terrSurface(vec3 rp) {
   col = mix(col, tundra, alpine);
 
   // ---- forest -------------------------------------------------------------------------------------------------
-  float forestPot = (1.0 - ss(0.28, 0.62, arid)) * ss(treeline + 60.0, treeline - 260.0, h) * (1.0 - ss(0.30, 0.50, slope))
-                  * ss(2.5, 6.0, h) * (1.0 - pad) * (1.0 - water);
-  float wild = ss(0.50, 0.42, macro2 * 0.75 + n0.a * 0.25);          // country that is not farmed: more woodland
-  float cover = clamp(0.14 + 0.62 * ss(0.006, 0.07, slope) + 0.14 * ss(80.0, 500.0, h) + 5.0 * max(curv, 0.0)
-              + 0.30 * wild * ss(0.40, 0.60, n0.r) + 0.35 * tropic, 0.0, 0.93);
-  float fnoise = 0.5 + (n1.r - 0.5) * 1.1 + (n2.g - 0.5) * 0.7 + (n0.r - 0.5) * 0.8 + (n3.r - 0.5) * 0.22;
-  float fthr = mix(0.86, 0.06, cover);
-  float forest = ss(fthr - 0.025, fthr + 0.025, fnoise) * forestPot;
-  float conifer = ss(600.0, 1500.0, h + 500.0 * (n1.g - 0.5) - 6.0 * latK);
   vec3 fcol = mix(vec3(0.044, 0.078, 0.027), vec3(0.027, 0.049, 0.023), conifer);
   fcol = mix(fcol, fcol * vec3(1.35, 1.2, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.6);
   fcol = mix(fcol, vec3(0.030, 0.050, 0.016), tropic * 0.5);
   float crown = 1.0 - n3.b;                           // cell centres = crown tops
   fcol *= 0.42 + 1.05 * crown * crown + 0.25 * n4.r;
+  // where 3D trees stand (trees.js) the ground shows as shaded forest floor instead of painted crowns
+  float t3d = uTerrTree.x * (1.0 - ss(uTerrTree.y, uTerrTree.z, distance(rp.xz, uTerrCam.xz)));
+  fcol = mix(fcol, mix(vec3(0.030, 0.042, 0.018), vec3(0.060, 0.052, 0.030), n4.g) * (0.7 + 0.6 * n5.r), t3d * 0.85);
 
   // ---- cropland patchwork ---------------------------------------------------------------------------------------
-  float cropPot = (1.0 - ss(0.30, 0.50, arid)) * ss(0.014, 0.005, slope) * ss(9.0, 16.0, h) * ss(520.0, 380.0, h)
-                * (1.0 - pad) * (1.0 - water) * ss(0.43, 0.49, macro2 * 0.75 + n0.a * 0.25);
-  // wooded creeks winding through the farmland (iso-lines of the macro noise)
-  float creekV = abs(n0.g + 0.10 * (n1.g - 0.5) + 0.03 * (n2.g - 0.5) - 0.5);
-  float creek = (1.0 - ss(0.006, 0.014, creekV)) * forestPot;
   if (cropPot > 0.001) {
-    vec2 q = w + (n1.rg - 0.5) * 260.0;               // the survey grid is not perfectly straight
+    // the survey grid is not perfectly straight: long gentle bends (smooth, so field edges stay locally straight)
+    vec2 q = w + vec2(140.0 * sin(w.y * 0.0031 + 1.3) + 90.0 * sin(w.y * 0.0013 + w.x * 0.0007),
+                      120.0 * sin(w.x * 0.0027 + 0.4) + 80.0 * sin(w.x * 0.0011 - w.y * 0.0009 + 2.0));
     q = vec2(0.978 * q.x - 0.208 * q.y, 0.208 * q.x + 0.978 * q.y);
     vec2 b = q / 1340.0, bi = floor(b), bf = b - bi;
     vec2 hb = terrHash2(bi + 4096.0);
@@ -183,7 +210,7 @@ TerrSurf terrSurface(vec3 rp) {
     float edge = min(de.x, de.y);
     vec2 db = min(bf, 1.0 - bf) * 1340.0;
     float road = min(db.x, db.y);
-    float t = pow(hf.x, mix(0.55, 1.8, ss(0.3, 0.7, n0.b * 0.5 + n1.a * 0.5)));   // regional crop mix
+    float t = pow(hf.x, mix(0.55, 1.8, terrHash2(floor(bi / 3.0) + 9000.0).x));   // regional crop mix (per district)
     vec3 c = t < 0.30 ? vec3(0.062, 0.122, 0.034)       // green crop
            : t < 0.42 ? vec3(0.255, 0.210, 0.098)       // ripe grain
            : t < 0.54 ? vec3(0.135, 0.098, 0.056)       // ploughed earth
@@ -202,18 +229,17 @@ TerrSurf terrSurface(vec3 rp) {
     // hedgerows / field margins and gravel section roads
     float hedge = (1.0 - ss(1.5 + 3.0 * hb2.x, 4.5 + 3.0 * hb2.x + px, edge)) * clamp(6.0 / px, 0.0, 1.0);
     c = mix(c, vec3(0.040, 0.064, 0.027) * (0.6 + 0.8 * n4.r), hedge * (0.45 + 0.5 * hb2.y));
-    float rd = (1.0 - ss(3.0, 4.0 + px, road)) * clamp(7.0 / px, 0.0, 1.0);
+    float rd = (1.0 - ss(2.0, 3.0 + px, road)) * clamp(6.0 / px, 0.0, 1.0);
     c = mix(c, vec3(0.27, 0.25, 0.215), rd);
     // farmsteads: a yard and a shelter belt near some block corners
     vec2 fpos = (bf - vec2(0.12 + 0.2 * hb.y, 0.10 + 0.2 * hb2.x)) * 1340.0;
-    float fd = length(fpos) + 25.0 * (n3.g - 0.5);
-    float farm = step(0.45, hb.x) * (1.0 - ss(55.0, 75.0 + px, fd));
-    c = mix(c, mix(vec3(0.24, 0.215, 0.18), vec3(0.035, 0.060, 0.022), ss(0.35, 0.55, n3.b + 0.3 * step(30.0, fd))), farm);
+    float fd = max(abs(fpos.x), abs(fpos.y)) + 14.0 * (n3.g - 0.5);
+    float farm = step(0.45, hb.x) * (1.0 - ss(52.0, 60.0 + px, fd));
+    // a gravel yard inside a shelter belt of trees
+    c = mix(c, mix(vec3(0.21, 0.19, 0.16) * (0.85 + 0.3 * n4.r), vec3(0.034, 0.058, 0.022) * (0.6 + 0.8 * n4.g), ss(24.0, 30.0, fd + 10.0 * (n4.r - 0.5))), farm);
     col = mix(col, c, cropPot);
     rough = mix(rough, 0.9, cropPot);
-    forest *= 1.0 - cropPot * (1.0 - farm * 0.0);
   }
-  forest = max(forest, creek * ss(0.3, 0.7, n3.r + 0.4));
   col = mix(col, fcol, forest);
   rough = mix(rough, 0.95, forest);
   // centre-pivot irrigation in the dry margins
@@ -312,7 +338,7 @@ TerrSurf terrSurface(vec3 rp) {
   float hard = clamp(max(rockAmt, scree * 0.7) + desertAmt * 0.35, 0.0, 1.0);
   float soft = (1.0 - hard) * (1.0 - snow * 0.7);
   vec2 dn = vec2(0.0);
-  dn += terrUnrot(TERR_TILE3, g3.ba) * (forest * 2.6 * ss(60.0, 4.0, px));                    // tree crowns
+  dn += terrUnrot(TERR_TILE3, g3.ba) * (forest * 2.6 * ss(60.0, 4.0, px) * (1.0 - t3d));     // tree crowns
   dn += terrUnrot(TERR_TILE3, g3.rg) * (hard * 1.3 + soft * 0.12);
   dn += terrUnrot(TERR_TILE4, g4.rg) * (hard * 1.2 + soft * 0.30 + forest * 0.6);
   dn += terrUnrot(TERR_TILE5, g5.rg) * (hard * 0.9 + soft * 0.45);
@@ -323,10 +349,10 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- ambient occlusion and self shadow -----------------------------------------------------------------------
   float ao = 1.0 - clamp(conc * 1.6 + concW * 2.2, -0.08, 0.62);
-  ao *= mix(1.0, 0.55 + 0.45 * crown, forest);          // canopy self-occlusion
+  ao *= mix(1.0, mix(0.55 + 0.45 * crown, 0.5, t3d), forest);   // canopy self-occlusion
   ao *= 1.0 - 0.3 * shrub;
   S.albedo = col; S.rough = rough; S.n = n; S.ao = ao;
-  S.shadow = terrShadow(rp, lf);
+  S.shadow = dot(n, uSunDir) > 0.0 ? terrShadow(rp, lf, TERR_SHADOW_STEPS) : 1.0;
   return S;
 }
 `;

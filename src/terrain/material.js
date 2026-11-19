@@ -3,7 +3,7 @@
 // roughness, normal, AO, terrain self-shadow) replaced by a fully procedural biome shader.
 import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../core/glsl.js';
-import { SURFACE_GLSL } from './surface.glsl.js';
+import { COVER_GLSL, SURFACE_GLSL } from './surface.glsl.js';
 
 // Noise sampling scales: period in metres and a rotation so the scales never line up (anti-tiling).
 export const TILE_SCALES = [
@@ -26,10 +26,12 @@ float terrLevelAt(float d) { return clamp(ceil(log2(max(d, 1.0) / uTerrLod.x)), 
 `;
 }
 
+export const TILE_CONSTS_GLSL = TILE_SCALES.map((s, i) => `const vec3 TERR_TILE${i} = vec3(${Math.cos(s.angle).toFixed(6)}, ${Math.sin(s.angle).toFixed(6)}, ${(1 / s.period).toExponential(6)});`).join('\n');
+
 export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms }) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
   mat.defines = { ...(mat.defines || {}), TERR_SHADOW_STEPS: shadowSteps };
-  const tileConsts = TILE_SCALES.map((s, i) => `const vec3 TERR_TILE${i} = vec3(${Math.cos(s.angle).toFixed(6)}, ${Math.sin(s.angle).toFixed(6)}, ${(1 / s.period).toExponential(6)});`).join('\n');
+  const tileConsts = TILE_CONSTS_GLSL;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -69,6 +71,7 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms }) {
         ${clipmapGLSL(L)}
         ${tileConsts}
         varying vec3 vTerrPos;
+        ${COVER_GLSL}
         ${SURFACE_GLSL}
       `)
       .replace('#include <map_fragment>', /* glsl */`
