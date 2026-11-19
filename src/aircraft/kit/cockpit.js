@@ -120,3 +120,61 @@ export function tub(o) {
   quad([-xf, y0, z0], [xf, y0, z0], [xf, y1, z0], [-xf, y1, z0]);               // front bulkhead (faces aft)
   return m;
 }
+
+/**
+ * Interior lining patch that follows the inside of a lofted body: a bilinear quad in (z, t) space, offset inward and
+ * facing inward. Use several patches that share edges to line a flight deck around its (painted) windows, so the pilot's
+ * view shows posts, sills and roof while the outside world stays visible through the gaps.
+ * corners: [[z, t], [z, t], [z, t], [z, t]] in order around the patch; opts: { inset = .05, nu = 4, nv = 4, uv, mirror = false }
+ * mirror: also emit the left-hand copy (t → 1 − t).
+ */
+export function liner(body, corners, o = {}) {
+  const nu = o.nu ?? 4, nv = o.nv ?? 4, inset = o.inset ?? 0.05, uv = o.uv || [0, 0], m = new Mesh();
+  const one = (flip) => {
+    const i0 = m.vertexCount, pts = [];
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv, c = corners;
+      const z = (c[0][0] * (1 - u) + c[1][0] * u) * (1 - v) + (c[3][0] * (1 - u) + c[2][0] * u) * v;
+      let t = (c[0][1] * (1 - u) + c[1][1] * u) * (1 - v) + (c[3][1] * (1 - u) + c[2][1] * u) * v;
+      if (flip) t = 1 - t;
+      const s = body.at(z, t), p = [s.p[0] - s.n[0] * inset, s.p[1] - s.n[1] * inset, s.p[2] - s.n[2] * inset];
+      pts.push(p); m.vert(p[0], p[1], p[2], -s.n[0], -s.n[1], -s.n[2], uv[0], uv[1]);
+    }
+    // orient the faces inward whatever the corner order
+    const a = pts[0], b = pts[1], d = pts[nu + 1], e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+    const nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+    const inward = nx * m.n[i0 * 3] + ny * m.n[i0 * 3 + 1] + nz * m.n[i0 * 3 + 2] > 0;
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const q = i0 + j * (nu + 1) + i;
+      if (inward) m.quad(q, q + 1, q + nu + 2, q + nu + 1); else m.quad(q, q + nu + 1, q + nu + 2, q + 1);
+    }
+  };
+  one(false); if (o.mirror) one(true);
+  return m;
+}
+
+/**
+ * Flat bulkhead filling a lofted body's cross-section at station z (cockpit door wall, pressure bulkhead, well end wall).
+ * opts: { inset = .05, uv, facing = -1 (-1: faces the nose, +1: faces aft), n = 24 }
+ */
+export function bulkhead(body, z, o = {}) {
+  const n = o.n ?? 24, inset = o.inset ?? 0.05, uv = o.uv || [0, 0], f = o.facing ?? -1, m = new Mesh();
+  let cx = 0, cy = 0; const pts = [];
+  for (let i = 0; i < n; i++) { const s = body.at(z, i / n); pts.push([s.p[0] - s.n[0] * inset, s.p[1] - s.n[1] * inset]); cx += pts[i][0] / n; cy += pts[i][1] / n; }
+  const c = m.vert(cx, cy, z, 0, 0, f, uv[0], uv[1]);
+  const ids = pts.map(p => m.vert(p[0], p[1], z, 0, 0, f, uv[0], uv[1]));
+  // ring parameter t runs bottom → right (+X) → top → left: counter-clockwise seen from the nose (-Z)
+  for (let i = 0; i < n; i++) { const a = ids[i], b = ids[(i + 1) % n]; if (f < 0) m.tri(c, a, b); else m.tri(c, b, a); }
+  return m;
+}
+
+/** Floor (or ceiling) panel inside a lofted body at height y between stations z0..z1, trimmed to the body width. opts: { inset = .05, uv, n = 6, up = true } */
+export function deck(body, z0, z1, y, o = {}) {
+  const n = o.n ?? 6, inset = o.inset ?? 0.05, uv = o.uv || [0, 0], up = o.up ?? true, m = new Mesh(), rows = [];
+  for (let i = 0; i <= n; i++) {
+    const z = z0 + (z1 - z0) * i / n, x = Math.max(0.02, body.at(z, body.tAtY(z, y)).p[0] - inset);
+    rows.push([m.vert(-x, y, z, 0, up ? 1 : -1, 0, uv[0], uv[1]), m.vert(x, y, z, 0, up ? 1 : -1, 0, uv[0], uv[1])]);
+  }
+  for (let i = 0; i < n; i++) { const [a, b] = rows[i], [c, d] = rows[i + 1]; if (up) m.quad(a, c, d, b); else m.quad(a, b, d, c); }
+  return m;
+}

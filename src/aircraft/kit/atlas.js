@@ -353,6 +353,38 @@ class Pen {
     }
     return this;
   }
+  /**
+   * Row of painted cabin windows on both body sides (unwrap chart with chart.body set). zs: array of window-centre stations.
+   * o: { w = .26, h = .36, r = .1, side = 'both', frame = '#b9bdc0' | null, lit = .7 (fraction glowing at night), glow = '#ffd9a0', seed }
+   * Paints dark glossy glass, a thin frame, a shallow recess, and (emissive layer) warm light for the lit fraction.
+   */
+  windows(zs, y, o = {}) {
+    const w = o.w ?? 0.26, h = o.h ?? 0.36, r = o.r ?? 0.1, lit = o.lit ?? 0.7, rnd = rng(o.seed ?? 4242), glass = FINISH.paintedGlass;
+    const rr = (g, k) => { g.beginPath(); g.roundRect(-w / 2 - k, -h / 2 - k, w + 2 * k, h + 2 * k, r + k); };
+    for (const side of o.side === 'L' || o.side === 'R' ? [o.side] : ['L', 'R']) for (const z of zs) {
+      const on = rnd() < lit, shade = rnd();
+      this.decalOn(z, y, side, { layers: lit > 0 ? ['color', 'orm', 'height', 'emis'] : ['color', 'orm', 'height'] }, (g, layer) => {
+        if (layer === 'color') { if (o.frame !== null) { g.fillStyle = o.frame || '#b9bdc0'; rr(g, 0.022); g.fill(); } g.fillStyle = glass.color; rr(g, 0); g.fill(); if (shade < 0.25) { g.fillStyle = 'rgba(190,195,200,0.5)'; g.beginPath(); g.roundRect(-w / 2, -h / 2, w, h * (0.3 + shade * 2), r); g.fill(); } }
+        else if (layer === 'orm') { g.fillStyle = ormStyle(glass.rough, 0); rr(g, 0); g.fill(); }
+        else if (layer === 'height') { g.fillStyle = 'rgba(0,0,0,0.35)'; rr(g, 0.012); g.fill(); }
+        else if (on) { g.fillStyle = o.glow || '#ffd9a0'; g.globalAlpha = 0.55 + 0.45 * shade; rr(g, -0.01); g.fill(); }
+      });
+    }
+    return this;
+  }
+  /** Rectangle outline groove on a body side between stations z0..z1 and heights y0..y1 (doors, hatches). o: groove options + side, r */
+  doorOn(z0, z1, y0, y1, o = {}) {
+    const body = this.chart.body, zm = (z0 + z1) / 2;
+    for (const side of o.side === 'L' || o.side === 'R' ? [o.side] : ['L', 'R']) {
+      const m = (t) => (side === 'L' ? 1 - t : t), n = 6, pts = [];
+      for (let i = 0; i <= n; i++) pts.push([z0, m(body.tAtY(z0, y0 + (y1 - y0) * i / n))]);
+      for (let i = n; i >= 0; i--) pts.push([z1, m(body.tAtY(z1, y0 + (y1 - y0) * i / n))]);
+      pts.push(pts[0]);
+      this.line(pts, o);
+      if (o.handle) this.decalOn(zm, (y0 + y1) / 2, side, (g) => { g.fillStyle = 'rgba(30,32,36,0.8)'; g.fillRect(-0.09, -0.02, 0.18, 0.04); });
+    }
+    return this;
+  }
   /** Groove around the body at station z between ring parameters t0..t1. */
   ring(z, t0 = 0, t1 = 1, o = {}) { return this.groove((g) => { g.moveTo(z, t0); g.lineTo(z, t1); }, o); }
   /** Text. On projected charts (a, b) are paint coords; h = cap height in metres. o: { color, font, weight, align, rot, spacing, finish, stretch } */
@@ -393,7 +425,7 @@ class Pen {
 
 function greyStyle(h) { const v = Math.round(128 + Math.max(-1, Math.min(1, h)) * 127); return `rgb(${v},${v},${v})`; }
 
-export const FONT = { sans: '"Arial Narrow", "Helvetica Neue", Arial, "Liberation Sans Narrow", "Liberation Sans", sans-serif', wide: 'Arial, "Helvetica Neue", "Liberation Sans", sans-serif', serif: 'Georgia, "Times New Roman", "Liberation Serif", serif', mono: '"B612 Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace' };
+export const FONT = { round: '"Trebuchet MS", "Verdana", "DejaVu Sans", Arial, sans-serif', sans: '"Arial Narrow", "Helvetica Neue", Arial, "Liberation Sans Narrow", "Liberation Sans", sans-serif', wide: 'Arial, "Helvetica Neue", "Liberation Sans", sans-serif', serif: 'Georgia, "Times New Roman", "Liberation Serif", serif', mono: '"B612 Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace' };
 
 /** Draw text of cap height h (metres) at the origin of the current decal frame. o: { color, font, weight = 700, align = 'center', italic, spacing = 0, stretch = 1, outline, finish } */
 export function drawText(g, str, h, o = {}, layer = 'color') {

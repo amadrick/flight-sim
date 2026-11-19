@@ -143,7 +143,8 @@ export function nozzle2D(o) {
  *   flat = 0 (0..0.35 bottom flattening of the inlet, 737NG style), droop = 0 (inlet centre lowered at the lip),
  *   sleeve = 0.55 (fraction of the cowl length where the translating reverser sleeve starts; 0 = no separate sleeve),
  *   core: { r0, r1, length, z0 (start behind the highlight) }, plug: { r, length },
- *   segments = 32, chart (unwrap chart with uAxis 's' for the fixed cowl) | uv, uvInner, uvCore, uvPlug, uvCascade
+ *   segments = 32, chart (unwrap chart with uAxis 's' for the fixed cowl) | uv, uvLip (bare-metal inlet lip), uvInner, uvSleeve,
+ *   uvCore, uvPlug, uvCascade
  * }
  * Returns { cowl, sleeve, cascade, core, plug, fanZ, exitZ, coreExitZ, sleeveTravel, body (cowl loft result) } — meshes in body coords.
  */
@@ -164,7 +165,8 @@ export function nacelle(o) {
   stations.push(st(0.012, rHi - 0.022, 1), st(0, rHi, 1), st(0.012, rHi + 0.022, 1));
   for (const z of [L * 0.035, L * 0.1, L * 0.22, L * 0.4]) if (z < zOuterEnd - 0.05) stations.push(st(z, z > L * 0.3 ? rAt(z) : rHi + (rMax - rHi) * Math.sqrt(Math.min(1, z / (L * 0.3))), z < L * 0.3 ? 1 : 0.5));
   stations.push(st(zOuterEnd, rAt(zOuterEnd), 0.15));
-  const body = loft({ stations, segments: seg, step: L / 14, chart: o.chart, uAxis: 's', uv: o.uv });
+  const uvFn = o.chart ? undefined : (x, y, z, t, ring) => (ring.k < 3.5 ? uvIn : ring.k <= 7 && o.uvLip ? o.uvLip : (o.uv || [0, 0]));
+  const body = loft({ stations, segments: seg, step: L / 14, chart: o.chart, uAxis: 's', uv: o.uv, uvFn });
   const out = { body, cowl: body.mesh, fanZ: cz + zFan, exitZ: cz + L, sleeveTravel: L * 0.17 };
   if (sl > 0) {
     const sStations = [st(zS, rAt(zS), 0.15), st((zS + L) / 2, rAt((zS + L) / 2), 0.05), st(L - 0.01, rExit + 0.004, 0), { ...st(L, rExit - 0.01, 0), hard: true }, st(L - 0.02, rExit - 0.035, 0), st(zS, rFan + 0.03, 0)];

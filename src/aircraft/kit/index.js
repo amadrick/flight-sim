@@ -8,7 +8,7 @@ export { glassMaterial, GLASS, lampMaterial, glowMaterial } from './materials.js
 export { createRig, makeStateView, seq, keys, smooth01 } from './rig.js';
 export { buildGear, wheel, swing, arrestorHook } from './gear.js';
 export { fan, fanBackdrop, petalNozzle, afterburnerGlow, abGlowColor, nozzle2D, nacelle, pylon, intake2DStations } from './propulsion.js';
-export { pilot, ejectionSeat, crewSeat, hud, stick, yoke, tub } from './cockpit.js';
+export { pilot, ejectionSeat, crewSeat, hud, stick, yoke, tub, liner, bulkhead, deck } from './cockpit.js';
 export { missile, launchRail, tank, probe, bladeAntenna, staticWicks, vortexGenerators, fence } from './stores.js';
 
 /** Tessellation multiplier and atlas size for a quality level. */

@@ -339,7 +339,7 @@ export function loft(o) {
     const j = jj % K, b = (i * K + j) * 3, nn = nrm[variant];
     let u = uvConst;
     if (chart) u = chart.type === 'unwrap' ? chart.uvUnwrap(rings[i].u, jj / K, strip) : chart.uv3(pos[b], pos[b + 1], pos[b + 2]);
-    else if (o.uvFn) u = o.uvFn(pos[b], pos[b + 1], pos[b + 2], jj / K, rings[i]);
+    else if (o.uvFn) { const rg = rings[i]; if (rg.k === undefined) { let q = 0; while (q < n - 2 && sv[q + 1] < rg.s) q++; rg.k = q + (rg.s - sv[q]) / Math.max(1e-9, sv[q + 1] - sv[q]); } u = o.uvFn(pos[b], pos[b + 1], pos[b + 2], jj / K, rg); }
     id = ow.mesh.vert(pos[b], pos[b + 1], pos[b + 2], nn[b] * sign, nn[b + 1] * sign, nn[b + 2] * sign, u[0], u[1]);
     ow.map.set(key, id); return id;
   };

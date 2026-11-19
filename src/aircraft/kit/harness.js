@@ -15,6 +15,7 @@
 //   dims=1               overlay reference boxes / points from geometry.js
 //   sun=az,el            sun direction in degrees                     t=seconds (advance the lamp clock)   bg=studio|dark
 //   quality=low|medium|high|ultra
+import * as K from './index.js';
 import * as THREE from 'three';
 import { AIRCRAFT, getAircraft } from '../registry.js';
 import { createAircraftState } from '../../core/state.js';
@@ -172,7 +173,7 @@ function boot() {
   renderer.info.autoReset = false;
   let clock = num('t', 0);
   visual.update(state, clock);                                      // advance the lamp clock to t
-  sim.visual = visual; sim.state = state; sim.def = def;
+  sim.visual = visual; sim.state = state; sim.def = def; sim.K = K;
   sim.stats = { ...(visual.stats || {}), buildMs: Math.round(buildMs) };
   sim.step = (n = 1, dt = 1 / 60) => {
     for (let i = 0; i < n; i++) { ctx.time.now += dt; ctx.time.dt = dt; visual.update(state, dt); render(); }
