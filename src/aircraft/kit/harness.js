@@ -16,6 +16,7 @@
 //   sun=az,el            sun direction in degrees                     t=seconds (advance the lamp clock)   bg=studio|dark
 //   quality=low|medium|high|ultra
 import * as K from './index.js';
+import { Pen } from './atlas.js';
 import * as THREE from 'three';
 import { AIRCRAFT, getAircraft } from '../registry.js';
 import { createAircraftState } from '../../core/state.js';
@@ -68,12 +69,19 @@ function boot() {
     quality: { level, anisotropy: 8, shadows: true },
     env: { sunDir, moonDir: sunDir.clone().negate(), sunColor: new THREE.Color(SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day), ambientSky: new THREE.Color(0.25 * day, 0.4 * day, 0.7 * day), ambientGround: new THREE.Color(0.1 * day, 0.09 * day, 0.08 * day), sunLight: sun, exposure: 1, nightFactor: night },
     world: { origin: new THREE.Vector3(), groundHeightAt: () => 0, groundAt: (x, z, out = {}) => { out.height = 0; out.type = 'runway'; return out; }, toRender: (w, out = new THREE.Vector3()) => out.copy(w), toWorld: (r, out = new THREE.Vector3()) => out.copy(r) },
-    events: { on: () => () => {}, emit: () => {} }, time: { now: 0, dt: 0 }, uniforms: { frame: {} }, player: null,
+    events: { on: () => () => {}, emit: () => {} }, time: { now: 0, dt: 0 }, uniforms: { frame: { uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) } } }, player: null,
   };
   sim.ctx = ctx;
 
   // ---- aircraft -----------------------------------------------------------------------------------------------------------
   const def = q.get('aircraft') ? getAircraft(q.get('aircraft')) : AIRCRAFT[0], g = def.geometry;
+  if (q.get('prof') === '1') {                                        // prof=1: time spent in each pen method → sim.penProf
+    const prof = (sim.penProf = {}), proto = Pen.prototype; let depth = 0;
+    for (const k of Object.getOwnPropertyNames(proto)) if (k !== 'constructor' && k[0] !== '_' && k !== 'each' && typeof proto[k] === 'function') {
+      const fn = proto[k];
+      proto[k] = function (...a) { if (depth++) { try { return fn.apply(this, a); } finally { depth--; } } const t = performance.now(); try { return fn.apply(this, a); } finally { depth--; const e = (prof[k] = prof[k] || [0, 0]); e[0] += performance.now() - t; e[1]++; } };
+    }
+  }
   const t0 = performance.now();
   const visual = def.createVisual(ctx, { livery: q.get('livery') || undefined });
   const buildMs = performance.now() - t0;
@@ -125,6 +133,17 @@ function boot() {
     rear: { az: 180, el: 6, d: 1.7, fov: 26 }, rearq: { az: 148, el: 14, d: 1.55, fov: 30 }, below: { az: 35, el: -38, d: 1.6, fov: 30, noGround: true }, sider: { az: 90, el: 1.5, d: 1.75, fov: 26 },
     bottom: { az: 0, el: -89.9, d: 1.9, fov: 26, noGround: true }, cockpit: { cockpit: true, fov: 75 }, noseq: { az: 25, el: 8, d: 0.75, fov: 30, tz: -0.28 }, tailq: { az: 155, el: 10, d: 0.8, fov: 30, tz: 0.3 },
   };
+  {                                                                   // close-up views derived from geometry.js (photorealism review)
+    const e = g.pilotEye, gm = (g.gear[1] || g.gear[0]), gn = g.gear[0], en = g.engines[0] || { nozzle: [0, 0, g.tailZ], nozzleRadius: 0.5 }, y0 = state.position.y;
+    const nl = Math.abs(e[2] - g.noseZ);
+    VIEWS.cnose = { az: 52, el: 10, dist: Math.max(4, nl * 2.3), fov: 30, tgt: [0, e[1] - 0.35 + y0, (g.noseZ + e[2]) / 2] };
+    VIEWS.ccanopy = { az: 292, el: 12, dist: Math.max(3.2, nl * 1.1), fov: 30, tgt: [e[0], e[1] - 0.1 + y0, e[2] + 0.3] };
+    VIEWS.croot = { az: 62, el: 24, dist: Math.max(5, g.length * 0.3), fov: 30, tgt: [g.span * 0.11, y0 + 0.1, (g.noseZ + g.tailZ) / 2 * 0.3] };
+    VIEWS.cgear = { az: 305, el: 3, dist: Math.max(3.5, g.cgHeight * 3.2), fov: 30, tgt: [gm.pos[0] * 0.6, gm.pos[1] + y0 + g.cgHeight * 0.45, (gm.pos[2] * 2 + gn.pos[2]) / 3] };
+    VIEWS.cwheel = { az: 250, el: 6, dist: Math.max(1.6, gm.wheelRadius * 7), fov: 30, tgt: [gm.pos[0], gm.pos[1] + y0 + gm.wheelRadius * 1.6, gm.pos[2]] };
+    VIEWS.cnoz = { az: 158, el: 10, dist: Math.max(3, (en.nozzleRadius || 0.5) * 9), fov: 30, tgt: [en.nozzle[0] * 0.8, en.nozzle[1] + y0, en.nozzle[2] - 0.5] };
+    VIEWS.cwing = { az: 300, el: 32, dist: Math.max(4, g.span * 0.22), fov: 30, tgt: [-g.span * 0.27, y0 + 0.2, (g.noseZ + g.tailZ) / 2 * 0.3 + g.length * 0.05] };
+  }
   function placeCamera(name, aspect) {
     let v = VIEWS[name] || VIEWS.quarter;
     if (q.has('cam') && !q.has('views') && q.get('view') !== 'sheet') { const c = q.get('cam').split(',').map(Number); v = { az: c[0], el: c[1], dist: c[2], fov: num('fov', 30), noGround: c[1] < 0 }; }
@@ -135,7 +154,7 @@ function boot() {
       camera.rotation.set(look[1] * DEG, -look[0] * DEG, 0, 'YXZ');
     } else {
       camera.near = 0.5;
-      const tgt = centre.clone(); if (v.tz) tgt.z += v.tz * g.length;
+      const tgt = centre.clone(); if (v.tz) tgt.z += v.tz * g.length; if (v.tgt) tgt.fromArray(v.tgt);
       if (q.has('tgt')) { const t = q.get('tgt').split(',').map(Number); tgt.set(t[0], t[1] + state.position.y, t[2]); }
       const fit = Math.max(size, 2.2 * g.height) / (2 * Math.tan(camera.fov * DEG / 2));
       const dist = v.dist ?? v.d * fit * Math.max(1, 1.6 / aspect) * 0.62;
@@ -148,7 +167,7 @@ function boot() {
     ground.visible = !airborne && q.get('ground') !== '0' && !v.noGround && camera.position.y > 0.05;
   }
   const viewParam = q.get('view') || 'quarter';
-  const list = q.has('views') ? q.get('views').split(',') : viewParam === 'sheet' ? ['quarter', 'side', 'top', 'front', 'rearq', 'below'] : [viewParam];
+  const list = q.has('views') ? q.get('views').split(',') : viewParam === 'sheet' ? ['quarter', 'side', 'top', 'front', 'rearq', 'below'] : viewParam === 'closeups' ? ['cnose', 'croot', 'cgear', 'cnoz'] : [viewParam];
   const hud = hudCanvas.getContext('2d');
   function render() {
     const W = window.innerWidth, H = window.innerHeight;

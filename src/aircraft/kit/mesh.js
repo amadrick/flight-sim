@@ -6,7 +6,7 @@ import * as THREE from 'three';
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m3 = new THREE.Matrix3(), _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion();
 
 export class Mesh {
-  constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; this.p2 = null; }
+  constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; this.p2 = null; this.occ = null; }
   get vertexCount() { return this.p.length / 3; }
   get triCount() { return this.idx.length / 3; }
   /** Add a vertex, return its index. */
@@ -14,8 +14,20 @@ export class Mesh {
     const i = this.p.length / 3;
     this.p.push(x, y, z); this.n.push(nx, ny, nz); this.uv.push(u, v);
     if (this.p2) this.p2.push(x, y, z);
+    if (this.occ) this.occ.push(0);
     return i;
   }
+  /**
+   * Baked ambient occlusion per vertex (0 = open … 1 = fully enclosed), for cavities that shadow maps cannot resolve: wheel
+   * wells, intake ducts, jet pipes, cockpit tubs. `v` is a number or (x, y, z, i) => number; the larger of old and new wins.
+   * The kit skin material darkens ambient light (and, partly, direct light) by it. well() and the propulsion parts set it.
+   */
+  occlude(v) {
+    const nv = this.vertexCount, o = this._occ(), p = this.p, f = typeof v === 'function';
+    for (let i = 0; i < nv; i++) { const q = f ? v(p[i * 3], p[i * 3 + 1], p[i * 3 + 2], i) : v; if (q > o[i]) o[i] = q; }
+    return this;
+  }
+  _occ() { const nv = this.vertexCount; if (!this.occ) this.occ = []; const o = this.occ; while (o.length < nv) o.push(0); if (o.length > nv) o.length = nv; return o; }
   tri(a, b, c) { this.idx.push(a, b, c); return this; }
   /** Quad a,b,c,d counter-clockwise seen from outside. */
   quad(a, b, c, d) { this.idx.push(a, b, c, a, c, d); return this; }
@@ -33,11 +45,12 @@ export class Mesh {
     for (let i = 0; i < o.uv.length; i++) uv.push(o.uv[i]);
     for (let i = 0; i < o.idx.length; i++) idx.push(o.idx[i] + base);
     if (this.p2) { const s = o.p2 || o.p; for (let i = 0; i < s.length; i++) this.p2.push(s[i]); }
+    if (o.occ || this.occ) { if (!this.occ) this.occ = []; const d = this.occ, so = o.occ, nb = o.p.length / 3; while (d.length < base) d.push(0); d.length = base; for (let i = 0; i < nb; i++) d.push(so ? so[i] || 0 : 0); }
     return this;
   }
   clone() {
     const m = new Mesh();
-    m.p = this.p.slice(); m.n = this.n.slice(); m.uv = this.uv.slice(); m.idx = this.idx.slice(); m.p2 = this.p2 ? this.p2.slice() : null;
+    m.p = this.p.slice(); m.n = this.n.slice(); m.uv = this.uv.slice(); m.idx = this.idx.slice(); m.p2 = this.p2 ? this.p2.slice() : null; m.occ = this.occ ? this.occ.slice() : null;
     return m;
   }
   /** Apply a Matrix4 in place (normals use the normal matrix; winding flips for mirroring transforms). */
@@ -90,7 +103,7 @@ export class Mesh {
       fn[t * 3] = uy * vz - uz * vy; fn[t * 3 + 1] = uz * vx - ux * vz; fn[t * 3 + 2] = ux * vy - uy * vx;   // area-weighted
       for (let k = 0; k < 3; k++) { const kk = key(idx[t * 3 + k]); let g = groups.get(kk); if (!g) groups.set(kk, g = []); g.push(t); }
     }
-    const out = new Mesh(); out.p2 = this.p2 ? [] : null;
+    const out = new Mesh(); out.p2 = this.p2 ? [] : null; const occ = this.occ ? this._occ() : null, occOut = occ ? [] : null;
     for (let t = 0; t < nt; t++) {
       const fx = fn[t * 3], fy = fn[t * 3 + 1], fz = fn[t * 3 + 2], fl = Math.hypot(fx, fy, fz) || 1;
       const ids = [];
@@ -104,11 +117,12 @@ export class Mesh {
         const id = out.p.length / 3;
         out.p.push(p[vi * 3], p[vi * 3 + 1], p[vi * 3 + 2]); out.n.push(nx / l, ny / l, nz / l); out.uv.push(this.uv[vi * 2], this.uv[vi * 2 + 1]);
         if (out.p2) out.p2.push(this.p2[vi * 3], this.p2[vi * 3 + 1], this.p2[vi * 3 + 2]);
+        if (occOut) occOut.push(occ[vi]);
         ids.push(id);
       }
       out.idx.push(ids[0], ids[1], ids[2]);
     }
-    this.p = out.p; this.n = out.n; this.uv = out.uv; this.idx = out.idx; this.p2 = out.p2;
+    this.p = out.p; this.n = out.n; this.uv = out.uv; this.idx = out.idx; this.p2 = out.p2; this.occ = occOut;
     return this;
   }
   /** Axis-aligned bounds { min: [x,y,z], max: [x,y,z] }. */
@@ -124,6 +138,10 @@ export class Mesh {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setIndex(new THREE.BufferAttribute(nv > 65535 ? new Uint32Array(this.idx) : new Uint16Array(this.idx), 1));
     if (this.p2) { g.morphAttributes.position = [new THREE.Float32BufferAttribute(this.p2, 3)]; g.morphTargetsRelative = false; }
+    if (this.occ) {                                                   // baked occlusion (see occlude()); absent = unoccluded
+      const o = new Uint8Array(nv), s = this.occ; for (let i = 0; i < nv && i < s.length; i++) o[i] = Math.max(0, Math.min(255, Math.round(s[i] * 255)));
+      g.setAttribute('kitOcc', new THREE.BufferAttribute(o, 1, true));
+    }
     g.computeBoundingSphere(); g.computeBoundingBox();
     return g;
   }
@@ -309,7 +327,11 @@ export function well(patch, depth = 0.3, uv = null, dir = null) {
     m.vert(p[i * 3] + dx * depth, p[i * 3 + 1] + dy * depth, p[i * 3 + 2] + dz * depth, n[i * 3], n[i * 3 + 1], n[i * 3 + 2], u[0], u[1]);
   }
   for (let k = 0; k < patch.idx.length; k++) m.idx.push(patch.idx[k]);
+  const nFloor = m.vertexCount;
   for (const [a, b] of boundaryEdges(patch)) wall(m, patch, a, b, depth, uv, true, dir);
+  // baked occlusion: the floor of the cavity is dark, the walls fade from the rim to the floor (i2, i3 of each wall quad are deep)
+  const deep = Math.min(0.78, 0.5 + Math.abs(depth) * 0.6), o = m._occ();
+  for (let i = 0; i < m.vertexCount; i++) o[i] = i < nFloor ? deep : ((i - nFloor) % 4 < 2 ? 0.18 : deep);
   return m;
 }
 
