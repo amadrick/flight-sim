@@ -131,7 +131,7 @@ export function createTrees(ctx, { L, uniforms }) {
       if (near) { near.update(camWX, camWZ); near.mesh.castShadow = shadowsOn(); }
       if (grass) grass.update(camWX, camWZ, org, Hd);
       stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0);
-      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 4 : 0);
+      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0);
     },
     dispose() {
       placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose();

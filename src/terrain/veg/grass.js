@@ -1,4 +1,4 @@
-// Ground vegetation near the camera: instanced grass tufts (two crossed alpha-tested cards each) on a camera-centred
+// Ground vegetation near the camera: instanced grass tufts (three alpha-tested cards each) on a camera-centred
 // grid of 1 m cells. A small map pass decides per cell: meadow grass, mown airfield turf (short) or reeds (river banks),
 // using the same land cover as the surface shader. Nothing grows on runways, taxiways or aprons: the pavement
 // rectangles of the airport layouts near the camera are tested per cell (plus a margin), and the cropland, forest
@@ -92,11 +92,11 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
   const mapScene = new THREE.Scene(), mapMesh = new THREE.Mesh(tri, mapMat), mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   mapMesh.frustumCulled = false; mapScene.add(mapMesh);
 
-  // tuft: two crossed cards
+  // tuft: three cards at 60 degrees
   const geo = new THREE.InstancedBufferGeometry();
   const P = [], N = [], UV = [], I = [];
-  for (let k = 0; k < 2; k++) {
-    const a = k * Math.PI / 2, cx = Math.cos(a), cz = Math.sin(a), o = k * 4;
+  for (let k = 0; k < 3; k++) {
+    const a = k * Math.PI / 3, cx = Math.cos(a), cz = Math.sin(a), o = k * 4;
     for (const [sx, sy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) { P.push(sx * 0.5 * cx, sy, sx * 0.5 * cz); N.push(0, 1, 0); UV.push(sx * 0.5 + 0.5, sy); }
     I.push(o, o + 1, o + 2, o, o + 2, o + 3);
   }
@@ -125,8 +125,9 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         float gR = gG * uVegGrassWin.w * 0.5;
         float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x);
         float gAng = gh2.y * 6.2831853, gc = cos(gAng), gs = sin(gAng);
-        float gW = gM.g > 1.5 ? 0.6 : mix(0.45, 0.85, gh.y) * (0.6 + 0.6 * min(gM.r / 0.5, 1.0));
+        float gW = gM.g > 1.5 ? 0.6 : (gM.g > 0.5 ? mix(1.1, 1.5, gh.y) : mix(0.6, 1.0, gh.y));
         vec3 gl = vec3(position.x * gW, position.y * gH, position.z * gW);
+        gl.xz += vec2(0.6, 0.8) * (position.y * gH * 0.45);      // lean: seen from above the cards show their faces
         gl.xz = vec2(gc * gl.x - gs * gl.z, gs * gl.x + gc * gl.z);
         vec3 vegPos = vec3(gBase.x, vegGround(gBase) - 0.03, gBase.y) + gl;
         vegPos += vegWind(vegPos, position.y * position.y * 3.0, position.y * 0.3, max(gH, 0.3), gh.x);
@@ -134,7 +135,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         if (gH < 0.02) vegPos = vec3(0.0, -1.0e5, 0.0);
         vec3 objectNormal = normalize(vec3(gc * position.x * 0.0, 1.0, 0.0) + vec3(gs, 0.0, gc) * 0.15 * (uv.x - 0.5));
         float gTile = gM.g > 1.5 ? 1.0 : 0.0;
-        vGUv = vec2(mix(${g9x.toFixed(4)}, ${r10x.toFixed(4)}, gTile) + (uv.x * (gM.g > 0.5 && gM.g < 1.5 ? 0.35 : 0.9) + 0.05 * gh.x) * ${gts.toFixed(4)},
+        vGUv = vec2(mix(${g9x.toFixed(4)}, ${r10x.toFixed(4)}, gTile) + (uv.x * (gM.g > 0.5 && gM.g < 1.5 ? 0.7 : 0.9) + 0.05 * gh.x) * ${gts.toFixed(4)},
                     mix(${g9y.toFixed(4)}, ${r10y.toFixed(4)}, gTile) + (1.0 - uv.y * 0.98) * ${gts.toFixed(4)});
         vGM = gM; vGM.w = gh2.x; vGFade = vec2(gDist / gR, uv.y);
         vVegWorld = vegPos;`)
@@ -153,7 +154,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
         if (vGM.g > 0.5 && vGM.g < 1.5) gc = vec3(0.070, 0.112, 0.036) * (0.9 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);
-        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.35, 1.05, vGFade.y);
+        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.8, 1.08, vGFade.y);
         gc *= 0.8 + 0.4 * vGM.w;      // per-tuft variation
         diffuseColor.rgb = gc;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
