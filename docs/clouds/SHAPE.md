@@ -24,8 +24,8 @@ base) .. 0.11 1/m (top); overcast 0.06-0.08 1/m; anvil 0.002-0.012 1/m.
 * **Life cycle** (`clLife=0` freezes it, `clLifeT` = nominal lifetime, s): every cumulus cell has an age that runs at
   its own rate (lifetime ~1400 s for a 1.2 km cell, ~15 min for small ones [4.3]). Born at 60 % radius and 25 %
   height with no water; the tower rises (top climbs 1-3 m/s) and the radius fills in during the first third; mature;
-  from 62 % of its life it frays (wispy noise, soft edge, diluted skin), from 70 % its water evaporates and the radius
-  shrinks; at the wrap it has no water, so nothing pops. Selection threshold is raised by 25 % so the visible cloud
+  from 62 % of its life it frays partly (at most 45 % of the round-four decay look: soft edge, diluted skin), from
+  66 % the radius shrinks to 45 % and from 70 % its water evaporates; at the wrap it has no water, so nothing pops. Selection threshold is raised by 25 % so the visible cloud
   fraction stays the same. The CPU mirror (`densityAt`) follows the same ages.
 * **Wind**: air-mass advection with the wind at 35 % of the layer (unchanged), towers lean downwind with the
   base-to-top shear (now one function for the GPU and the CPU mirror), streets along the wind (unchanged).

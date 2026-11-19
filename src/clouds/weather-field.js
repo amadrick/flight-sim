@@ -168,7 +168,7 @@ export function densityFromField(p, wf, n, y, cl, cells, life = null) {
   const lon = life ? life.on : 0;
   const age = lon ? ((cl[3] + life.t * lerp(0.75, 1.3, (cl[2] * 7.31) % 1) / Math.sqrt(Math.min(4, Math.max(0.3, rad / 600)))) % 1) : 0;
   const lgH = lerp(1, lerp(0.25, 1, smoothstep(0, 0.35, age)), lon);
-  const lgR = lerp(1, lerp(0.6, 1, smoothstep(0, 0.25, age)) * lerp(1, 0.75, smoothstep(0.7, 1, age)), lon);
+  const lgR = lerp(1, lerp(0.6, 1, smoothstep(0, 0.25, age)) * lerp(1, 0.45, smoothstep(0.66, 1, age)), lon);
   const vig = saturate((cov * 1.45 * (1 + 0.25 * lon) - cl[2]) * 8), grow = (lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0)) * lgR;
   const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), 0.8 * lid * p.thickness) * lgH;
   const hc = h / Math.max(H * lerp(1, 0.4, p.sheet * (1 - dev)), 1);

@@ -141,7 +141,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // nothing pops.
   float age = fract(cl.a + uClLife.x * mix(0.75, 1.3, fract(cl.b * 7.31)) * inversesqrt(clamp(rad / 600.0, 0.3, 4.0)));
   float lgH = mix(1.0, mix(0.25, 1.0, smoothstep(0.0, 0.35, age)), uClLife.y);
-  float lgR = mix(1.0, mix(0.6, 1.0, smoothstep(0.0, 0.25, age)) * mix(1.0, 0.75, smoothstep(0.7, 1.0, age)), uClLife.y);
+  float lgR = mix(1.0, mix(0.6, 1.0, smoothstep(0.0, 0.25, age)) * mix(1.0, 0.45, smoothstep(0.66, 1.0, age)), uClLife.y);
   float lgW = mix(1.0, smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(0.7, 0.98, age)), uClLife.y);
   // Self-similar turrets: inside a cumulus cell the shape noise is sampled at a frequency that follows the cell size
   // (a 300 m humilis gets 100-300 m bulges, a 4 km congestus 1-2 km towers with sub-turrets), same single fetch.
@@ -211,7 +211,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  a crisp growing cell and a soft decaying one would otherwise meet in a visible vertical seam)
   float phase = cl.a;
   if (uClDet.x > 0.5 && lod < 1.5) phase = mix(textureLod(tClCells, pc * uClCell.x, lod + 3.5).a, phase, clSat(lod * 2.0 - 2.0));
-  float decay = max(mix(smoothstep(0.65, 0.92, phase), smoothstep(0.62, 0.9, age), uClLife.y), 0.6 * uClDet5.z * (1.0 - vig)) * (1.0 - uClShape.w);
+  float decay = max(mix(smoothstep(0.65, 0.92, phase), 0.45 * smoothstep(0.62, 0.9, age), uClLife.y), 0.6 * uClDet5.z * (1.0 - vig)) * (1.0 - uClShape.w);
   vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
 
   // ---- (2) layer clouds from the 3-D shape noise: stratus / nimbostratus deck, stratocumulus sheet, Cb core -----
