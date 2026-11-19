@@ -183,6 +183,7 @@ vec2 unresolvedVar(int c, float lod) {
   return mix(uVar[c * 10 + i], uVar[c * 10 + min(i + 1, 9)], f);
 }
 
+float gCloudA = -1.0;
 #ifdef WATER_CLOUDS
 // Clouds seen in the reflection: trace the reflected ray to the cloud base and read the clouds module's optical-depth
 // map there (stored along the sun slope; × sun elevation ≈ vertical). Underside radiance: ambient sky light plus a
@@ -195,8 +196,13 @@ vec3 reflectClouds(vec3 P, vec3 R, vec3 sky, vec3 sunE) {
   float tau = cloudShadowTau(hit, base) * clamp(uSunDir.y, 0.12, 1.0);
   float a = 1.0 - exp(-0.6 * tau);
   a *= exp(-t / 70000.0) * smoothstep(0.003, 0.05, R.y);
+  gCloudA = a + 0.001 * tau;
   vec3 up = atmSkyRadiance(vec3(0.0, 1.0, 0.0));
-  vec3 Lc = 0.55 * sky + 0.9 * up + sunE * (0.035 + 0.11 * exp(-0.35 * tau)) * max(uSunDir.y, 0.0);
+  // near the horizon the reflection sees the clouds' sunlit flanks, overhead their shaded bases
+  float sunUp = smoothstep(-0.05, 0.15, uSunDir.y);
+  vec3 side = up * 1.1 + sunE * sunUp * (0.10 + 0.12 * max(dot(normalize(vec3(R.x, 0.0, R.z) + 1e-5), -normalize(vec3(uSunDir.x, 0.0, uSunDir.z) + 1e-5)), 0.0));
+  vec3 bse = up * 0.95 + sunE * sunUp * 0.05 * exp(-0.25 * tau);
+  vec3 Lc = mix(side, bse, smoothstep(0.08, 0.45, R.y));
   return mix(sky, Lc, a);
 }
 #endif
@@ -285,10 +291,16 @@ void main() {
     vec2 sea = m > 1e-5 ? -g / m : -uWaveDir;              // toward deeper water
     m = clamp(m, 0.004, 0.25);
     // shelter: the shallowest seabed between here and the open sea limits the waves that reach this point
-    float up = max(max(terrainHeight(wAbs + sea * 45.0), terrainHeight(wAbs + sea * 140.0)), terrainHeight(wAbs + sea * 420.0));
+    float th45 = terrainHeight(wAbs + sea * 45.0);
+    float up = max(max(th45, terrainHeight(wAbs + sea * 140.0)), terrainHeight(wAbs + sea * 420.0));
     float Hin = uShore.x * mix(0.55, 1.0, smoothstep(-0.4, 0.6, dot(-sea, uWaveDir)));
-    Hloc = min(Hin, 0.78 * max(-up, 0.0) + 0.06);
-    sheltered = 1.0 - Hloc / max(Hin, 1e-3);
+    float Harr = min(Hin, 0.78 * max(-up, 0.0) + 0.06);          // what arrives from the open sea
+    sheltered = 1.0 - Harr / max(Hin, 1e-3);
+    float dd0 = max(depth, 0.0);
+    Hloc = min(Harr, 0.78 * dd0 + 0.03);                           // depth-limited height here
+    float Hsea = min(Harr, 0.78 * max(-th45, 0.0) + 0.03);          // ... and 45 m seaward
+    // breaking = energy lost between there and here (strong on reef edges and bars, nil on the flat behind them)
+    float diss = clamp((Hsea - Hloc) / max(0.2 * Hin, 0.05), 0.0, 1.0);
     // along-shore variation: breaking happens in segments (peaks and gaps), offsets bend the crest lines
     vec2 alongD = vec2(-sea.y, sea.x);
     float sAlong = dot(wq, alongD);
@@ -302,12 +314,12 @@ void main() {
     float u = fract(ph);
     // breaking zone: depth below ~1.3 breaker heights; bores (fronts at u = 0) leave foam that decays behind them
     float hb = max(Hloc, 0.02);
-    float zone = smoothstep(1.6 * hb + 0.2, 0.9 * hb, dd) * smoothstep(-0.05, 0.25, dd + 0.2);
+    float zone = smoothstep(1.5 * Harr + 0.2, 0.8 * Harr, dd) * smoothstep(-0.05, 0.25, dd + 0.2);
     float front = smoothstep(0.0, 0.025, u) * exp(-u * 4.0) + 0.3 * exp(-(1.0 - u) * 40.0);
-    float bore = mix(front, 0.33, smoothstep(0.3, 0.9, dph));            // filtered when the bands are sub-pixel
-    float strength = smoothstep(0.05, 0.4, Hloc) * (0.55 + 0.45 * seg);
-    boreF = bore * zone * strength;
-    surfF = zone * strength;                                // general aerated surf-zone water
+    float bore = mix(front, 0.5, smoothstep(0.3, 0.9, dph));            // filtered when the bands are sub-pixel
+    float strength = smoothstep(0.05, 0.4, Harr) * (0.55 + 0.45 * seg);
+    boreF = bore * zone * strength * clamp(diss * 1.6, 0.0, 1.0);
+    surfF = zone * strength * (0.35 + 0.65 * diss);         // general aerated surf-zone water
     susp = zone * smoothstep(0.1, 0.7, Hloc);               // sand stirred up by the breakers
     // swash: run-up on the beach — fast uprush, slow backwash; the level is the same along a crest's phase
     float us = fract(uTime / uShore.y + 0.35 * an.g + 0.6 * an.b);
@@ -425,9 +437,9 @@ void main() {
   float ftS = texture(tFoamTex, wq / 9.0 + vec2(0.0, uTime * 0.02)).r;
   float lace = smoothstep(0.42, 0.7, ftS * 0.7 + ft * 0.3);
   float surfFoam = max(boreF * mix(0.8, smoothstep(0.15, 0.55, ftS + boreF * 0.4), detailW),
-                       surfF * mix(0.3, lace * 0.5, detailW));
+                       surfF * mix(0.4, lace * 0.55, detailW));
   // swash front: a thin foam line at the leading edge of the run-up
-  float edgeFoam = (1.0 - smoothstep(0.0, 0.06 + 0.04 * Hloc, dW)) * covW * smoothstep(0.03, 0.2, Hloc) * mix(0.6, smoothstep(0.3, 0.6, ftS), detailW);
+  float edgeFoam = (1.0 - smoothstep(0.0, 0.06 + 0.04 * Hloc, dW)) * covW * smoothstep(0.1, 0.5, Hloc) * (1.0 - sheltered) * mix(0.6, smoothstep(0.3, 0.6, ftS), detailW);
   float foam = clamp(max(max(wc * (1.0 - 0.7 * sheltered), surfFoam), max(edgeFoam, washF * 0.5 * smoothstep(0.4, 0.7, ft))), 0.0, 1.0);
   vec3 foamRad = 0.82 * (vSunE * max(dot(N, L), 0.0) / PI + atmAmbient(P, N) + vMoonE * max(uMoonDir.y, 0.0) / PI);
 
@@ -449,6 +461,7 @@ void main() {
   else if (uDebug == 4) { col = N * 0.5 + 0.5; a = 1.0; }
   else if (uDebug == 5) { col = vec3(s0.w, s1.w, s2.w) * 0.5; a = 1.0; }
   else if (uDebug == 6) { col = vec3(gl * 0.1, lobeS, 0.0); a = 1.0; }
+  else if (uDebug == 7) { col = vec3(gCloudA, -gCloudA, 0.0); a = 1.0; }
   outColor = vec4(max(col, vec3(0.0)), clamp(a, 0.0, 1.0));
 }`;
 }
