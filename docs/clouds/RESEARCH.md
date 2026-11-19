@@ -163,9 +163,9 @@ tau = (9/5) LWP / (rho_w r_e,top) (Szczodrak et al. 2001). [K] https://doi.org/1
 
 * Liquid water imaginary refractive index (Hale & Querry 1973) is about 1e-9 at 450 nm, 2e-9 at 550 nm and 1.6e-8 at 700 nm.
   It jumps to ~1e-4 at 1.6 um and 2.5e-4 near 2.1 um. [K] https://doi.org/10.1364/AO.12.000555
-* Co-albedo is 1 - omega_0 ~ (approximately) 0.85 * (4 pi k / lambda) * 2 r_e * ... (geometric-optics absorption); for r_e = 10 um:
-  ~2e-7 (450 nm), ~5e-7 (550 nm), ~3e-6 (700 nm), ~0.01 (1.6 um). [UNVERIFIED exact digits; the order of magnitude and
-  the red > green > blue ordering are standard; see Bohren & Clothiaux 2006, ch. 5]
+* Co-albedo 1 - omega_0, **computed** by me (Mie, lognormal sigma_g = 1.35, Hale & Querry k = 1.64e-8 / 1.96e-9 / 1.0e-9 at 650 / 550 / 450 nm) [derived]:
+  r_e = 5 um: (1.8e-6, 2.1e-7, 1.4e-7); r_e = 10 um: (3.7e-6, 4.1e-7, 2.5e-7); r_e = 15 um: (4.6e-6, 5.9e-7, 3.7e-7) for (R, G, B).
+  It scales roughly with r_e and k. At 1.6 um it is ~0.01 (literature [K], Bohren & Clothiaux 2006 ch. 5). See 2.1b for the code.
 * **White:** visible absorption is negligible and Mie scattering by 10 um droplets is almost wavelength-independent
   (size parameter x = 2 pi r / lambda ~ 100). So the reflected spectrum equals the incident spectrum. [K] Bohren & Clothiaux,
   *Fundamentals of Atmospheric Radiation*, 2006.
@@ -176,7 +176,7 @@ tau = (9/5) LWP / (rho_w r_e,top) (Szczodrak et al. 2001). [K] https://doi.org/1
   scatterings (thousands). The path length becomes kilometres of water-laden air, so the slight red absorption of liquid
   water plus ice turns transmitted and deep-reflected light faintly blue-green. Green thunderstorms combine this with
   reddened (sunset) illumination. Bohren & Fraser 1993. [K] https://doi.org/10.1175/1520-0477(1993)074<2185:GT>2.0.CO;2
-* Rough per-colour co-albedo to use for the spectral tint of deep paths: 1 - omega ~ (3e-6, 6e-7, 3e-7) for (R, G, B)
+* Per-colour co-albedo for the spectral tint of deep paths (r_e = 10 um, computed above): 1 - omega = (3.7e-6, 4.1e-7, 2.5e-7) for (R, G, B).
   [UNVERIFIED, derived from the k values above]. With N ~ 2000 scatterings, the transmitted R/G/B ratio is
   ~ exp(-N (1-w)) = (0.994, 0.999, 0.9994), which is tiny. **The real blue in cloud bases is mostly skylight fill**
   (blue sky illuminating the cloud's sides and underside) **plus aerial perspective between viewer and cloud.**
@@ -196,12 +196,12 @@ For r_e ~ 5 to 15 um at visible wavelengths (size parameter 60 to 170), the phas
 
 | Feature | Scattering angle theta | Strength / width | Visual | Source |
 |---|---|---|---|---|
-| Diffraction peak | 0 deg, width ~ lambda/(2 r) ~ 1-3 deg | p(0) ~ 1e3 to 1e4 sr^-1 times isotropic; ~50% of scattered energy within a few degrees | silver lining, glare around the sun through thin cloud | Bohren & Huffman 1983 [K] |
+| Diffraction peak | 0 deg, half-width ~ lambda/(2 r) ~ 1-2 deg | p(0) ~ 150 (r_e 5), 580 (r_e 10), 1300 (r_e 15) sr^-1; 30-45% of scattered energy within 2 deg, ~55% within 10 deg (computed, 2.1b) | silver lining, glare around the sun through thin cloud | Bohren & Huffman 1983 [K]; [derived] |
 | Corona | 1 to 10 deg rings around sun/moon | ring radius ∝ lambda/r: first red ring at ~ 0.6 * lambda / r rad (~2.5 deg for r = 8 um) | coloured rings round the moon through thin Ac/Cs; small *uniform* drops required | Les Cowley, atoptics [K] https://atoptics.co.uk/droplets/corona.htm |
 | Iridescence | 10 to 30 deg from sun | pastel pinks and greens on thin, young cloud edges (lenticulars, pileus) | | atoptics [K] https://atoptics.co.uk/droplets/irid1.htm |
-| Side-scatter minimum | ~ 90 to 120 deg | ~0.03 to 0.05 sr^-1 (lowest) | | Mie [K] |
-| Cloudbow / fogbow | 138 deg scattering (= 42 deg from antisolar point); for small drops broad, white, radius ~ 33 to 41 deg | 1.5 to 2x the side minimum | white arc opposite the sun | atoptics fogbow [K] https://atoptics.co.uk/droplets/fogbow.htm |
-| Glory | 180 deg, rings out to ~ 2 to 5 deg | backscatter rise to ~0.2 to 1 sr^-1 at 180 deg | coloured rings round the aircraft shadow on cloud below: **very relevant for a flight sim** | atoptics [K] https://atoptics.co.uk/droplets/glory.htm |
+| Side-scatter minimum | ~ 90 to 115 deg | ~0.0016 to 0.003 sr^-1 (i.e. 2-4% of isotropic 0.0796; computed) | | [derived] |
+| Cloudbow / fogbow | peak at 143 deg (r_e 5), 141.5 (r_e 10), 140.5 (r_e 15) scattering angle, i.e. 37-39.5 deg from the antisolar point; broad, nearly white | ~8-10x the side minimum (p ~ 0.02-0.03 sr^-1) | white arc opposite the sun | atoptics fogbow [K] https://old.atoptics.co.uk/droplets/fogdrpsz.htm [V qualitative]; [derived] |
+| Glory | 180 deg; innermost bright ring at ~1.5 deg (r_e 10), ~1.05 deg (r_e 15), ~2.7 deg (r_e 5) from the antisolar point; outer rings to ~8-9 deg | backscatter p(180) ~ 0.04-0.05 sr^-1 (about 0.6x isotropic, 20-25x the side minimum) | coloured rings round the aircraft shadow on cloud below: **very relevant for a flight sim** | atoptics [K] https://atoptics.co.uk/droplets/glory.htm ; [derived] |
 
 Asymmetry parameter g = 0.85 to 0.87 (r = 4 to 16 um, visible). [K] Hansen & Travis 1974.
 
@@ -210,6 +210,41 @@ is cheap and dramatic in a flight sim: when the anti-solar point falls on a clou
 coloured rings around the aircraft's shadow point with the first red ring at ~ 1.5-2.5 deg angular radius for r_e = 10 um
 (angle ∝ 1/r_e). Weight it by surface opacity (tau > 1 in the top 50 m). (c) A white fogbow arc at 138 deg (radius ~ 40
 deg around the antisolar point, width ~ 5-10 deg), added only on single-scatter samples.
+
+### 2.1b Computed Mie reference values (to check the fits against)
+
+I ran my own Lorenz-Mie code (Bohren & Huffman algorithm with numpy; checked to give Q_ext → 2 and g → 0.87 at large x). It
+used water droplets in a lognormal with sigma_g = 1.35 at 550 nm. The phase function p is normalised to 1 over 4 pi sr (isotropic = 0.0796).
+[derived; ~80 lines of numpy, BH appendix A algorithm, not committed]
+
+| theta (deg) | Mie r_e=5 | Mie r_e=10 | Mie r_e=15 | JdE fit d=10 | JdE fit d=20 | JdE fit d=30 | HG g=0.865 |
+|---|---|---|---|---|---|---|---|
+| 0 | 150 | 585 | 1301 | 587 | 2740 | 6480 | 8.1 |
+| 1 | 102 | 144 | 84 | 105 | 72 | 50 | 8.0 |
+| 2 | 36 | 11.4 | 7.9 | 20 | 10.5 | 7.1 | 7.5 |
+| 5 | 1.9 | 1.34 | 1.14 | 1.97 | 1.27 | 1.09 | 5.1 |
+| 10 | 0.69 | 0.62 | 0.52 | 0.65 | 0.63 | 0.64 | 2.1 |
+| 20 | 0.35 | 0.31 | 0.35 | 0.33 | 0.35 | 0.36 | 0.47 |
+| 30 | 0.18 | 0.20 | 0.18 | 0.18 | 0.18 | 0.18 | 0.16 |
+| 60 | 0.025 | 0.019 | 0.017 | 0.022 | 0.019 | 0.018 | 0.024 |
+| 90 | 0.0028 | 0.0021 | 0.0016 | 0.0017 | 0.0012 | 0.0010 | 0.0087 |
+| 120 | 0.0037 | 0.0028 | 0.0025 | 0.0055 | 0.0046 | 0.0042 | 0.0047 |
+| 140 (bow) | 0.018 | 0.023 | 0.031 | 0.0092 | 0.0078 | 0.0073 | 0.0037 |
+| 160 | 0.011 | 0.0094 | 0.0089 | 0.012 | 0.010 | 0.0094 | 0.0032 |
+| 180 (glory) | 0.042 | 0.050 | 0.051 | 0.013 | 0.011 | 0.010 | 0.0031 |
+| g | 0.850 | 0.865 | 0.871 | | | | 0.865 |
+
+Reading the table:
+* **Single HG(0.865) is badly wrong for clouds.** It is 70-300x too low at 0-1 deg (no silver lining), 4x too high at 5-10 deg (a milky
+  glow instead of a crisp bright rim), 4x too high at 90 deg (sides too bright when lit from the side), and 15x too low at 180 deg
+  (no backscatter brightening at the antisolar point or around the aircraft shadow).
+* **The JdE fit matches Mie within ~20-40% from 2 to 160 deg.** Its peak at 0 deg is taller and narrower for larger d (the JdE reference uses a
+  narrower distribution, sigma 0.25 in ln d, than my 1.35 → 0.30). It misses the bow (2-4x low) and the glory (4-5x low), as the authors state.
+* The fit's *diameter* d corresponds to about **2 r_e** (JdE d=10 ≈ Mie r_e=5 at 0-5 deg; d=20 ≈ r_e=10 from 2 deg out).
+* Fogbow and glory: add two narrow analytic bumps on top of the JdE fit for single scattering:
+  `p += 0.015 * exp(-((theta - 141)/3)^2) + 0.035 * exp(-((180 - theta)/1.5)^2)` (sr^-1, r_e ~ 10 um) [derived fit to the table, use as a starting point].
+* Wavelength: g is 0.842 / 0.850 / 0.853 (R/G/B) at r_e = 5 and 0.863 / 0.865 / 0.864 at r_e = 10, so the phase function is effectively grey
+  except for the coloured rings (corona, glory, bow), which matter only in single scattering.
 
 ### 2.2 Analytic phase function fits
 
