@@ -1,9 +1,12 @@
 // Terrain surface material: MeshStandardMaterial (so the engine's sun, shadow map, ambient and IBL apply unchanged)
 // with the vertex stage replaced by clipmap displacement + CDLOD geomorphing and the fragment inputs (albedo,
-// roughness, normal, AO, terrain self-shadow) replaced by a fully procedural biome shader.
+// roughness, normal, AO, terrain self-shadow) replaced by the land-surface shader (surface.glsl.js).
+// The learned land cover (src/neural/ground-cover.js) is evaluated here in the VERTEX stage and interpolated: its
+// inputs are band-limited to several clipmap texels, so per-vertex evaluation loses nothing and keeps a ~900
+// multiply-add network and its feature fetches out of the fragment shader.
 import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../core/glsl.js';
-import { COVER_GLSL, SURFACE_GLSL } from './surface.glsl.js';
+import { COVER_GLSL, SURFACE_GLSL, ECO_GLSL, GROUND_MODE } from './surface.glsl.js';
 
 // Noise sampling scales: period in metres and a rotation so the scales never line up (anti-tiling).
 export const TILE_SCALES = [
@@ -28,10 +31,13 @@ float terrLevelAt(float d) { return clamp(ceil(log2(max(d, 1.0) / uTerrLod.x)), 
 
 export const TILE_CONSTS_GLSL = TILE_SCALES.map((s, i) => `const vec3 TERR_TILE${i} = vec3(${Math.cos(s.angle).toFixed(6)}, ${Math.sin(s.angle).toFixed(6)}, ${(1 / s.period).toExponential(6)});`).join('\n');
 
-export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms }) {
+/** quality: 0 low, 1 medium, 2 high / ultra (detail scales and side projection of the surface shader). */
+export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms, quality = 2 }) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
-  mat.defines = { ...(mat.defines || {}), TERR_SHADOW_STEPS: shadowSteps };
+  mat.defines = { ...(mat.defines || {}), TERR_SHADOW_STEPS: shadowSteps, TERR_Q: quality };
   const tileConsts = TILE_CONSTS_GLSL;
+  const neural = GROUND_MODE !== 'classic';
+  const cover = COVER_GLSL, surface = SURFACE_GLSL;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -43,6 +49,14 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms }) {
         attribute vec4 iB;       // grid level, force-morph, -, -
         varying vec3 vTerrPos;   // render-space position before the curvature drop (y = true height)
         uniform float uTerrCurv;
+        ${neural ? /* glsl */`
+        ${tileConsts}
+        ${ECO_GLSL}
+        uniform sampler2D tTerrNoise;
+        uniform vec2 uTerrTile[7];
+        varying vec4 vTerrEcoA; varying vec4 vTerrEcoB; varying vec4 vTerrEcoC;   // learned land cover
+        varying vec4 vTerrN0;    // province-scale noise (19 km)
+        varying vec4 vTerrAux;   // x = valley-scale concavity` : ''}
       `)
       .replace('#include <begin_vertex>', /* glsl */`
         vec2 tg = position.xy;
@@ -59,20 +73,30 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms }) {
         float ta = clamp(max(iA.w, ceil(log2(max(td, 1.0) / uTerrLod.x))), iA.w, uTerrLod.z);
         vec4 th4 = terrTexH(tpxz, ta);
         float th = th4.x + th4.y;
+        float tka = 0.0;
         if (ta < uTerrLod.z) {
-          float tka = terrMorph(td / (uTerrLod.x * exp2(ta)));
+          tka = terrMorph(td / (uTerrLod.x * exp2(ta)));
           if (tka > 0.0) { vec4 tb = terrTexH(tpxz, ta + 1.0); th = mix(th, tb.x + tb.y, tka); }
         }
         vTerrPos = vec3(tpxz.x, th, tpxz.y);
         vec3 transformed = vec3(tpxz.x, th - uTerrCurv * curvatureDrop(distance(tpxz, uTerrCam.xz)), tpxz.y);
+        ${neural ? /* glsl */`
+        TerrEco tE = terrEco(tpxz, th);
+        vTerrEcoA = tE.a; vTerrEcoB = tE.b; vTerrEcoC = tE.c;
+        vec2 tnuv = vec2(TERR_TILE0.x * tpxz.x - TERR_TILE0.y * tpxz.y, TERR_TILE0.y * tpxz.x + TERR_TILE0.x * tpxz.y) * TERR_TILE0.z + uTerrTile[0];
+        vTerrN0 = textureLod(tTerrNoise, tnuv, max(ta - 6.0, 0.0));
+        float tcw = terrTexD(tpxz, min(ta + 2.0, uTerrLod.z)).w;
+        if (tka > 0.0) tcw = mix(tcw, terrTexD(tpxz, min(ta + 3.0, uTerrLod.z)).w, tka);
+        vTerrAux = vec4((tcw - 0.5) / 1.5, 0.0, 0.0, 0.0);` : ''}
       `);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', /* glsl */`#include <common>
         ${clipmapGLSL(L)}
         ${tileConsts}
         varying vec3 vTerrPos;
-        ${COVER_GLSL}
-        ${SURFACE_GLSL}
+        ${neural ? 'varying vec4 vTerrEcoA; varying vec4 vTerrEcoB; varying vec4 vTerrEcoC; varying vec4 vTerrN0; varying vec4 vTerrAux;' : ''}
+        ${cover}
+        ${surface}
       `)
       .replace('#include <map_fragment>', /* glsl */`
         TerrSurf tSurf = terrSurface(vTerrPos);
@@ -90,6 +114,6 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms }) {
         reflectedLight.directSpecular *= tSurf.shadow;
       `);
   };
-  mat.customProgramCacheKey = () => 'skyward-terrain-' + L + '-' + shadowSteps;
+  mat.customProgramCacheKey = () => `skyward-terrain-${GROUND_MODE}-${L}-${shadowSteps}-${quality}`;
   return mat;
 }
