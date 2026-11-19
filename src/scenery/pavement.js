@@ -123,7 +123,7 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec2 inC = sl - cell * slab;
             float h1 = scnHash(cell + seed), h2 = scnHash(cell * 1.37 + seed + 5.1), h3 = scnHash(cell * 2.11 + 9.7);
             float tone = 0.86 + 0.24 * h1;
-            vec3 base = kind < 1.5 ? vec3(0.265, 0.26, 0.245) : vec3(0.24, 0.235, 0.222);
+            vec3 base = kind < 1.5 ? vec3(0.25, 0.245, 0.232) : vec3(0.215, 0.21, 0.198);
             col = base * tone * (0.8 + 0.4 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
             col *= vec3(1.0, 0.99 + 0.02 * h2, 0.97 + 0.05 * h3);                         // cement batches differ
             float jx = scnLines(sl.x + 0.01, slab, 0.02), jy = scnLines(sl.y + 0.01, slab, 0.02);
@@ -134,8 +134,8 @@ export function makePavementMaterial(ctx, shared, pools) {
             // spalled corners and the odd shattered slab (dark crack lines)
             float corner = (1.0 - smoothstep(0.0, 0.9, min(inC.x, slab - inC.x))) * (1.0 - smoothstep(0.0, 0.9, min(inC.y, slab - inC.y)));
             col *= 1.0 - 0.25 * corner * step(0.7, h1);
-            float crk = smoothstep(0.6, 0.9, crackNet) * step(0.82, h3);
-            col *= 1.0 - 0.55 * crk;
+            float crk = smoothstep(0.75, 0.95, crackNet) * step(0.9, h3);
+            col *= 1.0 - 0.3 * crk;
             // stains: oil and hydraulic fluid on aprons, tyre scuffs; rust streaks from tie-downs are rare
             float stain = smoothstep(0.62, 0.82, nB.b * 0.55 + nD.g * 0.45) * (kind > 2.5 ? 1.0 : 0.35);
             col *= 1.0 - 0.45 * stain;

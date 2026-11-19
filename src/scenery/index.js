@@ -16,7 +16,7 @@ import { createLightSystem } from './lights.js';
 import { MultiBuilder, lin } from './builder.js';
 import { buildStructures } from './structures.js';
 import { setupDebugCamera } from './debugcam.js';
-import { makeAirliner, makeFighter, makeLightPlane, makeVehicles, instances } from './parked.js';
+import { makeAirliner, makeWidebody, makeTanker, makeTurboprop, makeFighter, makeLightPlane, makeVehicles, instances, aircraftInstances, makeParkedMaterial } from './parked.js';
 
 const DEG = Math.PI / 180;
 const RANGE = { pavement: 70000, buildings: 26000, props: 9000, lights: 110000 };
@@ -117,10 +117,12 @@ export async function createScenery(ctx) {
   const sockGeo = makeWindsockGeometry();
   const sockMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }));
 
-  const parkedMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 })));
+  const parkedMat = addPools(addCurvature(makeParkedMaterial({ roughness: 0.32, metalness: 0.15 })));
   const vehMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.1 })));
-  const GEO = { airliner: makeAirliner(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
-  const LIVERY = [0x0b3d91, 0xc8102e, 0x00843d, 0xf2a900, 0x5b2c83, 0x0093b2, 0x1d1d1b, 0xe35205, 0x7a1f2b, 0x2e6db4];
+  const GEO = { narrow: makeAirliner(), wide: makeWidebody(), tanker: makeTanker(), prop: makeTurboprop(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
+  // fictional airlines: [tail / engines, belly / cheatline]
+  const LIVERY = [[0x0b3d91, 0x9aa4b0], [0xc8102e, 0x2a2d34], [0x00843d, 0xc9ccd0], [0xf2a900, 0x1f3a68], [0x5b2c83, 0xb9bdc1], [0x0093b2, 0x0b3d5c],
+    [0x1d1d1b, 0xc8102e], [0xe35205, 0xd8dadc], [0x7a1f2b, 0xc2b59b], [0x2e6db4, 0xe8e8e8], [0x0f6b5c, 0x0f6b5c], [0xd0d3d6, 0x1a4d8f]];
 
   const fixtureGeo = (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.035, 0.28, 6, lin(0x9a9a40)); B.cylinder('b', 0, 0.28, 0, 0.07, 0.09, 8, [1, 1, 1], 'b', 0.05); return B.build().b; })();
   const fixtureMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.1 }));
@@ -176,35 +178,65 @@ export async function createScenery(ctx) {
       cars.computeBoundingSphere();
       near.add(cars);
     }
-    // parked aircraft on ~70 % of the stands, ground vehicles around the occupied gates
+    // parked aircraft on the occupied stands (types by airport role), ground support equipment around airline gates
     {
       const occ = L.stands.filter((st) => st.occupied);
-      const lists = { airB: [], airA: [], ftr: [], gaB: [], gaA: [], tug: [], belt: [], fuel: [], cart: [] };
+      const lists = { narrow: [], wide: [], tanker: [], prop: [], fighter: [], light: [] };
+      const veh = { tug: [], belt: [], fuel: [], cart: [], stairs: [], bus: [], catering: [], gpu: [], follow: [], arff: [], cone: [], chock: [] };
+      const vcol = { tug: 0xe9e6dc, belt: 0xf0c020, fuel: 0xdcdcd6, cart: 0x6a7a8a, stairs: 0xe9e6dc, bus: 0xe6e8ea, catering: 0xe8e8e2, gpu: 0xf0c020, follow: 0xf0c020, arff: 0xd8d4c8, cone: 0xffffff, chock: 0xffffff };
+      const mil = ap.kind === 'military';
+      if (mil) { vcol.tug = vcol.belt = vcol.gpu = 0x9a9a7a; vcol.fuel = 0x8a8f7a; vcol.follow = 0x8a8f7a; vcol.arff = 0xd8d0b0; }
+      const vadd = (k, p, hdg) => veh[k].push({ x: p.x, z: p.z, hdg, color: vcol[k] });
       for (const st of occ) {
         const h = st.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+        const at = (fwd, right) => ({ x: st.x + dx * fwd + rx * right, z: st.z + dz * fwd + rz * right });
         if (st.size === 'heavy' || st.size === 'medium') {
-          const sc = st.size === 'heavy' ? 1.55 : 1;
+          let type = st.size === 'heavy' ? 'wide' : 'narrow';
+          if (mil) type = 'tanker';
+          else if (ap.kind === 'regional') type = 'prop';
+          else if (ap.kind === 'island') type = rnd() < 0.5 ? 'prop' : 'narrow';
           const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
-          lists.airB.push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: rnd() < 0.85 ? 0xf4f4f2 : 0xd0d4d8 });
-          lists.airA.push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: liv });
-          if (st.bridge || rnd() < 0.5) {
-            const at = (fwd, right) => ({ x: st.x + dx * fwd * sc + rx * right * sc, z: st.z + dz * fwd * sc + rz * right * sc });
-            if (rnd() < 0.6) lists.tug.push({ ...at(5.5, 0), hdg: st.hdg + 180, color: 0xe8e8e0 });
-            if (rnd() < 0.8) lists.belt.push({ ...at(-7, 3.4), hdg: st.hdg - 20, color: 0xf0c020 });
-            if (rnd() < 0.5) lists.fuel.push({ ...at(-15, 9.5), hdg: st.hdg + 90, color: 0xdddddd });
-            if (rnd() < 0.7) for (let k = 0; k < 3; k++) lists.cart.push({ ...at(-12 - k * 3.6, 7 + k * 0.2), hdg: st.hdg + 180, color: 0x6a7a8a });
+          const sc = type === 'narrow' ? (rnd() < 0.3 ? 0.88 : 1) : 1;
+          lists[type].push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: mil ? 0xffffff : liv[0], color2: mil ? 0x7d858c : liv[1] });
+          const k = type === 'wide' ? 1.7 : type === 'prop' ? 0.72 : sc;
+          // chocks at the nose gear, cones at the wingtips and engines (safety zone)
+          vadd('chock', at(0, 0), st.hdg + 90);
+          const span = type === 'wide' ? 31 : type === 'prop' ? 13.6 : type === 'tanker' ? 20 : 17.5 * sc;
+          for (const sg of [-1, 1]) { vadd('cone', at(-(type === 'wide' ? 34 : 15 * k), sg * (span + 1.5)), 0); vadd('cone', at(-3 * k, sg * 6 * k), 0); }
+          vadd('cone', at(-36 * k, 0), 0);
+          if (mil) { if (rnd() < 0.5) vadd('fuel', at(-14, 12), st.hdg + 90); continue; }
+          if (rnd() < 0.85) vadd('gpu', at(3.5, 2.5), st.hdg + 90);
+          if (st.bridge || rnd() < 0.6) {
+            if (rnd() < 0.55) vadd('tug', at(6.5, 0), st.hdg + 180);
+            vadd('belt', at(-6 * k, 3.6 * k), st.hdg - 25);
+            if (rnd() < 0.7) vadd('belt', at(-22 * k, 3.6 * k), st.hdg + 25);
+            if (rnd() < 0.6) vadd('catering', at(-26 * k, 4.8 * k), st.hdg + 90);
+            if (rnd() < 0.5) vadd('fuel', at(-13 * k, 11 * k), st.hdg + 180);
+            const nc = 2 + Math.floor(rnd() * 3);
+            for (let c = 0; c < nc; c++) vadd('cart', at(-10 * k - c * 3.5, 9 * k + c * 0.3), st.hdg + 180);
           }
-        } else if (st.size === 'fighter') lists.ftr.push({ x: st.x, z: st.z, hdg: st.hdg, color: ap.kind === 'military' ? 0x9aa1a8 : 0xb0b0b0 });
-        else if (st.size === 'light') {
-          lists.gaB.push({ x: st.x, z: st.z, hdg: st.hdg, color: 0xf2f2f2 });
-          lists.gaA.push({ x: st.x, z: st.z, hdg: st.hdg, color: LIVERY[Math.floor(rnd() * LIVERY.length)] });
+          if (!st.bridge && type !== 'prop') {
+            vadd('stairs', at(-3.5 * k, -4.2 * k), st.hdg + 180);
+            if (rnd() < 0.6) vadd('bus', at(-3 * k, -16 * k), st.hdg);
+          }
+        } else if (st.size === 'fighter') {
+          lists.fighter.push({ x: st.x, z: st.z, hdg: st.hdg, color: 0xffffff, color2: 0x7d858c });
+          vadd('chock', at(0, 0), st.hdg + 90);
+          if (rnd() < 0.35) vadd('gpu', at(-2, -3.5), st.hdg + 90);
+        } else if (st.size === 'light') {
+          const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
+          lists.light.push({ x: st.x, z: st.z, hdg: st.hdg, color: liv[0], color2: 0xf2f2f2 });
         }
       }
-      const add = (geo, list, mat, grp) => { if (geo && list.length) grp.add(instances(geo, mat, list)); };
-      add(GEO.airliner.b, lists.airB, parkedMat, mid); add(GEO.airliner.a, lists.airA, parkedMat, mid);
-      add(GEO.fighter.b, lists.ftr, parkedMat, mid);
-      add(GEO.light.b, lists.gaB, parkedMat, near); add(GEO.light.a, lists.gaA, parkedMat, near);
-      for (const k of ['tug', 'belt', 'fuel', 'cart']) add(GEO.veh[k], lists[k], vehMat, near);
+      // a follow-me car near the apron entrance, crash tenders at the fire station
+      if (L.aprons[0]) { const a0 = L.aprons[0], p = L.frame.P(a0.a - a0.len / 2 + 30, a0.cIn + a0.side * 12); vadd('follow', p, L.frame.H + 90); }
+      for (const b of L.buildings) if (b.type === 'firestation') {
+        const d = { x: Math.sin(b.hdg * DEG), z: -Math.cos(b.hdg * DEG) }, r = { x: Math.cos(b.hdg * DEG), z: Math.sin(b.hdg * DEG) };
+        const n = ap.kind === 'international' || mil ? 3 : 1;
+        for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * 6; vadd('arff', { x: b.x + d.x * off - r.x * (b.wid / 2 + 9), z: b.z + d.z * off - r.z * (b.wid / 2 + 9) }, b.hdg + 90); }
+      }
+      for (const [k, list] of Object.entries(lists)) if (list.length) (k === 'light' ? near : mid).add(aircraftInstances(GEO[k], parkedMat, list));
+      for (const [k, list] of Object.entries(veh)) if (list.length && GEO.veh[k]) near.add(instances(GEO.veh[k], vehMat, list));
     }
     // windsocks (animated)
     const socks = [];
