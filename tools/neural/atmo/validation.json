@@ -1,0 +1,379 @@
+{
+ "params": {
+  "mie_clear": 0.020999999999999998,
+  "mie_fair": 0.0373,
+  "wavelengths": [
+   385.0,
+   397.5,
+   410.0,
+   422.5,
+   435.0,
+   447.5,
+   460.0,
+   472.5,
+   485.0,
+   497.5,
+   510.0,
+   522.5,
+   535.0,
+   547.5,
+   560.0,
+   572.5,
+   585.0,
+   597.5,
+   610.0,
+   622.5,
+   635.0,
+   647.5,
+   660.0,
+   672.5,
+   685.0,
+   697.5,
+   710.0,
+   722.5,
+   735.0,
+   747.5
+  ],
+  "aerosol_asymmetry": 0.7134,
+  "E_sun_TOA_lux": 132472.7851218881
+ },
+ "sun_toa_cct_K": 6023.437662873286,
+ "sun": {
+  "90": {
+   "clear": {
+    "normal_illuminance_lux": 112865.98059707471,
+    "cct_K": 5487.707968278196
+   },
+   "fair": {
+    "normal_illuminance_lux": 110679.73106773126,
+    "cct_K": 5487.707968278196
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 125854.55226638424,
+    "cct_K": 5996.548967419404
+   }
+  },
+  "60": {
+   "clear": {
+    "normal_illuminance_lux": 110120.98478062925,
+    "cct_K": 5415.458903720813
+   },
+   "fair": {
+    "normal_illuminance_lux": 107661.77596460612,
+    "cct_K": 5415.458903720818
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 124865.20109462544,
+    "cct_K": 5992.366225130949
+   }
+  },
+  "45": {
+   "clear": {
+    "normal_illuminance_lux": 105679.49674770578,
+    "cct_K": 5299.669930338512
+   },
+   "fair": {
+    "normal_illuminance_lux": 102796.730072687,
+    "cct_K": 5299.669930338514
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 123227.23879673054,
+    "cct_K": 5985.325230932714
+   }
+  },
+  "30": {
+   "clear": {
+    "normal_illuminance_lux": 96369.84640557649,
+    "cct_K": 5060.700889915052
+   },
+   "fair": {
+    "normal_illuminance_lux": 92674.61527359947,
+    "cct_K": 5060.700889915048
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 119632.37206266422,
+    "cct_K": 5969.278423369909
+   }
+  },
+  "20": {
+   "clear": {
+    "normal_illuminance_lux": 83536.67515212168,
+    "cct_K": 4736.402926937833
+   },
+   "fair": {
+    "normal_illuminance_lux": 78899.57751356078,
+    "cct_K": 4736.402926937832
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 114259.94251934497,
+    "cct_K": 5943.403576104788
+   }
+  },
+  "10": {
+   "clear": {
+    "normal_illuminance_lux": 55311.90007917261,
+    "cct_K": 4013.5363133914816
+   },
+   "fair": {
+    "normal_illuminance_lux": 49452.585918908066,
+    "cct_K": 4013.5363133914825
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 100076.59213995335,
+    "cct_K": 5857.7493773048245
+   }
+  },
+  "5": {
+   "clear": {
+    "normal_illuminance_lux": 27801.521675195647,
+    "cct_K": 3194.9221166224334
+   },
+   "fair": {
+    "normal_illuminance_lux": 22327.46181676925,
+    "cct_K": 3194.9221166224334
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 80607.28489569642,
+    "cct_K": 5657.671527673938
+   }
+  },
+  "3": {
+   "clear": {
+    "normal_illuminance_lux": 14235.999167363316,
+    "cct_K": 2648.6060019685565
+   },
+   "fair": {
+    "normal_illuminance_lux": 10010.483172058226,
+    "cct_K": 2648.6060019685565
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 66374.58228128996,
+    "cct_K": 5386.527435379869
+   }
+  },
+  "2": {
+   "clear": {
+    "normal_illuminance_lux": 7923.6409138308045,
+    "cct_K": 2303.828778696824
+   },
+   "fair": {
+    "normal_illuminance_lux": 4815.124176977768,
+    "cct_K": 2303.8287786968253
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 57151.347888991055,
+    "cct_K": 5113.34087465376
+   }
+  },
+  "1": {
+   "clear": {
+    "normal_illuminance_lux": 2937.752445752356,
+    "cct_K": 1927.094880691865
+   },
+   "fair": {
+    "normal_illuminance_lux": 1299.0010924877142,
+    "cct_K": 1927.094880691864
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 46509.61129955112,
+    "cct_K": 4664.276785434437
+   }
+  },
+  "0": {
+   "clear": {
+    "normal_illuminance_lux": 169.47261066540318,
+    "cct_K": 1637.0307689262827
+   },
+   "fair": {
+    "normal_illuminance_lux": 28.39780953631176,
+    "cct_K": 1637.0307689262827
+   },
+   "fair_12km": {
+    "normal_illuminance_lux": 34761.12423177511,
+    "cct_K": 3976.0636082679957
+   }
+  }
+ },
+ "sky_sea_level_fair": {
+  "90": {
+   "zenith_luminance": 105716.72310279662,
+   "zenith_single_scatter_share": 0.9936915422748442,
+   "horizontal_sky_illuminance_lux": 12266.384446344728,
+   "horizontal_direct_lux": 110679.73106773126,
+   "horizontal_global_lux": 122946.115514076,
+   "zenith_rgb_chromaticity": [
+    0.37833350712966113,
+    0.32734878567608366,
+    0.29431770719425526
+   ]
+  },
+  "60": {
+   "zenith_luminance": 2688.534963522227,
+   "zenith_single_scatter_share": 0.8147039564448693,
+   "horizontal_sky_illuminance_lux": 11519.364534078306,
+   "horizontal_direct_lux": 93237.83300189777,
+   "horizontal_global_lux": 104757.19753597608,
+   "zenith_rgb_chromaticity": [
+    0.22536334268414998,
+    0.28325811000512535,
+    0.4913785473107247
+   ]
+  },
+  "30": {
+   "zenith_luminance": 1335.4690826074882,
+   "zenith_single_scatter_share": 0.7320779793765722,
+   "horizontal_sky_illuminance_lux": 10049.95404742557,
+   "horizontal_direct_lux": 46337.30763679973,
+   "horizontal_global_lux": 56387.2616842253,
+   "zenith_rgb_chromaticity": [
+    0.17882027462549197,
+    0.2711577525948224,
+    0.5500219727796857
+   ]
+  },
+  "10": {
+   "zenith_luminance": 807.741806088987,
+   "zenith_single_scatter_share": 0.6879308505268789,
+   "horizontal_sky_illuminance_lux": 7123.853310667104,
+   "horizontal_direct_lux": 8587.351425735686,
+   "horizontal_global_lux": 15711.20473640279,
+   "zenith_rgb_chromaticity": [
+    0.1790882732954873,
+    0.2818661763104864,
+    0.5390455503940265
+   ]
+  },
+  "5": {
+   "zenith_luminance": 529.1378688069639,
+   "zenith_single_scatter_share": 0.7212566870648236,
+   "horizontal_sky_illuminance_lux": 4107.292560325315,
+   "horizontal_direct_lux": 1945.9665183105012,
+   "horizontal_global_lux": 6053.259078635816,
+   "zenith_rgb_chromaticity": [
+    0.2004438136799181,
+    0.2947776886319892,
+    0.5047784976880928
+   ]
+  },
+  "2": {
+   "zenith_luminance": 313.36685390897566,
+   "zenith_single_scatter_share": 0.7287075058948365,
+   "horizontal_sky_illuminance_lux": 2184.565655330291,
+   "horizontal_direct_lux": 168.0454103365683,
+   "horizontal_global_lux": 2352.6110656668593,
+   "zenith_rgb_chromaticity": [
+    0.2128459032545513,
+    0.2941343210057638,
+    0.4930197757396848
+   ]
+  },
+  "0": {
+   "zenith_luminance": 155.34597888921604,
+   "zenith_single_scatter_share": 0.7571221961403842,
+   "horizontal_sky_illuminance_lux": 1022.4640149410174,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 1022.4640149410174,
+   "zenith_rgb_chromaticity": [
+    0.22326712735381687,
+    0.2858534767850877,
+    0.4908793958610954
+   ]
+  },
+  "-2": {
+   "zenith_luminance": 51.17595157872821,
+   "zenith_single_scatter_share": 0.7507407138496243,
+   "horizontal_sky_illuminance_lux": 310.00621945551785,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 310.00621945551785,
+   "zenith_rgb_chromaticity": [
+    0.22138749568163943,
+    0.27303672086874786,
+    0.5055757834496126
+   ]
+  },
+  "-4": {
+   "zenith_luminance": 9.43432234978205,
+   "zenith_single_scatter_share": 0.6834910564287442,
+   "horizontal_sky_illuminance_lux": 55.22873574444063,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 55.22873574444063,
+   "zenith_rgb_chromaticity": [
+    0.19215215115182196,
+    0.2559161376076869,
+    0.5519317112404912
+   ]
+  },
+  "-6": {
+   "zenith_luminance": 0.8501425124209578,
+   "zenith_single_scatter_share": 0.6067202796499741,
+   "horizontal_sky_illuminance_lux": 6.976398748890971,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 6.976398748890971,
+   "zenith_rgb_chromaticity": [
+    0.1969488084613958,
+    0.24299379146448857,
+    0.5600574000741156
+   ]
+  },
+  "-8": {
+   "zenith_luminance": 0.0525857410089981,
+   "zenith_single_scatter_share": 0.2670528996640679,
+   "horizontal_sky_illuminance_lux": 0.760308025527303,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 0.760308025527303,
+   "zenith_rgb_chromaticity": [
+    0.10026586478921666,
+    0.238087694352951,
+    0.6616464408578323
+   ]
+  },
+  "-10": {
+   "zenith_luminance": 0.03061453573626551,
+   "zenith_single_scatter_share": 3.8587881283331344e-07,
+   "horizontal_sky_illuminance_lux": 0.09303596079321833,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 0.09303596079321833,
+   "zenith_rgb_chromaticity": [
+    0.0959600710943382,
+    0.20690383325385647,
+    0.6971360956518052
+   ]
+  },
+  "-12": {
+   "zenith_luminance": 0.006451798720236174,
+   "zenith_single_scatter_share": 0.0,
+   "horizontal_sky_illuminance_lux": 0.012714797199319344,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 0.012714797199319344,
+   "zenith_rgb_chromaticity": [
+    0.2702217943203168,
+    0.31577199005304796,
+    0.41400621562663537
+   ]
+  },
+  "-15": {
+   "zenith_luminance": 0.00017886335108391555,
+   "zenith_single_scatter_share": 0.0,
+   "horizontal_sky_illuminance_lux": 0.0010581439006528788,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 0.0010581439006528788,
+   "zenith_rgb_chromaticity": [
+    0.1743514577256495,
+    0.24842234094754195,
+    0.5772262013268086
+   ]
+  },
+  "-18": {
+   "zenith_luminance": 3.7953774762619383e-07,
+   "zenith_single_scatter_share": 0.0,
+   "horizontal_sky_illuminance_lux": 4.267752509568466e-05,
+   "horizontal_direct_lux": 0.0,
+   "horizontal_global_lux": 4.267752509568466e-05,
+   "zenith_rgb_chromaticity": [
+    0.15292080941406855,
+    0.354994691863421,
+    0.4920844987225104
+   ]
+  }
+ }
+}

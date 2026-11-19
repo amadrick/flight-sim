@@ -60,6 +60,7 @@ export default {
     n1Idle: 0.20, n2Idle: 0.60, spoolUp: 7, spoolDown: 7, idleThrust: 0.035, idleFuelFlow: 0.14,
     tsfc: [0.32, 0.34], egt: [440, 890, 890], startTime: 18,
     reverser: { fraction: 0.40, time: 2, power: 0.8, minSpeed: 30, stowSpeed: 26 },
+    thrustLineOffset: 0.15,   // nozzles moved up 0.15 m in geometry.js (engines installed 1.5° nose down): keeps the tuned thrust line
   },
   gear: {
     nose: { travel: 0.40 }, main: { travel: 0.48 },

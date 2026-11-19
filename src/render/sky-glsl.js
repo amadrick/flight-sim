@@ -2,12 +2,14 @@
 // sphere shading, maria), procedural stars (stable per direction, scintillating, extinguished by the air mass) and a
 // faint Milky Way. Requires FRAME_UNIFORMS_GLSL + ATMOSPHERE_GLSL. All helpers are prefixed `sky_`.
 import { ATM } from './atmosphere-glsl.js';
+import { neuralSkyGLSL } from '../neural/atmo.js';
 
 export const SKY_GLSL = /* glsl */`
 uniform mat3 uSkyStarRot;     // render-space direction -> celestial frame (sidereal rotation about the pole)
 uniform vec4 uSkyParams;      // x: angular size of a pixel (rad), y: star brightness (0 disables stars), z: moon angular radius (rad), w: moon disc radiance
 uniform vec3 uSkySunDisc;     // sun disc radiance outside the atmosphere
-
+uniform vec3 uAtmSunLimb;     // linear limb-darkening coefficients per channel (atmosphere uniforms)
+${neuralSkyGLSL('sky')}
 float sky_hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec3 sky_hash32(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yzz) * p3.zyx); }
 float sky_hash13(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
@@ -88,7 +90,7 @@ vec3 sky_sun(vec3 dir) {
   float edge = 1.0 - smoothstep(R - px, R + px, ang);
   if (edge <= 0.0) return vec3(0.0);
   float mu = sqrt(max(1.0 - ang * ang / (R * R), 0.0));
-  vec3 limb = 1.0 - vec3(0.44, 0.58, 0.74) * (1.0 - mu);       // linear limb-darkening law, stronger in the blue
+  vec3 limb = 1.0 - uAtmSunLimb * (1.0 - mu);                  // linear limb-darkening law, stronger in the blue
   return uSkySunDisc * limb * edge;
 }
 
@@ -98,6 +100,7 @@ vec3 sky_radiance(vec3 dir) {
   float h = uAtmView.w;
   float muH = -sqrt(h * (2.0 * ATM_RG + h)) / (ATM_RG + h);
   if (dir.y < muH - 0.01) return col;                           // below the horizon: ground
+  col += atmAureole(dir);                                       // neural circumsolar aureole (0 when off)
   vec3 T = atmLightTransmittance(h, dir.y);
   col += sky_sun(dir) * T;
   vec4 moon = sky_moon(dir);

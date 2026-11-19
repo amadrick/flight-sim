@@ -2,6 +2,10 @@
 import * as THREE from 'three';
 import { FRAME_UNIFORMS_GLSL, FULLSCREEN_VERT, FullscreenPass } from '../core/glsl.js';
 import { ATM, ATMOSPHERE_GLSL, ATM_MODEL_GLSL } from './atmosphere-glsl.js';
+import { createNeuralSun, createNeuralSky } from '../neural/atmo.js';
+import { ATMO_MODEL } from '../neural/atmo-weights.js';
+
+const CLASSIC_LIMB = [0.44, 0.58, 0.74];
 
 const BR = [5.802e-3, 13.558e-3, 33.1e-3];
 const BO = [0.650e-3, 1.881e-3, 0.085e-3];
@@ -17,7 +21,8 @@ ${ATMOSPHERE_GLSL}
 ${ATM_MODEL_GLSL}
 `;
 
-const TRANSMITTANCE_FRAG = HEAD + /* glsl */`
+// ATM_NEURAL_SUN: the public (spectral) variant. Rayleigh + ozone through the sun network, aerosol stays exp(-tau_M).
+const TRANSMITTANCE_FRAG = (neuralGLSL) => HEAD + (neuralGLSL ? '#define ATM_NEURAL_SUN\n' + neuralGLSL : '') + /* glsl */`
 void main() {
   vec2 x = clamp((vUv * ATM_TRANS_SIZE - 0.5) / (ATM_TRANS_SIZE - 1.0), 0.0, 1.0);
   float H = sqrt(ATM_HT * (2.0 * ATM_RG + ATM_HT));
@@ -26,14 +31,20 @@ void main() {
   float dmin = ATM_HT - h, dmax = rho + H;
   float d = dmin + x.x * (dmax - dmin);
   float mu = d <= 0.0 ? 1.0 : clamp((H * H - rho * rho - d * d) / (2.0 * r * d), -1.0, 1.0);
-  vec3 od = vec3(0.0);
+  vec3 od = vec3(0.0), col = vec3(0.0);
   float t0 = 0.0;
   for (int i = 0; i < 40; i++) {
     float x1 = float(i + 1) / 40.0, t1 = d * x1 * x1;
-    od += atmExtinction(atmDensity(atmAltitudeAt(h, mu, 0.5 * (t0 + t1)))) * (t1 - t0);
+    vec3 dens = atmDensity(atmAltitudeAt(h, mu, 0.5 * (t0 + t1)));
+    od += atmExtinction(dens) * (t1 - t0);
+    col += dens * (t1 - t0);
     t0 = t1;
   }
+#ifdef ATM_NEURAL_SUN
+  outColor = vec4(exp(-uAtmMie.y * col.y) * atmNeuralSunT(col.x, col.z), 1.0);
+#else
   outColor = vec4(exp(-od), 1.0);
+#endif
 }`;
 
 // Hillaire 2020 §5.5: second-order scattering L2 and the transfer factor f_ms, isotropic phase; Psi = L2 / (1 - f_ms).
@@ -79,8 +90,9 @@ const SKYVIEW_FRAG = HEAD + /* glsl */`
 void main() {
   vec3 dir = atmSkyUVToDir(vUv);
   float h = uAtmView.w;
-  vec3 L, T;
-  atmIntegrate(h, dir, atmDistToTop(h, dir.y), 40, L, T);
+  vec3 L, Ls, T;
+  atmIntegrate2(h, dir, atmDistToTop(h, dir.y), 40, L, Ls, T);
+  L += Ls * (atmNeuralSkyRatio(dir) - 1.0);
   outColor = vec4(atmEncode(L), dot(T, vec3(0.3333333)));
 }`;
 
@@ -95,8 +107,10 @@ void main() {
   float tEnd = min(ATM_AP_DMAX * w * w, atmDistToTop(h, dir.y));
   float tG = atmDistToGround(h, dir.y);
   if (tG >= 0.0) tEnd = min(tEnd, tG);            // below the horizon the volume saturates at the ground
-  vec3 L, T;
-  atmIntegrate(h, dir, tEnd, int(clamp(4.0 + k * 0.75, 4.0, 26.0)), L, T);
+  vec3 L, Ls, T;
+  atmIntegrate2(h, dir, tEnd, int(clamp(4.0 + k * 0.75, 4.0, 26.0)), L, Ls, T);
+  // same correction as the sky along this direction (the horizon's below it), so far haze converges to the sky
+  L += Ls * (atmNeuralSkyRatio(dir) - 1.0);
   vec3 ratio = L / max(atmSkyRef(dir), vec3(1e-10));
   // 8-bit fallback stores ratio / 4
   outColor = vec4(uAtmEnc.x > 0.5 ? clamp(ratio * 0.25, 0.0, 1.0) : clamp(ratio, 0.0, 16.0), dot(T, vec3(0.3333333)));
@@ -113,7 +127,15 @@ export function createAtmosphere(ctx, caps) {
     });
     return t;
   };
-  const transRT = rt(ATM.TRANS_W, ATM.TRANS_H);
+  // Neural air + sun (default) vs the classic LUT model (?atmo=classic) for A/B comparison.
+  const neuralOn = (ctx.params?.raw?.atmo ?? '') !== 'classic';
+  const nSun = neuralOn ? createNeuralSun() : null;
+  const nSky = neuralOn ? createNeuralSky() : null;
+  const transRT = rt(ATM.TRANS_W, ATM.TRANS_H);                  // classic: used by the LUT generation passes
+  const transPubRT = neuralOn ? rt(ATM.TRANS_W, ATM.TRANS_H) : transRT;   // what every consumer sees
+  if (neuralOn) transPubRT.texture.name = 'atm.transmittance.spectral';
+  const white = neuralOn ? null : new THREE.DataTexture(new Uint16Array([15360, 15360, 15360, 15360]), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+  if (white) white.needsUpdate = true;
   const msRT = rt(ATM.MS_N, ATM.MS_N);
   const skyRT = rt(ATM.SKY_W, ATM.SKY_H);
   const aerialRT = rt(ATM.AP_N * ATM.AP_TX, ATM.AP_N * ATM.AP_TY);
@@ -122,7 +144,7 @@ export function createAtmosphere(ctx, caps) {
   // Uniforms every consumer of the GLSL API needs (shared {value} holders — never replace the holders).
   const uniforms = {
     uAtmHaze: { value: 1 / 60000 },
-    tAtmTransmittance: { value: transRT.texture },
+    tAtmTransmittance: { value: transPubRT.texture },
     tAtmSkyView: { value: skyRT.texture },
     tAtmAerial: { value: aerialRT.texture },
     uAtmView: { value: new THREE.Vector4(0, 1, 0, 0.001) },
@@ -130,6 +152,10 @@ export function createAtmosphere(ctx, caps) {
     uAtmMoonIllum: { value: new THREE.Vector3(0, 0, 0) },
     uAtmGround: { value: new THREE.Vector3(0.05, 0.05, 0.05) },
     uAtmEnc: { value: new THREE.Vector2(caps.float ? 0 : 1, 16) },
+    tAtmNeuralSky: { value: neuralOn ? nSky.ratio : white },
+    tAtmNeuralAur: { value: neuralOn ? nSky.column : white },
+    uAtmNeural: { value: new THREE.Vector4(neuralOn ? 1 : 0, neuralOn ? 1 : 0, 0, 0) },
+    uAtmSunLimb: { value: new THREE.Vector3(...(neuralOn ? ATMO_MODEL.limb : CLASSIC_LIMB)) },
   };
   // Uniforms of the medium model (LUT generation only).
   const model = {
@@ -141,12 +167,15 @@ export function createAtmosphere(ctx, caps) {
     uAtmAirglow: { value: new THREE.Vector3(0, 0, 0) },
     uAtmDeck: { value: new THREE.Vector4(1.5, 3, 0, 0) },
   };
-  const mk = (frag) => new FullscreenPass(new THREE.ShaderMaterial({
+  // the generation passes read the classic transmittance (the sky network corrects exactly that model)
+  const classicT = { tAtmTransmittance: { value: transRT.texture } };
+  const mk = (frag, extra = {}) => new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: false, fog: false,
-    uniforms: { ...ctx.uniforms.frame, ...uniforms, ...model },
+    uniforms: { ...ctx.uniforms.frame, ...uniforms, ...model, ...classicT, ...extra },
     vertexShader: FULLSCREEN_VERT, fragmentShader: frag,
   }));
-  const transPass = mk(TRANSMITTANCE_FRAG), msPass = mk(MULTISCAT_FRAG), skyPass = mk(SKYVIEW_FRAG), aerialPass = mk(AERIAL_FRAG);
+  const transPass = mk(TRANSMITTANCE_FRAG(null)), msPass = mk(MULTISCAT_FRAG), skyPass = mk(SKYVIEW_FRAG), aerialPass = mk(AERIAL_FRAG);
+  const transPubPass = neuralOn ? mk(TRANSMITTANCE_FRAG(nSun.glsl), nSun.uniforms) : null;
 
   const mie = { scat: 0, ext: 0, g: 0.8, invH: 1 / 1.2 };
   const state = { camH: 0.001, beta: 0, deck: 1 };   // deck: 0 disables the cloud-deck dimming (no cloud shadows available)
@@ -167,12 +196,12 @@ export function createAtmosphere(ctx, caps) {
   }
 
   // ---- CPU mirror (used for the light colour at the camera; ~40 exp() per call) --------------------------------
-  const od = [0, 0, 0];
+  const od = [0, 0, 0], colm = [0, 0, 0];
   function transmittance(h, mu, out) {
     h = clamp(h, 0, ATM.HT);
     const r = ATM.RG + h, rmu = r * mu;
     const d = Math.max(0, -rmu + Math.sqrt(Math.max(rmu * rmu + (ATM.HT - h) * (ATM.RG + ATM.HT + r), 0)));
-    od[0] = od[1] = od[2] = 0;
+    od[0] = od[1] = od[2] = 0; colm[0] = colm[1] = colm[2] = 0;
     let t0 = 0;
     const N = 48;
     for (let i = 0; i < N; i++) {
@@ -181,8 +210,10 @@ export function createAtmosphere(ctx, caps) {
       const hs = Math.max(0, h + t * (t + 2 * r * mu) / (r1 + r));
       const dR = Math.exp(-hs * 0.125), dM = Math.exp(-hs * mie.invH) * mie.ext, dO = Math.max(0, 1 - Math.abs(hs - 25) / 15);
       od[0] += (BR[0] * dR + dM + BO[0] * dO) * dt; od[1] += (BR[1] * dR + dM + BO[1] * dO) * dt; od[2] += (BR[2] * dR + dM + BO[2] * dO) * dt;
+      colm[0] += dR * dt; colm[1] += dM * dt; colm[2] += dO * dt;
       t0 = t1;
     }
+    if (nSun) return nSun.sample(colm[0], colm[2], out).multiplyScalar(Math.exp(-colm[1]));   // colm[1] already has mie.ext
     out.x = Math.exp(-od[0]); out.y = Math.exp(-od[1]); out.z = Math.exp(-od[2]);
     return out;
   }
@@ -206,6 +237,7 @@ export function createAtmosphere(ctx, caps) {
     if (Math.abs(mie.ext - lutMie) > lutMie * 0.004 || Math.abs(mie.g - lutG) > 0.002 || Math.abs(mie.invH - lutInvH) > 0.002) {
       lutMie = mie.ext; lutG = mie.g; lutInvH = mie.invH;
       transPass.render(renderer, transRT);
+      if (transPubPass) transPubPass.render(renderer, transPubRT);
       msPass.render(renderer, msRT);
     }
     // (2) per-frame view-dependent LUTs
@@ -220,6 +252,7 @@ export function createAtmosphere(ctx, caps) {
     model.uAtmAirglow.value.copy(p.airglow);
     uniforms.uAtmSunIllum.value.copy(p.sunIllum);
     uniforms.uAtmMoonIllum.value.copy(p.moonIllum);
+    if (nSky) nSky.update(Math.asin(clamp(p.sunDir.y, -1, 1)), h, mie.ext);
     skyPass.render(renderer, skyRT);
     aerialPass.render(renderer, aerialRT);
     renderer.setRenderTarget(prevRT);
@@ -227,8 +260,14 @@ export function createAtmosphere(ctx, caps) {
 
   return {
     uniforms, model, glsl: ATMOSPHERE_GLSL, mie, state,
-    targets: { transmittance: transRT, multiscat: msRT, skyView: skyRT, aerial: aerialRT },
+    neural: neuralOn ? { sun: nSun, sky: nSky } : null,
+    sunLimb: neuralOn ? ATMO_MODEL.limb.slice() : CLASSIC_LIMB.slice(),     // linear limb-darkening coefficients (r, g, b)
+    targets: { transmittance: transPubRT, transmittanceClassic: transRT, multiscat: msRT, skyView: skyRT, aerial: aerialRT },
     setWeather, update, transmittance, lightTransmittance,
-    dispose() { for (const t of [transRT, msRT, skyRT, aerialRT]) t.dispose(); for (const p of [transPass, msPass, skyPass, aerialPass]) p.dispose(); },
+    dispose() {
+      for (const t of new Set([transRT, transPubRT, msRT, skyRT, aerialRT])) t.dispose();
+      for (const p of [transPass, transPubPass, msPass, skyPass, aerialPass]) p?.dispose();
+      nSun?.dispose(); nSky?.dispose(); white?.dispose();
+    },
   };
 }

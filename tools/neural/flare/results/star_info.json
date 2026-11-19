@@ -1,0 +1,114 @@
+{
+ "aperture": {
+  "open_area_samples": 2724221.5,
+  "dust_specks": 73,
+  "dust_fraction": 0.0020497951190918684,
+  "scratch_fraction": 0.0005986400647088885,
+  "hexagon_vs_circle": 0.8269754648208618
+ },
+ "nfft": 4096,
+ "pad": 2,
+ "rho_max": 900.0,
+ "energy_within_rho_max": 0.9999265074729919,
+ "encircled": {
+  "outside_2_lambda_over_D": 0.12044378370046616,
+  "outside_10_lambda_over_D": 0.024871189147233963,
+  "outside_50_lambda_over_D": 0.006241503171622753,
+  "outside_200_lambda_over_D": 0.0014102987479418516,
+  "outside_900_lambda_over_D": 7.366995851043612e-05
+ },
+ "f_number": 4.0,
+ "frame_unit_mm": 10.062193432613526,
+ "lambda_over_D_frame_units_550": 0.00021864020153591684,
+ "sun_radius_frame_units": 0.008396098872159766,
+ "r_trust": 0.13881665159334938,
+ "extrapolated_slopes_spike": [
+  -2.3290559845551018,
+  -2.431645815444401,
+  -2.650960025490576
+ ],
+ "extrapolated_slopes_between": [
+  -2.449753795094194,
+  -2.6234694977637045,
+  -2.771166155474866
+ ],
+ "exact_hexagon": {
+  "rho_300": {
+   "spike": 2.6508616140615886e-07,
+   "between": 1.7348282563877017e-11
+  },
+  "rho_600": {
+   "spike": 6.820099585035354e-08,
+   "between": 1.090626453768559e-12
+  },
+  "rho_1800": {
+   "spike": 9.274988100964478e-09,
+   "between": 1.3341195679816575e-14
+  },
+  "rho_3600": {
+   "spike": 1.9248572206586173e-09,
+   "between": 8.972673116775567e-16
+  }
+ },
+ "exact_spike_slope_far": -2.2685939952969334,
+ "exact_spike_slope_mid": -1.9585966472104683,
+ "veil_tis_total_550": 0.0019316040210552267,
+ "veil_surfaces": [
+  {
+   "surface": "S1",
+   "frame_units_per_rad": 5.000000000000004,
+   "tis_550": 0.00023647542331665575
+  },
+  {
+   "surface": "S2",
+   "frame_units_per_rad": 4.743408923472758,
+   "tis_550": 0.00023647542331665575
+  },
+  {
+   "surface": "S3",
+   "frame_units_per_rad": 4.7342243554615635,
+   "tis_550": 0.00023647542331665575
+  },
+  {
+   "surface": "S4",
+   "frame_units_per_rad": 4.152387837202384,
+   "tis_550": 4.993321784443546e-07
+  },
+  {
+   "surface": "S5",
+   "frame_units_per_rad": 3.681506637309747,
+   "tis_550": 0.0002587076603421984
+  },
+  {
+   "surface": "S6",
+   "frame_units_per_rad": 3.255665679426237,
+   "tis_550": 0.00019196073322710135
+  },
+  {
+   "surface": "S7",
+   "frame_units_per_rad": 3.3250615300668,
+   "tis_550": 1.5431601872278076e-06
+  },
+  {
+   "surface": "S8",
+   "frame_units_per_rad": 3.6538740166071673,
+   "tis_550": 0.00022792633731519833
+  },
+  {
+   "surface": "S9",
+   "frame_units_per_rad": 3.6484779612567686,
+   "tis_550": 0.0002707702639275445
+  },
+  {
+   "surface": "S10",
+   "frame_units_per_rad": 3.584062451990179,
+   "tis_550": 0.0002707702639275445
+  }
+ ],
+ "harvey": {
+  "l": 0.004,
+  "s": 2.2,
+  "sigma_nm": 2.0
+ },
+ "seconds": 11.216034412384033
+}
