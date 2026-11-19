@@ -358,7 +358,7 @@ export async function createClouds(ctx) {
     const cam = frame.camera || ctx.camera;
     const tanHalf = Math.tan((cam.fov || 60) * Math.PI / 360);
     const focalPx = fullH / (2 * tanHalf);
-    U.uClFullRes.value.set(fullW, fullH, N / focalPx, dbg('clLS', 1));
+    U.uClFullRes.value.set(fullW, fullH, N / focalPx, dbg('clLS', 3));
     // nothing is visible far beyond the haze: shorter rays in murky weather (the expensive presets)
     const maxDist = Math.min(maxDistQ, Math.max(60000, (ctx.weather.visibility || 60000) * 8));
     U.uClStep.value.set(dbg('clKf', 0.9 / steps), dbg('clMinFine', 1200 / steps), dbg('clMinCoarse', 110), maxDist);

@@ -359,7 +359,13 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit) {
   // slant of the lookup (one 80 m texel spans ~14 m of height at 10 deg sun). The cubic B-spline fetch (C2, 4 taps)
   // removes them without the noisy 1 km jitter; uClFullRes.w = 0 restores the single jittered tap (A/B, cost).
   if (uClFullRes.w > 0.5) {
-    tau += cloudShadowTauF(pe.xz + uCloudShadowC.xy, pe.y, true);
+    // plus a +-k texel jitter along the slope (k = uClFullRes.w, default 3): the B-spline alone is smooth but still
+    // prints the map's own texel-scale structure as fine horizontal bands on faces lit at grazing sun (k=1 still
+    // bands, k=3 is clean); the temporal filter integrates the jitter
+    float sl = length(uCloudShadowB.xy);
+    float texM = 1.0 / (uCloudShadowA.z * float(textureSize(tCloudShadowMap, 0).x));
+    vec2 jo = uCloudShadowB.xy / max(sl, 1e-3) * ((jit - 0.5) * 2.0 * texM * uClFullRes.w);
+    tau += cloudShadowTauF(pe.xz + uCloudShadowC.xy + jo, pe.y, true);
   } else {
     float sl = length(uCloudShadowB.xy);
     vec2 jo = uCloudShadowB.xy * ((jit - 0.5) * min(150.0, 1200.0 / max(sl, 1e-3)));

@@ -39,9 +39,11 @@ storm keep the noise model. Fitted to a small cumulus LES (`tools/neural/les_cum
 - **Broken** skies add a ~600 m stratocumulus sheet at the base from the shape noise (`uClCell.w`); **overcast** and
   **storm** use the round-two layer model (stratus deck with ragged base; Cb towers + anvil).
 - **Light march**: the shadow-map lookup beyond the 4 near samples uses the cubic B-spline fetch (4 taps, was 1
-  jittered tap): removes the horizontal striations on cloud faces at low sun and the jitter noise they caused.
-  The 4 light samples reuse the sample's weather fetch (the field varies over kilometres), which pays for their
-  cell fetch. Debug A/B: `clLS=0`.
+  jittered tap) with a jitter of +-3 map texels along the light slope (was up to +-10 texels). The B-spline alone
+  still printed the map's texel-scale structure as fine horizontal bands on faces lit at grazing sun (checked:
+  `clLS=1` banded, `clLS=3` clean); the smaller jitter is less noisy than round two's. The 4 light samples reuse
+  the sample's weather fetch (the field varies over kilometres), which pays for their cell fetch.
+  Debug A/B: `clLS=0` = round-two single jittered tap, `clLS=k` = B-spline with +-k texels.
 - **Resolve**: while a pixel's history holds fewer than ~6 samples (boot, cut, disocclusion) the current frame is
   reconstructed from a depth-aware 4x4 Gaussian of the low-res samples instead of the nearest 4: no dots in thin
   cloud in a 6-frame capture. Converged pixels are unchanged.
