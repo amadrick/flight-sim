@@ -66,7 +66,7 @@ try {
   page.on('pageerror', e => errors.push('PAGEERROR ' + (e.stack || e.message)));
   const params = flag('params', '');
   const url = pathToFileURL(html).href + '?test=1&autostart=1' + (params ? '&' + params : '');
-  await page.goto(url);
+  await page.goto(url, { waitUntil: 'commit', timeout });   // a loaded machine can take over 30 s to reach 'load'
   await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout });
   const bootErr = await page.evaluate(() => window.__sim.error || null);
   if (bootErr) { errors.push('BOOT ' + bootErr); }
