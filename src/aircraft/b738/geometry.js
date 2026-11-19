@@ -4,7 +4,7 @@ export default {
   length: 39.47, span: 35.79, height: 12.55, wingArea: 124.6,
   noseZ: -18.4, tailZ: 21.07,
   cgHeight: 2.9,
-  pilotEye: [-0.53, 1.25, -15.9],
+  pilotEye: [-0.53, 1.25, -15.65],
   gear: [
     { name: 'nose',  pos: [0, -2.9, -14.4],   wheelRadius: 0.34, steerable: true,  braked: false },
     { name: 'left',  pos: [-2.86, -2.9, 1.2], wheelRadius: 0.57, steerable: false, braked: true },

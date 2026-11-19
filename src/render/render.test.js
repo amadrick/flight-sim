@@ -66,3 +66,27 @@ test('shadow cascades are texel-snapped in world space and nested', () => {
 test('raw-shader shadow API is declared', () => {
   assert.ok(SUN_SHADOW_API_GLSL.includes('float sunShadow(vec3 renderPos, vec3 normal)'));
 });
+
+test('twilight gain is 1 by day and rises monotonically below the horizon', async () => {
+  const { twilightGain } = await import('./index.js');
+  assert.equal(twilightGain(0.5), 1);
+  assert.equal(twilightGain(0), 1);
+  let prev = 1;
+  for (let deg = 0.5; deg <= 20; deg += 0.5) {
+    const g = twilightGain(-Math.sin(deg * Math.PI / 180));
+    assert.ok(g >= prev && g <= 60, `gain at -${deg} deg`);
+    prev = g;
+  }
+  assert.ok(twilightGain(-Math.sin(3.4 * Math.PI / 180)) > 2 && twilightGain(-Math.sin(3.4 * Math.PI / 180)) < 4);
+});
+
+test('emissive mask chunk patch is applied once and only to lit materials', async () => {
+  const { installEmissiveMaskChunk, NIGHT_GRADE_GLSL } = await import('./nightgrade.js');
+  assert.ok(installEmissiveMaskChunk());
+  assert.ok(installEmissiveMaskChunk());
+  const src = THREE.ShaderChunk.opaque_fragment;
+  assert.equal(src.split('SKYWARD_EMISSIVE_MASK').length, 2);
+  assert.ok(src.includes('defined( STANDARD )') && src.includes('totalEmissiveRadiance'));
+  assert.ok(src.indexOf('totalEmissiveRadiance') > src.indexOf('#ifdef OPAQUE'));
+  assert.ok(NIGHT_GRADE_GLSL.includes('vec3 ng_grade(vec3 refl, vec3 total)'));
+});

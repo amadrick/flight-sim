@@ -164,7 +164,7 @@ TerrEco terrEco(vec2 rxz, float h) {
   vec4 x0 = vec4(h / 1500.0 - 1.0, (1.0 - na.y) * 4.0 - 1.0, na.z * 1.5, na.x * 1.5);
   vec4 x1 = vec4((Da.z - 0.5) * 4.8, (Da.w - 0.5) * 4.0, (1.0 - nb.y) * 4.0 - 1.0, nb.z * 1.5);
   vec4 x2 = vec4((Db.z - 0.5) * 4.8, (Db.w - 0.5) * 4.0, clamp((h - Hc.x - Hc.y) / sC * 4.0, -2.0, 2.0), clamp((h - He.x - He.y) / sE * 4.0, -2.0, 2.0));
-  vec4 x3 = vec4(clamp(Hc.w, 0.0, 1.0) * 2.0 - 1.0, Hc.z * 2.0 - 1.0, clamp((rxz.y + uOrigin.z) * 0.001, -200.0, 200.0) / 100.0, lod / 2.5 - 1.0);
+  vec4 x3 = vec4(clamp(Hc.w, 0.0, 1.0) * 2.0 - 1.0, min(Hc.z, 1.0) * 2.0 - 1.0, clamp((rxz.y + uOrigin.z) * 0.001, -200.0, 200.0) / 100.0, lod / 2.5 - 1.0);
   TerrEco E;
   terrEcoNet(x0, x1, x2, x3, E.a, E.b, E.c);
   return E;

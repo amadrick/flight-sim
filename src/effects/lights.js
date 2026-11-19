@@ -125,13 +125,21 @@ export function createAircraftLights(ctx, shared, header) {
     mat.uniforms.uLtPixAngle.value = (2 * Math.tan(((cam.fov || 60) * Math.PI) / 360)) / Math.max(1, vp4.w) / (cam.zoom || 1);
   };
   const classic = ctx.params?.raw?.acl === 'classic';   // ?acl=classic: previous aircraft-light sprites
+  const lampVirtual = ctx.params?.raw?.lamp !== 'classic'; // ?lamp=classic: landing spot at the real lamp (lights the cockpit through the skin)
+  const beamDir = new THREE.Vector3(0, 0, -1);
   mat.uniforms.uLtClassic.value = classic ? 1 : 0;
 
-  // faint beam shaft (rain / fog), additive cone in the landing light's frame
+  // Landing-light beam: single scattering of the spot by the air (haze, mist, rain) integrated along each view ray
+  // through a cone proxy (back faces only, so every covered pixel runs once). Analytic ray/cone entry, N jittered
+  // samples of sigma_s * phase * I * coneFalloff / d^2 between the entry and min(cone exit, scene depth): a soft shaft
+  // brightest near the lamp, faint in clear air, strong in mist; no hard cone edges. ?beam=classic: previous cone.
   const coneGeo = new THREE.ConeGeometry(1, 1, 24, 1, true); coneGeo.translate(0, -0.5, 0); coneGeo.rotateX(-Math.PI / 2); // apex at 0, opening to -z
+  const beamClassic = ctx.params?.raw?.beam === 'classic';
   const beamMat = new THREE.ShaderMaterial({
-    ...premulMaterialOpts(), side: THREE.DoubleSide,
-    uniforms: { ...shared, uBeam: { value: 0 }, uLen: { value: 120 }, uRad: { value: 25 } },
+    ...premulMaterialOpts(), side: beamClassic ? THREE.DoubleSide : THREE.BackSide, depthTest: !beamClassic,
+    uniforms: { ...shared, uBeam: { value: 0 }, uLen: { value: 120 }, uRad: { value: 25 },
+      uBeamPos: { value: new THREE.Vector3() }, uBeamDir: { value: new THREE.Vector3(0, 0, -1) }, uBeamCos: { value: new THREE.Vector2(0.97, 0.99) },
+      uBeamI: { value: new THREE.Vector3() }, uBeamSigma: { value: 1e-4 }, uBeamSteps: { value: 12 }, uBeamDecay: { value: 2 }, uBeamClassic: { value: beamClassic ? 1 : 0 } },
     vertexShader: header + /* glsl */`
       uniform float uLen; uniform float uRad;
       out vec3 vW; out float vAlong; out vec3 vN;
@@ -143,25 +151,60 @@ export function createAircraftLights(ctx, shared, header) {
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: '#define FX_FRAG\n' + header + /* glsl */`
-      uniform float uBeam;
+      uniform float uBeam; uniform float uBeamClassic;
+      uniform vec3 uBeamPos; uniform vec3 uBeamDir; uniform vec2 uBeamCos; uniform vec3 uBeamI; uniform float uBeamSigma; uniform float uBeamSteps; uniform float uBeamDecay;
       in vec3 vW; in float vAlong; in vec3 vN;
       out vec4 outColor;
       void main() {
         float sd = fxSceneDist(); float d = length(vW - uCameraPos);
-        if (d > sd) discard;
-        float soft = clamp((sd - d) / 6.0, 0.0, 1.0);
-        vec3 v = normalize(uCameraPos - vW);
-        float edge = pow(abs(dot(normalize(vN), v)), 1.5);
-        float fall = (1.0 - vAlong) * (1.0 - vAlong) * smoothstep(0.0, 0.05, vAlong);
-        vec3 e = vec3(1.0, 0.95, 0.85) * uBeam * edge * fall * soft;
-        outColor = fxFinish(vec3(0.0), 0.0, e, vW);
+        if (uBeamClassic > 0.5) {
+          if (d > sd) discard;
+          float soft = clamp((sd - d) / 6.0, 0.0, 1.0);
+          vec3 v = normalize(uCameraPos - vW);
+          float edge = pow(abs(dot(normalize(vN), v)), 1.5);
+          float fall = (1.0 - vAlong) * (1.0 - vAlong) * smoothstep(0.0, 0.05, vAlong);
+          outColor = fxFinish(vec3(0.0), 0.0, vec3(1.0, 0.95, 0.85) * uBeam * edge * fall * soft, vW);
+          return;
+        }
+        vec3 rd = (vW - uCameraPos) / max(d, 1e-4);
+        float t1 = min(d, sd);
+        // entry into the cone dot(p - A, D) >= c |p - A|
+        vec3 co = uCameraPos - uBeamPos;
+        float c = uBeamCos.x, c2 = c * c, dv = dot(rd, uBeamDir), cv = dot(co, uBeamDir);
+        float t0 = 0.0;
+        if (cv < c * length(co)) {
+          float qa = dv * dv - c2, qb = 2.0 * (dv * cv - c2 * dot(rd, co)), qc = cv * cv - c2 * dot(co, co);
+          float disc = qb * qb - 4.0 * qa * qc;
+          t0 = t1;
+          if (disc >= 0.0 && abs(qa) > 1e-6) {
+            float sq = sqrt(disc), r0 = (-qb - sq) / (2.0 * qa), r1 = (-qb + sq) / (2.0 * qa);
+            float lo = min(r0, r1), hi = max(r0, r1);
+            if (lo > 0.0 && cv + dv * lo > 0.0) t0 = lo; else if (hi > 0.0 && cv + dv * hi > 0.0) t0 = hi;
+          }
+        }
+        if (t0 >= t1) discard;
+        float n = uBeamSteps, dt = (t1 - t0) / n;
+        float j = fxHash12(gl_FragCoord.xy + fract(uTime * 7.13) * 91.0);
+        float acc = 0.0;
+        for (int i = 0; i < 24; i++) {
+          if (float(i) >= n) break;
+          vec3 rel = co + rd * (t0 + (float(i) + j) * dt);
+          float d2 = max(dot(rel, rel), 0.5);
+          vec3 ld = rel * inversesqrt(d2);
+          float cone = smoothstep(uBeamCos.x, uBeamCos.y, dot(ld, uBeamDir));
+          float ph = 0.85 * fxHG(dot(ld, -rd), 0.7) + 0.15 / (4.0 * FX_PI);   // aerosol: forward peaked
+          acc += cone * ph * pow(d2, -0.5 * uBeamDecay);
+        }
+        vec3 e = uBeamI * (uBeamSigma * acc * dt);
+        outColor = fxFinish(vec3(0.0), 0.0, e, uCameraPos + rd * (0.5 * (t0 + t1)));
       }`,
   });
   const beam = new THREE.Mesh(coneGeo, beamMat);
   beam.layers.set(LAYERS.POST); beam.frustumCulled = false; beam.renderOrder = 4; beam.name = 'fx-beam';
 
   let lamps = [], player = null, group = null;
-  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), q = new THREE.Quaternion();
+  const out = { beacon: 0, beaconPos: new THREE.Vector3() };
+  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), q = new THREE.Quaternion(), tmpM = new THREE.Matrix4();
   let t = 0;
 
   function add(pos, color, size, kind, axisDeg, halfDeg) {
@@ -206,8 +249,11 @@ export function createAircraftLights(ctx, shared, header) {
       mesh.removeFromParent(); beam.removeFromParent();
       player = null; group = null; lamps = []; geo.instanceCount = 0; spot.intensity = 0;
     },
+    /** Strongest beacon flash this frame (0..1) and where it is (render space): the effects light follows it. */
+    beacon: out,
     update(dt, s, night) {
       t += dt;
+      out.beacon = 0;
       if (!player || !s) { spot.intensity = 0; return; }
       const Ls = s.lights || {};
       let elec = !s.crashed && !(s.engines?.length > 0);
@@ -216,6 +262,7 @@ export function createAircraftLights(ctx, shared, header) {
       // Units: 1 ≈ white paint in the noon sun (~3e4 cd/m²). Nav ≈ 4e5 cd/m², strobe flash ≈ 1e7, landing ≈ 1e7.
       const dayK = classic ? 0.25 + 0.75 * night : 1;
       const K = classic ? { nav: 22, strobe: 650, beacon: 45, land: 700, taxi: 200 } : { nav: 14, strobe: 420, beacon: 40, land: 320, taxi: 110 };
+      out.beacon = 0; let bIdx = -1;
       for (let i = 0; i < lamps.length; i++) {
         const l = lamps[i]; let I = 0;
         if (l.kind === 'nav') I = Ls.nav !== false ? K.nav : 0;
@@ -225,31 +272,83 @@ export function createAircraftLights(ctx, shared, header) {
           if (Ls.beacon !== false) { const ph = (t * 0.95 + (l.kind === 'beacon2' ? 0.5 : 0)) % 1; I = K.beacon * Math.pow(Math.max(0, Math.sin(ph * Math.PI)), 8); }
         } else if (l.kind === 'landing') I = (Ls.landing ? K.land : 0) + (Ls.taxi ? K.taxi : 0);
         array[i * STRIDE + 7] = elec ? I * (l.kind === 'nav' ? dayK : 1) : 0;
+        if (elec && (l.kind === 'beacon' || l.kind === 'beacon2') && I / K.beacon > out.beacon) { out.beacon = I / K.beacon; bIdx = i; }
+      }
+      if (bIdx >= 0 && group) {
+        group.updateWorldMatrix(true, false);
+        const l = lamps[bIdx];
+        // a little outside the skin so the light reaches the fuselage around the lamp instead of the lens housing
+        out.beaconPos.set(l.pos[0], l.pos[1] + (l.kind === 'beacon2' ? -0.25 : 0.25), l.pos[2]).applyMatrix4(group.matrixWorld);
       }
       buf.clearUpdateRanges(); buf.addUpdateRange(0, lamps.length * STRIDE); buf.needsUpdate = true;
       // landing / taxi spot light (night only)
-      const lampPos = player.def.geometry?.lights?.landing || [0, -1, (player.def.geometry?.noseZ || -6) * 0.5];
+      const g = player.def.geometry || {};
+      const lampPos = g.lights?.landing || [0, -1, (g.noseZ || -6) * 0.5];
       const want = elec && (Ls.landing || Ls.taxi) ? Math.max(0, (night - 0.15) / 0.85) : 0;
       if (want > 0.001) {
         group.updateWorldMatrix(true, false);
-        tmp.fromArray(lampPos).applyMatrix4(group.matrixWorld);
+        // aim 4° below the body axis (taxi light: 10° below, wider; both: in between)
+        let down = Ls.landing ? (Ls.taxi ? 0.11 : 0.07) : 0.18;
+        // real lamps have a bright core and wide soft tails: a wide cone with a long penumbra (no hard pool edges)
+        let half = (lampVirtual ? (Ls.landing ? (Ls.taxi ? 24 : 18) : 34) : (Ls.landing ? (Ls.taxi ? 20 : 13) : 30)) * Math.PI / 180;
+        spot.penumbra = lampVirtual ? 0.85 : 0.45;
+        let I = want * ((Ls.landing ? 9000 : 0) + (Ls.taxi ? 2500 : 0));
+        let lz = lampPos[2];
+        spot.decay = 2;
+        if (lampVirtual) {
+          // The spot has no shadow map, so a lamp behind the nose (wing roots, main-gear doors) would light the
+          // cockpit and the inside of the forward fuselage through the skin. Move the source to just ahead of the nose,
+          // same aim and cone, and make it fall off like the real lamp t metres further back: irradiance ~ I/(d+t)^2 is
+          // matched by I'/d^p with p = 2 Dm/(Dm+t) and I' = I Dm^p/(Dm+t)^2 (exact at Dm = 40 m, within ~30 % from
+          // 12 to 150 m), so the pool keeps its length and brightness.
+          const nose = (g.noseZ ?? -6) - 0.3, t = lz - nose;
+          if (t > 0) {
+            const Dm = 40, p = 2 * Dm / (Dm + t);
+            I *= Math.pow(Dm, p) / ((Dm + t) * (Dm + t));
+            spot.decay = p;
+            lz = nose;
+          }
+        }
+        tmp.set(lampPos[0], lampPos[1], lz).applyMatrix4(group.matrixWorld);
         spot.position.copy(tmp);
-        // aim 4° below the body axis (taxi light: 10° below, wider)
-        const down = Ls.landing ? 0.07 : 0.18;
         tmp2.set(0, -down, -1).normalize().transformDirection(group.matrixWorld);
         spot.target.position.copy(tmp).addScaledVector(tmp2, 100);
         spot.target.updateMatrixWorld();
-        spot.angle = Ls.landing ? 13 * Math.PI / 180 : 30 * Math.PI / 180;
-        spot.intensity = want * (Ls.landing ? 9000 : 2500);
+        spot.angle = half;
+        spot.intensity = I;
+        beamDir.copy(tmp2);
       } else spot.intensity = 0;
-      // beam shaft visible in precipitation / fog at night
       const murk = Math.min(1, (ctx.weather.precipitation || 0) + Math.max(0, 1 - (ctx.weather.visibility || 1e5) / 15000));
-      const bI = want * murk * (Ls.landing ? 1 : 0);
-      beam.visible = bI > 0.01;
-      if (beam.visible) {
-        beam.position.fromArray(lampPos);
-        beam.quaternion.setFromAxisAngle(tmp.set(1, 0, 0), -0.07);
-        beamMat.uniforms.uBeam.value = 0.05 * bI;
+      if (beamClassic) {
+        // previous: beam shaft visible in precipitation / fog at night
+        const bI = want * murk * (Ls.landing ? 1 : 0);
+        beam.visible = bI > 0.01;
+        if (beam.visible) {
+          beam.position.fromArray(lampPos);
+          beam.quaternion.setFromAxisAngle(tmp.set(1, 0, 0), -0.07);
+          beamMat.uniforms.uBeam.value = 0.05 * bI;
+        }
+      } else {
+        // scattering coefficient of the air (1/m): haze from the visibility (Koschmieder, minus Rayleigh) + rain
+        const vis = Math.max(200, ctx.weather.visibility || 60000);
+        const sigma = Math.min(0.02, Math.max(2e-5, 3.912 / vis - 1.16e-5) + 1.5e-3 * (ctx.weather.precipitation || 0));
+        beam.visible = spot.intensity > 1 && !s.crashed;
+        if (beam.visible) {
+          const u = beamMat.uniforms;
+          u.uBeamPos.value.copy(spot.position);
+          u.uBeamDir.value.copy(beamDir);
+          const outer = spot.angle, inner = spot.angle * (1 - spot.penumbra);
+          u.uBeamCos.value.set(Math.cos(outer), Math.cos(inner));
+          u.uBeamI.value.set(spot.color.r, spot.color.g, spot.color.b).multiplyScalar(spot.intensity);
+          u.uBeamSigma.value = sigma; u.uBeamDecay.value = spot.decay;
+          u.uBeamSteps.value = Math.round(6 + 10 * Math.min(1, ctx.quality?.particles ?? 1));
+          // proxy cone in body space: same apex / axis as the spot, 350 m long
+          const L = 350;
+          beam.position.copy(spot.position); group.worldToLocal(beam.position);
+          beam.quaternion.setFromUnitVectors(tmp.set(0, 0, -1), tmp2.copy(beamDir).transformDirection(tmpM.copy(group.matrixWorld).invert()));
+          beam.scale.set(1, 1, 1);
+          u.uLen.value = L; u.uRad.value = L * Math.tan(outer) * 1.08;
+        }
       }
     },
     dispose() { ctx.scene.remove(spot, spot.target); geo.dispose(); mat.dispose(); coneGeo.dispose(); beamMat.dispose(); },

@@ -32,6 +32,8 @@ export async function createEffects(ctx) {
 
   const tex = { noise3D: createNoise3D(), puff: createPuffTexture() };
   const shared = createSharedUniforms(ctx, tex);
+  if (raw.fxmoon === '0') shared.uFxMoon.value = 0;
+  const beaconLight = raw.beaconlight !== '0';   // ?beaconlight=0: beacons do not light the airframe / ground
   if (raw.fxtm === '1') { shared.uFxPreviewTM.value = 1; shared.uFxPreviewExposure.value = +raw.fxexp || 1; }
   const header = sharedHeader(ctx);
   const anchor = createAnchor(ctx, shared);
@@ -364,6 +366,8 @@ export async function createEffects(ctx) {
       anchor.update();
       const night = ctx.env.nightFactor || 0;
       shared.uFxNight.value = night;
+      const kd = ctx.pipeline?.lighting?.keyDir;
+      if (kd) shared.uFxKeyDir.value.copy(kd); else shared.uFxKeyDir.value.copy(ctx.env.sunDir);
       shared.uFxExposure.value = Math.max(1e-3, ctx.env.exposure || 1);
       const s = ctx.player?.state;
       if (s) ctx.weather.windAt(s.position, shared.uFxWind.value); else shared.uFxWind.value.copy(ctx.weather.wind);
@@ -373,7 +377,8 @@ export async function createEffects(ctx) {
       // wrecks (fire + smoke columns)
       let fire = 0, firePos = null;
       for (const w of wrecks) { const f = E.wreckUpdate(ps, smoke, w, dt, q, w.scale); if (f > fire) { fire = f; firePos = w.pos; } }
-      // fx light priority: lightning > explosion flash > wreck fire > afterburner
+      lights.update(dt, P?.player?.state || null, night);
+      // fx light priority: lightning > explosion flash > wreck fire > afterburner > anti-collision beacon
       const lf = lightning.update(dt);
       flash.t += dt;
       const fl = flash.t < 3 ? Math.exp(-flash.t * 2.2) : 0;
@@ -390,10 +395,14 @@ export async function createEffects(ctx) {
         E.bodyToWorld(P.player.state, P.abLightPt, tmp);
         ctx.world.toRender(tmp, fxLight.position);
         fxLight.color.setRGB(1, 0.55, 0.25); fxLight.intensity = 60 * abSum * (0.9 + 0.2 * Math.random()); fxLight.distance = 80;
+      } else if (beaconLight && lights.beacon.beacon * night > 0.02) {
+        // red flash on the skin around the beacon and on the ground under the belly one (~150 cd effective against a
+        // compressed moon: a clear red wash at night, nothing by day)
+        fxLight.position.copy(lights.beacon.beaconPos);
+        fxLight.color.setRGB(1, 0.05, 0.02); fxLight.intensity = 0.5 * lights.beacon.beacon * Math.min(1, night * 1.5); fxLight.distance = 30;
       } else fxLight.intensity = 0;
       shared.uFxLightPos.value.copy(fxLight.position);
       shared.uFxLightColor.value.copy(fxLight.color).multiplyScalar(fxLight.intensity * 0.5);
-      lights.update(dt, P?.player?.state || null, night);
       rain.update(dt, P?.player?.state || null);
       const cockpit = !!P && (dcam === 'cockpit' || (!dcam && ctx.cameraRig?.mode === 'cockpit'));
       canopy.update(dt, P?.player?.state || null, cockpit, rain.amount);

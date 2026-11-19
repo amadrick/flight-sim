@@ -21,7 +21,7 @@ export const SPECIES = [
   { id: 'palm',    group: 'broad',   shape: 'palm',  base: 0.82, rad: 0.30, peak: 0.30, h: [12, 22], tile: 5, leaf: [0.074, 0.101, 0.046], bark: [0.230, 0.200, 0.160] },
   { id: 'tropic',  group: 'broad',   shape: 'ellip', base: 0.42, rad: 0.42, peak: 0.62, h: [9, 18],  tile: 6, leaf: [0.054, 0.087, 0.040], bark: [0.130, 0.115, 0.095] },
   { id: 'scrub',   group: 'broad',   shape: 'dome',  base: 0.10, rad: 0.62, peak: 0.40, h: [2.5, 5], tile: 7, leaf: [0.062, 0.073, 0.043], bark: [0.110, 0.090, 0.070] },
-  { id: 'desert',  group: 'broad',   shape: 'dome',  base: 0.05, rad: 0.70, peak: 0.35, h: [0.9, 2], tile: 8, leaf: [0.095, 0.095, 0.068], bark: [0.160, 0.130, 0.100] },
+  { id: 'desert',  group: 'broad',   shape: 'dome',  base: 0.05, rad: 0.70, peak: 0.35, h: [0.9, 2], tile: 8, leaf: [0.135, 0.138, 0.098], bark: [0.160, 0.130, 0.100] },
   { id: 'bush',    group: 'broad',   shape: 'dome',  base: 0.06, rad: 0.60, peak: 0.45, h: [2.0, 4.5], tile: 7, leaf: [0.060, 0.087, 0.042], bark: [0.090, 0.075, 0.060] },
 ];
 export const SPECIES_INDEX = Object.fromEntries(SPECIES.map((s, i) => [s.id, i]));

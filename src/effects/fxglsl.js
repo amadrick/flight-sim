@@ -21,6 +21,10 @@ export function createSharedUniforms(ctx, tex) {
     uFxLightPos: { value: new THREE.Vector3() },   // render space; the dynamic fx point light (AB / fire)
     uFxLightColor: { value: new THREE.Color(0, 0, 0) }, // radiant intensity (irradiance at 1 m)
     uFxNight: { value: 0 },
+    uFxKeyDir: { value: new THREE.Vector3(0, 1, 0) },  // key light direction (sun by day, moon at night) for media phase / wrap
+    uFxMoon: { value: 1 },                       // 1: media are lit by the moon too (?fxmoon=0 turns it off)
+    // night grade of the pipeline (scotopic shift of lit media; emission keeps its colour): shared holder, or off
+    uNightK: ctx.pipeline?.nightGrade?.uniforms?.uNightK || { value: new THREE.Vector4(0, 1, 1, 0) },
     uFxExposure: { value: 1 },                   // ctx.env.exposure (exposure-aware soft limits)
     uFxAnchor: { value: new THREE.Vector3() }, // anchor world pos − origin (render offset of anchored data)
     uFxWind: { value: new THREE.Vector3() },   // world wind m/s at the player's altitude
@@ -31,8 +35,12 @@ export function createSharedUniforms(ctx, tex) {
 export function sharedHeader(ctx) {
   const atmGlsl = ctx.pipeline?.atmosphere?.glsl || /* glsl */`
     vec3 atmSunIlluminance(vec3 p) { return uSunColor; }
+    vec3 atmMoonIlluminance(vec3 p) { return vec3(0.0); }
     vec4 atmAerialPerspective(vec3 p) { return vec4(0.0, 0.0, 0.0, 1.0); }
     vec3 atmAmbient(vec3 p, vec3 n) { return mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5); }`;
+  const ngGlsl = ctx.pipeline?.nightGrade?.glsl || /* glsl */`
+    uniform vec4 uNightK;
+    vec3 ng_grade(vec3 refl, vec3 total) { return refl; }`;
   const cl = ctx.clouds;
   const shadowGlsl = cl?.shadowGLSL && cl?.shadowUniforms ? cl.shadowGLSL : 'float cloudShadow(vec3 p) { return 1.0; }';
   // DEPTH_GLSL reads tSceneDepth; we route it through tFxDepth so the pipeline can hand us a copy.
@@ -44,9 +52,11 @@ uniform highp sampler2D tFxDepth;
 ${depth}
 ${atmGlsl}
 ${shadowGlsl}
+${ngGlsl}
 uniform highp sampler3D tFxNoise3D; uniform sampler2D tFxPuff;
 uniform float uFxApOn; uniform float uFxPreviewTM; uniform float uFxPreviewExposure;
 uniform vec3 uFxLightPos; uniform vec3 uFxLightColor; uniform float uFxNight; uniform float uFxExposure;
+uniform vec3 uFxKeyDir; uniform float uFxMoon;
 uniform vec3 uFxAnchor; uniform vec3 uFxWind;
 #define FX_PI 3.14159265
 float fxHash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -57,8 +67,9 @@ vec4 fxNoise(vec3 p) { return texture(tFxNoise3D, p); }
 #ifdef FX_FRAG
 float fxSceneDist() { return sceneDistance(gl_FragCoord.xy / uResolution); }
 #endif
-// Direct sun at a point, including cloud shadow.
-vec3 fxSun(vec3 p) { return atmSunIlluminance(p) * cloudShadow(p); }
+// Direct key light at a point: the sun (with cloud shadow) plus the moon (contrails and smoke are moonlit at night).
+// Its direction for the phase / wrap terms is uFxKeyDir.
+vec3 fxSun(vec3 p) { return atmSunIlluminance(p) * cloudShadow(p) + atmMoonIlluminance(p) * uFxMoon; }
 // Point fx light (afterburner / fire) irradiance at p.
 vec3 fxLocal(vec3 p) { vec3 d = uFxLightPos - p; return uFxLightColor / (dot(d, d) + 4.0); }
 vec3 fxACES(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -66,6 +77,7 @@ vec3 fxTM(vec3 x) { return pow(fxACES(x * uFxPreviewExposure), vec3(1.0 / 2.2));
 // lit: premultiplied lit radiance (L·a); a: coverage; emis: additive emission. Applies aerial perspective.
 vec4 fxFinish(vec3 lit, float a, vec3 emis, vec3 renderPos) {
   if (uFxApOn > 0.5) { vec4 ap = atmAerialPerspective(renderPos); lit = lit * ap.a + ap.rgb * a; emis *= ap.a; }
+  if (uNightK.x > 0.0 && a > 0.0) lit = ng_grade(lit, lit / max(a, 1e-3));   // night vision grades lit media only
   vec3 rgb = lit + emis;
   if (uFxPreviewTM > 0.5) rgb = fxTM(lit / max(a, 1e-3)) * a + fxTM(emis) * (1.0 - a * 0.5);
   return vec4(max(rgb, 0.0), clamp(a, 0.0, 1.0));
@@ -74,16 +86,17 @@ vec4 fxAP(vec3 renderPos) { return uFxApOn > 0.5 ? atmAerialPerspective(renderPo
 // Same as fxFinish with a precomputed aerial perspective (per vertex / per instance).
 vec4 fxFinishAP(vec3 lit, float a, vec3 emis, vec4 ap) {
   lit = lit * ap.a + ap.rgb * a; emis *= ap.a;
+  if (uNightK.x > 0.0 && a > 0.0) lit = ng_grade(lit, lit / max(a, 1e-3));
   vec3 rgb = lit + emis;
   if (uFxPreviewTM > 0.5) rgb = fxTM(lit / max(a, 1e-3)) * a + fxTM(emis) * (1.0 - a * 0.5);
   return vec4(max(rgb, 0.0), clamp(a, 0.0, 1.0));
 }
 // Media lighting with sun / ambient precomputed per vertex (cheap: no atmosphere/cloud-shadow calls per pixel).
 vec3 fxMediaLightPre(vec3 albedo, vec3 sun, vec3 ambUp, vec3 ambDn, vec3 p, vec3 n, vec3 rd, float dens, float g) {
-  float ndl = dot(n, uSunDir);
+  float ndl = dot(n, uFxKeyDir);
   float wrap = clamp((ndl + 0.6) / 1.6, 0.0, 1.0);
   float selfShadow = mix(1.0, 0.72, dens);
-  float cosT = dot(rd, uSunDir);
+  float cosT = dot(rd, uFxKeyDir);
   float phase = mix(1.0 / (4.0 * FX_PI), fxHG(cosT, g), 0.6) * 4.0 * FX_PI;
   vec3 direct = sun * (wrap * selfShadow * mix(1.0, phase, 0.35 + 0.65 * (1.0 - dens))) / FX_PI;
   vec3 amb = mix(ambDn, ambUp, n.y * 0.5 + 0.5) * (0.75 + 0.25 * (1.0 - dens));
@@ -92,10 +105,10 @@ vec3 fxMediaLightPre(vec3 albedo, vec3 sun, vec3 ambUp, vec3 ambDn, vec3 p, vec3
 // Approximate volumetric shading of a smoke/vapour puff: n = pseudo normal (world), dens = local density 0..1.
 vec3 fxMediaLight(vec3 albedo, vec3 p, vec3 n, vec3 rd, float dens, float g) {
   vec3 sun = fxSun(p);
-  float ndl = dot(n, uSunDir);
+  float ndl = dot(n, uFxKeyDir);
   float wrap = clamp((ndl + 0.6) / 1.6, 0.0, 1.0);
   float selfShadow = mix(1.0, 0.72, dens);
-  float cosT = dot(rd, uSunDir);
+  float cosT = dot(rd, uFxKeyDir);
   float phase = mix(1.0 / (4.0 * FX_PI), fxHG(cosT, g), 0.6) * 4.0 * FX_PI; // 1 = isotropic
   vec3 direct = sun * (wrap * selfShadow * mix(1.0, phase, 0.35 + 0.65 * (1.0 - dens))) / FX_PI;
   vec3 amb = atmAmbient(p, n) * (0.75 + 0.25 * (1.0 - dens));

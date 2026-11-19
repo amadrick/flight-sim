@@ -15,6 +15,7 @@
 // `?ground=classic` switches back to the previous hand-tuned shader (ground-classic.glsl.js).
 import { groundEcoGLSL } from '../neural/ground-cover.js';
 import { CLASSIC_COVER_GLSL, CLASSIC_SURFACE_GLSL } from './ground-classic.glsl.js';
+import { SETTLE_GLSL } from './settle.js';
 
 /** GLSL for the vertex stage of the terrain (and anything else that wants the learned cover): TerrEco terrEco(rxz, h). */
 export const ECO_GLSL = groundEcoGLSL();
@@ -39,6 +40,7 @@ vec2 terrHash2(vec2 p) {
 vec2 terrUV(vec3 T, vec2 off, vec2 p) { return vec2(T.x * p.x - T.y * p.y, T.y * p.x + T.x * p.y) * T.z + off; }
 vec2 terrUnrot(vec3 T, vec2 g) { return vec2(T.x * g.x + T.y * g.y, T.x * g.y - T.y * g.x); }
 float ss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
+//@SETTLE@
 
 // Macro noise that never repeats (the tiled noise texture shows its 2.3 km period as a lattice from high altitude):
 // two independent channels of value noise with 620 m and 250 m cells, mean 0.5, sigma ~0.14. dist = distance from
@@ -112,6 +114,11 @@ struct TerrCover {
   float woods;     // natural woodland only (forest without the hedgerows)
   TerrField fld;   // the farm parcel here (valid where crop > 0)
   vec2 mac;        // non-repeating macro noise (terrMacro) at this point
+#ifdef TERR_SETTLE
+  TerrRoad road;   // the nearest road of this grid cell
+  TerrTown town;   // the settlement lot here
+  float built;     // 1 on streets, roads and building footprints (nothing grows there)
+#endif
 };
 
 // Fraction f of the area is covered where the (roughly normal, mean 0.5, sigma sg) noise value nz clears a threshold.
@@ -119,6 +126,11 @@ float terrThresh(float f, float sg) { f = clamp(f, 0.002, 0.998); return 0.5 - s
 
 // n0..n3 = tTerrNoise at scales 0..3 at this point; n = terrain normal; curv = clipmap curvature; water = river mask;
 // E = the learned ecosystem cover (terrEco) at this point.
+// metres per pixel where the cover is being shaded (0 in the placement passes, which have no screen footprint).
+// Hedgerows, avenues and woodlot edges are 5-10 m features: without this prefilter a pixel wider than that is either
+// all hedge or all of the pale road beside it, and the boundary lines broke into regular dashes and steps (the
+// "white staircase" from a few kilometres up).
+float gTerrPx = 0.0;
 TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float water, vec4 n0, vec4 n1, vec4 n2, vec4 n3, TerrEco E) {
   TerrCover C;
   float latK = (rxz.y + uOrigin.z) * 0.001;           // km south of the origin
@@ -141,6 +153,18 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   // climatic tree line (trees near it are stunted); where trees actually stand is the network's business
   C.treeline = 2180.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (C.mac.x - 0.5) + 90.0 * (n2.g - 0.5);
   float open = (1.0 - C.pad) * (1.0 - water) * ss(1.2, 3.2, h);
+#ifdef TERR_SETTLE
+  // roads and settlements (settle.js): fields and woods stop at them
+  vec2 srel; uvec4 scell = terrSetCell(rxz, srel);
+  C.road = terrRoadIn(scell, srel);
+  C.town = terrTownIn(scell, rxz);
+  float townK = C.town.on * ss(0.02, 0.22, C.town.dens);
+  float roadK = 1.0 - ss(C.road.hw + 1.5, C.road.hw + 5.0, C.road.d);
+  vec2 bdq = C.town.bh + 2.5 - abs(C.town.bq);
+  C.built = max(max(roadK, C.town.on * (1.0 - ss(C.town.hwS + 1.0, C.town.hwS + 3.5, C.town.ds)) * ss(0.02, 0.22, C.town.dens)),
+                step(0.001, C.town.bh.x) * step(0.0, min(bdq.x, bdq.y)));
+  open *= (1.0 - townK) * (1.0 - roadK);
+#endif
 
   // ---- farmland: arable land (deep soil, gentle, moist enough, warm enough) in the districts that are farmed ----
   // (in the mountains every scrap of level valley floor is meadow or pasture)
@@ -152,8 +176,8 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
     C.fld = terrFieldAt(rxz + uOrigin.xz);
     // hedgerows with trees along some field boundaries, tree-lined section roads, shelter belts at the farmsteads
     float hasHedge = step(0.42, fract(C.fld.id.x * 7.31 + C.fld.blk.z));
-    float hd = (1.0 - ss(2.0, 5.5, C.fld.edge)) * hasHedge * ss(0.30, 0.50, n3.r * 0.6 + n2.r * 0.4);
-    float avenue = (1.0 - ss(5.0, 8.0, abs(C.fld.road - 9.0))) * step(0.62, C.fld.blk.y) * ss(0.35, 0.5, n2.g);
+    float hd = (1.0 - ss(2.0 - 0.5 * gTerrPx, 5.5 + 0.5 * gTerrPx, C.fld.edge)) * min(1.0, 9.0 / (gTerrPx + 3.0)) * hasHedge * ss(0.30, 0.50, n3.r * 0.6 + n2.r * 0.4);
+    float avenue = (1.0 - ss(5.0 - 0.5 * gTerrPx, 8.0 + 0.5 * gTerrPx, abs(C.fld.road - 9.0))) * min(1.0, 15.0 / (gTerrPx + 3.0)) * step(0.62, C.fld.blk.y) * ss(0.35, 0.5, n2.g);
     C.hedge = max(hd, avenue) * C.crop;
   }
 
@@ -167,11 +191,18 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   stand = max(max(stand, ss(0.94, 0.99, dens)), lot0) * (1.0 - ss(0.42, 0.60, slope)) * open;
   // woods that survive in farmed country: wet hollows and stream lines, the cores of the old stands, and whole
   // parcels left as woodlots (straight edges along the field boundaries)
-  float lot = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * ss(1.0, 6.0, C.fld.edge + 9.0 * (n3.g - 0.5));
+  float lot = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * ss(1.0 - 0.5 * gTerrPx, 6.0 + 0.5 * gTerrPx, C.fld.edge + 9.0 * (n3.g - 0.5));
   float core = ss(0.74, 0.80, fnoise) * ss(0.25, 0.5, dens);
   float keep = max(max(ss(0.86, 0.93, E.b.w + 0.06 * (n2.r - 0.5)), max(lot, core)), 1.0 - C.crop);
   C.woods = stand * keep;
   C.forest = max(C.woods, C.hedge * 0.9);
+#ifdef TERR_SETTLE
+  // garden and street trees: more in the leafy outskirts, few in the core and around farmyards
+  float garden = townK * (1.0 - C.town.core) * (0.10 + 0.16 * ss(0.3, 0.8, C.town.rr) + 0.3 * step(1.5, C.town.btype)) * (1.0 - 0.8 * step(0.5, C.town.btype) * step(C.town.btype, 1.5)) * ss(0.25, 0.75, n3.g + 0.5 * (C.town.h1.y - 0.5))
+               * ss(1.2, 3.2, h) * (1.0 - water) * (1.0 - ss(0.3, 0.7, arid));
+  C.forest = max(C.forest, garden) * (1.0 - C.built);
+  C.woods *= 1.0 - C.built;
+#endif
   C.conifer = clamp(E.a.y + 0.35 * (n2.r - 0.5) * E.a.y * (1.0 - E.a.y) * 4.0, 0.0, 1.0);
   return C;
 }
@@ -219,7 +250,7 @@ const float TERR_ANISO = 1.5;
 #endif
 uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
 
-struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
+struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
 
 const float M_GRASS = 0.0, M_SOIL = 1.0, M_GRAVEL = 2.0, M_ROCK = 3.0, M_SAND = 4.0, M_MUD = 5.0, M_CANOPY = 6.0, M_STRATA = 7.0;
 // per material: x = tint amplitude, y = cavity (height) darkening, z = detail normal strength, w = roughness
@@ -233,6 +264,8 @@ const vec4 TERR_MATP[8] = vec4[8](
   vec4(0.60, 0.95, 1.50, 0.95),    // forest canopy
   vec4(0.50, 0.70, 1.40, 0.80));   // bedded rock
 
+// RMS slope of each material's relief at the scales the detail layers show (input of the micro-relief transfer)
+const float TERR_SIG[8] = float[8](0.42, 0.30, 0.45, 0.45, 0.15, 0.08, 0.0, 0.45);
 // Coverage of a line of half width hw whose centre is dist away, seen through a pixel px wide (box filter).
 float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * hw / px + 0.15); }
 // Share of the ground covered when a fraction f is broken into patches by the noise value nz (mean 0.5, sigma sg);
@@ -270,7 +303,7 @@ void terrSide(vec3 T, vec2 off, vec3 rp, vec3 n, float layer, vec3 dpx, vec3 dpy
 // ---- farmland ------------------------------------------------------------------------------------------------------
 // Colour of the farm parcel F. wet = soil moisture, n2/n3/n4 = noise, px = metres per pixel. Returns rgb + a = surface
 // kind for the detail layers (0 crop canopy / grass, 1 bare soil, 2 gravel).
-vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, vec4 n4, float px, out float rough) {
+vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, vec4 n4, float px, vec2 vxz, out float rough, out vec2 fdn) {
   // regional crop mix per district, then the class of this field; mountain valleys grow grass (pasture, hay)
   float t = pow(F.id.x, mix(0.6, 1.7, terrHash2(floor(w / 4020.0) + 9000.0).x));
   if (ss(650.0, 1250.0, h) > fract(F.id.x * 3.7 + F.id.y)) t = F.id.y < 0.55 ? 0.60 : 0.82;
@@ -280,6 +313,10 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   // headlands: at both ends of the field the machine turns and works across
   float head = step(min(along, len - along), 13.0);
   float cr = mix(across, along, head);
+  // world direction of the axis the rows are counted along (the field frame is the survey grid, turned 12 degrees)
+  vec2 dAx = F.flip > 0.5 ? vec2(0.208, 0.978) : vec2(0.978, -0.208), dAy = F.flip > 0.5 ? vec2(0.978, -0.208) : vec2(0.208, 0.978);
+  vec2 crDir = (head > 0.5) == wide ? dAx : dAy;
+  fdn = vec2(0.0);
   // growth is uneven: wetter hollows are darker and lusher, dry knolls pale; drill misses and waterlogging
   float vig = clamp(0.5 + 1.1 * (wet - 0.52) + 0.9 * (n3.r - 0.5) + 0.5 * (n2.g - 0.5) + 0.35 * (n4.g - 0.5), 0.0, 1.0);
   vec3 soil = mix(vec3(0.165, 0.130, 0.080), vec3(0.090, 0.070, 0.045), clamp(wet * 1.3 - 0.25 + 0.5 * (n3.g - 0.5), 0.0, 1.0));
@@ -311,7 +348,16 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   }
   c *= 0.86 + 0.28 * F.id.y;
   // drill rows / furrows (close up), swaths (from pattern altitude), tramlines (two wheel tracks every 24 m)
-  if (rowP > 0.0) c *= 1.0 - rowA * (0.5 + 0.5 * sin(cr * 6.2831853 / rowP)) * ss(rowP * 0.9, rowP * 0.3, px);
+  if (rowP > 0.0) {
+    float rk = ss(rowP * 0.9, rowP * 0.3, px), ph = cr * 6.2831853 / rowP;
+    c *= 1.0 - rowA * (0.5 + 0.5 * sin(ph)) * rk;
+    fdn = crDir * (-(0.35 + 1.6 * rowA) * cos(ph) * rk);                 // ridges and furrows catch the light
+  }
+  // every pass of the machine lays the crop over the other way: alternate bands look lighter or darker depending on
+  // which way you look along them (what makes fields read as striped from the air)
+  float passW = 6.0 + 6.0 * floor(F.id.y * 3.0), passK = ss(passW * 0.7, passW * 0.2, px) * (1.0 - kind) * step(0.5, 1.0 - head);
+  float passS = step(0.5, fract(cr / passW)) * 2.0 - 1.0;
+  c *= 1.0 + passK * passS * (0.035 + 0.10 * dot(vxz, vec2(-crDir.y, crDir.x)));
   if (swP > 0.0) c *= 1.0 - swA * step(0.5, fract(cr / swP + 0.25)) * ss(swP * 0.8, swP * 0.25, px);
   if (tram > 0.0) {
     float tx = abs(abs(fract(cr / 24.0) - 0.5) * 24.0 - 0.95);
@@ -364,8 +410,9 @@ TerrSurf terrSurface(vec3 rp) {
   vec3 ng = n;                                        // geometric normal (before detail)
   float curv = (D.z - 0.5) / 1.25;                    // > 0 concave (gully), < 0 convex (spur), per texel of this level
   float conc = (D.w - 0.5) / 1.5;                     // > 0 hollow at ~4 texel scale
-  float arid = G.z, spec = G.w;
+  float arid = min(G.z, 1.0), spec = G.w, dune = clamp(G.z - 1.0, 0.0, 1.0);   // (dune fields: height.glsl.js)
   float water = clamp(spec, 0.0, 1.0), playa = clamp(-spec, 0.0, 1.0);
+  vec3 Vw = normalize(uTerrCam.xyz - rp);            // toward the camera
   float concW = vTerrAux.x;                           // valley-scale concavity, two levels up (per vertex)
 
   // ---- the learned ecosystem (per vertex) and the noise fields that break it into patches -----------------
@@ -394,8 +441,32 @@ TerrSurf terrSurface(vec3 rp) {
 
   float slope = 1.0 - n.y;                            // 0.03 = 14 deg, 0.13 = 30 deg, 0.29 = 45 deg
   float latK = w.y * 0.001;                           // km south of the origin
+  gTerrPx = px;
   TerrCover C = terrCoverEco(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3c, E);
   float macro = n0.r * 0.6 + C.mac.x * 0.4;           // 0..1 large-scale variation
+  // ---- rills, chutes and runnels: streaks running down the fall line ---------------------------------------------
+  // Noise stretched 22:1 along three fixed directions 60 degrees apart, blended by how well each lines up with the
+  // slope (a pattern in a frame that turns with the slope would shear; fixed frames cannot). rill: 0 = channel
+  // floor .. 1 = rib between channels, mean 0.5. Only on slopes steeper than ~12 degrees, while resolved.
+  float rill = 0.5, rillK = ss(0.022, 0.085, slope) * ss(110.0, 25.0, px) * (1.0 - water) * (1.0 - C.pad);
+  if (rillK > 0.0) {
+    vec2 sd = normalize(ng.xz + vec2(1.0e-5, 0.0));
+    float acc = 0.0, wsum = 1.0e-4;
+    for (int i = 0; i < 3; i++) {
+      vec2 dI = i == 0 ? vec2(1.0, 0.0) : i == 1 ? vec2(0.5, 0.8660254) : vec2(-0.5, 0.8660254);
+      float al = dot(sd, dI), wg = al * al; wg *= wg; wg *= wg;
+      if (wg > 0.004) {
+        vec2 pI = vec2(-dI.y, dI.x);
+        // (the tile is 150 m across the fall line: at 37 m its repeat showed as a comb of identical snow streaks;
+        // the larger noise scales bend the streaks so they are not ruled lines)
+        vec2 uv = vec2(dot(w, pI) / 150.0 + 0.22 * (n1.r - 0.5) + 0.05 * (n2.g - 0.5), dot(w, dI) / 3300.0) + float(i) * 0.371;
+        vec4 rt = textureGrad(tTerrNoise, uv, vec2(dot(dxz, pI) / 150.0, dot(dxz, dI) / 3300.0), vec2(dot(dyz, pI) / 150.0, dot(dyz, dI) / 3300.0));
+        acc += wg * (0.6 * rt.g + 0.4 * rt.a); wsum += wg;
+      }
+    }
+    rill = clamp(0.5 + (acc / wsum - 0.5) * 2.4, 0.0, 1.0);
+  }
+  float rillS = (rill - 0.5) * rillK;                  // signed, faded
   // patch noise: ~normal(0.5, 0.11) at nested scales; the fine part fades with distance and the non-repeating
   // macro noise takes over as the finer scales drop below a pixel, so the far field keeps its breakup
   float farN = ss(6.0, 60.0, px);
@@ -433,12 +504,21 @@ TerrSurf terrSurface(vec3 rp) {
   vec4 beds2 = textureLod(tTerrNoise, vec2(0.71, hb / 420.0), log2(max(dh / 1.64, 1.0)) + 0.6);
   vec3 strataCol = mix(vec3(0.335, 0.175, 0.105), vec3(0.455, 0.365, 0.255), ss(0.30, 0.70, beds.r + 0.5 * (beds2.g - 0.5)));
   desert = mix(desert, strataCol * (0.9 + 0.2 * n2.g), 0.7 * mesaAmt);
+  // grey fan gravels and dark varnished pavements break the red-and-tan; runnels streak the slopes pale and dark
+  desert = mix(desert, vec3(0.265, 0.250, 0.225) * (0.85 + 0.3 * n2.g), ss(0.52, 0.66, n0.a * 0.55 + n1.g * 0.45) * 0.6 * (1.0 - mesaAmt));
+  desert = mix(desert, desert * vec3(0.52, 0.50, 0.50), ss(0.60, 0.78, n1.b * 0.5 + C.mac.x * 0.5) * ss(0.02, 0.10, slope) * 0.55);
+  desert *= 1.0 + 0.55 * rillS;
+  desert = mix(desert, vec3(0.42, 0.37, 0.29), ss(0.10, 0.32, -rillS) * 0.7);          // sand and gravel in the runnel floors
+  // dune sand: clean, warm, a little darker and coarser in the troughs between the dunes
+  vec3 duneCol = mix(vec3(0.400, 0.290, 0.170), vec3(0.520, 0.405, 0.262), ss(-0.03, 0.05, -curv) * 0.6 + 0.4 * n1.r) * (0.94 + 0.12 * n3.r);
+  desert = mix(desert, duneCol, dune);
   vec3 col = mix(earth, desert, desertAmt);
   float rough = mix(0.90, 0.86, desertAmt);
   mat = mix(M_SOIL, M_SAND, step(0.5, desertAmt * (0.35 + 0.65 * ss(0.40, 0.60, bk3))));
   if (alpine > 0.5) mat = M_GRAVEL;
+  if (dune > 0.5) mat = M_SAND;
   // desert washes and torrent beds: pale gravel and sand where the simulation routes floods
-  float washAmt = terrPatch(eWash * (0.55 + 0.45 * desertAmt), bk2, 0.11, eps + 0.03);
+  float washAmt = terrPatch(eWash * (0.55 + 0.45 * desertAmt), bk2 - 0.45 * rillS, 0.11, eps + 0.03) * (1.0 - dune);
   col = mix(col, mix(vec3(0.335, 0.315, 0.285), vec3(0.44, 0.38, 0.28), desertAmt) * (0.9 + 0.2 * n3.r), washAmt * 0.85);
   if (washAmt > 0.5) mat = M_GRAVEL;
 
@@ -455,7 +535,7 @@ TerrSurf terrSurface(vec3 rp) {
   float openFrac = max(1.0 - 0.95 * eForest, 0.06);
   float herb = clamp((eGrass + eShrub) / openFrac, 0.0, 1.0);
   // dry country: bunch grass between the bushes covers a fraction of the ground, the soil colour carries the scene
-  herb *= 1.0 - 0.72 * desertAmt;
+  herb *= (1.0 - 0.72 * desertAmt) * (1.0 - 0.95 * dune);
   // below the tree line in a humid climate, ground that carries soil is never bare for long
   herb = max(herb, 0.88 * ss(0.30, 0.50, wet) * ss(0.12, 0.35, eSoil) * (1.0 - alpine));
   float dry = ss(0.25, 0.60, arid);
@@ -471,7 +551,7 @@ TerrSurf terrSurface(vec3 rp) {
   // larger tiles are not used: a jittered grid of 7 m cells shows as a weave from the air.)
   float bushes = ss(1.3, 0.4, pxt);
   float shrubN = 0.5 + 0.85 * (bk2 - 0.5) + (0.45 - n4.b) * 0.55 * bushes;
-  float shrubF = eShrub / openFrac * 1.1 * (1.0 - 0.5 * desertAmt) + 0.035 * desertAmt * (1.0 - playa);
+  float shrubF = (eShrub / openFrac * 1.1 * (1.0 - 0.5 * desertAmt) + 0.035 * desertAmt * (1.0 - playa)) * (1.0 - 0.92 * dune);
   shrubF *= mix(1.0, 0.5 + 1.0 * ss(0.25, 0.75, 0.5 + (C.mac.y - 0.5) + 0.6 * (n2.g - 0.5)), 0.5 + 0.5 * dry);
   float shrubAmt = terrPatch(clamp(shrubF, 0.0, 1.0), shrubN, 0.12, eps + 0.02 + 0.3 * dry * (1.0 - bushes));
   vec3 shrubCol = mix(mix(vec3(0.060, 0.082, 0.036), vec3(0.105, 0.104, 0.070), desertAmt), vec3(0.070, 0.075, 0.040), alpine);
@@ -497,10 +577,14 @@ TerrSurf terrSurface(vec3 rp) {
   float canopy = 0.0;
   if (forest > 0.004) {
     vec4 cn = terrMatTex(TERR_TILE3, uTerrTile[3], rp.xz, 0.035 * (n2.rg - 0.5), M_CANOPY, dxz, dyz);
-    float fine = ss(7.0, 1.6, pxt);                    // crowns (7 m) resolve below a few metres per pixel
+    // crowns (8 m) resolve below ~3 m per pixel. (They used to start at 7 m per pixel: under-sampled, the crown
+    // lattice chopped hedgerows and the roads beside them into regular dashes - the "white staircase" seen from
+    // a few kilometres up.)
+    float fine = ss(3.4, 1.3, pxt);
     crown = mix(0.5, cn.b, fine);
     crownG = terrUnrot(TERR_TILE3, cn.rg - 0.5) * fine;
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
+    canopy = max(canopy, C.hedge * 0.8);               // a hedgerow is a continuous strip, not a row of dots
     // sunlit crown tops over the dark gaps between the trees; every crown its own shade of green
     fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine) * mix(1.0, 0.86, conifer);
     canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine);
@@ -519,9 +603,12 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- cropland patchwork ---------------------------------------------------------------------------------------
   float cropAmt = cropPot * (1.0 - C.hedge);
+  vec2 fieldDn = vec2(0.0);
   if (cropPot > 0.001) {
     float fr;
-    vec4 fc = terrFieldColor(C.fld, w, h, wet, n2, n3, n4, px, fr);
+    vec2 fdn;
+    vec4 fc = terrFieldColor(C.fld, w, h, wet, n2, n3, n4, px, Vw.xz, fr, fdn);
+    fieldDn = fdn * cropAmt;
     col = mix(col, fc.rgb, cropAmt);
     rough = mix(rough, fr, cropAmt);
     if (cropAmt > 0.5) mat = fc.a > 1.5 ? M_GRAVEL : fc.a > 0.75 ? M_SOIL : M_GRASS;
@@ -559,15 +646,18 @@ TerrSurf terrSurface(vec3 rp) {
   if (turf > 0.5) mat = thin > 0.3 ? M_SOIL : M_GRASS;
 
   // ---- scree and bare rock: where the simulation strips the soil, plus anything too steep to hold it ------------
-  float screeAmt = terrPatch(eScree, bk2, 0.11, eps) * (1.0 - 0.7 * paint);
-  float steepPix = ss(0.50, 0.66, slope + 0.16 * (n3.a - 0.5) + 0.08 * (n4.a - 0.5));
-  float rockAmt = max(terrPatch(eRock, bk3, 0.11, eps), steepPix);
+  // talus tongues run down the chutes; ribs of rock stand between them
+  float screeAmt = terrPatch(clamp(eScree + 0.5 * max(-rillS, 0.0) * ss(0.10, 0.30, slope) * max(eRock, eScree), 0.0, 1.0), bk2 - 0.7 * rillS, 0.11, eps) * (1.0 - 0.7 * paint);
+  float steepPix = ss(0.50, 0.66, slope + 0.16 * (n3.a - 0.5) + 0.08 * (n4.a - 0.5) + 0.12 * rillS);
+  float rockAmt = max(terrPatch(eRock, bk3 + 0.5 * rillS, 0.11, eps), steepPix);
   // outcrops poke through thin soils on steeper ground
-  rockAmt = max(rockAmt, ss(0.80, 0.90, bk3 + 0.9 * slope + 0.35 * (1.0 - eSoil) - 0.25) * (1.0 - cropPot));
+  // (needs real slope, and an edge as soft as the pixel: on the flat coastal plain this term used to scatter
+  // hard-edged pale rock patches over the grass - the jagged white patches reported at the Haven coast)
+  rockAmt = max(rockAmt, clamp((bk3 + 0.9 * slope + 0.35 * (1.0 - eSoil) - 1.10) / (0.05 + 2.0 * eps) + 0.5, 0.0, 1.0) * ss(0.012, 0.05, slope) * (1.0 - cropPot));
   rockAmt *= 1.0 - pad * 0.9;
   vec3 granite = mix(vec3(0.120, 0.118, 0.116), vec3(0.235, 0.226, 0.212), ss(0.2, 0.8, n2.r * 0.6 + n3.g * 0.4));
   granite *= 0.86 + 0.28 * beds.r + 0.16 * (beds2.r - 0.5);                             // bedding, filtered
-  granite = mix(granite, granite * vec3(0.62, 0.60, 0.58), ss(0.55, 0.85, n3.a) * 0.6);   // dark seepage / lichen
+  granite = mix(granite, granite * vec3(0.62, 0.60, 0.58), ss(0.55, 0.85, n3.a - 0.5 * rillS) * 0.6);   // dark seepage / lichen, water streaks down the runnels
   granite = mix(granite, granite * vec3(0.80, 0.86, 0.74), ss(0.5, 0.9, wet) * (1.0 - alpine) * 0.5);   // moss, lichen in damp shade
   // sandstone: colour follows the (tilted, mip-filtered) beds
   vec3 sandstone = mix(vec3(0.290, 0.130, 0.072), vec3(0.50, 0.315, 0.19), ss(0.25, 0.75, beds.g + 0.6 * (beds2.r - 0.5)));
@@ -590,13 +680,14 @@ TerrSurf terrSurface(vec3 rp) {
   // ---- snow and glacier ice -------------------------------------------------------------------------------------
   // late-lying snow from the simulation (shaded faces, loaded gullies, avalanche cones); it cannot hold on the
   // steepest pixels, and drifts sit in the small hollows first
+  eSnow *= ss(treeline - 1000.0, treeline - 650.0, h);      // no late snow in the warm lowlands, whatever the network extrapolates
   float snowF = clamp(eSnow * 1.25 + 0.9 * clamp(conc, -0.06, 0.12) * ss(0.02, 0.3, eSnow), 0.0, 1.0);
   // above the climatic firn line (not simulated: the simulation ends at the late-summer melt-out) snow is permanent
   // wherever the ground is not too steep to hold it
   float firn = ss(treeline + 650.0, treeline + 1350.0, h + 260.0 * (C.mac.x - 0.5)) * (1.0 - 0.8 * desertAmt);
   snowF = max(snowF, 0.92 * firn);
   // drifts linger in the hollows and gullies first; a little broad noise so the edges are not contour lines
-  float bkS = 0.5 + 1.0 * clamp(conc, -0.10, 0.10) + 0.8 * clamp(curv, -0.06, 0.06) + 0.55 * (n2.r - 0.5) + 0.30 * (n3.g - 0.5) + 0.6 * farN * (C.mac.x - 0.5);
+  float bkS = 0.5 - 0.6 * rillS * ss(0.06, 0.2, slope) + 1.0 * clamp(conc, -0.10, 0.10) + 0.8 * clamp(curv, -0.06, 0.06) + 0.55 * (n2.r - 0.5) + 0.30 * (n3.g - 0.5) + 0.6 * farN * (C.mac.x - 0.5);
   float snow = terrPatch(snowF, bkS, 0.12, eps + 0.03) * max(ss(0.04, 0.14, eSnow), firn) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
   snow *= 1.0 - 0.8 * paint * ss(0.9, 0.5, eSnow);
   vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.95 + 0.07 * n3.r);
@@ -646,8 +737,149 @@ TerrSurf terrSurface(vec3 rp) {
   if (bar > 0.5) mat = M_GRAVEL;
   float wsurf = ss(0.5, 0.8, water);
 
+
+#ifdef TERR_SETTLE
+  // ---- settlements and roads (settle.js) ------------------------------------------------------------------------
+  float paved = 0.0, roofAmt = 0.0, bShade = 0.0;     // smooth man-made surface; painted roof; building shadow
+  vec3 roofN = vec3(0.0, 1.0, 0.0), emis = vec3(0.0);
+  {
+    TerrTown T = C.town;
+    float slant = distance(rp, uTerrCam.xyz);
+    // where the buildings are real geometry (buildings.js) only their footprint is painted
+    float b3d = uSetOn.w > 0.0 ? 1.0 - ss(0.8 * uSetOn.w, uSetOn.w, slant) : 0.0;
+    if (T.on > 0.5) {
+      float tk = ss(0.02, 0.22, T.dens) * ss(0.6, 1.8, h);
+      float occ = step(0.001, T.bh.x);
+      float farm = step(T.kind, 0.5);
+      float shedB = step(0.5, T.btype) * step(T.btype, 1.5), green = step(1.5, T.btype);
+      float hardY = max(T.core, shedB);
+      // yards: lawn and garden beds, paved courts in the core, gravel farmyards in the hamlets
+      vec3 lawn = mix(vec3(0.060, 0.104, 0.034), vec3(0.110, 0.128, 0.052), ss(0.3, 0.7, n4.g * 0.6 + T.h1.x * 0.4)) * (0.86 + 0.28 * T.h2.y);
+      lawn = mix(lawn, grassDry * 0.9, 0.75 * desertAmt);
+      vec3 court = vec3(0.150, 0.146, 0.138) * (0.85 + 0.3 * n4.r);
+      vec3 yard = mix(lawn, court, max(hardY * 0.92, farm * 0.55 * ss(0.4, 0.6, T.h2.x)));
+      yard = mix(yard, vec3(0.050, 0.095, 0.030) * (0.85 + 0.3 * n3.g), green);                     // parks and playing fields
+      float lotAmt = tk * max(max(occ, hardY), green) * (1.0 - snow * 0.9);
+      col = mix(col, yard, lotAmt * 0.92);
+      rough = mix(rough, 0.92, lotAmt);
+      if (lotAmt > 0.5) mat = hardY > 0.5 ? M_GRAVEL : M_GRASS;
+      paved = max(paved, lotAmt * hardY * 0.8);
+      // fences and hedges on the lot lines, a drive from the street to the house
+      float nearK = ss(3.0, 0.7, px);
+      col = mix(col, vec3(0.035, 0.055, 0.026), terrLine(T.lotEdge, 0.55, px) * occ * (1.0 - hardY) * tk * 0.75 * nearK * step(0.35, T.h1.y));
+      vec2 dq = T.bh - abs(T.bq);
+      float inside = min(dq.x, dq.y);
+      float drive = terrLine(abs(T.bq.x - (T.h2.x - 0.5) * T.bh.x), 1.4, px) * step(0.0, -T.bq.y * T.front) * occ * (1.0 - hardY) * step(inside, 0.0);
+      col = mix(col, vec3(0.185, 0.175, 0.160), drive * tk * 0.85 * ss(6.0, 1.5, px));
+      // the building: a roof seen from above; gable roofs get their two planes (ridge along the street)
+      float roof = clamp(inside / px + 0.5, 0.0, 1.0) * occ * tk;
+      if (roof > 0.0) {
+        vec3 rc = settleRoofColor(T.h1, T.h2, T.roofK, tropic);
+        float rowK = ss(0.9, 0.25, px);
+        rc *= 1.0 - 0.14 * rowK * T.roofK * step(0.5, fract(T.bq.y * 3.1));                           // courses of tiles
+        rc *= 1.0 - 0.25 * (1.0 - T.roofK) * (1.0 - ss(0.0, 0.7, inside)) * ss(1.5, 0.4, px);        // parapet
+        // roof plant and skylights on the flat roofs
+        vec2 pl = floor((T.bq + T.bh) / 3.2);
+        rc = mix(rc, vec3(0.30, 0.31, 0.32), (1.0 - T.roofK) * step(0.86, terrHash2(pl + T.h1 * 977.0).x) * ss(3.0, 1.0, px) * step(1.2, inside));
+        rc *= 0.9 + 0.2 * n5.r;
+        // far away single roofs are smaller than a pixel: converge to the mean roof instead of sparkling
+        rc = mix(rc, mix(vec3(0.185, 0.180, 0.172), vec3(0.165, 0.105, 0.080), T.roofK), ss(3.0, 14.0, px) * 0.85);
+        float lz = sign(T.bq.y) * 0.5 * T.roofK * ss(0.25, 0.6, abs(T.bq.y) / max(px, 0.05) * 0.5 + 0.3);
+        vec3 rn = normalize(vec3(-T.ax.y * lz, 0.866, T.ax.x * lz));
+        float paintRoof = roof * (1.0 - b3d);
+        col = mix(col, mix(rc, col * 0.35, b3d), roof);
+        roofN = rn; roofAmt = paintRoof;
+        rough = mix(rough, 0.80, roof);
+        paved = max(paved, roof);
+      }
+      // the shadow the building throws (analytic box shadow in the lot's frame); also under the 3-D buildings, which
+      // the sun shadow map does not reach away from the aircraft
+      if (occ > 0.5 && inside < 0.0 && uSunDir.y > 0.02) {
+        vec2 sl = vec2(dot(uSunDir.xz, T.ax), dot(uSunDir.xz, vec2(-T.ax.y, T.ax.x)));
+        float hl = length(sl) + 1.0e-4;
+        vec2 dir = sl / hl + vec2(1.0e-4, -1.0e-4);
+        float smax = (T.bH + 1.2 * T.roofK) * hl / uSunDir.y;
+        vec2 t1 = (-T.bh - T.bq) / dir, t2 = (T.bh - T.bq) / dir;
+        float tn = max(min(t1.x, t2.x), min(t1.y, t2.y)), tf = min(max(t1.x, t2.x), max(t1.y, t2.y));
+        bShade = clamp((tf - max(tn, 0.0)) / px + 0.5, 0.0, 1.0) * clamp((smax - tn) / max(px, 0.3) + 0.5, 0.0, 1.0) * step(0.0, tf) * tk;
+      }
+      // streets: asphalt between pavements (kerb stones in towns), patched and worn
+      float sAmt = terrLine(T.ds, T.hwS, px) * tk;
+      float walk = terrLine(T.ds, T.hwS + 1.7, px) * tk * step(0.5, T.kind);
+      col = mix(col, vec3(0.270, 0.262, 0.245) * (0.9 + 0.2 * n5.g), walk * 0.9);
+      vec3 tar = mix(vec3(0.052, 0.054, 0.058), vec3(0.105, 0.102, 0.097), ss(0.3, 0.7, n3.r * 0.5 + n4.g * 0.5));
+      tar = mix(tar, vec3(0.245, 0.225, 0.190), farm * 0.8);                                         // farm lanes are gravel
+      tar *= 1.0 - 0.10 * ss(0.5, 0.2, abs(abs(T.ds) - 1.4)) * ss(1.2, 0.3, px);                    // wheel tracks
+      tar = mix(tar, vec3(0.50), terrLine(T.ds, 0.07, px) * step(1.5, T.kind) * step(0.45, fract(T.along / 9.0)) * ss(2.0, 0.5, px) * 0.7);
+      col = mix(col, tar, sAmt);
+      rough = mix(rough, 0.86, sAmt);
+      paved = max(paved, max(sAmt, walk) * (1.0 - farm));
+      // street lamps: pools of light on the ground; lamps merge into lit streets and then into the town's glow with
+      // distance (each stage keeps the area mean of the one before, so the town does not change brightness)
+      if (uSetOn.z > 0.002) {
+        float dens = T.dens * (farm > 0.5 ? 0.35 : 1.0) * (1.0 + 0.7 * T.core) * (1.0 - 0.85 * green);
+        float al = (fract(T.along / 34.0) - 0.5) * 34.0;
+        float sg2 = 2.0 * 6.0 * 6.0;
+        float e1 = exp(-(al * al + T.ds * T.ds) / sg2);
+        float e2 = 0.442 * exp(-T.ds * T.ds / sg2);                 // mean along the street: sqrt(2 pi) sigma / spacing
+        float e3 = 0.442 * 15.04 * 0.0300;                           // mean over the blocks: x sqrt(2 pi) sigma (1 / bw + 1 / bd)
+        float e = mix(mix(e1, e2, ss(5.0, 16.0, px)), e3, ss(24.0, 80.0, px));
+        // (saturated on purpose: the night grade in post pulls everything dimmer than a lamp towards blue)
+        vec3 lamp = mix(vec3(1.0, 0.40, 0.09), vec3(1.0, 0.58, 0.24), step(0.62, T.lamp));
+        // lit windows and yard lights spill a little warm light around every other house
+        float spill = occ * step(T.h2.y, 0.6) * exp(-max(-inside, 0.0) * 0.35) * step(inside, 0.0) * 0.5;
+        spill = mix(spill, 0.05, ss(6.0, 30.0, px));
+        // arterial streets carry taller, brighter, whiter lamps: the grid a city shows from the air
+        lamp = mix(lamp, vec3(1.0, 0.52, 0.17), T.art * 0.7);
+        e *= 1.0 + 1.6 * T.art * (1.0 - ss(24.0, 80.0, px)) + 0.4 * ss(24.0, 80.0, px) * step(1.5, T.kind);
+        emis = (lamp * e * dens + vec3(1.0, 0.50, 0.16) * spill * dens) * tk * uSetOn.z;
+      }
+    }
+    TerrRoad Rd = C.road;
+    if (Rd.n > 0.5 && Rd.d < Rd.hw + 12.0 + px) {
+      float farR = ss(160.0, 60.0, px);
+      float gravelR = step(1.5, Rd.cls);
+      float vergeW = Rd.cls < 0.5 ? 4.5 : Rd.cls < 1.5 ? 2.2 : 0.9;
+      float verge = terrLine(Rd.d, Rd.hw + vergeW, px) * farR;
+      vec3 vergeCol = mix(mix(vec3(0.092, 0.120, 0.048), grassDry * 0.85, 0.3 + 0.4 * n4.r), vec3(0.300, 0.250, 0.185), max(desertAmt, alpine * 0.6));
+      col = mix(col, vergeCol * (0.85 + 0.3 * n4.g), verge * 0.85 * (1.0 - snow));
+      float cov = terrLine(Rd.d, Rd.hw, px) * farR;
+      vec3 tar = mix(vec3(0.050, 0.052, 0.056), vec3(0.112, 0.108, 0.102), ss(0.25, 0.75, n2.r * 0.4 + n3.g * 0.3 + n4.r * 0.3));
+      tar = mix(tar, mix(vec3(0.255, 0.232, 0.195), vec3(0.330, 0.275, 0.205), desertAmt) * (0.85 + 0.3 * n4.r), gravelR);
+      // bridges: a concrete deck where the road crosses water
+      tar = mix(tar, vec3(0.30, 0.295, 0.28), ss(0.2, 0.5, water) * (1.0 - gravelR));
+      float lane = Rd.cls < 0.5 ? 3.3 : 0.0;
+      // traffic polishes two tracks per lane; oil down the middle of each lane
+      float lpos = Rd.cls < 0.5 ? abs(abs(Rd.d) - 1.65 - (Rd.d > 3.3 ? 3.3 : 0.0)) : abs(abs(Rd.d - Rd.hw * 0.5) - 0.0);
+      tar *= 1.0 - 0.08 * ss(0.9, 0.3, abs(lpos - 0.85)) * ss(1.5, 0.3, px) * (1.0 - gravelR);
+      // gravel lanes: two bare wheel ruts, grass down the middle
+      tar = mix(tar, vergeCol, gravelR * ss(0.45, 0.15, Rd.d) * 0.6 * ss(1.5, 0.4, px) * (1.0 - desertAmt));
+      float mk = ss(5.0, 1.2, px) * (1.0 - gravelR);
+      if (mk > 0.0) {
+        vec3 white = vec3(0.56);
+        float dash = step(0.5, fract(Rd.s / 12.0));
+        float m = terrLine(abs(Rd.d - (Rd.hw - 0.45)), 0.08, px);                                   // edge lines
+        if (Rd.cls < 0.5) {
+          m = max(m, terrLine(abs(Rd.d - 3.3), 0.07, px) * dash);                                   // lane lines
+          tar = mix(tar, vec3(0.50, 0.38, 0.06), max(terrLine(abs(Rd.d - 0.18), 0.06, px), 0.0) * mk * 0.9);   // double centre line
+        } else {
+          m = max(m, terrLine(Rd.d, 0.06, px) * dash);
+        }
+        tar = mix(tar, white, m * mk * 0.85);
+      }
+      col = mix(col, tar, cov);
+      rough = mix(rough, mix(0.80, 0.90, gravelR), cov);
+      paved = max(paved, cov * (1.0 - 0.6 * gravelR));
+      if (cov * gravelR > 0.5) mat = M_GRAVEL;
+      wsurf *= 1.0 - cov;
+    }
+  }
+#endif
   // ---- detail layers of the material on top: height, normal, tint at up to four scales ----------------------------
   vec4 mp = TERR_MATP[int(mat)];
+#ifdef TERR_SETTLE
+  mp.xyz *= 1.0 - 0.78 * paved;
+#endif
   vec2 dn = vec2(0.0);
   float hgt = 0.0, tint = 0.0;                         // accumulated height and tint, centred on 0
   // a scale is shown while its features (tile / 8 .. tile / 128) are resolved; beyond that only its mean remains
@@ -703,22 +935,45 @@ TerrSurf terrSurface(vec3 rp) {
     hgt += (t3.b - 0.5) * fade3 * top * 0.8; tint += (t3.a - 0.5) * fade3 * top * 0.8;
     dn += terrUnrot(TERR_TILE3, t3.rg - 0.5) * (fade3 * top * 0.9);
   }
+  // The finer scales are looked up through a parallax shift by the height of the coarser ones (clods and stones
+  // stand in front of what lies behind them), and the two finest resolved scales shadow themselves: one extra tap
+  // toward the sun tells whether the relief there rises above the sun ray.
+  vec2 parV = Vw.xz / max(Vw.y, 0.30), par = vec2(0.0);
+  float microSh = 1.0;
+  vec2 sunXZ = uSunDir.xz / max(length(uSunDir.xz), 0.05);
+  float sunTan = max(uSunDir.y, 0.0) / max(length(uSunDir.xz), 0.05);
   if (fade4 > 0.0) {
-    vec4 t4 = terrMatTex(TERR_TILE4, uTerrTile[4], rp.xz, 0.03 * (n3.rg - 0.5), mat, dxz, dyz);
+    vec2 wp4 = 0.03 * (n3.rg - 0.5);
+    vec4 t4 = terrMatTex(TERR_TILE4, uTerrTile[4], rp.xz, wp4, mat, dxz, dyz);
     float k4 = fade4 * top * (mat == M_CANOPY ? 0.55 : 1.0);
     hgt += (t4.b - 0.5) * k4; tint += (t4.a - 0.5) * k4;
     dn += terrUnrot(TERR_TILE4, t4.rg - 0.5) * k4;
+    par = parV * ((t4.b - 0.5) * 0.07 * mp.z * k4);
+#if TERR_Q > 0
+    if (uSunDir.y > 0.0 && mat != M_CANOPY) {
+      float t4s = terrMatTex(TERR_TILE4, uTerrTile[4], rp.xz + sunXZ * 0.11, wp4, mat, dxz, dyz).b;
+      microSh *= 1.0 - 0.8 * k4 * ss(0.25, 1.1, (t4s - t4.b) * 0.20 * mp.z / (0.11 * sunTan + 0.004)) * ss(0.9, 0.25, pxt);
+    }
+#endif
   }
 #if TERR_Q > 0
   if (fade5 > 0.0) {
-    vec4 t5 = terrMatTex(TERR_TILE5, uTerrTile[5], rp.xz, 0.03 * (n4.rg - 0.5), mat, dxz, dyz);
+    vec2 wp5 = 0.03 * (n4.rg - 0.5);
+    vec4 t5 = terrMatTex(TERR_TILE5, uTerrTile[5], rp.xz + par, wp5, mat, dxz, dyz);
     hgt += (t5.b - 0.5) * fade5 * 0.8; tint += (t5.a - 0.5) * fade5 * 0.8;
     dn += terrUnrot(TERR_TILE5, t5.rg - 0.5) * (fade5 * 0.9);
+#if TERR_Q > 1
+    if (uSunDir.y > 0.0) {
+      float t5s = terrMatTex(TERR_TILE5, uTerrTile[5], rp.xz + par + sunXZ * 0.020, wp5, mat, dxz, dyz).b;
+      microSh *= 1.0 - 0.7 * fade5 * ss(0.25, 1.1, (t5s - t5.b) * 0.035 * mp.z / (0.020 * sunTan + 0.001));
+    }
+#endif
+    par += parV * ((t5.b - 0.5) * 0.012 * mp.z * fade5);
   }
 #endif
 #if TERR_Q > 1
   if (fade6 > 0.0) {
-    vec4 t6 = terrMatTex(TERR_TILE6, uTerrTile[6], rp.xz, 0.03 * (n5.rg - 0.5), mat, dxz, dyz);
+    vec4 t6 = terrMatTex(TERR_TILE6, uTerrTile[6], rp.xz + par, 0.03 * (n5.rg - 0.5), mat, dxz, dyz);
     hgt += (t6.b - 0.5) * fade6 * 0.6; tint += (t6.a - 0.5) * fade6 * 0.6;
     dn += terrUnrot(TERR_TILE6, t6.rg - 0.5) * (fade6 * 0.8);
   }
@@ -726,7 +981,14 @@ TerrSurf terrSurface(vec3 rp) {
   float soft = 1.0 - 0.75 * snow;                     // snow smooths everything
   col *= clamp(1.0 + (mp.x * tint + mp.y * hgt) * soft, 0.35, 1.7);
   rough = clamp(rough + (mp.w - 0.9) * 0.6 - 0.10 * hgt * soft, 0.3, 1.0);
-  dn = dn * mp.z * soft + crownG * 2.4 * paint;
+  dn = dn * mp.z * soft + crownG * 2.4 * paint + fieldDn * (1.0 - snow);
+  // loose stones on bare, dry or frost-shattered ground (one per cell of the fine cellular noise, in drifts)
+  float stoneP = max(max(desertAmt * (1.0 - dune) * (1.0 - playa), alpine), 0.5 * screeAmt) * (1.0 - snow) * (1.0 - paint) * (1.0 - cropPot) * (1.0 - wsurf0) * near5;
+  if (stoneP > 0.01) {
+    float st = ss(0.34, 0.18, n5.b) * ss(0.50, 0.62, n4.r * 0.6 + n3.g * 0.4) * stoneP;
+    col = mix(col, rockCol * (0.75 + 0.6 * n5.r), st * 0.85);
+    hgt += 0.5 * st; rough = mix(rough, 0.78, st);
+  }
 
   // ---- water on the land: rain-wet ground, puddles in the hollows of the micro relief, tide line, rivers ---------
   float rainWet = uTerrWet * (1.0 - snow) * (1.0 - paint * 0.7);
@@ -748,6 +1010,9 @@ TerrSurf terrSurface(vec3 rp) {
   dn *= 1.0 - wsurf; dnSide *= 1.0 - wsurf;
   n = mix(n, vec3(0.0, 1.0, 0.0), wsurf);
   n = normalize(n - vec3(dn.x, 0.0, dn.y) - dnSide * mp.z * 0.8);
+#ifdef TERR_SETTLE
+  n = normalize(mix(n, roofN, roofAmt));
+#endif
 
   // ---- ambient occlusion and self shadow -----------------------------------------------------------------------
   float ao = 1.0 - clamp(conc * 1.6 + concW * 2.2, -0.08, 0.62);
@@ -762,18 +1027,42 @@ TerrSurf terrSurface(vec3 rp) {
 #endif
   float nl = dot(ng, uSunDir);
   S.shadow = nl > 0.0 ? mix(1.0, terrShadow(rp, ng, lf, TERR_SHADOW_STEPS), ss(0.0, 0.10, nl)) : 1.0;
+  S.emis = vec3(0.0);
+  S.shadow *= microSh;
+#ifdef TERR_MICRO
+  // relief this pixel no longer resolves (the 4 m detail scale has faded): the learned micro-relief transfer gives
+  // its mean effect on direct light, so the far field keeps the directional behaviour of the near field
+  float sig = TERR_SIG[int(mat)] * (1.0 - fade4) * (1.0 - 0.7 * snow) * (1.0 - wsurf) * (1.0 - playa);
+#ifdef TERR_SETTLE
+  sig *= 1.0 - paved;
+#endif
+  S.canopyK *= terrMicroK(ng, Vw, uSunDir, sig);
+#endif
+#ifdef TERR_SETTLE
+  S.shadow *= (1.0 - 0.92 * bShade);
+  S.ao *= 1.0 - 0.25 * bShade;
+  S.emis = emis * (0.40 * col + 0.018);
+#endif
   return S;
 }
 `;
 
 // ---- switch between the learned and the classic ground (live bindings: trees.js reads COVER_GLSL when it builds) ----
 export let GROUND_MODE = 'neural';
-export let COVER_GLSL = NEURAL_COVER_GLSL;
+let SETTLE_ON = false;
+const coverGLSL = () => NEURAL_COVER_GLSL.replace('//@SETTLE@', SETTLE_ON ? SETTLE_GLSL : '');
+export let COVER_GLSL = coverGLSL();
 export let SURFACE_GLSL = NEURAL_SURFACE_GLSL;
 /** 'neural' (default) or 'classic'. Call before the terrain / tree materials are created. */
 export function setGroundMode(mode) {
   GROUND_MODE = mode === 'classic' ? 'classic' : 'neural';
-  COVER_GLSL = GROUND_MODE === 'classic' ? CLASSIC_COVER_GLSL : NEURAL_COVER_GLSL;
+  COVER_GLSL = GROUND_MODE === 'classic' ? CLASSIC_COVER_GLSL : coverGLSL();
   SURFACE_GLSL = GROUND_MODE === 'classic' ? CLASSIC_SURFACE_GLSL : NEURAL_SURFACE_GLSL;
   return GROUND_MODE;
+}
+/** Roads and settlements painted into the neural ground (settle.js). Call before materials are created, after setGroundMode. */
+export function setSettleMode(on) {
+  SETTLE_ON = !!on && GROUND_MODE !== 'classic';
+  if (GROUND_MODE !== 'classic') COVER_GLSL = coverGLSL();
+  return SETTLE_ON;
 }
