@@ -48,8 +48,9 @@ function reveal(el) {
     box.scrollLeft += (r.left + r.width / 2) - (b.left + b.width / 2);
   }
   if (box.scrollHeight > box.clientHeight + 2) {
-    if (r.top < b.top) box.scrollTop -= b.top - r.top + 4;
-    else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 4;
+    // 24px clear of the edge: the list fades out over its last 18px
+    if (r.top < b.top + 8) box.scrollTop -= b.top - r.top + 8;
+    else if (r.bottom > b.bottom - 24) box.scrollTop += r.bottom - b.bottom + 24;
   }
 }
 /** Morphing selection highlight: moves `ind` (absolutely positioned in `group`) onto the selected item. */
@@ -409,6 +410,7 @@ export async function createMenu(ctx) {
     // aircraft details
     heroKicker.textContent = [d.manufacturer, d.firstFlight ? 'First flight ' + d.firstFlight : null].filter(Boolean).join('  ·  ');
     heroName.textContent = d.name;
+    heroName.classList.toggle('long', d.name.length > 18);
     heroTag.textContent = d.lore?.tagline || d.role || '';
     heroTag.hidden = !heroTag.textContent;
     const rows = specRows(d);

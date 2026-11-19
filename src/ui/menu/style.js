@@ -213,10 +213,11 @@ export const CSS = /* css */`
 .menu-hero-kicker { font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(242 246 250 / 0.86); text-shadow: 0 1px 3px rgb(0 0 0 / 0.6); text-wrap: balance; pointer-events: none; }
 .menu-hero-name { font-family: var(--font-display); font-weight: 600; font-size: clamp(38px, 4.2vw, 70px); line-height: 0.96; letter-spacing: 0.02em; text-transform: uppercase; margin: 6px 0 4px;
   text-shadow: 0 2px 4px rgb(0 0 0 / 0.45), 0 0 30px rgb(0 0 0 / 0.3); pointer-events: none; }
+.menu-hero-name.long { font-size: clamp(30px, 3.1vw, 54px); }
 .menu-hero-tag { font-size: 15px; color: rgb(242 246 250 / 0.9); margin: 0 0 14px; text-shadow: 0 1px 3px rgb(0 0 0 / 0.6); pointer-events: none; }
 .menu-spec { --r: var(--r-l); width: 100%; box-sizing: border-box; padding: 6px; text-align: left; }
 .menu-spec-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.menu-spec-key { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.menu-spec-key { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); }
 .menu-kv { padding: 8px 12px 8px; min-width: 0; position: relative; }
 .menu-spec-key > .menu-kv + .menu-kv::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--hair); }
 .menu-kv-k { font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); white-space: nowrap; }
@@ -334,7 +335,7 @@ export const CSS = /* css */`
 .menu-cbtn.menu-cbtn-icon { padding: 0; width: 40px; }
 .menu-cbtn svg { width: 18px; height: 18px; flex: none; }
 .menu-crash.menu-crash {
-  --r: var(--r-xl); position: absolute; z-index: 21; left: 50%; bottom: calc(var(--gb) + 56px); transform: translateX(-50%);
+  --r: var(--r-xl); position: absolute; z-index: 21; left: 50%; bottom: calc(var(--gb) + max(112px, 15vh)); transform: translateX(-50%);   /* clear of the HUD strip */
   width: min(440px, calc(100% - 32px)); box-sizing: border-box; pointer-events: auto; padding: 18px 18px 10px;
   animation: menu-rise 0.42s var(--spring);
 }
@@ -382,6 +383,16 @@ export const CSS = /* css */`
   .menu-main { grid-template-columns: minmax(256px, 290px) minmax(0, 1fr) minmax(290px, 330px); column-gap: 14px; }
   .menu-status-item.menu-status-opt { display: none; }
   .menu-tab { padding: 0 14px; }
+}
+@media (max-width: 1000px) {
+  .menu-status-k { display: none; }
+  .menu-status-item { padding-right: 10px; }
+  .menu-status-item + .menu-status-item { padding-left: 10px; }
+}
+@media (max-width: 900px) {
+  .menu-status-item:first-child { display: none; }
+  .menu-status { padding-left: 14px; }
+  .menu-tab { padding: 0 12px; }
 }
 @media (max-width: 1020px) {
   .menu-spec-key, .menu-spec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -459,7 +470,7 @@ export const CSS = /* css */`
   /* hero becomes the selected aircraft's card inside the sheet */
   .menu-main .menu-hero { width: auto; align-items: stretch; text-align: left; padding: 10px 2px 2px; }
   .menu-hero-kicker { display: none; }
-  .menu-hero-name { font-size: 26px; margin: 0 0 2px; text-shadow: none; }
+  .menu-hero-name, .menu-hero-name.long { font-size: 26px; margin: 0 0 2px; text-shadow: none; }
   .menu-hero-tag { display: block; font-size: 13px; margin: 0 0 10px; text-shadow: none; color: var(--fg-dim); }
   .menu-spec { background: rgb(0 0 0 / 0.14) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; box-shadow: inset 0 0 0 1px var(--hair) !important; }
   .menu-spec::before, .menu-spec::after { display: none; }
@@ -470,7 +481,7 @@ export const CSS = /* css */`
   .menu-fly { min-height: 54px; }
   .menu-devices { grid-template-columns: 1fr; }
   .menu-keys { columns: 1; }
-  .menu-crash { bottom: calc(var(--gb) + 24px); }
+  .menu-crash.menu-crash { bottom: 40%; }
   .menu-anim .menu-sheet, .menu-anim .menu-dock > .menu-panel { animation: menu-in-u 0.46s var(--spring) both; }
   .menu-anim .menu-main .menu-panel-ac, .menu-anim .menu-main .menu-panel-plan, .menu-anim .menu-main .menu-flybar, .menu-anim .menu-hero { animation: none; }
 }
