@@ -137,6 +137,7 @@ export function createRig(ctx, o = {}) {
         rig.cameraBody.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_inv);
         rig.cameraInCockpit = rig.cameraBody.distanceTo(eye) < (o.cockpitRadius ?? 0.75);
       };
+      for (const d of rig.disposables) d?.bake?.();                    // pack the atlas layers into their GPU textures
       let draws = 0; root.traverse(n => { if (n.isMesh) draws++; });
       const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0 };
       const visual = {

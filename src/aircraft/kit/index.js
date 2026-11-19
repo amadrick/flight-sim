@@ -4,6 +4,7 @@ export { loft, roundEnd, pchip } from './loft.js';
 export { naca4, naca5, naca6, cst, supercritical, biconvex, hexagonal, slab } from './airfoil.js';
 export { wing, blendedWinglet } from './surface.js';
 export { createAtlas, FINISH, FONT, drawText, drawStarBar } from './atlas.js';
+export { SKIN_DEFAULTS, skinMaterial } from './skin.js';
 export { glassMaterial, GLASS, lampMaterial, glowMaterial } from './materials.js';
 export { createRig, makeStateView, seq, keys, smooth01 } from './rig.js';
 export { buildGear, wheel, swing, arrestorHook } from './gear.js';
