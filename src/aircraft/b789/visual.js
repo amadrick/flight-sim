@@ -161,7 +161,7 @@ export function createVisual(ctx, opts = {}) {
     L([[w2.q[0], LO], [ZBd, LO], [ZBd, HI], w2.q], UA.liner, 2, 4);
     stA.add(K.deck(fus, D(DF), D(ZBd), FY, { uv: UA.floor, n: 8 }));                                         // floor
     stA.add(K.bulkhead(fus, D(ZBd), { uv: UA.liner, facing: -1 }));                                            // flight-deck door wall
-    stA.add(K.bulkhead(fus, D(DF + 0.01), { uv: UA.shield, facing: 1 }));                                     // forward wall under the windshield
+    stA.add(K.bulkhead(fus, D(1.2), { uv: UA.shield, facing: 1 }));                                     // forward wall in the nose, below the windshield sightline
     const zp = eye[2] - 0.8;                                                                                   // main instrument panel plane
     { const gy = EY0 - 0.36, gs = K.prism([[zp - 0.3, gy - 0.05], [zp + 0.15, gy], [zp + 0.18, gy - 0.03], [zp + 0.15, gy - 0.08], [zp - 0.3, gy - 0.13]], -1.05, 1.05, UA.shield); stA.add(gs); }   // glareshield
     { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.2, 0.6], [2.2, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.1, EY0 - 1.07 + (0.6 - b), zp + 0.12 + (0.6 - b) * 0.08, 0, 0.1, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
