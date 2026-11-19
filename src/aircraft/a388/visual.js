@@ -9,13 +9,13 @@
 //   d ≈ 13. Constant section d 15 … 50, aft taper from d 54, upswept tail cone ending in the APU exhaust (y 0.6).
 //   Windows: main deck y -0.85, upper deck y 2.3; doors M1–M5 at d 8.5 / 18.5 / 33 / 52 / 62, U1–U3 at d 12 / 36 / 58.
 //   Wing (right): root LE z -11.5 at x 3.6 (chord 17.5), Yehudi kink x 14.5 (LE z -3.9, chord 11.8), tip x 39.88 (LE z 12.4,
-//   chord 4.0); LE sweep 35° / 33°; two trailing-edge kinks (x 11.5, x 25); dihedral 8° inboard, 7° outboard from the root
-//   chord line at y -2.6 (tip y 2.05); supercritical section 15 % → 8 %. Wingtip fences: arrow-shaped plates 2.3 m above
+//   chord 4.0); LE sweep 35° / 33°; two trailing-edge kinks (x 11.5, x 25); dihedral 10.8° inboard (gull), 5.8° outboard from the
+//   root chord line at y -2.6 (tip y 2.05); supercritical section 15 % → 8 %. Wingtip fences: arrow-shaped plates 2.3 m above
 //   and 1.4 m below the tip, starting ahead of the tip leading edge.
 //   Leading edge: droop nose x 4.4–11.8, slats x 13.6–39.3. Trailing edge: three single-slotted flaps (x 4.3–29.4) with
 //   big flap-track fairings, three ailerons (x 29.6–39.4), eight spoilers (x 5–28.8).
-//   Engines (Trent 900 class): fan Ø 2.95 m, nacelle Ø 3.56 m, fan cowl 4.7 m + core 2.2 m; inlet at x ±12.7 (y -3.2,
-//   z -9.3) and x ±25.2 (y -2.6, z 1.0) on short, thick pylons. Translating reverser sleeves on the inboard pair only.
+//   Engines (Trent 900 class): fan Ø 2.95 m, nacelle Ø 3.8 m, fan cowl 4.7 m + core 2.2 m; inlet at x ±12.7 (y -3.35,
+//   z -9.3) and x ±25.2 (y -2.4, z 1.0) on short, thick pylons. Translating reverser sleeves on the inboard pair only.
 //   Tail: stabiliser span 30.4 m, root chord 11.6 (LE z 20.2 at x 0.8), tip chord 3.5, LE sweep 38°, dihedral 6°, two
 //   elevators a side. Fin LE root z 14.5 at the crown, chord 18 → 5.5 at y 18.39, LE sweep 42°, two-segment rudder.
 //   Gear (geometry.js, unchanged): nose twin r 0.55 at z -28.4 (retracts forward); wing gear x ±6.25 z 0.8 (four-wheel
@@ -55,7 +55,7 @@ const TAIL = [
 const XR = 3.6, XK = 14.5, XT = 39.88;
 const zLE = (x) => (x <= XK ? -11.5 + 0.6972 * (x - XR) : -3.9 + 0.6422 * (x - XK));
 const zTE = (x) => (x <= 11.5 ? 6.0 + 0.1013 * (x - XR) : x <= 25 ? 6.8 + 0.3704 * (x - 11.5) : 11.8 + 0.3091 * (x - 25));
-const wy = (x) => (x <= XK ? -2.6 + 0.1405 * (x - XR) : -1.069 + 0.1228 * (x - XK));
+const wy = (x) => (x <= XK ? -2.6 + 0.19 * (x - XR) : -0.529 + 0.1016 * (x - XK));
 const FLAPS = [[4.3, 11.3], [11.5, 20.6], [20.8, 29.4]];
 const AILS = [[29.6, 32.9], [33.0, 36.3], [36.4, 39.4]];
 const SPOILERS = [[5.0, 7.6], [7.7, 10.3], [10.4, 13.0], [13.1, 15.6], [15.7, 18.6], [18.7, 21.8], [21.9, 25.3], [25.4, 28.8]];
@@ -592,7 +592,6 @@ function paintSurfaces(B, o) {
     } else {
       for (let i = 0; i < 22; i++) { const x = 5 + i * 1.55, a = at(x, 0.66); Q.streak(a[0], a[1], a[0], a[1] + 2.0, 0.08, { alpha: 0.1 }); }
       for (const x of [8, 16, 22, 30, 35]) { const p = at(x, 0.4); Q.panel(p[0] - 0.35, p[1] - 0.25, p[0] + 0.35, p[1] + 0.25, { r: 0.06 }); }
-      const r = at(30, 0.42); Q.text(SC.reg, r[0], r[1], 1.6, { color: '#2a2e33', font: K.FONT.sans, weight: 700, rot: 90 });
     }
     Q.noise({ alpha: 0.045, scale: 3, stretch: [1, 2.5], rough: 0.04 });
   }
