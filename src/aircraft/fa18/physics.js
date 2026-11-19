@@ -31,8 +31,8 @@ export default {
     flaps: {            // AUTO / HALF / FULL; LE flaps and flaperons schedule automatically
       detents: [
         { name: 'AUTO', deg: 0, pos: 0 },
-        { name: 'HALF', deg: 30, pos: 0.65, slat: 1, dcl0: 0.40, clMax: 2.15, dcd0: 0.020, dcm0: -0.04 },
-        { name: 'FULL', deg: 45, pos: 1, slat: 1, dcl0: 0.62, clMax: 2.40, dcd0: 0.035, dcm0: -0.06 },
+        { name: 'HALF', deg: 30, pos: 0.65, slat: 1, dcl0: 0.50, clMax: 2.15, dcd0: 0.020, dcm0: -0.04 },
+        { name: 'FULL', deg: 45, pos: 1, slat: 1, dcl0: 0.74, clMax: 2.40, dcd0: 0.035, dcm0: -0.06 },
       ],
       time: 3, slatTime: 2, takeoff: 1, landing: 2,
     },
@@ -49,7 +49,7 @@ export default {
   engines: {
     type: 'turbofan-ab', inlet: 'pitot', throttleRatio: 0.95, milLapse: 2.3, abLapse: 1.69, pressureLimit: 1.9,
     n1Idle: 0.32, n2Idle: 0.68, spoolUp: 3.5, spoolDown: 2.6, idleThrust: 0.025, idleFuelFlow: 0.17,
-    tsfc: [0.78, 0.25], tsfcAb: [1.85, 0.25], egt: [400, 880, 960], abLightTime: 1.2, startTime: 16,
+    tsfc: [0.90, 0.25], tsfcAb: [1.85, 0.25], egt: [400, 880, 960], abLightTime: 1.2, startTime: 16,
   },
   gear: {
     nose: { travel: 0.30 }, main: { travel: 0.35 },
