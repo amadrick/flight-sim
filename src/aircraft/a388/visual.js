@@ -281,6 +281,7 @@ export function createVisual(ctx, opts = {}) {
   cFus.body = fus;
   // the skin around the six flight-deck windows is rebuilt with real openings; glass panes sit 30 mm in from the skin
   const glaz = glazing(fus, cFus, WIN.list.flatMap(w => [w, w.map(p => [p[0], 1 - p[1]]).reverse()]), fdBox, 0.16, 0.03, UA.seal);
+  let captainMesh = null;
   const stA = new K.Mesh(), stB = new K.Mesh();
   stA.add(fus.mesh).add(glaz.skin);
   stA.add(K.well(K.merge(fus.patches.ngwR, fus.patches.ngwL), 1.2, UA.well, [0, 1, 0]));
@@ -354,7 +355,7 @@ export function createVisual(ctx, opts = {}) {
     // main instrument panel (kit: PFD outboard + ND inboard per pilot, engine / warning display + standby in the centre, lit by
     // day) under the FCU glareshield (top at yG), narrowed toward the nose to stay inside the skin
     const eL = [-Math.abs(eye[0]), eye[1], eye[2]], eR = [Math.abs(eye[0]), eye[1], eye[2]];
-    const panelMesh = fitInside(K.instrumentPanel({ eyes: [eL, eR], kind: 'airline', dist: eye[2] - zP - 0.02, drop: eye[1] - yG + 0.337, height: 0.56, width: 2.2, mfd: 0.22, uv: UA.shield }), fus, 1.13);
+    const panelMesh = K.instrumentPanel({ eyes: [eL, eR], kind: 'airline', style: 'airbus', hoodTaper: 0.75, dist: eye[2] - zP - 0.02, drop: eye[1] - yG + 0.337, height: 0.56, width: 2.2, mfd: 0.22, uv: UA.shield });
     IN.add(panelMesh);
     { // pedestal with its sloping top (MFD keyboards, four thrust levers, speedbrake and flap handles)
       IN.add(K.box(0.42, yG - 0.72 - fy, 1.05, UA.console).translate(0, fy + (yG - 0.72 - fy) / 2, zP + 0.6));
@@ -368,7 +369,7 @@ export function createVisual(ctx, opts = {}) {
       IN.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.cushion } }));
       // crew: outboard hand on the side-stick, inboard hand resting on the seat's inboard armrest
       const onStick = [sx * (1.0 - Math.abs(eye[0])), fy + 0.82 - eye[1], -0.4], rest = [-sx * 0.28, -0.5, -0.2];
-      IN.add(K.pilot({ eye: e, kind: 'airline', recline: 8, stick: sx > 0 ? onStick : rest, throttle: sx > 0 ? rest : onStick, uv: { suit: UA.seat, helmet: UA.seat, dark: UA.seat } }));
+      const crew = K.pilot({ eye: e, kind: 'airline', recline: 8, stick: sx > 0 ? onStick : rest, throttle: sx > 0 ? rest : onStick, uv: { suit: UA.seat, helmet: UA.seat, dark: UA.seat } }); if (sx < 0) captainMesh = crew; else IN.add(crew);   // the captain is its own part, hidden from the cockpit camera
       IN.add(K.box(0.3, 0.66, 1.1, UA.console).translate(sx * 1.05, fy + 0.33, e[2] - 0.15));                       // side console (top at elbow height)
       IN.add(K.box(0.2, 0.05, 0.5, UA.shield).translate(sx * 1.0, fy + 0.685, e[2] - 0.3));
       IN.add(K.stick({ base: [sx * 1.0, fy + 0.71, e[2] - 0.42], height: 0.17, uv: UA.stick }));                    // side-stick
@@ -509,6 +510,7 @@ export function createVisual(ctx, opts = {}) {
   const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 });
   lap('textures');
   rig.material('paint', matA, { shared: true }); rig.material('wing', matB, { shared: true });
+  const captainNode = captainMesh && rig.part('captain', captainMesh, { pivot: G.pilotEye });
   rig.glass('glass', K.glassMaterial(ctx, { ...K.GLASS.airliner, dust: 0.03 }));
   rig.disposables.push(A, B);
 
@@ -613,6 +615,7 @@ export function createVisual(ctx, opts = {}) {
   const fanAng = [0, 0, 0, 0];
   const flapK = [[0, 0], [0.1, 0], [0.3, 8 / 32], [0.55, 17 / 32], [0.78, 25 / 32], [1, 1]];
   rig.onUpdate((S, dt) => {
+    if (captainNode) captainNode.visible = !rig.cameraInCockpit;
     const sf = S.sf, gnd = S.onGround ? 1 : 0;
     setFlaps(K.keys(flapK, sf.flaps));
     setSlats(Math.max(0, sf.slats));
@@ -971,18 +974,4 @@ function drawLeaf(g, s, col, flip) {
   g.strokeStyle = '#ffffff'; g.lineWidth = 0.16; g.lineCap = 'round'; g.beginPath(); g.moveTo(-3.0, 3.2); g.quadraticCurveTo(0, 0.4, 3.2, -3.8); g.stroke();
   for (const t of [0.25, 0.45, 0.65]) { const x = -3 + 6.2 * t, y = 3.2 - 7 * t + 0.6; g.beginPath(); g.moveTo(x, y - 0.4); g.lineTo(x + 1.1, y - 0.2); g.stroke(); g.beginPath(); g.moveTo(x, y - 0.4); g.lineTo(x - 0.2, y - 1.4); g.stroke(); }
   g.restore();
-}
-
-/** Narrow a cockpit part toward the nose so it stays inside the skin: every vertex's x is scaled by
- *  (inner half-width of `body` at its own z and height − margin) / hwRef wherever that is below 1 (the kit glareshield is a
- *  straight-sided hood; airliner noses taper under it). Returns the mesh. */
-function fitInside(m, body, hwRef, margin = 0.08) {
-  const p = m.p;
-  for (let i = 0; i < p.length; i += 3) {
-    const y = p[i + 1], z = p[i + 2];
-    if (z < body.zRange[0] || y >= body.topAt(z) || y <= body.botAt(z)) continue;
-    const k = (body.at(z, body.tAtY(z, y)).p[0] - margin) / hwRef;
-    if (k < 1) p[i] *= Math.max(0.15, k);
-  }
-  return m;
 }
