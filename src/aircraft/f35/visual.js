@@ -190,8 +190,8 @@ export function createVisual(ctx, opts = {}) {
   const icen = [(INL.BI[0] + INL.BO[0] + INL.TO[0] + INL.TI[0]) / 4, (INL.BI[1] + INL.BO[1] + INL.TO[1] + INL.TI[1]) / 4];
   const C0 = [0.2, -0.08], profCache = new Map();
   const bodyProf = (z) => {   // right half-profile of the (bumped) fuselage at z: [[x, y, t]…] bottom → top
-    const key = Math.round(z * 200); let pr = profCache.get(key);
-    if (!pr) { pr = []; for (let k = 0; k <= 48; k++) { const t = 0.5 * k / 48, p = fus.at(z, t).p; pr.push([p[0] + bumpAt(BUMP, z, p[1]), p[1], t]); } profCache.set(key, pr); }
+    const key = Math.round(z * 100); let pr = profCache.get(key);
+    if (!pr) { pr = []; const zq = key / 100, r = fus.ring(zq), Kr = fus.K; for (let j = 0; j <= Kr / 2; j++) pr.push([r[3 * j] + bumpAt(BUMP, zq, r[3 * j + 1]), r[3 * j + 1], j / Kr]); profCache.set(key, pr); }
     return pr;
   };
   const smooth = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
@@ -363,10 +363,10 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps -------------------------------------------------------------------------------------------------------------------------
   const L = G.lights;
-  rig.lamp('nav', L.navLeft, { color: [0.42, 0.006, 0.003], size: 0.035, squash: [0.6, 0.6, 1.6] });
-  rig.lamp('nav', L.navRight, { color: [0.004, 0.42, 0.09], size: 0.035, squash: [0.6, 0.6, 1.6] });
-  rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.03 });
-  rig.lamp('nav', [-L.tail[0], L.tail[1], L.tail[2]], { color: [1, 1, 1], size: 0.03 });
+  rig.lamp('nav', L.navLeft, { color: [0.15, 0.002, 0.001], size: 0.045, squash: [0.6, 0.6, 1.6] });
+  rig.lamp('nav', L.navRight, { color: [0.0015, 0.15, 0.035], size: 0.045, squash: [0.6, 0.6, 1.6] });
+  rig.lamp('nav', L.tail, { color: [0.4, 0.4, 0.38], size: 0.035 });
+  rig.lamp('nav', [-L.tail[0], L.tail[1], L.tail[2]], { color: [0.4, 0.4, 0.38], size: 0.035 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.065, squash: [1, 0.45, 1.5] });
   // formation strips: electroluminescent tapes on the forward fuselage and the boom sides
   for (const sx of [1, -1]) {
@@ -385,6 +385,7 @@ export function createVisual(ctx, opts = {}) {
     rudR.set((sf.rudder * 25 + sf.speedbrake * 30) * DEG); rudL.set((sf.rudder * 25 - sf.speedbrake * 30) * DEG);   // speedbrake = toe-out rudders
     nozzle.morphTargetInfluences[0] = e.nozzle ?? 0;
     K.abGlowColor(glow.color, e, S.night);
+    if (!(e.afterburner > 0)) glow.color.multiplyScalar(0.4);          // dry: only a dull turbine-face glow deep in the pipe
     setCanopy(sf.canopy * 34 * DEG);
     setHook(sf.hook * 42 * DEG);
     pilotNode.visible = !rig.cameraInCockpit;
