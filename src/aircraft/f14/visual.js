@@ -219,8 +219,8 @@ export function createVisual(ctx, opts = {}) {
   }
   // instrument panels (kit): pilot (F-14D: two MFDs, up-front display) under a glareshield whose top stays at ≈ 0.82, and the RIO's
   // panel on the back of the pilot's bulkhead (tactical displays, its own coaming)
-  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.5, drop: 0.54, height: 0.4, width: 0.82, uv: U.console, uvPad: U.black }));
-  stat.add(K.instrumentPanel({ eye: eyeR, kind: 'fighter', dist: 0.48, drop: 0.48, height: 0.42, width: 0.8, mfd: 0.16, pages: ['mfdSA', 'mfdRadar'], uv: U.console, uvPad: U.black }));
+  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.5, drop: 0.54, height: 0.4, width: 0.82, analogue: true, uv: U.console, uvPad: U.black }));
+  stat.add(K.instrumentPanel({ eye: eyeR, kind: 'fighter', dist: 0.48, drop: 0.48, height: 0.42, width: 0.8, mfd: 0.16, ufc: false, centreDisplay: 'mfdSA', pages: ['mfdSA', 'mfdRadar'], uv: U.console, uvPad: U.black }));
   {
     const ck = new K.Mesh();
     ck.add(K.box(0.9, 0.04, 0.1, U.console).translate(0, 0.36, -7.02));                    // pilot panel lower lip
