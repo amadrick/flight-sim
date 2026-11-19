@@ -1103,13 +1103,13 @@ void main() {
   // it jumps and the optical depth comes in steps: rings around every storm core, on the anvil and on the ground.
   // The last 8 steps now cover the anvil's height range evenly (from the weather map of this column), the rest the
   // towers below. (uClDet4.w = 0: round four)
-  float aTop = 1.0;
+  // (one layout for the whole map: a per-texel layout printed the map's texels onto sunlit tower walls as ripples;
+  //  the anvil steps are jittered per texel by a fraction of a step instead, which the filtered lookups integrate)
+  float aTop = 1.0, jA = 0.5;
   int nA = 0;
   if (uClShape2.z * uClDet4.w > 0.0 && uClPhys.w > 0.5) {
-    float yA = uClLayer.x + 0.85 * uClLayer.w;
-    vec4 wa = clWeather(q + uClBakeShadowB.xy * (yA - uClLayer.x), 0.0);
-    float am = uClShape2.z * smoothstep(uClShape2.x - 0.17, uClShape2.x + 0.03, wa.g);
-    if (am > 0.001) { aTop = clamp(0.89 - 0.035 - 0.15 * am * am - 0.09, 0.4, 0.9); nA = 8; }
+    aTop = 0.6; nA = CL_SHADOW_STEPS / 2;
+    jA = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));    // interleaved gradient noise
   }
   for (int i = 0; i < CL_SHADOW_STEPS; i++) {
     // denser sampling near the base, where most cloud mass is
@@ -1117,7 +1117,7 @@ void main() {
     float y1;
     if (i < nB) { float u1 = float(i + 1) / float(nB); y1 = u1 * sqrt(u1) * aTop; }
     else y1 = aTop + (1.0 - aTop) * float(i + 1 - nB) / float(nA);
-    float hN = 0.5 * (y0 + y1), dy = (y1 - y0) * uClLayer.w;
+    float hN = mix(y0, y1, i < nB ? 0.5 : jA), dy = (y1 - y0) * uClLayer.w;
     float y = uClLayer.x + hN * uClLayer.w;
     vec3 pa = vec3(q.x + uClBakeShadowB.x * (y - uClLayer.x), y, q.y + uClBakeShadowB.y * (y - uClLayer.x));
     vec4 wx = clWeather(pa.xz, 0.0);

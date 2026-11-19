@@ -50,7 +50,7 @@ base) .. 0.11 1/m (top); overcast 0.06-0.08 1/m; anvil 0.002-0.012 1/m.
   re-run on time/weather changes while the player is still at the spawn point, and a GPU read-back of the baked
   shadow map at the player (4x4 texels) that shifts the field again with a wider margin if tau > 0.03.
   `clouds.debug.spawnInfo` reports shift, candidates, gpuTau.
-* **Anvil rings**: the shadow-map bake spends its last 8 steps evenly over the anvil's height range (the u^1.5 steps
+* **Anvil rings**: with an anvil the shadow-map bake spends half its steps evenly over the top 40 % of the layer, jittered per texel (the u^1.5 steps
   cut the slab with 1-3 samples, so its optical depth came in steps around every core).
 * **Twilight**: see the local-vertical sun above; low clouds go into the Earth's shadow at the right time, high and
   distant sunward clouds keep their orange.
