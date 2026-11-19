@@ -119,8 +119,11 @@ export function deriveWeatherParams(w, out = {}) {
   out.erosion = lerp(0.28, 0.14, stratus);       // surface displacement by the detail noise, in shape units
   // cumulus cells (see clShape): depth / diameter of undeveloped and developed cells (humilis ~0.5, congestus ~1.5+),
   // stratocumulus sheet at the base in broken skies, width profile fitted to the LES (tools/neural/les_stats.py)
-  out.aspectLo = lerp(1.0, 1.1, convective);
-  out.aspectHi = lerp(2.0, 3.0, convective);
+  // round six: fair-weather cumulus are mostly wider than tall (humilis 0.2-0.5 km deep for 0.2-1 km across, mediocris
+  // height ~ width; research doc 4.2); towers come from developed regions and the congestus cells (clShape devC).
+  // (round five: 1.0 / 2.0, set clAspLo / clAspHi to compare)
+  out.aspectLo = lerp(0.6, 1.1, convective);
+  out.aspectHi = lerp(1.7, 3.0, convective);
   out.sheet = smoothstep(0.5, 0.68, cov) * (1 - smoothstep(0.8, 0.92, cov)) * (1 - convective);
   // g(h) = [gb + (1 - gb)(1 - (1 - h / hp)^k)] [1 - ((h - hp) / (1 - hp))^2]^p, fitted to the LES (results/profile_fit.json):
   // shallow trade cumulus (BOMEX) and congestus; mixed by the local development in the shader
@@ -141,7 +144,8 @@ export function deriveWeatherParams(w, out = {}) {
  * p = derived params, wf = weatherField sample, n = base-noise RGBA at that point, y = altitude,
  * cl = cell-field RGBA at the leaned / warped position, cells = { dMin, dMax }.
  */
-export function densityFromField(p, wf, n, y, cl, cells, life = null) {
+export function densityFromField(p, wf, n, y, cl, cells, life = null, opts = null) {
+  const cong = opts?.cong ?? 0, turretK = opts?.turretK ?? 1;
   const shape = n[0];
   const hN = (y - p.base) / p.thickness;
   if (hN <= 0 || hN >= 1) return 0;
@@ -170,13 +174,16 @@ export function densityFromField(p, wf, n, y, cl, cells, life = null) {
   const lgH = lerp(1, lerp(0.25, 1, smoothstep(0, 0.35, age)), lon);
   const lgR = lerp(1, lerp(0.6, 1, smoothstep(0, 0.25, age)) * lerp(1, 0.45, smoothstep(0.66, 1, age)), lon);
   const vig = saturate((cov * 1.45 * (1 + 0.25 * lon) - cl[2]) * 8), grow = (lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0)) * lgR;
-  const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), 0.8 * lid * p.thickness) * lgH;
-  const hc = h / Math.max(H * lerp(1, 0.4, p.sheet * (1 - dev)), 1);
-  const pf = p.profShallow.map((v, i) => lerp(v, p.profDeep[i], dev));
+  // round six: congestus among humilis (clShape devC)
+  const devC = saturate(dev + cong * smoothstep(0.45, 0.8, cl[1]) * (((cl[2] * 13.37 + cl[3] * 0.71) % 1) <= 0.3 ? 1 : 0));
+  const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, devC) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), 0.8 * lid * p.thickness) * lgH;
+  const hc = h / Math.max(H * lerp(1, 0.4, p.sheet * (1 - devC)), 1);
+  const pf = p.profShallow.map((v, i) => lerp(v, p.profDeep[i], devC));
   const g = (pf[0] + (1 - pf[0]) * (1 - Math.pow(1 - Math.min(hc / pf[1], 1), pf[2])))
           * Math.pow(saturate(1 - Math.pow(saturate((hc - pf[1]) / (1 - pf[1])), 2)), pf[3]);
-  const wb = n[1] * 0.6 + n[2] * 0.4, bil = (Math.sqrt(saturate(2 * wb - wb * wb)) - 0.8) * p.turret + (n[0] - 0.5) * p.lobes;
-  const rS = rad * grow * (g + bil * lerp(0.35, 1, saturate(hc * 1.6)));
+  const wb = n[1] * 0.6 + n[2] * 0.4, bil = (Math.sqrt(saturate(2 * wb - wb * wb)) - 0.8) * p.turret * turretK + (n[0] - 0.5) * p.lobes;
+  let rS = rad * grow * (g + bil * lerp(0.35, 1, saturate(hc * 1.6)));
+  if (cong > 0) { const ov = Math.max(rS - 0.9 * rad, 0); rS -= ov * ov / (ov + 0.3 * rad); }   // (round six envelope cap, clShape)
   const d = rad * (2 - 2 * cl[0]);
   let ex = vig > 0 ? (rS - d) * 1e-3 - (cl[0] <= 0.002 ? 1 : 0) - (1 - bottom) * 0.4 - Math.max(hc - 1, 0) * H * 3e-3 : -1;
   const layerW = Math.max(p.stratus, p.anvil);

@@ -34,6 +34,7 @@ const SHADOW_MAP_SIZE_M = 81920;         // shadow map covers ±41 km
 const BASE_NOISE_PERIOD = 9800;          // metres per tile of the 128^3 base volume (≈ 77 m voxels)
 const DETAIL_NOISE_PERIOD = 1350;        // metres per tile of the 32^3 detail volume (≈ 42 m voxels): sub-turrets of ~100-450 m
 const BASE_NOISE_VSTRETCH = 0.55;      // vertical frequency of the base noise relative to horizontal (taller billows)
+const VSTRETCH_CELL = 0.9;             // round six: the same inside cumulus cells (0.55 drew vertically stretched turrets: curtains)
 const LEAN_TIME = 220;                  // s: tower lean = wind shear x this (LES: 390-520 s, tools/neural/les_stats.py; halved, see INTEGRATION.md)
 const GOLDEN = 0.61803398875;
 
@@ -66,7 +67,10 @@ export async function createClouds(ctx) {
   // ------------------------------------------------------------------------------------------------ textures
   const noise2 = createNoise2D(ctx.params?.seed ?? 1337);
   const noise3 = createNoise3D(renderer);
-  const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(ctx.params?.clBorder ?? 1) !== '0' });
+  // round six (clField=0: round five): broken power law of sizes, clustered placement, gentler border taper
+  const field6 = dbg('clField', 1) > 0;
+  const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(raw.clBorder ?? 1) !== '0',
+    ...(field6 ? { slope: 1.7, slope2: 3.2, dBreak: 1100, cluster: 0.7, taperK: 1, taperTo: 1.6 } : {}) });
   const weatherField = makeWeatherFieldJS(noise2);
 
   const atmGLSL = ctx.pipeline?.atmosphere?.glsl || FALLBACK_ATMOSPHERE_GLSL;
@@ -101,7 +105,7 @@ export async function createClouds(ctx) {
   const U = {
     tClBase: { value: noise3.base }, tClDetail: { value: noise3.detail }, tClWeather: { value: weatherRT.texture },
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
-    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture },
+    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClCost: v4(0.004, 0, 0, 0),
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
     uClDet: v4(1, 1, 1, 1), uClLife: v4(0, 1, 0, 0), uClPhys: v4(2e-3, 1, 0.6, 1), uClMie: v4(0.9946, 0.594, 27.1, 0.498), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
@@ -124,7 +128,7 @@ export async function createClouds(ctx) {
       msModel = createCloudMultiScatter({ reff });
     } catch (e) { console.warn('[clouds] learned multiple scattering unavailable', e); msModel = null; }
   }
-  U.uClMs = v4(dbg('clMsN', 4), dbg('clMsDetail', 0.5), 0, 0);
+  U.uClMs = v4(dbg('clMsN', 2), dbg('clMsDetail', 0.5), 0, 0);
   const allUniforms = () => ({ ...ctx.uniforms.frame, ...atmUniforms, ...shadowUniforms, ...U, ...(scatterModel?.uniforms || {}), ...(msModel?.uniforms || {}) });
   const mkPass = (frag, uniforms) => new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
@@ -412,15 +416,22 @@ export async function createClouds(ctx) {
     const s = 1 / BASE_NOISE_PERIOD, o = U.uClNoiseOfs.value;
     // same order as clShape: cell under the (leaned, warped) point, then the shape noise at the cell's frequency
     const h = y - Pp.base;
-    const cx = ax - leanXZ.x * h + 160 * Math.sin(az * 3.7e-3 + 1.3 * Math.sin(ax * 1.9e-3));
-    const cz = az - leanXZ.y * h + 160 * Math.sin(ax * 3.3e-3 + 1.1 * Math.sin(az * 2.3e-3));
+    const wall = dbg('clWall', 45);
+    const cx = ax - leanXZ.x * h + 160 * Math.sin(az * 3.7e-3 + 1.3 * Math.sin(ax * 1.9e-3)) + wall * Math.sin(h * 9.1e-3 + az * 2.9e-3 + 2 * Math.sin(ax * 1.3e-3));
+    const cz = az - leanXZ.y * h + 160 * Math.sin(ax * 3.3e-3 + 1.1 * Math.sin(az * 2.3e-3)) + wall * Math.sin(h * 7.7e-3 + ax * 3.1e-3 + 2 * Math.sin(az * 1.7e-3));
     cells.sample(cx / cells.period, cz / cells.period, tmpC);
+    if (wall > 0) {           // (round six, as clShape: owner cell's size / id / phase, not a blend of two neighbours)
+      const S = cells.size, u = cx / cells.period, v = cz / cells.period;
+      const i = (((Math.floor((u - Math.floor(u)) * S) % S) + S) % S) + (((Math.floor((v - Math.floor(v)) * S) % S) + S) % S) * S;
+      tmpC[1] = cells.data[i * 4 + 1]; tmpC[2] = cells.data[i * 4 + 2]; tmpC[3] = cells.data[i * 4 + 3];
+    }
     const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, tmpC[1]);
     const dev = smoothstep(Pp.devLo, Pp.devHi, tmpWf.dev), layerW = Math.max(Pp.stratus, Pp.anvil);
     const kS = layerW > 0 ? 1 : lerp(Math.min(8, Math.max(0.8, 2400 / rad)), 1, Pp.sheet);
-    const nu = ax * s * kS + o.x, nv = y * s * kS * dbg('clD', BASE_NOISE_VSTRETCH) + o.y, nw = az * s * kS + o.z;
+    const vs = layerW > 0 || dbg('clVs', VSTRETCH_CELL) <= 0 ? dbg('clD', BASE_NOISE_VSTRETCH) : dbg('clVs', VSTRETCH_CELL);
+    const nu = ax * s * kS + o.x, nv = y * s * kS * vs + o.y, nw = az * s * kS + o.z;
     for (let c = 0; c < 4; c++) tmpN[c] = sampleLowRes(noise3.lowRes, nu, nv, nw, c);
-    return densityFromField(Pp, tmpWf, tmpN, y, tmpC, cells, lifeParams(time)) * 0.8;
+    return densityFromField(Pp, tmpWf, tmpN, y, tmpC, cells, lifeParams(time), { cong: dbg('clCong', 0.35), turretK: turretK() }) * 0.8;
   }
 
   // life cycle of the cumulus cells (shared by the GPU and the CPU mirror): t in nominal lifetimes
@@ -440,7 +451,7 @@ export async function createClouds(ctx) {
     U.uClLayer.value.set(P.base, P.top, 1 / P.thickness, P.thickness);
     U.uClShape.value.set(P.covBias, P.covAmp, P.topMin, P.stratus);
     U.uClShape2.value.set(P.devLo, P.devHi, P.anvil, P.baseRamp);
-    U.uClShape3.value.set(dbg('clTaper', P.taperLo), P.taperHi, dbg('clPt', P.turret), dbg('clPl', P.lobes));
+    U.uClShape3.value.set(dbg('clTaper', P.taperLo), P.taperHi, dbg('clPt', P.turret * turretK()), dbg('clPl', P.lobes));
     computeLean(P);
     U.uClCell.value.set(1 / cells.period, leanXZ.x, leanXZ.y, dbg('clSheet', P.sheet));
     U.uClCell2.value.z = dbg('clAspLo', P.aspectLo); U.uClCell2.value.w = dbg('clAspHi', P.aspectHi);
@@ -506,8 +517,24 @@ export async function createClouds(ctx) {
     // displaced the surface by ~100 m and the 7-28 m one by ~50 m, more than their own size, which shredded every turret
     // into fuzz (cotton wool); with amplitude ~ wavelength each octave adds round lobes on lobes (cauliflower)
     U.uClDet2.value.set(dbg('clDetA', dbg('clPhys', 1) > 0 ? 0.28 : 0.5), dbg('clDetF', 4), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
+    // round six (docs/clouds/SHAPE.md): bubble cascade (clBub = amplitude, 0 = round-five detail; clBubR = size ratio between
+    // octaves; clBubL = largest sub-turret / cell radius), turret noise vertical frequency in cells (clVs, 0 = clD),
+    // congestus among humilis (clCong), far fade of sub-pixel cells (clFar), height-dependent wall warp (clWall, m),
+    // growing-edge width factor (clBubE)
+    U.uClBub.value.set(dbg('clBub', 0.85), dbg('clBubR', 0.42), dbg('clBubL', 0.45), dbg('clVs', VSTRETCH_CELL));
+    U.uClBub2.value.set(dbg('clCong', 0.35), dbg('clFar', 1), dbg('clWall', 45), dbg('clBubE', 1));
+    // entrainment skin of growing turrets (clSkin x round five's 20 m), lobe lighting in the learned-MS path and the
+    // bubble-field lobe orientation (clLobe), the largest bubble octave in the cheap density (light march, shadow map: lobe
+    // self-shadowing; clLobeSh), analytic sun path through the anvil slab (clAnvL: no contour arcs under the anvil)
+    U.uClBub3.value.set(dbg('clSkin', 0.3), dbg('clLobe', 1), dbg('clAnvL', 1), dbg('clLobeSh', 1));
+    // cost (round six): rays stop at transmittance clTmin (round five 0.004), far-field light from the shadow map alone beyond
+    // clFarL m low-res pixels (0 = off; `low` quality from 25 m), learned-MS taps without the bubble octave (clMsBub=1 keeps it), bubble octaves 2 / 3 / 4 at low / medium / high (clBubN)
+    U.uClCost.value.set(dbg('clTmin', 0.01), dbg('clFarL', detailLevel === 0 ? 25 : 40), dbg('clMsBub', 0) > 0 ? 0 : 1, dbg('clBubN', [2, 3, 4][detailLevel]));
   }
 
+  // round six: with the bubble cascade the base-noise turrets are lower (clPtK x round five's amplitude): the cascade's big
+  // octave makes the turrets, and a smooth envelope keeps the displacement isotropic
+  const turretK = () => (dbg('clBub', 0.85) > 0 ? dbg('clPtK', 0.4) : 1);
   const volumetricOn = () => P.coverage > 0.012;
   const cirrusOn = () => P.cirrus > 0.004;
 
