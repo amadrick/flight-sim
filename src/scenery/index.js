@@ -359,7 +359,8 @@ export async function createScenery(ctx) {
   }
 
   stats = computeStats(airports, stats);
-  const info = { bootMs: performance.now() - t0, ...stats };
+  const texMB = textureBytes([noise, atlas, fenceTex, signs.tex, ...Object.values(facades).flatMap((f) => [f.map, f.emissive])]) / 1048576;
+  const info = { bootMs: performance.now() - t0, textureMB: +texMB.toFixed(2), ...stats };
   if (ctx.params.raw?.sdebug) console.info('scenery', JSON.stringify(info));
 
   return {
@@ -373,18 +374,30 @@ export async function createScenery(ctx) {
 
 function computeStats(airports, base) {
   let draws = 0, tris = 0, inst = 0;
+  const perAirport = [];
   for (const A of airports) {
+    const pa = { id: A.id, draws: 0, triangles: 0, lowDraws: 0, lowTriangles: 0 };
     A.root.traverse((o) => {
       if (!o.isMesh) return;
-      draws++;
       const g = o.geometry;
       const n = g.index ? g.index.count / 3 : g.attributes.position.count / 3;
-      if (o.isInstancedMesh) { tris += n * o.count; inst += o.count; }
-      else if (g.isInstancedBufferGeometry) { tris += n * g.instanceCount; inst += g.instanceCount; }
-      else tris += n;
+      let t = n;
+      if (o.isInstancedMesh) { t = n * o.count; inst += o.count; }
+      else if (g.isInstancedBufferGeometry) { t = n * g.instanceCount; inst += g.instanceCount; }
+      draws++; tris += t; pa.draws++; pa.triangles += t;
+      if (!o.userData.scnLowOff) { pa.lowDraws++; pa.lowTriangles += t; }
     });
+    pa.triangles = Math.round(pa.triangles); pa.lowTriangles = Math.round(pa.lowTriangles);
+    perAirport.push(pa);
   }
-  return { ...base, drawables: draws, drawablesPerAirport: +(draws / airports.length).toFixed(1), triangles: Math.round(tris), instances: inst };
+  return { ...base, drawables: draws, drawablesPerAirport: +(draws / airports.length).toFixed(1), triangles: Math.round(tris), instances: inst, perAirport };
+}
+
+/** Bytes of GPU texture memory for the scenery's generated textures (RGBA8, + 1/3 for mip chains). */
+function textureBytes(texs) {
+  let b = 0;
+  for (const t of texs) { const im = t?.image; if (!im) continue; b += (im.width * im.height * 4) * (t.generateMipmaps !== false ? 4 / 3 : 1); }
+  return Math.round(b);
 }
 
 /** Merge transformed, colour-tinted copies of small static geometries: [[geometry, [{ x, z, y?, hdg, color, scale }]]]. */
