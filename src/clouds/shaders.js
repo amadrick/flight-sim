@@ -77,8 +77,17 @@ uniform vec4 uClNoise;     // x = base noise scale (1/m), y = detail scale (1/m)
 uniform vec4 uClNoiseOfs;  // xyz = base-noise scroll (noise units), w = detail scroll
 uniform vec4 uClDebug;
 uniform vec4 uClRain;      // x = rain extinction (1/m), y = cell threshold lo, z = cell threshold hi, w = reach toward the ground (0..1)
+uniform sampler2D tClCells;   // tiling field of individual convective cells (noise.js createCellField)
+uniform vec4 uClCell;      // x = 1 / cell-field period (1/m), yz = tower lean (horizontal offset per metre of height), w = stratocumulus sheet amount
+uniform vec4 uClCell2;     // x = smallest cell diameter (m), y = log2(largest / smallest), z = aspect (depth / diameter) of undeveloped cells, w = of developed cells
+uniform vec4 uClProf;      // cumulus width profile g(h) of shallow cells (LES fit, tools/neural/les_fit.py): x = width at the base, y = height of the widest point, z = rise exponent, w = dome exponent
+uniform vec4 uClProf2;     // the same for developed cells (congestus); uClShape3.z = turret amplitude (x radius)
 
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
+// side outputs of clShape for the detail pass (globals: GLSL ES 3 functions may write them)
+float clDecay = 0.0;       // 0 = growing / mature cell (crisp edges) .. 1 = decaying fragment (soft, frayed)
+float clRadius = 1000.0;   // radius of the cell at this sample (m): erosion scales with the cloud (self-similar turrets)
+float clDetailK = 1.0;     // frequency factor of the detail noise for this cell
 
 vec4 clWeather(vec2 airXZ, float lod) {
   return textureLod(tClWeather, (airXZ - uClWx.xy) * uClWx.z + 0.5, lod);
@@ -106,13 +115,25 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float lid = 0.89 + 0.06 * (wx.a - 0.5) + 0.05 * smoothstep(0.8, 1.0, dev);
   float aThick = 0.035 + 0.15 * am * am;
   float anvil = step(0.001, am) * smoothstep(lid - aThick - 0.025, lid - aThick + 0.025, hN);
-  vec3 q = pa * uClNoise.x * vec3(1.0, uClDebug.w, 1.0) + uClNoiseOfs.xyz;
+  float h = pa.y - uClLayer.x;                                   // metres above the condensation level
+  // the decks / Cb cores of the 3-D shape noise (below) take over from the cumulus cells where layerW > 0
+  float layerW = max(uClShape.w, uClShape2.z);
+  // cumulus cell under this point (the tower leans downwind with the shear; a cheap warp breaks the round outlines)
+  vec2 pc = pa.xz - uClCell.yz * h + 160.0 * vec2(sin(pa.z * 3.7e-3 + 1.3 * sin(pa.x * 1.9e-3)), sin(pa.x * 3.3e-3 + 1.1 * sin(pa.z * 2.3e-3)));
+  vec4 cl = textureLod(tClCells, pc * uClCell.x, lod + 1.0);
+  float rad = 0.5 * uClCell2.x * exp2(cl.g * uClCell2.y);
+  // Self-similar turrets: inside a cumulus cell the shape noise is sampled at a frequency that follows the cell size
+  // (a 300 m humilis gets 100-300 m bulges, a 4 km congestus 1-2 km towers with sub-turrets), same single fetch.
+  float kS = layerW > 0.0 ? 1.0 : mix(clamp(2400.0 / rad, 0.8, 8.0), 1.0, uClCell.w);
+  clDetailK = clamp(sqrt(kS), 0.9, 2.2);
+  vec3 q = pa * (uClNoise.x * kS) * vec3(1.0, uClDebug.w, 1.0) + uClNoiseOfs.xyz;
+  float lodS = clamp(lod + log2(kS), 0.0, 5.0);
   // smoothstep the texel fraction: hardware trilinear filtering is only C0 and its creases at voxel boundaries
   // show up as terraces / contour lines on smooth cloud surfaces (worst along the stretched vertical axis)
-  float vs = 128.0 * exp2(-floor(lod));
+  float vs = 128.0 * exp2(-floor(lodS));
   vec3 qt = q * vs - 0.5, qi = floor(qt), qf = qt - qi;
-  q = (qi + qf * qf * (3.0 - 2.0 * qf) + 0.5) / vs;
-  vec4 n = textureLod(tClBase, q, lod);
+  q = (qi + mix(qf * qf * (3.0 - 2.0 * qf), qf, clSat(lodS - 1.5)) + 0.5) / vs;   // (coarse mips are smooth already)
+  vec4 n = textureLod(tClBase, q, lodS);
   // billows: the volume's own mid / high Worley fbm bulges the low-frequency shape (they fade to their mean with
   // the mip LOD, so distant clouds keep their size while losing detail)
   float s = n.r * (1.0 + (n.g - 0.48) * uClDebug.x + (n.b - 0.48) * uClDebug.y);
@@ -122,16 +143,57 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // noise peak (big cells are tall, small ones stay humilis) and the outline is a dome: r(h) ~ peak - k h^2.
   // Nothing is cut at a height-field: tops and flanks are always noise surfaces (cauliflower, not mountains).
   float bottom = clSat(hN * uClLayer.w / uClShape2.w);
+
+  // ---- (1) cumulus: one cloud per cell of the cell field ------------------------------------------------------
+  // Each cell is a cloud with a flat base at the common condensation level, a width profile fitted to the LES
+  // (tools/neural/les_*.py: widest a little above the base, dome-shaped top), a depth that follows its size
+  // (aspect ratio, larger for developed cells: humilis .. congestus) and turrets from the base volume's Worley fbm
+  // whose amplitude scales with the cell (billows on billows). Towers lean downwind with the shear.
+  // coverage switches cells on by their random id (and grows them past their nominal rim when it is high)
+  float sel = cov * 1.45;
+  float vig = clSat((sel - cl.b) * 3.0);
+  float grow = mix(0.55, 1.0, vig) + 1.4 * max(cov - 0.62, 0.0);
+  float H = min(2.0 * rad * mix(uClCell2.z, uClCell2.w, dev) * mix(0.75, 1.25, cl.a) * (0.6 + 0.4 * vig), lid * uClLayer.w);
+  float hc = h / max(H, 1.0);
+  vec4 pf = mix(uClProf, uClProf2, dev);
+  float g = (pf.x + (1.0 - pf.x) * (1.0 - pow(1.0 - min(hc / pf.y, 1.0), pf.z)))
+          * pow(clSat(1.0 - pow(clSat((hc - pf.y) / (1.0 - pf.y)), 2.0)), pf.w);
+  // turrets: Worley fbm (round bulges, cauliflower) plus the Perlin-Worley lobes of the shape noise (towers / shoulders)
+  // (inverted Worley is a cone around each feature point; sqrt(2w - w^2) turns the cones into spherical caps, so the
+  //  turrets are round bubbles separated by sharp creases instead of soft pyramids)
+  float wb = n.g * 0.6 + n.b * 0.4;
+  float bil = (sqrt(clSat(2.0 * wb - wb * wb)) - 0.8) * uClShape3.z + (n.r - 0.5) * uClShape3.w;
+  float rS = rad * grow * (g + bil * mix(0.35, 1.0, clSat(hc * 1.6)));
+  float d = rad * (1.0 - (2.0 * cl.r - 1.0));                    // distance from the cell centre (m)
+  float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - step(1.0, hc) * 0.3 * (hc - 1.0);
+  exC = vig > 0.0 ? mix(exC, -1.0, layerW) : -1.0;
+  float decay = max(smoothstep(0.62, 0.92, cl.a), 1.0 - vig) * (1.0 - uClShape.w);
+  vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
+
+  // ---- (2) layer clouds from the 3-D shape noise: stratus / nimbostratus deck, stratocumulus sheet, Cb core -----
   float prof = mix(hRel * hRel, smoothstep(0.65, 1.0, hRel) + 4.0 * max(hRel - 1.0, 0.0), uClShape.w);   // dome / flat deck
   prof *= mix(uClShape3.x, uClShape3.y, dev);
-  info = vec4(clSat(hRel), uClLayer.x + min(topN * 1.15, 1.0) * uClLayer.w, n.g, 1.0);
-  // water content grows with height above the base (adiabatic), glaciated anvils are thinner
-  info.w = mix(0.45, 1.0, clSat(hRel * 2.5 + 0.1)) * mix(1.0, mix(0.05, 0.45, am * am), anvil) * mix(0.75, 1.15, wx.a);
   // stratus decks keep a minimum threshold so the long base ramp turns the noise into an undulating, ragged base
-  float ex = s * bottom - max(1.0 - cov, 0.22 * uClShape.w) - prof;
+  float exL = s * bottom - max(1.0 - cov, 0.22 * uClShape.w) - prof;
+  vec4 infoL = vec4(clSat(hRel), uClLayer.x + min(topN * 1.15, 1.0) * uClLayer.w, n.g, 1.0);
+  // stratocumulus: a sheet ~600 m deep at the base, cells and gaps from the same noise, flat top under the inversion
+  float scTop = min(620.0 * uClLayer.z, 1.0), hs = hN / scTop;
+  float exS = s * bottom - max(1.05 - cov, 0.12) - (smoothstep(0.55, 1.0, hs) * 0.6 + 4.0 * max(hs - 1.0, 0.0)) * 0.5;
+  // the cumulonimbus core of developed cells in convective weather (columnar by nature) and the decks
+  float ex = exC; info = infoC;
+  if (uClCell.w > 0.0 && exS * uClCell.w > ex) { ex = mix(-0.4, exS, uClCell.w); info = vec4(clSat(hs), uClLayer.x + scTop * uClLayer.w, n.g, 1.0); decay = 0.0; }
+  if (layerW > 0.0) {
+    float exLw = mix(-0.4, exL, layerW);
+    if (exLw > ex || uClShape.w > 0.5) { ex = mix(ex, exL, uClShape.w > 0.5 ? uClShape.w : 1.0); info = infoL; decay = 0.0; }
+  }
+  // water content grows with height above the base (adiabatic), decaying fragments and glaciated anvils are thinner
+  info.w = mix(0.45, 1.0, clSat(info.x * 2.5 + 0.1)) * mix(1.0, mix(0.05, 0.45, am * am), anvil) * mix(0.75, 1.15, wx.a)
+         * mix(1.0, 0.6, decay);
+  clDecay = decay; clRadius = rad * grow;
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
   // toward the rim through its density (info.w), not through a soft threshold (which would reveal texel facets)
   ex = mix(ex, s - (1.0 - 0.95 * am), anvil);
+  if (anvil > 0.5) { info.x = clSat(hRel); info.y = uClLayer.y; clDecay = 0.0; }
   return ex - 3.0 * clSat((hN - lid) * 14.0);                    // lid at the tropopause / inversion
 }
 // Cheap density (no detail), used by the light march and the shadow map.
@@ -143,12 +205,13 @@ float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
 // ([Schneider15] sec. "detail"): wispy at the bottom, billowy on top. edge = width of the density ramp in
 // shape units (tied to the march step: crisp close to the camera, softer far away).
 #define CL_EROSION_BIAS 0.3
+#define CL_EROSION_MAXK 1.25        // largest size / decay factor of the erosion (keeps the march's hit test conservative)
 float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, float edge) {
-  vec3 q = pa * uClNoise.y;
+  vec3 q = pa * (uClNoise.y * clDetailK);
   vec2 curl = textureLod(tClCurl, pa.xz * 1.9e-4, 0.0).xy * 2.0 - 1.0;
-  q.xz += curl * (1.0 - info.x) * 0.07;
+  q.xz += curl * ((1.0 - info.x) * 0.07 + clDecay * 0.12);
   q.y -= uClNoiseOfs.w; q.x += uClNoiseOfs.w * 0.4;
-  vec4 dn = textureLod(tClDetail, q, lodD);
+  vec4 dn = textureLod(tClDetail, q, lodD + log2(clDetailK));
   // all three octaves of the detail volume from the one fetch (R: 3-6-12 cell Worley fbm, G: 6-12, B: 12): the
   // finer octaves cut the small sub-turrets / ragged bits into the edge that the single R channel left smooth
   float hf = dn.r * 0.62 + dn.g * 0.23 + dn.b * 0.15;
@@ -156,11 +219,16 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, f
     float fine = textureLod(tClDetail, q * 3.7 + 0.37, 0.0).g;
     hf = mix(hf, hf * 0.7 + fine * 0.3, nearK);
   }
-  float m = mix(hf, 1.0 - hf, clSat(info.x * 5.0));
+  // growing / mature cells: billowy (inverted Worley = round bulges) above the base; decaying fragments: wispy
+  float hb = sqrt(clSat(2.0 * hf - hf * hf));                // round sub-turrets (see clShape)
+  float m = mix(hf, 1.0 - hb, clSat(info.x * 5.0) * (1.0 - clDecay));
   // keep the condensation level flat: little erosion in the lowest ~8 % of the cell (cumulus bases are flat and
-  // sharp; the wisps belong to the flanks)
-  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z * mix(0.35, 1.0, clSat(info.x * 12.0));
-  return clSat((excess - m) / edge);
+  // sharp; the wisps belong to the flanks). The erosion depth follows the size of the cloud (a 300 m humilis keeps
+  // its shape, a 3 km congestus gets proportionally large sub-turrets) and grows on decaying fragments.
+  float sizeK = clamp(clRadius / 700.0, 0.6, 1.0) * mix(1.0, 1.25, clDecay);
+  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z * sizeK * mix(0.35, 1.0, clSat(info.x * 12.0));
+  // hard sunlit edges on growing towers, soft frayed edges on decaying fragments
+  return clSat((excess - m) / (edge * mix(1.0, 3.5, clDecay)));
 }
 
 // Rain / virga below the cloud base (air-mass position pa with pa.y < base). Returns relative density 0..1.
@@ -233,7 +301,7 @@ ${scatterGLSL}
 uniform sampler2D tClBlue;
 uniform sampler2D tClCirrus;
 uniform vec4 uClJitter;      // xy = sub-pixel offset of this frame's sample inside the NxN block (full-res px), z = temporal blue-noise shift, w = on/off of volumetrics
-uniform vec4 uClFullRes;     // xy = full resolution (px), z = radians per low-res pixel, w = unused
+uniform vec4 uClFullRes;     // xy = full resolution (px), z = radians per low-res pixel, w = 1: B-spline shadow-map fetch in the light march
 uniform vec4 uClStep;        // x = relative fine step, y = min fine step (m), z = min coarse step (m), w = max distance (m)
 uniform vec3 uClOriginAir;   // xz: render-space -> air-mass offset (origin - wind offset), computed in doubles on the CPU
 uniform vec3 uClLightDir;    // unit vector TOWARD the dominant light (sun, or moon at night)
@@ -264,7 +332,7 @@ vec3 clLightE(vec3 renderPos) { return atmSunIlluminance(renderPos) * uClLightSe
 
 // Optical depth toward the light: a few exponentially spaced samples of the cheap density (cone/light march of
 // [Schneider15], shortened), then the baked shadow map for everything farther away (other clouds, upper layers).
-float clTauLight(vec3 pa, float lod, float jit) {
+float clTauLight(vec3 pa, vec4 wx, float lod, float jit) {
   float tau = 0.0, d0 = 0.0;
   vec4 info;
   for (int j = 0; j < CL_LIGHT_STEPS; j++) {
@@ -272,7 +340,8 @@ float clTauLight(vec3 pa, float lod, float jit) {
     float d1 = 1000.0 * u * u;                                     // segment ends: 62, 250, 562, 1000 m (4 steps)
     float dl = d1 - d0;
     vec3 pl = pa + uClLightDir * (d0 + dl * (0.25 + 0.5 * jit));    // half-cell jitter: hides the sample planes at half the variance
-    vec4 wx = clWeather(pl.xz, max(lod - 1.0, 0.0));
+    // (the weather map varies over kilometres: the sample's own fetch serves the whole 1 km light path, which pays
+    //  for the cell-field fetch each light sample now makes)
     // the first segments at full-ish resolution: the shadow of one turret on the next (the dark creases) is ~100 m scale
     float d = clDensityBase(pl, wx, lod + 0.5 + float(j) * 0.6, info);
     tau += d * info.w * dl;
@@ -284,9 +353,16 @@ float clTauLight(vec3 pa, float lod, float jit) {
   // At low sun the 2.5D shadow map projects its horizontal structure onto cloud faces compressed by tan(elevation),
   // which reads as horizontal striations. Jitter the lookup along the light slope (up to 1.2 km, i.e. a penumbra /
   // multiple-scattering blur); the temporal filter integrates it.
-  float sl = length(uCloudShadowB.xy);
-  vec2 jo = uCloudShadowB.xy * ((jit - 0.5) * min(150.0, 1200.0 / max(sl, 1e-3)));
-  tau += cloudShadowTau(pe.xz + uCloudShadowC.xy + jo, pe.y);
+  // Round three: the striations were the C0 creases of the bilinear fetch, stretched across the face by the
+  // slant of the lookup (one 80 m texel spans ~14 m of height at 10 deg sun). The cubic B-spline fetch (C2, 4 taps)
+  // removes them without the noisy 1 km jitter; uClFullRes.w = 0 restores the single jittered tap (A/B, cost).
+  if (uClFullRes.w > 0.5) {
+    tau += cloudShadowTauF(pe.xz + uCloudShadowC.xy, pe.y, true);
+  } else {
+    float sl = length(uCloudShadowB.xy);
+    vec2 jo = uCloudShadowB.xy * ((jit - 0.5) * min(150.0, 1200.0 / max(sl, 1e-3)));
+    tau += cloudShadowTau(pe.xz + uCloudShadowC.xy + jo, pe.y);
+  }
   return tau;
 }
 
@@ -302,9 +378,12 @@ vec4 clCirrusLayer(vec3 rd, float c, float sceneD, out float tHit) {
   float mu = clamp(abs((CL_R + c) * rd.y + t) / (CL_R + H), 0.06, 1.0);        // |cos| of the ray to the local vertical
   float lod = log2(max(t * uClFullRes.z / mu / 84.0, 1.0));
   float fib = textureLod(tClCirrus, x / 43000.0, lod).r;
+  // a second, finer and slightly turned octave of the same fibres (the bundles split into strands up close)
+  float fib2 = textureLod(tClCirrus, vec2(0.995 * x.x + 0.1 * x.y, -0.1 * x.x + 0.995 * x.y) / 9100.0 + 0.37, lod + 2.2).r;
+  fib = fib * (0.55 + 0.75 * fib2);
   vec4 big = textureLod(tClCirrus, vec2(0.83 * x.x - 0.56 * x.y, 0.56 * x.x + 0.83 * x.y) / 167000.0, max(lod - 2.0, 0.0));
   float patches = smoothstep(1.0 - uClCirrus.y * 1.25, 1.25 - uClCirrus.y * 1.1, big.g * 0.75 + big.b * 0.45);
-  float d = patches * (0.25 + 0.75 * fib) * smoothstep(0.1, 0.55, fib + patches * 0.35);
+  float d = patches * (0.08 + 0.92 * fib) * smoothstep(0.04, 0.4, fib + patches * 0.15);   // fibres, little haze between
   float tauV = d * (0.12 + 0.5 * uClCirrus.y);                                   // vertical optical depth
   float tau = min(tauV / mu, 3.0) * (1.0 - smoothstep(2.0e5, 3.2e5, t));
   if (tau <= 1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
@@ -393,6 +472,11 @@ void main() {
           // highest altitude the strongest possible noise peak (s ~ 1.25) can reach in this column
           float reach = sqrt(max(0.25 + covC, 0.0) / mix(uClShape3.x, uClShape3.y, devC));
           float topC = uClLayer.x + min(mix(uClShape.z, 1.0, devC) * reach, 1.0) * uClLayer.w + 100.0;
+          // layer clouds only where they exist; cumulus cells: the deepest the largest cell can grow here
+          if (uClShape.w <= 0.0 && uClShape2.z <= 0.0) topC = uClLayer.x + 100.0;
+          if (uClCell.w > 0.0) topC = max(topC, uClLayer.x + 720.0);
+          float hMaxC = uClCell2.x * exp2(uClCell2.y) * mix(uClCell2.z, uClCell2.w, devC) * 1.25 * (1.0 + 1.4 * max(covC - 0.62, 0.0)) * (1.0 + uClShape3.z * 0.6 + uClShape3.w * 0.5);
+          topC = max(topC, uClLayer.x + min(hMaxC, uClLayer.w) + 100.0);
           if (uClShape2.z * smoothstep(uClShape2.x - 0.17, uClShape2.x + 0.03, wx.g + 0.07) > 0.0) topC = uClLayer.y;   // anvil overhead
           if (covC <= 0.0 || h > topC) {
             float big = max(ds, 0.14 * t);
@@ -423,7 +507,7 @@ void main() {
 
         float lod = clamp(log2(ds / (voxel * 2.0)), 0.0, 2.5);
         vec4 info;
-        float ex = clShape(pa, wx, lod, info) + CL_EROSION_BIAS * uClNoise.z;   // conservative: erosion can also add
+        float ex = clShape(pa, wx, lod, info) + CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z;   // conservative: erosion can also add
         if (!fine && !farField) {
           if (ex > 0.0) { fine = true; zeros = 0; continue; }     // hit: re-march this interval with fine steps
           t += ds; continue;
@@ -432,7 +516,7 @@ void main() {
         if (ex > 0.0) {
           float lodD = clamp(log2(ds / voxelD), 0.0, 4.0);
           float edge = clamp(ds * 0.0005, 0.009, 0.05);              // density ramp: crisp near, soft far
-          d = clDensityFull(pa, ex - CL_EROSION_BIAS * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
+          d = clDensityFull(pa, ex - CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
         }
         if (d > 0.0) {
           float sig = d * uClNoise.w;
@@ -443,7 +527,7 @@ void main() {
             cap = max(1.0 / sig, uClStep.y); t = max(t, ts - 0.5 * cap); fine = true; zeros = 0; continue;
           }
           zeros = 0; nDense += 1.0;
-          float tauSun = clTauLight(pa, lod, fract(blue2 + nDense * 0.618));
+          float tauSun = clTauLight(pa, wx, lod, fract(blue2 + nDense * 0.618));
           // optical depth to the cloud top: mostly a smooth height-based estimate (using only the local density
           // would print the density field onto the ambient term: an "x-ray" look in diffuse light)
           float tauUp = uClNoise.w * (0.3 + 0.2 * d) * max(info.y - h, 0.0);
@@ -546,8 +630,25 @@ void main() {
   vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
   bool ok = uClTemporal.x > 0.5 && pc.w > 0.0 && all(greaterThan(puv, vec2(0.0))) && all(lessThan(puv, vec2(1.0)));
   float alpha = 1.0, count = 1.0;
+  vec4 h = vec4(0.0), ha = vec4(0.0);
+  if (ok) { h = texture(tClHist, puv); ha = texture(tClHistAux, puv); }
+  // Young history (first frames after a cut, a disocclusion or boot): the running mean of a handful of jittered
+  // samples still shows the per-pixel step jitter as dots in thin cloud. Widen the spatial reconstruction to a
+  // depth-aware Gaussian over 4x4 low-res samples until ~6 samples have accumulated.
+  float young = ok ? clSat(1.0 - ha.z / 6.0) : 1.0;
+  if (young > 0.0) {
+    vec4 wS = vec4(0.0); float wW = 0.0;
+    for (int k = 0; k < 16; k++) {
+      ivec2 o = ivec2(k & 3, k >> 2) - 1;
+      ivec2 ip = clamp(i0 + o, ivec2(0), lowSize - 1);
+      vec2 dd = vec2(o) - f;
+      float dz = abs(log2(max(texelFetch(tClMarchAux, ip, 0).y, 1e-4) / max(dFull, 1e-4)));
+      float w = exp(-0.6 * dot(dd, dd)) * exp2(-min(dz * 24.0, 60.0));
+      wS += texelFetch(tClMarch, ip, 0) * w; wW += w;
+    }
+    if (wW > 1e-12) cur = mix(cur, wS / wW, 0.8 * young);
+  }
   if (ok) {
-    vec4 h = texture(tClHist, puv); vec4 ha = texture(tClHistAux, puv);
     // disocclusion: the scene surface in front of / behind the cloud changed (aircraft edges, terrain silhouettes)
     // (only depth changes that can cut into the cloud matter: beyond ~3x the cloud distance, e.g. the terrain/sky
     //  boundary at the horizon seen through near cloud, the surface is irrelevant and must not reset the history)
@@ -630,23 +731,32 @@ uniform vec4 uClBakeWx;   // xy = centre (air-mass m), z = size (m)
 void main() { oColor = clWeatherField(uClBakeWx.xy + (vUv - 0.5) * uClBakeWx.z); }`;
 }
 
-// Cirrus texture bake (512^2, tiling): R = fibrous streaks (domain-warped, strongly anisotropic fbm),
-// G,B = smooth large-scale fields for patchiness.
+// Cirrus texture bake (512^2, tiling): R = fibrous streaks, G,B = smooth large-scale fields for patchiness.
+// Fibrous cirrus (fibratus / uncinus) are fall streaks of ice crystals drawn out by the shear into long, thin,
+// slightly curved filaments that start in denser heads. The fibres here are RIDGED anisotropic noise (bright where
+// the noise crosses its mean: thin lines rather than soft bands), 1:12 to 1:30 anisotropy at three scales, all
+// following one smooth, curving flow field (domain warp), each scale gated by the coarser one so fibres bundle;
+// dense heads sit at the upwind end of a bundle.
 export const CIRRUS_BAKE_FRAG = /* glsl */`
 precision highp float;
 in vec2 vUv; out vec4 oColor;
 uniform sampler2D tClNoise2D;
+float ridge(float n) { return 1.0 - abs(2.0 * n - 1.0); }
 void main() {
   vec2 p = vUv;
   vec4 w1 = texture(tClNoise2D, p + vec2(0.11, 0.37)), w2 = texture(tClNoise2D, p * 2.0 + vec2(0.53, 0.19));
-  vec2 warp = (vec2(w1.r, w1.g) - 0.5) * 0.22 + (vec2(w2.g, w2.r) - 0.5) * 0.07;
-  // fibres run along +x (the jet-stream direction is applied when sampling); 1:7 anisotropy
-  float s1 = texture(tClNoise2D, vec2(p.x * 1.0, p.y * 7.0) + warp * vec2(1.0, 3.0)).a;
-  float s2 = texture(tClNoise2D, vec2(p.x * 2.0, p.y * 17.0) + warp * vec2(2.0, 7.0) + 0.31).r;
-  float s3 = texture(tClNoise2D, vec2(p.x * 5.0, p.y * 41.0) + warp * vec2(4.0, 15.0) + 0.67).a;
-  float fib = s1 * 0.5 + s2 * 0.32 + s3 * 0.18;
-  fib = clamp((fib - 0.3) / 0.5, 0.0, 1.0);
-  // uncinus hooks / denser heads
-  float heads = smoothstep(0.55, 0.9, texture(tClNoise2D, p * 3.0 + warp + 0.5).b);
-  oColor = vec4(clamp(fib * (0.7 + 0.5 * heads), 0.0, 1.0), w1.a, w2.b, 1.0);
+  // flow: a smooth bend of the streak direction (fibres stay roughly along +x, the jet direction)
+  vec2 warp = (vec2(w1.r, w1.g) - 0.5) * 0.3 + (vec2(w2.g, w2.r) - 0.5) * 0.08;
+  vec2 f = p + vec2(0.0, warp.x * 0.35 + warp.y * 0.1);
+  float b1 = texture(tClNoise2D, vec2(f.x * 1.0, f.y * 12.0) + vec2(warp.y, 0.0)).a;
+  float b2 = texture(tClNoise2D, vec2(f.x * 2.0, f.y * 41.0) + vec2(warp.y * 2.0, 0.31)).r;
+  float b3 = texture(tClNoise2D, vec2(f.x * 4.0, f.y * 113.0) + vec2(warp.y * 3.0, 0.67)).g;
+  float r1 = pow(ridge(b1), 2.0), r2 = pow(ridge(b2), 4.0), r3 = pow(ridge(b3), 6.0);
+  // bundles: fine fibres only inside the coarse ones
+  float fib = r1 * (0.45 + 0.55 * r2) * (0.6 + 0.4 * r3) * 1.3 + 0.35 * r2 * r3 * smoothstep(0.3, 0.7, b1);
+  // uncinus heads: denser tufts at the upwind (-x) end of the bundles
+  float head = smoothstep(0.62, 0.9, texture(tClNoise2D, vec2(f.x * 3.0, f.y * 9.0) + 0.5).b);
+  float tail = smoothstep(0.0, 0.5, texture(tClNoise2D, vec2(f.x * 3.0 + 0.04, f.y * 9.0) + 0.5).b);
+  fib = fib * (0.75 + 0.6 * head) * mix(0.6, 1.0, tail);
+  oColor = vec4(clamp(fib, 0.0, 1.0), w1.a, w2.b, 1.0);
 }`;

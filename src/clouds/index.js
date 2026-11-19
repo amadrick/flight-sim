@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { FRAME_UNIFORMS_GLSL, DEPTH_GLSL, FULLSCREEN_VERT, FullscreenPass } from '../core/glsl.js';
 import { saturate, smoothstep, lerp, damp } from '../core/math.js';
-import { createNoise2D, createNoise3D, sampleLowRes } from './noise.js';
+import { createNoise2D, createNoise3D, createCellField, sampleLowRes } from './noise.js';
 import { WEATHER_FIELD_GLSL, makeWeatherFieldJS, deriveWeatherParams, densityFromField } from './weather-field.js';
 import {
   CLOUD_SHADOW_GLSL, DEFAULT_SCATTER_GLSL, marchFragment, resolveFragment, OUTPUT_FRAG,
@@ -33,6 +33,7 @@ const SHADOW_MAP_SIZE_M = 81920;         // shadow map covers ±41 km
 const BASE_NOISE_PERIOD = 9800;          // metres per tile of the 128^3 base volume (≈ 77 m voxels)
 const DETAIL_NOISE_PERIOD = 1350;        // metres per tile of the 32^3 detail volume (≈ 42 m voxels): sub-turrets of ~100-450 m
 const BASE_NOISE_VSTRETCH = 0.55;      // vertical frequency of the base noise relative to horizontal (taller billows)
+const LEAN_TIME = 220;                  // s: tower lean = wind shear x this (LES: 390-520 s, tools/neural/les_stats.py; halved, see INTEGRATION.md)
 const GOLDEN = 0.61803398875;
 
 function mulberry(seed) {
@@ -64,6 +65,7 @@ export async function createClouds(ctx) {
   // ------------------------------------------------------------------------------------------------ textures
   const noise2 = createNoise2D(ctx.params?.seed ?? 1337);
   const noise3 = createNoise3D(renderer);
+  const cells = createCellField({ seed: ctx.params?.seed ?? 1337 });
   const weatherField = makeWeatherFieldJS(noise2);
 
   const atmGLSL = ctx.pipeline?.atmosphere?.glsl || FALLBACK_ATMOSPHERE_GLSL;
@@ -96,7 +98,8 @@ export async function createClouds(ctx) {
   const U = {
     tClBase: { value: noise3.base }, tClDetail: { value: noise3.detail }, tClWeather: { value: weatherRT.texture },
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
-    tClNoise2D: { value: noise2.noise2D },
+    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture },
+    uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
     uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
@@ -257,7 +260,7 @@ export async function createClouds(ctx) {
   }
 
   // ------------------------------------------------------------------------------------------------ per-frame state
-  const tmpW = new THREE.Vector3();
+  const tmpW = new THREE.Vector3(), windLo = new THREE.Vector3(), windHi = new THREE.Vector3();
   let animTime = 0, firstUpdate = true;
 
   function update(dt) {
@@ -294,6 +297,7 @@ export async function createClouds(ctx) {
     api.cameraInCloud = dt > 0 ? damp(api.cameraInCloud, saturate(d * 3), 6, dt) : api.cameraInCloud;
   }
 
+  const tmpN = [0, 0, 0, 0], tmpC = [0, 0, 0, 0];
   function densityAt(worldPos) {
     if (P.coverage < 0.01) return 0;
     const y = worldPos.y;
@@ -301,8 +305,17 @@ export async function createClouds(ctx) {
     const ax = worldPos.x - windOffset.x, az = worldPos.z - windOffset.y;
     weatherField(ax, az, bake, tmpWf);
     const s = 1 / BASE_NOISE_PERIOD, o = U.uClNoiseOfs.value;
-    const shape = sampleLowRes(noise3.lowRes, ax * s + o.x, y * s * dbg('clD', BASE_NOISE_VSTRETCH) + o.y, az * s + o.z, 0);
-    return densityFromField(P, tmpWf, shape, y) * 0.8;
+    // same order as clShape: cell under the (leaned, warped) point, then the shape noise at the cell's frequency
+    const lean = U.uClCell.value, h = y - P.base;
+    const cx = ax - lean.y * h + 160 * Math.sin(az * 3.7e-3 + 1.3 * Math.sin(ax * 1.9e-3));
+    const cz = az - lean.z * h + 160 * Math.sin(ax * 3.3e-3 + 1.1 * Math.sin(az * 2.3e-3));
+    cells.sample(cx / cells.period, cz / cells.period, tmpC);
+    const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, tmpC[1]);
+    const dev = smoothstep(P.devLo, P.devHi, tmpWf.dev), layerW = Math.max(P.stratus, P.anvil);
+    const kS = layerW > 0 ? 1 : lerp(Math.min(8, Math.max(0.8, 2400 / rad)), 1, P.sheet);
+    const nu = ax * s * kS + o.x, nv = y * s * kS * dbg('clD', BASE_NOISE_VSTRETCH) + o.y, nw = az * s * kS + o.z;
+    for (let c = 0; c < 4; c++) tmpN[c] = sampleLowRes(noise3.lowRes, nu, nv, nw, c);
+    return densityFromField(P, tmpWf, tmpN, y, tmpC, cells) * 0.8;
   }
 
   function setUniforms(frame) {
@@ -310,7 +323,14 @@ export async function createClouds(ctx) {
     U.uClLayer.value.set(P.base, P.top, 1 / P.thickness, P.thickness);
     U.uClShape.value.set(P.covBias, P.covAmp, P.topMin, P.stratus);
     U.uClShape2.value.set(P.devLo, P.devHi, P.anvil, P.baseRamp);
-    U.uClShape3.value.set(dbg('clTaper', P.taperLo), P.taperHi, 0, 0);
+    U.uClShape3.value.set(dbg('clTaper', P.taperLo), P.taperHi, dbg('clPt', P.turret), dbg('clPl', P.lobes));
+    // towers lean downwind with the shear between the base and the top of the layer
+    tmpW.set(0, P.base, 0); ctx.weather.windAt(tmpW, windLo);
+    tmpW.set(0, P.base + Math.min(P.thickness, 3000), 0); ctx.weather.windAt(tmpW, windHi);
+    const leanK = dbg('clLean', LEAN_TIME) / Math.min(P.thickness, 3000);
+    U.uClCell.value.set(1 / cells.period, (windHi.x - windLo.x) * leanK, (windHi.z - windLo.z) * leanK, dbg('clSheet', P.sheet));
+    U.uClCell2.value.z = dbg('clAspLo', P.aspectLo); U.uClCell2.value.w = dbg('clAspHi', P.aspectHi);
+    U.uClProf.value.fromArray(P.profShallow); U.uClProf2.value.fromArray(P.profDeep);
     U.uClNoise.value.set(1 / dbg('clBase', BASE_NOISE_PERIOD), 1 / dbg('clDetail', DETAIL_NOISE_PERIOD), dbg('clErosion', P.erosion), dbg('clSigma', P.sigma));
     // slow internal evolution: the base volume drifts upward through the shapes, detail scrolls faster
     U.uClNoiseOfs.value.set(0, -animTime * 0.6 / BASE_NOISE_PERIOD, 0, (animTime * 2.5 / DETAIL_NOISE_PERIOD) % 1);
@@ -329,7 +349,7 @@ export async function createClouds(ctx) {
     const cam = frame.camera || ctx.camera;
     const tanHalf = Math.tan((cam.fov || 60) * Math.PI / 360);
     const focalPx = fullH / (2 * tanHalf);
-    U.uClFullRes.value.set(fullW, fullH, N / focalPx, 0);
+    U.uClFullRes.value.set(fullW, fullH, N / focalPx, dbg('clLS', 1));
     // nothing is visible far beyond the haze: shorter rays in murky weather (the expensive presets)
     const maxDist = Math.min(maxDistQ, Math.max(60000, (ctx.weather.visibility || 60000) * 8));
     U.uClStep.value.set(dbg('clKf', 0.9 / steps), dbg('clMinFine', 1200 / steps), dbg('clMinCoarse', 110), maxDist);
@@ -445,7 +465,7 @@ export async function createClouds(ctx) {
     params: P,
     get windOffset() { return windOffset; },
     weatherAt(worldX, worldZ, out = {}) { return weatherField(worldX - windOffset.x, worldZ - windOffset.y, bake, out); },
-    debug: { spawnFlash, noise3, noise2, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
+    debug: { spawnFlash, noise3, noise2, cells, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
   };
   return api;
 }

@@ -169,7 +169,7 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
       }
       vec3 pa = vec3(xz.x, uEx.w, xz.y); vec4 wx = clWeather(pa.xz, 0.0), info, info1;
       float ex = clShape(pa, wx, 0.0, info);
-      float d = ex + CL_EROSION_BIAS * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, 0.0, 0.0, uEdge) * info.w : 0.0;
+      float d = ex + CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, 0.0, 0.0, uEdge) * info.w : 0.0;
       float db = clDensityBase(pa, wx, 1.0, info1) * info1.w;
       o = vec4(d, db, info.y, ex);
     }`;
