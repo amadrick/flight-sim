@@ -72,14 +72,16 @@ TerrCover terrCover(vec2 rxz, float h, vec3 n, float curv, float arid, float wat
 
 // Terrain self-shadow: march toward the sun through the height pyramid with geometrically growing steps, taking
 // each sample from the level whose texels match the step length (coarse levels are band-limited = prefiltered).
-float terrShadow(vec3 rp, float lvl0, int steps) {
+float terrShadow(vec3 rp, vec3 ng, float lvl0, int steps) {
   if (steps <= 0 || uTerrShadowOn < 0.5 || uSunDir.y <= 0.0) return 1.0;
   float tex0 = 1.0 / (uTerrLvl[0].z * float(textureSize(tTerrH, 0).x));     // texel spacing of level 0
   float t = tex0 * exp2(lvl0) * 2.5;
   float grow = pow(40000.0 / t, 1.0 / float(steps));
   grow = clamp(grow, 1.25, 2.2);
   float res = 1.0;
-  vec3 o = rp + vec3(0.0, tex0 * exp2(lvl0) * 0.35, 0.0);
+  // start a little off the surface (along its normal) so a steep face does not shadow itself through the
+  // coarser, smoother levels the march samples
+  vec3 o = rp + (ng * 1.2 + vec3(0.0, 0.35, 0.0)) * (tex0 * exp2(lvl0));
   for (int i = 0; i < steps; i++) {
     vec3 p = o + uSunDir * t;
     float lv = clamp(max(ceil(log2(max(terrLodDist(p.xz), 1.0) / uTerrLod.x)), floor(log2(t / (tex0 * 5.0)))), uTerrLod.y, uTerrLod.z);
@@ -100,12 +102,27 @@ uniform vec4 uTerrTree;          // 3D trees: x = on, y = full radius, z = end r
 
 struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; };
 
+// Noise and bump gradient of scale T projected from the side (the two vertical planes of a triplanar mapping).
+// Top-down textures smear into streaks down the fall line of cliffs; steep faces use this instead.
+void terrSide(vec3 T, vec2 off, vec3 rp, vec3 n, float lod, out vec4 nz, out vec3 dn) {
+  vec2 uv = terrUV(T, off, rp.xz);
+  float v = rp.y * T.z;
+  vec2 a = vec2(T.x, -T.y), b = vec2(T.y, T.x);       // world directions of the two uv axes
+  float na = dot(n.xz, a), nb = dot(n.xz, b);
+  float wa = na * na, wb = nb * nb, ws = wa + wb + 1.0e-5;
+  vec2 uA = vec2(uv.y, v), uB = vec2(uv.x, v);
+  nz = (textureLod(tTerrNoise, uA, lod) * wa + textureLod(tTerrNoise, uB, lod) * wb) / ws;
+  vec4 gA = textureLod(tTerrNorm, uA, lod) - 0.5, gB = textureLod(tTerrNorm, uB, lod) - 0.5;
+  dn = (vec3(b.x * gA.r, gA.g, b.y * gA.r) * wa + vec3(a.x * gB.r, gB.g, a.y * gB.r) * wb) / ws;
+}
+
 TerrSurf terrSurface(vec3 rp) {
   TerrSurf S;
   vec2 w = rp.xz + uOrigin.xz;                        // world metres
   float h = rp.y;
   float d = terrLodDist(rp.xz);
-  float px = max(length(dFdx(rp.xz)), length(dFdy(rp.xz))) + 0.001;   // metres per pixel
+  float px = max(length(dFdx(rp.xz)), length(dFdy(rp.xz))) + 0.001;   // metres per pixel (map distance)
+  float px3 = max(length(dFdx(rp)), length(dFdy(rp))) + 0.001;        // metres per pixel on the surface
 
   // ---- clipmap data, blended across levels exactly like the geometry -------------------------------------
   float lf = terrLevelAt(d);
@@ -115,6 +132,7 @@ TerrSurf terrSurface(vec3 rp) {
     if (kb > 0.0) { D = mix(D, terrTexD(rp.xz, lf + 1.0), kb); G = mix(G, terrTexH(rp.xz, lf + 1.0), kb); }
   }
   vec3 n = terrDecodeN(D.xy);
+  vec3 ng = n;                                        // geometric normal (before detail)
   float curv = (D.z - 0.5) / 1.25;                    // > 0 concave (gully), < 0 convex (spur), per texel of this level
   float conc = (D.w - 0.5) / 1.5;                     // > 0 hollow at ~4 texel scale
   float arid = G.z, spec = G.w;
@@ -145,6 +163,19 @@ TerrSurf terrSurface(vec3 rp) {
   TerrCover C = terrCover(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3);
   float pad = C.pad, treeline = C.treeline, forest = C.forest, conifer = C.conifer, cropPot = C.crop;
 
+  // ---- steep faces: side-projected noise for the 110 m and 23 m scales ---------------------------------------
+  float steep = ss(0.22, 0.50, slope);
+  vec3 dnSide = vec3(0.0);
+  if (steep > 0.0) {
+    vec4 s3, s4; vec3 d3, d4;
+    float lod3 = log2(max(px3 * TERR_TILE3.z * 256.0, 1.0)), lod4 = log2(max(px3 * TERR_TILE4.z * 256.0, 1.0));
+    terrSide(TERR_TILE3, uTerrTile[3], rp, n, lod3, s3, d3);
+    terrSide(TERR_TILE4, uTerrTile[4], rp, n, lod4, s4, d4);
+    n3 = mix(n3, s3, steep); n4 = mix(n4, s4, steep);
+    dnSide = (d3 * 1.3 + d4 * 1.2) * steep;
+    g3 *= 1.0 - steep; g4 *= 1.0 - steep;
+  }
+
   // ---- climate lines ---------------------------------------------------------------------------------------
   // summer snow line: lower on north faces and in gullies / cirques where drifts survive
   float snowline = 3080.0 + 2.5 * clamp(latK + 95.0, -200.0, 200.0) + 380.0 * (n1.g - 0.5) + 160.0 * (n2.r - 0.5)
@@ -165,7 +196,14 @@ TerrSurf terrSurface(vec3 rp) {
   vec3 desert = mix(sand, redEarth, redness);
   desert *= (0.88 + 0.24 * n5.r) * (0.92 + 0.16 * n6.g);
   // desert pavement / darker gravel flats and pale alluvium in a mottled pattern
-  desert = mix(desert, desert * vec3(0.72, 0.70, 0.70), ss(0.50, 0.68, n2.a * 0.6 + n1.a * 0.4) * 0.6);
+  desert = mix(desert, desert * vec3(0.74, 0.72, 0.72), ss(0.48, 0.74, n1.g * 0.55 + n0.b * 0.25 + n2.r * 0.2) * 0.55);
+  // red-rock country: soils take the colour of the flat-lying beds they weather from (broad elevation bands)
+  float mesaAmt = 1.0 - ss(26000.0, 60000.0, distance(w, vec2(190000.0, -88000.0)));
+  float sb = h / 105.0 + n1.g * 1.0 + n0.r * 2.0;
+  float sbi = floor(sb);
+  vec3 st0 = mix(vec3(0.335, 0.175, 0.105), vec3(0.455, 0.365, 0.255), terrHash2(vec2(sbi, 11.0)).x);
+  vec3 st1 = mix(vec3(0.335, 0.175, 0.105), vec3(0.455, 0.365, 0.255), terrHash2(vec2(sbi + 1.0, 11.0)).x);
+  desert = mix(desert, mix(st0, st1, ss(0.3, 0.7, sb - sbi)) * (0.85 + 0.3 * n4.r) * (0.9 + 0.2 * n2.g), 0.7 * mesaAmt);
   float desertAmt = ss(0.42, 0.85, arid + 0.25 * (n1.r - 0.5) + 0.1 * (n3.r - 0.5));
   vec3 col = mix(grass, desert, desertAmt);
   float rough = mix(0.92, 0.86, desertAmt);
@@ -186,7 +224,7 @@ TerrSurf terrSurface(vec3 rp) {
   fcol = mix(fcol, fcol * vec3(1.35, 1.2, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.6);
   fcol = mix(fcol, vec3(0.030, 0.050, 0.016), tropic * 0.5);
   float crown = 1.0 - n3.b;                           // cell centres = crown tops
-  fcol *= 0.42 + 1.05 * crown * crown + 0.25 * n4.r;
+  fcol *= 0.38 + 0.95 * crown * crown + 0.22 * n4.r;
   // where 3D trees stand (trees.js) the ground shows as shaded forest floor instead of painted crowns
   float t3d = uTerrTree.x * (1.0 - ss(uTerrTree.y, uTerrTree.z, distance(rp.xz, uTerrCam.xz)));
   fcol = mix(fcol, mix(vec3(0.030, 0.042, 0.018), vec3(0.060, 0.052, 0.030), n4.g) * (0.7 + 0.6 * n5.r), t3d * 0.85);
@@ -194,8 +232,8 @@ TerrSurf terrSurface(vec3 rp) {
   // ---- cropland patchwork ---------------------------------------------------------------------------------------
   if (cropPot > 0.001) {
     // the survey grid is not perfectly straight: long gentle bends (smooth, so field edges stay locally straight)
-    vec2 q = w + vec2(140.0 * sin(w.y * 0.0031 + 1.3) + 90.0 * sin(w.y * 0.0013 + w.x * 0.0007),
-                      120.0 * sin(w.x * 0.0027 + 0.4) + 80.0 * sin(w.x * 0.0011 - w.y * 0.0009 + 2.0));
+    vec2 q = w + vec2(55.0 * sin(w.y * 0.0023 + 1.3) + 90.0 * sin(w.y * 0.00071 + w.x * 0.0004),
+                      45.0 * sin(w.x * 0.0019 + 0.4) + 80.0 * sin(w.x * 0.00063 - w.y * 0.0005 + 2.0));
     q = vec2(0.978 * q.x - 0.208 * q.y, 0.208 * q.x + 0.978 * q.y);
     vec2 b = q / 1340.0, bi = floor(b), bf = b - bi;
     vec2 hb = terrHash2(bi + 4096.0);
@@ -267,9 +305,11 @@ TerrSurf terrSurface(vec3 rp) {
   float rockN = slope + 0.20 * (n2.a - 0.5) + 0.10 * (n4.a - 0.5) - 0.05 * forest + 0.13 * alpine - 1.5 * clamp(curv, -0.05, 0.05) * alpine;
   float rockAmt = ss(0.20, 0.34, rockN);
   float dh = abs(dFdx(h)) + abs(dFdy(h)) + 0.001;     // metres of height per pixel: strata must fade before they alias
-  float strata = sin(h * 0.085 + n1.r * 14.0 + n2.r * 3.0) * ss(30.0, 9.0, dh);
+  // bedding: beds of irregular thickness (1D noise along height, bent a little by the macro noise); mip-filtered
+  // by the height covered per pixel so the layers fade to their mean instead of aliasing
+  float strata = (textureLod(tTerrNoise, vec2(0.37 + 0.04 * n1.r, h / 900.0 + 0.03 * n2.r), log2(max(dh / 3.5, 1.0))).r - 0.5) * 2.0;
   vec3 granite = mix(vec3(0.150, 0.146, 0.142), vec3(0.275, 0.262, 0.245), ss(0.2, 0.8, n2.r * 0.6 + n4.g * 0.4));
-  granite *= 0.90 + 0.10 * strata;
+  granite *= 0.90 + 0.22 * strata;
   granite = mix(granite, granite * vec3(0.62, 0.60, 0.58), ss(0.55, 0.85, n3.a) * 0.6);   // dark seepage / lichen
   granite *= 0.9 + 0.2 * n5.a;
   // sandstone: colour bands follow elevation (sedimentary layers)
@@ -317,10 +357,11 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- playa (dry lake) and open fresh water -------------------------------------------------------------------
   if (playa > 0.001) {
-    vec3 pc = mix(vec3(0.385, 0.335, 0.262), vec3(0.510, 0.470, 0.395), ss(0.25, 0.75, n1.r * 0.45 + n2.g * 0.25 + n0.g * 0.3));
-    // damp, darker clay where the last water stood; pale salt crust elsewhere; wind streaks
-    pc = mix(pc, pc * vec3(0.70, 0.68, 0.66), ss(0.52, 0.66, n1.a * 0.6 + n0.r * 0.4) * 0.7);
-    pc *= 0.93 + 0.07 * sin((w.x * 0.8 + w.y * 0.6) * 0.004 + n1.g * 9.0);
+    // pale silt and clay, a little whiter (salt crust) toward the middle of the pan; broad, faint tonal bands
+    vec3 pc = mix(vec3(0.430, 0.380, 0.300), vec3(0.520, 0.485, 0.410), ss(0.30, 0.70, n0.g * 0.75 + n1.r * 0.25));
+    // damp, darker clay where the last water stood; wind / sheet-flow streaks
+    pc = mix(pc, pc * vec3(0.80, 0.78, 0.76), ss(0.55, 0.70, n0.r * 0.8 + n1.a * 0.2) * 0.6);
+    pc *= 0.96 + 0.04 * sin((w.x * 0.8 + w.y * 0.6) * 0.004 + n0.g * 14.0) + 0.05 * (n1.g - 0.5);
     pc *= (0.95 + 0.10 * n4.r) * (1.0 - 0.10 * ss(0.78, 0.95, n3.b));             // giant desiccation polygons
     // desiccation polygons, visible close up
     float crack = ss(0.80, 0.97, n5.b) * ss(3.0, 0.4, px) * 0.45 + ss(0.84, 0.98, n6.b) * ss(0.5, 0.05, px) * 0.35;
@@ -345,14 +386,15 @@ TerrSurf terrSurface(vec3 rp) {
   dn += terrUnrot(TERR_TILE6, g6.rg) * (hard * 0.6 + soft * 0.40) + terrUnrot(TERR_TILE6, g6.ba) * hard * 0.5;
   dn *= (1.0 - wsurf) * (1.0 - 0.8 * playa) * (1.0 - 0.6 * wet);
   n = mix(n, vec3(0.0, 1.0, 0.0), wsurf);
-  n = normalize(n + vec3(dn.x, 0.0, dn.y) * -1.0);
+  n = normalize(n - vec3(dn.x, 0.0, dn.y) - dnSide * hard * (1.0 - wsurf));
 
   // ---- ambient occlusion and self shadow -----------------------------------------------------------------------
   float ao = 1.0 - clamp(conc * 1.6 + concW * 2.2, -0.08, 0.62);
   ao *= mix(1.0, mix(0.55 + 0.45 * crown, 0.5, t3d), forest);   // canopy self-occlusion
   ao *= 1.0 - 0.3 * shrub;
   S.albedo = col; S.rough = rough; S.n = n; S.ao = ao;
-  S.shadow = dot(n, uSunDir) > 0.0 ? terrShadow(rp, lf, TERR_SHADOW_STEPS) : 1.0;
+  float nl = dot(ng, uSunDir);
+  S.shadow = nl > 0.0 ? mix(1.0, terrShadow(rp, ng, lf, TERR_SHADOW_STEPS), ss(0.0, 0.10, nl)) : 1.0;
   return S;
 }
 `;

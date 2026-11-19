@@ -9,10 +9,10 @@ import { CURVATURE_GLSL, FULLSCREEN_VERT, fullscreenTriangle } from '../core/gls
 import { COVER_GLSL } from './surface.glsl.js';
 import { clipmapGLSL, TILE_CONSTS_GLSL } from './material.js';
 
-const SEG = 4;           // sides of a crown
-// crown profiles (t = height fraction, r = radius fraction of the tree height): 4 rings + apex
-const CONIFER = [[0.0, 0.035], [0.10, 0.25], [0.47, 0.085], [0.44, 0.185], [1.0, 0.0]];
-const BROADLEAF = [[0.0, 0.035], [0.24, 0.05], [0.50, 0.40], [0.80, 0.31], [1.0, 0.0]];
+const SEG = 6;           // sides of a crown
+// crown profiles (t = height fraction, r = radius fraction of the tree height): 3 rings + apex = 30 triangles
+const CONIFER = [[0.03, 0.235], [0.47, 0.080], [0.44, 0.180], [1.0, 0.0]];      // two tiers of boughs
+const BROADLEAF = [[0.0, 0.030], [0.46, 0.40], [0.80, 0.30], [1.0, 0.0]];       // trunk flaring into a round crown
 
 function profileNormals(prof) {
   // smooth lathe normals: (radial, vertical) per ring, from the neighbouring profile points
@@ -49,6 +49,8 @@ function crownGeometry() {
   for (let s = 0; s < SEG; s++) idx.push((rings - 1) * SEG + s, apex, (rings - 1) * SEG + (s + 1) % SEG);
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  // (a normal attribute must exist or three falls back to flat shading; the real normal is built in the vertex shader)
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nv * 3).fill(1), 3));
   g.setAttribute('aTreeA', new THREE.BufferAttribute(A, 4));
   g.setAttribute('aTreeN', new THREE.BufferAttribute(Nn, 4));
   g.setIndex(idx);
@@ -126,7 +128,7 @@ export function createTrees(ctx, { L, G, cell, uniforms }) {
         size *= mix(0.4, 1.0, ss(C.treeline + 60.0, C.treeline - 320.0, h));       // stunted near the tree line
         size *= mix(1.0, 0.8, C.tropic) * (0.75 + 0.25 * ss(0.3, 1.0, C.forest));
         size *= exists;
-        float sh = size > 0.0 ? terrShadow(vec3(rxz.x, h + size * 0.6, rxz.y), lf, 10) : 1.0;
+        float sh = size > 0.0 ? terrShadow(vec3(rxz.x, h + size * 0.6, rxz.y), vec3(0.0, 1.0, 0.0), lf, 10) : 1.0;
         float hi = floor(h * 0.25 + 0.5) * 4.0;
         outColor = vec4(hi, h - hi, size, conif + clamp(sh, 0.0, 1.0) * 0.9);
       }`,
@@ -167,7 +169,7 @@ export function createTrees(ctx, { L, G, cell, uniforms }) {
         vec3 tPos = vec3(tBase.x, tM.x + tM.y - 0.4, tBase.y) + tLocal;
         tPos.y -= uTerrCurv * curvatureDrop(tDist);
         // soft foliage normal: lathe normal bent upward
-        vec3 objectNormal = normalize(vec3(tDir.x * tProf.w, tProf.z + 0.45, tDir.y * tProf.w));
+        vec3 objectNormal = normalize(vec3(tDir.x * tProf.w, tProf.z + mix(1.0, 0.45, tConif), tDir.y * tProf.w));
         // colour: species, per-tree variety, darker inside / low in the canopy
         float tTropic = smoothstep(35.0, 70.0, (tBase.y + uOrigin.z) * 0.001);
         vec3 tCol = mix(vec3(0.050, 0.086, 0.030), vec3(0.030, 0.053, 0.026), tConif);
@@ -175,8 +177,9 @@ export function createTrees(ctx, { L, G, cell, uniforms }) {
         tCol = mix(tCol, vec3(0.036, 0.062, 0.020), tTropic * 0.5 * (1.0 - tConif));
         tCol *= 0.80 + 0.45 * tH3.x;
         float tUp = smoothstep(0.08, 0.95, tProf.x);
-        vTreeCol = tCol * 1.75;
-        vTreeLit = vec2(tShadow * mix(0.42, 1.0, tUp), mix(0.45, 1.0, tUp));
+        vTreeCol = tCol * mix(0.95, 2.1, tConif);
+        float tLow = mix(0.30, 0.42, tConif);
+        vTreeLit = vec2(tShadow * mix(tLow, 1.0, tUp), mix(tLow + 0.05, 1.0, tUp));
       `)
       .replace('#include <begin_vertex>', 'vec3 transformed = tPos;');
     shader.fragmentShader = shader.fragmentShader

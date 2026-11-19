@@ -121,9 +121,12 @@ function dissect(x, z, sx, sz, f0, gain) {
   let dirx = sz / sl, dirz = -sx / sl;
   let ea = 1.0, ef = f0, es = 0.0, ex = 0.0, ez = 0.0;
   for (let i = 0; i < 5; i++) {
-    let f = bl(1.0 / ef);
+    // the stripe frequency grows with |direction|: limit it, and band-limit to the true stripe width
+    let qx = dirx + ez, qz = dirz - ex;
+    let qk = min(1.0, 1.6 / sqrt(qx * qx + qz * qz + 0.0001));
+    let f = bl(0.6 / ef);
     if (f > 0.0) {
-      let g = gully(x * ef + 17.0, z * ef - 9.0, dirx + ez, dirz - ex);
+      let g = gully(x * ef + 17.0, z * ef - 9.0, qx * qk, qz * qk);
       es += g * ea * f;
       ex += gEx * ea * f * 0.8; ez += gEz * ea * f * 0.8;
     }
@@ -236,7 +239,7 @@ function terrain(x, z) {
   let dW = (X + 254.55) * 0.940 - (Z + 61.98) * 0.342;             // the Sound: west shore (runs along hdg 160)
   let dE = -(X + 186.0) * 0.996 - (Z + 60.0) * 0.085;              // east shore
   let dN = Z + 112.0;                                              // head of the bay
-  let fb = smin(smin(dW, dE, 8.0), dN, 8.0) + 1.3 * wig + (5.0 * L2 + 3.0 * l2x) * kbf;
+  let fb = smin(smin(dW, dE, 8.0), dN, 8.0) + 2.3 * wig + (8.0 * L2 + 5.0 * l2x) * kbf;
   let c = smin(cS, -fb, 3.0);
 
   // ---- climate ---------------------------------------------------------------------------------------------
@@ -337,7 +340,8 @@ function terrain(x, z) {
       let es = dissect(x + 31000.0, z - 7000.0, 0.02 + 0.10 * l2x + 0.3 * sx, 0.03 + 0.10 * l2z + 0.3 * sz, 0.000125, 0.36);
       let q = 3.0 * ss(0.12, -0.42, es);
       let fq = q - floor(q);
-      h -= 140.0 * (floor(q) + ss(0.25, 0.6, fq)) * Ms * fade;
+      // each tier: a talus apron below a cliff band, then a narrow bench (resistant layer over a soft one)
+      h -= 140.0 * (floor(q) + 0.45 * ss(0.0, 0.62, fq) + 0.55 * ss(0.60, 0.80, fq)) * Ms * fade;
       rough = max(rough, Ms * ss(0.2, -0.3, es) * 0.7);
     }
     // Redrock dry lake: dead flat playa at 702 m

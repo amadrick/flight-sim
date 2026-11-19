@@ -64,7 +64,7 @@ its own render targets (clipmap strips, tree placement map) and restores the pre
 
 `ctx.quality.level`: low -> 256^2 x 13 pyramid, medium 512^2, high / ultra 1024^2 (normals at twice the mesh
 resolution). `ctx.quality.terrainDetail` scales the LOD range (triangle count ~ detail^2). 3D trees: off on low,
-96^2 / 112^2 / 144^2 cells (7 m) on medium / high / ultra, drawn only below ~900 m clearance. The module rebuilds
+88^2 / 104^2 / 128^2 cells (7 m) on medium / high / ultra, drawn only below ~900 m clearance. The module rebuilds
 itself on `quality:change`.
 
 ## Debug URL parameters (read from `ctx.params.raw`)
