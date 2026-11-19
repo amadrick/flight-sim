@@ -163,7 +163,7 @@ function humpSkin(hump, fus, cHump, cFus, wins, detail) {
   const rings = zs.map((z) => {
     const q = meet(z); if (!q) return null;
     const tI = hump.tAtY(z, q.y), tIf = fus.tAtY(z, q.y), sf = Math.min(0.5, 0.17 + 0.4 * q.ext);
-    const tA = Math.min(z > D(5) && z < D(7.6) ? 0.335 : 0.485, tI + sf / Math.max(0.5, hump.girthAt(z, tI))), tB = Math.max(0.01, tIf - sf / Math.max(0.5, fus.girthAt(z, tIf)));
+    const tA = Math.min(z > D(5) && z < D(7.6) ? 0.322 : 0.485, tI + sf / Math.max(0.5, hump.girthAt(z, tI))), tB = Math.max(0.01, tIf - sf / Math.max(0.5, fus.girthAt(z, tIf)));
     const A = hump.at(z, tA), B = fus.at(z, tB);
     const tan = (L, t) => { const a = L.at(z, t - 0.003).p, b = L.at(z, t + 0.003).p, l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
     const dA = tan(hump, tA), dB = tan(fus, tB), h = sf * 0.55;
@@ -368,7 +368,7 @@ export function createVisual(ctx, opts = {}) {
     dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black), well: A.swatch('well', { color: '#8b9094', rough: 0.7, metal: 0.1 }), liner: A.swatch('liner', { color: '#b9b6ae', rough: 0.8, metal: 0 }),
     post: A.swatch('post', { color: '#8d8e8a', rough: 0.7, metal: 0 }), floor: A.swatch('floor', { color: '#34363a', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2a2c2f', rough: 0.85, metal: 0 }),
     console: A.swatch('console', { color: '#5c6166', rough: 0.75, metal: 0 }), seat: A.swatch('seat', { color: '#45484c', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#5b5346', rough: 1, metal: 0 }),
-    yoke: A.swatch('yoke', { color: '#17181a', rough: 0.5, metal: 0 }), lever: A.swatch('lever', { color: '#c9cbcc', rough: 0.35, metal: 0.6 }),
+    yoke: A.swatch('yoke', { color: '#17181a', rough: 0.5, metal: 0 }), lever: A.swatch('lever', { color: '#8e9194', rough: 0.35, metal: 0.7 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9e9e6')), dome: A.swatch('dome', F.semigloss('#d9dbdc')),
     strut: A.swatch('gear.strut', F.gearWhite), chrome: A.swatch('gear.chrome', F.chrome), tyre: A.swatch('gear.tyre', F.rubber), hub: A.swatch('gear.hub', { color: '#c4c6c2', rough: 0.4, metal: 0.35 }),
     link: A.swatch('gear.link', F.anodised), brake: A.swatch('gear.brake', { color: '#2c2724', rough: 0.58, metal: 0.8 }), hose: A.swatch('gear.hose', { color: '#17181a', rough: 0.55, metal: 0.35 }),
@@ -385,7 +385,7 @@ export function createVisual(ctx, opts = {}) {
     grey: B.swatch('grey', F.semigloss('#b9bec3')), engine: B.swatch('engine', F.gloss(SC.engine)), lip: B.swatch('lip', F.polished), band: B.swatch('band', F.gloss(SC.lip)),
     duct: B.swatch('duct', { color: '#101113', rough: 0.6, metal: 0.2 }), acoustic: B.swatch('acoustic', { color: '#7d8185', rough: 0.6, metal: 0.55 }), core: B.swatch('core', F.semigloss('#c3c7ca')),
     coreMetal: B.swatch('coreMetal', F.titanium), plug: B.swatch('plug', F.heatStained), blade: B.swatch('blade', { color: '#4d5259', rough: 0.3, metal: 0.65 }),
-    spinner: B.swatch('spinner', { color: '#26282c', rough: 0.3, metal: 0.5 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.primer),
+    spinner: B.swatch('spinner', { color: '#26282c', rough: 0.3, metal: 0.5 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.semigloss('#8c9399')),
     pylon: B.swatch('pylon', F.gloss(SC.style === 'aurora' ? '#e8eaec' : SC.body)), tail: B.swatch('tail', F.gloss(SC.tail)), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }),
     wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', F.semigloss('#c3c7cb')), chevron: B.swatch('chevron', { color: '#8d9298', rough: 0.4, metal: 0.8 }), hot: B.swatch('hot', { color: '#5f5a55', rough: 0.5, metal: 0.9 }),
     soot: B.swatch('soot', { color: '#3b3936', rough: 0.7, metal: 0.3 }),
@@ -398,11 +398,11 @@ export function createVisual(ctx, opts = {}) {
     [3.40, -0.25, 2.56, 2.34, 2.20], [4.80, -0.12, 2.90, 2.74, 2.66], [6.50, -0.04, 3.11, 3.04, 3.02], [8.50, -0.01, 3.23, 3.22, 3.21], [11.0, 0, 3.25, 3.25, 3.25],
     [50.0, 0, 3.25, 3.25, 3.25], [54.0, 0.0, 3.23, 3.23, 3.22], [58.0, 0.03, 3.13, 3.17, 3.13], [64.0, 0.16, 2.70, 2.69, 2.68], [70.0, 0.34, 1.80, 1.92, 1.93],
     [73.5, 0.85, 0.96, 0.96, 0.90], [75.9, 1.10, 0.40, 0.36, 0.34], [76.3, 1.13, 0.31, 0.27, 0.26],
-  ].map(r => ({ z: D(r[0]), y: r[1], w: r[2], top: r[3], bot: r[4] }));
+  ].map(r => ({ z: D(r[0]), y: r[1], w: r[2], top: r[3], bot: r[4], sub: r[0] >= 0.4 && r[0] < 11 ? 3 : r[0] >= 54 && r[0] < 76 ? 2 : undefined }));
   const fseg = Math.max(40, Math.round(96 * detail / 4) * 4);
   const fus = K.loft({
     stations: FS, segments: fseg, step: 1.3 / detail, chart: cFus, capEnd: 'flat', capUV: UA.exhaust,
-    cutouts: [{ name: 'ngd', z: [-30.7, -26.6], t: [0, 0.034], mirror: true }, { name: 'deck', z: [D(5.4), D(9.5)], t: [0.39, 0.61] }],   // 'deck': crown hidden inside the hump (keeps it out of the flight deck)
+    cutouts: [{ name: 'ngd', z: [-30.7, -26.6], t: [0, 0.034], mirror: true }, { name: 'deck', z: [D(4.8), D(9.5)], t: [0.4, 0.6] }],   // 'deck': crown hidden inside the hump (keeps it out of the flight deck)
   });
   cFus.body = fus;
   const stA = new K.Mesh(), stB = new K.Mesh();
@@ -443,9 +443,9 @@ export function createVisual(ctx, opts = {}) {
   // ---- flight deck ------------------------------------------------------------------------------------------------------------
   const ZB = D(8.6);
   // window corners as distances from the nose (d) and hump ring parameters (t): windshield W1, No. 2 window W2, sliding window W3
-  const w1 = { fi: 5.18, fo: 5.40, bo: 6.10, bi: 6.24, ti: 0.492, to: 0.40, tb: 0.432 };
-  const w2 = { fl: 5.48, bl: 6.55, fu: 6.17, tfl: 0.393, tbl: 0.352, tbu: 0.405, tfu: 0.426 };
-  const w3 = { f: 6.65, bl: 7.40, bu: 7.30, tfl: 0.35, tbl: 0.343, tbu: 0.385, tfu: 0.40 };
+  const w1 = { fi: 5.16, fo: 5.40, bo: 6.10, bi: 6.24, ti: 0.492, to: 0.388, tb: 0.432 };
+  const w2 = { fl: 5.48, bl: 6.55, fu: 6.17, tfl: 0.381, tbl: 0.341, tbu: 0.405, tfu: 0.426 };
+  const w3 = { f: 6.65, bl: 7.40, bu: 7.30, tfl: 0.339, tbl: 0.333, tbu: 0.385, tfu: 0.40 };
   const WIN = [   // right-hand window polygons (z, t) on the hump skin
     [[D(w1.fi), w1.ti], [D(w1.fo), w1.to], [D(w1.bo), w1.tb], [D(w1.bi), w1.ti]],
     [[D(w2.fl), w2.tfl], [D(w2.bl), w2.tbl], [D(w2.bl), w2.tbu], [D(w2.fu), w2.tfu]],
@@ -493,7 +493,6 @@ export function createVisual(ctx, opts = {}) {
       stA.add(K.yoke({ base: [e[0], FY, e[2] - 0.52], top: [e[0], e[1] - 0.55, e[2] - 0.44], uv: UA.yoke }));
       stA.add(K.box(0.34, 0.62, 1.15, UA.console).translate(sx * 1.38, FY + 0.31, e[2] - 0.05));                         // side console
       stA.add(K.box(0.24, 0.03, 0.3, UA.shield).translate(e[0], FY + 0.06, zp + 0.1));                                   // rudder pedals
-      stA.add(K.box(0.2, 0.15, 0.02, UA.console).translate(e[0] - sx * 0.05, 3.05, zp + 0.22));                          // sun visor, stowed
     }
   }
   // windshield wipers parked along the lower frame of each front pane
