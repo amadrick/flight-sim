@@ -63,7 +63,7 @@ export function createRain(ctx, shared, header) {
         float a = vA * exp(-vC.x * vC.x * 3.0) * (1.0 - smoothstep(0.4, 1.0, abs(vC.y)));
         if (a < 0.002) discard;
         // drops refract the bright sky: lighter than the background by day, faintly lit at night
-        vec3 L = atmAmbient(vW, vec3(0.0, 1.0, 0.0)) * 1.8 + fxSun(vW) * 0.03 + fxLocal(vW) * 0.4;
+        vec3 L = atmAmbient(vW, vec3(0.0, 1.0, 0.0)) * 1.3 + fxSun(vW) * 0.03 + fxLocal(vW) * 0.4;
         outColor = fxFinish(L * a, a * 0.5, vec3(0.0), vW);
       }`,
   });

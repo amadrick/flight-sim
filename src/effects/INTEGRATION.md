@@ -41,6 +41,11 @@ Attaches to the player on `session:start`, detaches and clears all live particle
    count — and therefore every material's program — never changes. Both are on layer 0 (MAIN). No shadows.
    Units follow the contract (irradiance = intensity / d²).
 
+## Known stub artefacts (not effects bugs)
+* The stub pipeline tone-maps before drawing POST, so HDR values clip in raw screenshots — use `fxtm=1` to preview.
+* The stub never lowers `ctx.env.ambientSky` at night, so rain/contrails look bluish-bright at night in stub shots;
+  with the real atmosphere (`atmAmbient`) they darken correctly.
+
 ## Events consumed
 `session:start`, `session:end`, `touchdown {verticalSpeed, gear}` (per-gear tyre smoke; a fallback fires on the
 ground-contact transition until physics emits a real `touchdown`), `crash {reason}` (explosion + lingering wreck fire
@@ -74,5 +79,5 @@ height, wingArea, noseZ, tailZ, cgHeight, pilotEye}`, `def.specs.{engineType, th
 `fx=ab,contrail,vapor,cone,crash,touchdown,rain,lights,lightning,spray,sparks,smoke,boom,all` forces effects;
 `fxtm=1` tone-maps in-shader (the stub pipeline draws POST after its tone map); `fxexp=<x>` preview exposure;
 `fxcam=side|front|rear|far|low|top|cockpit`, `fxdist=<m>` debug camera; `fxthr=<0..1>` force throttle;
-`fxlevel=1` hold altitude (stub physics sinks).
+`fxlevel=1` hold altitude (stub physics sinks); `fxwater=1&fxagl=<m>` teleport low over the nearest water (spray).
 Example: `node tools/shot.mjs --params "aircraft=f16&start=air&tod=23&fx=ab&fxtm=1&fxcam=side&fxdist=9"`.
