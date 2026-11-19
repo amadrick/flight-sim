@@ -67,10 +67,10 @@ export function createVisual(ctx, opts = {}) {
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9eaea')), lens: A.swatch('lens', F.lens),
   };
   const B = K.createAtlas({ size: atlasSize, base: F.semigloss('#bcc1c6') });
-  const cWT = B.chart('wingTop', { type: 'plan', x: [0.9, 17.0], z: [-4.3, 5.2], view: 'top', mirror: true });
-  const cWB = B.chart('wingBot', { type: 'plan', x: [0.9, 17.0], z: [-4.3, 5.2], view: 'bottom', mirror: true, density: 0.72 });
-  const cSh = B.chart('sharklet', { type: 'side', z: [3.5, 6.6], y: [0.45, 3.25], view: 'right' });
-  const cSt = B.chart('stab', { type: 'plan', x: [0.2, 6.6], z: [14.0, 19.8], view: 'top', mirror: true, density: 0.8 });
+  const cWT = B.chart('wingTop', { type: 'plan', x: [0.9, 17.0], z: [-4.3, 5.2], view: 'top', mirror: true, density: 1.15 });
+  const cWB = B.chart('wingBot', { type: 'plan', x: [0.9, 17.0], z: [-4.3, 5.2], view: 'bottom', mirror: true, density: 0.82 });
+  const cSh = B.chart('sharklet', { type: 'side', z: [3.5, 6.6], y: [0.45, 3.25], view: 'right', density: 1.3 });
+  const cSt = B.chart('stab', { type: 'plan', x: [0.2, 6.6], z: [14.0, 19.8], view: 'top', mirror: true, density: 0.95 });
   const cFin = { L: B.chart('finL', { type: 'side', z: [8.2, 18.9], y: [1.8, 8.7], view: 'left' }), R: B.chart('finR', { type: 'side', z: [8.2, 18.9], y: [1.8, 8.7], view: 'right' }) };
   B.pack();
   const UB = {
@@ -237,7 +237,6 @@ export function createVisual(ctx, opts = {}) {
     stB.add(K.pylon([{ y: -1.02, z0: -4.3, z1: -0.35, x: c[0], tc: 0.11 }, { y: -0.62, z0: -4.05, z1: 0.35, x: c[0], tc: 0.1 }, { y: -0.18, z0: -3.55, z1: 1.0, x: c[0], tc: 0.075 }], { uv: UB.pylon }));
     stB.add(K.plate([c[0] - sx * 0.98, c[1] + 0.55, c[2] + 0.75], [c[0] - sx * 0.98, c[1] + 0.55, c[2] + 1.6], [c[0] - sx * 1.24, c[1] + 0.7, c[2] + 1.65], [c[0] - sx * 1.21, c[1] + 0.68, c[2] + 0.95], 0.012, UB.engine));   // inboard nacelle strake
     const fanMesh = K.fan({ radius: NAC.rFan - 0.01, hub: 0.32, blades: 18, chord: 0.36, staggerRoot: 30, staggerTip: 60, sweep: 0.12, uvBlade: UB.blade, uvSpinner: UB.spinner });
-    fanMesh.add(K.lathe([[0.075, -0.45], [0.11, -0.4], [0.11, -0.36], [0.075, -0.32]], { segments: 10, uv: UB.swirl }).translate(0, 0, 0));   // spinner swirl mark
     eng.push({ c, n, fanMesh });
   }
 
@@ -385,8 +384,8 @@ function paintFuselage(A, o) {
     P.band(Z0, Z1, -Infinity, -0.7, belly, { step: 0.5 });
     P.band(-14.2, 19.9, -0.42, -0.2, accent, { step: 0.5 });
     P.band(-14.2, 19.9, -0.12, -0.06, F.gloss(SC.titleColor), { step: 0.5 });
-    P.textOn(SC.title, -6.8, 1.45, 'both', 0.55, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
-    P.textOn('neo', -1.6, 1.4, 'both', 0.7, { color: SC.accent, font: K.FONT.round, weight: 700 });
+    P.textOn(SC.title, -8.6, 1.45, 'both', 0.55, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
+    P.textOn('neo', -4.9, 1.4, 'both', 0.7, { color: SC.accent, font: K.FONT.round, weight: 700 });
   }
   P.textOn(SC.reg, 15.0, 1.35, 'both', 0.3, { color: SC.style === 'sweep' ? '#ffffff' : '#1d2126', font: K.FONT.sans, weight: 700 });
   P.textOn('A320neo', -11.0, -0.45, 'both', 0.14, { color: '#7c8288', font: K.FONT.wide, weight: 700 });
@@ -485,7 +484,7 @@ function paintSurfaces(B, o) {
   { const Q = B.pen(cSh); Q.fill('all', F.gloss(SC.sharklet));
     if (SC.style === 'cheat') Q.decal(5.2, 2.3, (g) => drawStar(g, 0.36, '#ffffff'));
     if (SC.style === 'sweep') Q.fill((g) => g.rect(3.5, 0.45, 3.1, 0.55), F.gloss(SC.belly));
-    if (SC.style === 'house') Q.text('neo', 5.3, 2.0, 0.28, { color: '#ffffff', font: K.FONT.round, weight: 700 });
+    if (SC.style === 'house') Q.fill((g) => g.rect(3.5, 0.45, 3.1, 0.5), F.gloss('#f2f3f4'));
   }
   {
     const Q = B.pen(cSt); Q.fill('all', grey);
