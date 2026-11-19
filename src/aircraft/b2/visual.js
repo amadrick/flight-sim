@@ -820,7 +820,7 @@ function paint(atlas, o) {
       // exhaust decks: heat-resistant tiles, lighter and metallic, sooty towards the trailing edge
       for (const e of ENG) {
         const x0 = e.cx - EHW, x1 = e.cx + EHW, poly = [[x0 - 0.04, e.z], [x1 + 0.04, e.z], [x1 + 0.04, zTE(x1 + 0.04)], [x0 - 0.04, zTE(x0 - 0.04)]];
-        P.fill(poly, { color: SC.tile, rough: 0.46, metal: 0.62 });
+        P.fill(poly, { color: SC.tile, rough: 0.55, metal: 0.6 });
         for (let z = e.z + 0.2; z < zTE(x0); z += 0.2) P.line([[x0, z], [x1, z]], { px: 1, depth: 0.18, dark: 0.07 });
         for (let x = x0 + 0.183; x < x1 - 0.05; x += 0.183) P.line([[x, e.z], [x, zTE(x)]], { px: 1, depth: 0.18, dark: 0.07 });
         P.streak(e.cx, e.z + 0.05, e.cx, zTE(e.cx) + 0.6, EHW * 1.9, { alpha: SC.fresh ? 0.12 : 0.34, color: '38,33,29' });
