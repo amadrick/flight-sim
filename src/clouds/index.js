@@ -215,9 +215,10 @@ export async function createClouds(ctx) {
   const flashes = [null, null];
   let nextFlash = 3 + rnd() * 4;
   const tmpWf = {}, tmpV = new THREE.Vector3();
-  function spawnFlash() {
+  function spawnFlash(forceX, forceZ) {
     let best = null, bestScore = 0.25;
-    for (let i = 0; i < 14; i++) {
+    if (forceX !== undefined) best = { x: forceX, z: forceZ, dev: 0.8 };       // debug / scripted strikes
+    else for (let i = 0; i < 14; i++) {
       const a = rnd() * Math.PI * 2, r = 4000 + rnd() * rnd() * 38000;
       const x = camWorld.x + Math.cos(a) * r, z = camWorld.z + Math.sin(a) * r;
       weatherField(x - windOffset.x, z - windOffset.y, bake, tmpWf);
@@ -437,7 +438,7 @@ export async function createClouds(ctx) {
     params: P,
     get windOffset() { return windOffset; },
     weatherAt(worldX, worldZ, out = {}) { return weatherField(worldX - windOffset.x, worldZ - windOffset.y, bake, out); },
-    debug: { noise3, noise2, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
+    debug: { spawnFlash, noise3, noise2, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
   };
   return api;
 }

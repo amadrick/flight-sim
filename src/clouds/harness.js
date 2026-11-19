@@ -92,13 +92,19 @@ async function boot() {
       }`,
   }));
 
-  const wxSwitch = raw.wx, wxAt = num('wxAt', 3);
+  const wxSwitch = raw.wx, wxAt = num('wxAt', 3), flashAt = num('flashAt', -1);
+  sim.lightning = [];
+  ctx.events.on('lightning', (e) => sim.lightning.push({ x: e.worldPos.x, y: e.worldPos.y, z: e.worldPos.z, intensity: e.intensity, frame: ctx.time.frame }));
   function frame(realDt) {
     realDt = Math.min(Math.max(realDt, 0), 0.1);
     ctx.renderer.info.reset();
     ctx.time.advance(realDt);
     const dt = ctx.time.dt;
     if (wxSwitch && ctx.time.frame === wxAt) ctx.weather.setPreset(wxSwitch, raw.wxInstant === '1');
+    if (ctx.time.frame === flashAt) {
+      const f = ctx.camera.getWorldDirection(new THREE.Vector3()), r = num('flashDist', 9000);
+      ctx.clouds.debug.spawnFlash(ctx.world.origin.x + ctx.camera.position.x + f.x * r, ctx.world.origin.z + ctx.camera.position.z + f.z * r);
+    }
     ctx.weather.update(dt);
     ctx.session.update(dt);
     ctx.cameraRig.update(realDt);

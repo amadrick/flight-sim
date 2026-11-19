@@ -390,7 +390,9 @@ void main() {
             vec3 S = E * (mix(0.0796, clHG(cosT, 0.6), 0.5) * exp(-tauS) + 0.05 * diffT) + 0.5 * (ambUp * diffT + ambDn);
             float Ts = exp(-sig * ds), w = T * (1.0 - Ts);
             for (int k = 0; k < 2; k++) { vec3 dv = pr - uClFlash[k].xyz; flash += w * uClFlash[k].w / (1.0 + dot(dv, dv) * 1.2e-6); }
-            L += w * S * 0.92; tSum += w * ts; wSum += w; T *= Ts;
+            // rain is featureless: it must not drag the reprojection depth towards the camera (the cloud structure
+            // seen through it would smear with wind drift / parallax), so it barely counts in the mean distance
+            L += w * S * 0.92; tSum += 0.03 * w * ts; wSum += 0.03 * w; T *= Ts;
           }
           t += ds; continue;
         }
@@ -511,7 +513,10 @@ void main() {
   if (ok) {
     vec4 h = texture(tClHist, puv); vec4 ha = texture(tClHistAux, puv);
     // disocclusion: the scene surface in front of / behind the cloud changed (aircraft edges, terrain silhouettes)
-    float dz = abs(log2(max(ha.x, 1e-4) / max(dFull, 1e-4)));
+    // (only depth changes that can cut into the cloud matter: beyond ~3x the cloud distance, e.g. the terrain/sky
+    //  boundary at the horizon seen through near cloud, the surface is irrelevant and must not reset the history)
+    float capKm = cloudKm * 3.0 + 2.0;
+    float dz = abs(log2(max(min(ha.x, capKm), 1e-4) / max(min(dFull, capKm), 1e-4)));
     float reject = smoothstep(0.15, 0.5, dz);
     float exact = max(f.x, 1.0 - f.x) * max(f.y, 1.0 - f.y);   // 1 when this pixel is one of this frame's samples
     exact *= exact; exact *= exact;
