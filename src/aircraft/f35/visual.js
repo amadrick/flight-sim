@@ -21,9 +21,9 @@ const DEG = Math.PI / 180;
 export const LIVERIES = ['usaf', 'lowvis', 'raaf'];
 
 const SCHEMES = {
-  usaf: { name: 'USAF 388th FW (HL)', skin: '#666a6d', tape: '#777c7f', mark: '#3e4245', code: 'HL', serial: 'AF 19-5427', unit: '388 FW', star: 'usaf', tip: '#2c2f31' },
-  lowvis: { name: 'Low-visibility (sanitised)', skin: '#5d6063', tape: '#696d70', mark: '#4a4e51', code: '', serial: '5481', unit: '', star: 'usaf', tip: null },
-  raaf: { name: 'RAAF No. 3 Sqn', skin: '#64686b', tape: '#75797c', mark: '#3c4043', code: '', serial: 'A35-052', unit: '3SQN', star: 'raaf', tip: null },
+  usaf: { name: 'USAF 388th FW (HL)', skin: '#56595c', tape: '#676b6e', mark: '#3e4245', code: 'HL', serial: 'AF 19-5427', unit: '388 FW', star: 'usaf', tip: '#2c2f31' },
+  lowvis: { name: 'Low-visibility (sanitised)', skin: '#4e5154', tape: '#5a5d60', mark: '#4a4e51', code: '', serial: '5481', unit: '', star: 'usaf', tip: null },
+  raaf: { name: 'RAAF No. 3 Sqn', skin: '#54585b', tape: '#65696c', mark: '#3c4043', code: '', serial: 'A35-052', unit: '3SQN', star: 'raaf', tip: null },
 };
 
 export function createVisual(ctx, opts = {}) {
@@ -79,9 +79,9 @@ export function createVisual(ctx, opts = {}) {
     [-2.20, 0.260, 1.450, 1.000, 1.080, 0.62, 0.85, 28, 56],
     [-1.00, 0.160, 1.490, 0.990, 0.980, 0.6, 0.88, 26, 68],
     [0.60, 0.100, 1.500, 0.980, 0.920, 0.6, 0.88, 24, 72],
-    [2.00, 0.100, 1.450, 0.910, 0.890, 0.6, 0.86, 26, 72],
-    [3.20, 0.100, 1.300, 0.820, 0.820, 0.66, 0.8, 30, 72],
-    [4.20, 0.100, 1.080, 0.740, 0.700, 0.68, 0.72, 38, 70],
+    [2.00, 0.100, 1.450, 0.910, 0.890, [0.7, 0.66], 0.86, 30, 72],
+    [3.20, 0.100, 1.300, 0.810, 0.820, [0.86, 0.78], 0.8, 52, 72],
+    [4.20, 0.100, 1.100, 0.730, 0.700, [0.9, 0.78], 0.72, 64, 70],
     [5.00, 0.100, 0.640, 0.620, 0.620, 0.5523, 0.5523, 90, 90],
   ].map(r => ({ z: r[0], y: r[1], w: r[2], top: r[3], bot: r[4], kTop: r[5], kBot: r[6], aTop: r[7], aBot: r[8] }));
   const T_SILL = 0.385, T_NG = 0.05, T_MLG = [0.07, 0.16];
@@ -98,11 +98,11 @@ export function createVisual(ctx, opts = {}) {
   stat.add(fus.mesh);
 
   // ---- tail booms (carry the fins and stabilators either side of the nozzle) ---------------------------------------------------
-  const BX = 1.0, BS = (z, y, w, top, bot, extra) => ({ z, x: BX, y, w, top, bot, kTop: [0.86, 0.8], kBot: [0.8, 0.74], aTop: 55, aBot: 80, ...extra });
+  const BX = 1.0, BS = (z, y, w, top, bot, extra) => ({ z, x: BX, y, w, top, bot, kTop: [0.95, 0.9], kBot: [0.85, 0.78], aTop: 70, aBot: 85, ...extra });
   const boom = K.loft({
     stations: [
-      BS(2.0, 0.4, 0.05, 0.05, 0.05), BS(2.8, 0.38, 0.27, 0.36, 0.32), BS(3.8, 0.37, 0.31, 0.39, 0.37), BS(5.0, 0.36, 0.29, 0.36, 0.36),
-      BS(5.7, 0.3, 0.2, 0.22, 0.22), BS(6.15, 0.18, 0.02, 0.02, 0.02),
+      BS(1.0, 0.12, 0.3, 0.06, 0.06), BS(2.2, 0.24, 0.31, 0.2, 0.2), BS(3.2, 0.34, 0.32, 0.32, 0.34), BS(4.0, 0.35, 0.32, 0.335, 0.36), BS(5.0, 0.34, 0.3, 0.32, 0.35),
+      BS(5.75, 0.29, 0.2, 0.2, 0.23), BS(6.2, 0.2, 0.02, 0.02, 0.02),
     ],
     segments: Math.max(16, Math.round(24 * detail / 4) * 4), step: 0.25, chart: cBoom, creases: ['side'],
   });
