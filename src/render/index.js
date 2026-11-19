@@ -235,7 +235,7 @@ export async function createPipeline(ctx) {
   };
   {
     // sun disc radiance so that its integral over the disc is the illuminance (per channel, with limb darkening)
-    const area = Math.PI * ATM.SUN_RADIUS * ATM.SUN_RADIUS, u = [0.44, 0.58, 0.74];
+    const area = Math.PI * ATM.SUN_RADIUS * ATM.SUN_RADIUS, u = atmosphere.sunLimb;
     compositeUniforms.uSkySunDisc.value.set(SUN_ILLUMINANCE / area / (1 - u[0] / 3), SUN_ILLUMINANCE / area / (1 - u[1] / 3), SUN_ILLUMINANCE / area / (1 - u[2] / 3));
   }
   const probeUniforms = { tMeter: { value: null }, tClouds: compositeUniforms.tClouds, uHasClouds: compositeUniforms.uHasClouds, uProbeSun: { value: new THREE.Vector4() }, uProbeFocus: { value: new THREE.Vector4(0, 0, 0, 1.777) } };

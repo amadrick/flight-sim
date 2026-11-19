@@ -16,9 +16,17 @@
 // sky colour at the horizon (no seam between far terrain and sky). Being world-aligned and spherical (not
 // frustum-aligned) it is valid for ANY render-space position: reflections, clouds, off-screen points, IBL capture.
 //
+// Neural air + sun (src/neural/atmo.js, default; URL param atmo=classic turns it off): the transmittance LUT bound to
+// tAtmTransmittance is the spectral one (band-integrated sun colour), the sky-view and aerial passes multiply the
+// sun-lit in-scatter by a network ratio (tAtmNeuralSky) and the composite adds the circumsolar aureole (atmAureole).
+// The LUT generation passes themselves keep the classic three-wavelength transmittance (the networks were trained
+// as corrections of exactly that model).
+//
 // Everything in the public API below is a handful of LUT fetches: no loops.
 // Requires FRAME_UNIFORMS_GLSL (core/glsl.js) to be declared first.
 // Bind uniforms with: uniforms: { ...ctx.uniforms.frame, ...ctx.pipeline.atmosphere.uniforms }
+
+import { neuralSkyGLSL } from '../neural/atmo.js';
 
 export const ATM = {
   RG: 6371.0,          // planet radius, km
@@ -185,6 +193,7 @@ uniform vec3 uAtmGroundAlbedo;
 uniform vec3 uAtmAirglow;      // emission per km of sea-level air (night readability)
 uniform vec4 uAtmDeck;         // horizontally-averaged cloud deck: x: base (km), y: top (km), z: light removed below it (0..1)
 
+${neuralSkyGLSL('model')}
 const vec3 ATM_BR = vec3(5.802e-3, 13.558e-3, 33.1e-3);     // Rayleigh scattering at sea level, 1/km
 const vec3 ATM_BO = vec3(0.650e-3, 1.881e-3, 0.085e-3);     // ozone absorption at the layer peak, 1/km
 
@@ -225,14 +234,15 @@ vec3 atmMultiScat(float h, float mu) { vec3 c = texture(tAtmMultiScat, atmMsUV(h
 // Single + multiple scattering from both lights along a ray that starts at altitude h (camera frame, +Y up) and
 // runs tMax km along dir, n steps distributed quadratically (dense near the camera). Analytic integration per
 // segment (Hillaire 2020 eq. 4-ish: energy conserving for thick media).
-void atmIntegrate(float h, vec3 dir, float tMax, int n, out vec3 L, out vec3 T) {
+// Ls: the part of L that is sunlight scattered by the air (what the neural sky ratio corrects).
+void atmIntegrate2(float h, vec3 dir, float tMax, int n, out vec3 L, out vec3 Ls, out vec3 T) {
   float r = ATM_RG + h, mu = dir.y;
   float c0 = dot(dir, uAtmL0Dir), c1 = dot(dir, uAtmL1Dir);
   float pR0 = atmPhaseR(c0), pM0 = atmPhaseM(c0, uAtmMie.z);
   float pR1 = atmPhaseR(c1), pM1 = atmPhaseM(c1, uAtmMie.z);
   bool moon = (uAtmL1Illum.r + uAtmL1Illum.g + uAtmL1Illum.b) > 0.0;
   bool sun = (uAtmL0Illum.r + uAtmL0Illum.g + uAtmL0Illum.b) > 0.0;
-  L = vec3(0.0); T = vec3(1.0);
+  L = vec3(0.0); Ls = vec3(0.0); T = vec3(1.0);
   float t0 = 0.0, inv = 1.0 / float(n);
   for (int i = 0; i < n; i++) {
     float x1 = float(i + 1) * inv, t1 = tMax * x1 * x1, dt = t1 - t0, t = t0 + 0.5 * dt;
@@ -242,22 +252,26 @@ void atmIntegrate(float h, vec3 dir, float tMax, int n, out vec3 L, out vec3 T) 
     vec3 dens = atmDensity(hs);
     vec3 sR = ATM_BR * dens.x; float sM = uAtmMie.x * dens.y;
     vec3 ext = sR + vec3(uAtmMie.y * dens.y) + ATM_BO * dens.z;
-    vec3 S = uAtmAirglow * dens.x;
+    vec3 S = uAtmAirglow * dens.x, Ssun = vec3(0.0);
     // Air under a cloud deck is lit by what the deck lets through on average. Baking this into the LUTs (rather than
     // darkening pixels afterwards) keeps terrain, water, clouds and sky consistent at the horizon on a grey day.
     float lit = 1.0 - uAtmDeck.z * (1.0 - smoothstep(uAtmDeck.x - 0.1, uAtmDeck.y, hs));
     if (sun) {
       float m = dot(up, uAtmL0Dir);
-      S += uAtmL0Illum * lit * (atmLightTransmittance(hs, m) * (sR * pR0 + sM * pM0) + atmMultiScat(hs, m) * (sR + sM));
+      Ssun = uAtmL0Illum * lit * (atmLightTransmittance(hs, m) * (sR * pR0 + sM * pM0) + atmMultiScat(hs, m) * (sR + sM));
+      S += Ssun;
     }
     if (moon) {
       float m = dot(up, uAtmL1Dir);
       S += uAtmL1Illum * lit * (atmLightTransmittance(hs, m) * (sR * pR1 + sM * pM1) + atmMultiScat(hs, m) * (sR + sM));
     }
     vec3 Ts = exp(-ext * dt);
-    L += T * (S - S * Ts) / max(ext, vec3(1e-9));
+    vec3 k = T * (1.0 - Ts) / max(ext, vec3(1e-9));
+    L += k * S;
+    Ls += k * Ssun;
     T *= Ts;
     t0 = t1;
   }
 }
+void atmIntegrate(float h, vec3 dir, float tMax, int n, out vec3 L, out vec3 T) { vec3 Ls; atmIntegrate2(h, dir, tMax, n, L, Ls, T); }
 `;
