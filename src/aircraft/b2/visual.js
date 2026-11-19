@@ -383,7 +383,7 @@ export function createVisual(ctx, opts = {}) {
   const MB = { xi: 3.85, xm: 4.3, xo: 5.35, zf: -2.6, za: 2.0 };          // main gear bay: trapezoid with LE-parallel ends
   const mbF = (x) => MB.zf + (x - MB.xi) * T33, mbA = (x) => MB.za - (x - MB.xi) * T33;
   const NB = [[0.0, -7.9], [0.5, -7.58], [0.5, -5.22], [0.0, -4.9]];
-  const AUX = INLETS.map(cx => [[cx - 0.42, -1.62], [cx + 0.42, -1.62], [cx + 0.42, -0.92], [cx - 0.42, -0.92]]);
+  const AUX = INLETS.map(cx => [[cx - 0.3, -1.6], [cx + 0.3, -1.6], [cx + 0.3, -1.12], [cx - 0.3, -1.12]]);
   const mkReg = (name, surf, polys) => { const P = polys.map(ccw); return { name, surf, polys: P, bbox: bboxOf(P.flat()), mesh: new K.Mesh() }; };
   const regions = [
     mkReg('winFront', 'U', [WIN.front]), mkReg('winSide', 'U', [WIN.side]),
@@ -638,11 +638,11 @@ function paint(atlas, o) {
     // panel patchwork: large skin panels in faintly different tones (the coating is applied and repaired panel by panel)
     for (let k = 0; k < FR.length - 1; k++) for (let m = 0; m < SP.length - 1; m++) {
       const q = [at(SP[m], FR[k]), at(SP[m + 1], FR[k]), at(SP[m + 1], FR[k + 1]), at(SP[m], FR[k + 1])], r = rnd();
-      P.fill(q, r < 0.5 ? patchF : seamF, { alpha: (weathered ? 0.25 : 0.12) + rnd() * (weathered ? 0.4 : 0.16) });
+      P.fill(q, r < 0.5 ? patchF : seamF, { alpha: (weathered ? 0.14 : 0.1) + rnd() * (weathered ? 0.24 : 0.14) });
     }
-    if (weathered) for (let k = 0; k < 34; k++) {                     // fresh repair patches
+    if (weathered) for (let k = 0; k < 22; k++) {                     // fresh repair patches
       const a = 0.4 + rnd() * 23, z = zLE(a) + 0.5 + rnd() * Math.max(0.3, chord(a) - 1.4), w = 0.25 + rnd() * 1.1, h = 0.2 + rnd() * 0.8;
-      P.fill([[a, z], [a + w, z], [a + w, z + h], [a, z + h]], coat(rnd() < 0.6 ? '#3d4249' : '#5a5f66'), { alpha: 0.55 + rnd() * 0.3 });
+      P.fill([[a, z], [a + w, z], [a + w, z + h], [a, z + h]], coat(rnd() < 0.6 ? '#40454c' : '#53585f'), { alpha: 0.3 + rnd() * 0.3 });
     }
     // panel joints (barely visible) with taped seams on the main joints
     for (let k = 1; k < FR.length - 1; k++) { const L = fLine(FR[k]); joint(P, L); if (k === 2 || k === 5) tape(P, L); }
