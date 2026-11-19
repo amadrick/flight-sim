@@ -59,7 +59,10 @@ def main():
     base = 0
     for f in files:
         z = np.load(f)
-        X.append(z['X']); Y.append(z['Y']); CX.append(z['CX']); CY.append(z['CY'])
+        if 'crown' in os.path.basename(f):          # crown-transfer-only dataset
+            CX.append(z['CX']); CY.append(z['CY'])
+            continue
+        X.append(z['X']); Y.append(z['Y'])
         SID.append(base + np.arange(len(z['X'])) // PER_STAND)
         base += len(z['X']) // PER_STAND
     X, Y, CX, CY, SID = map(np.concatenate, (X, Y, CX, CY, SID))

@@ -41,9 +41,9 @@ function configFor(ctx) {
   const k = Math.max(48, Math.min(kMax, Math.round(200 * (q.terrainDetail ?? 1))));   // LOD range in vertex spacings
   const m0 = Math.max(0.62, (1 + 1.45 * P / k) / 2 + 0.01);    // geomorph starts here (fraction of the level's range)
   const steps = raw.terrShadow !== undefined ? +raw.terrShadow : ({ low: 8, medium: 14, high: 20, ultra: 28 }[q.level] ?? 16);
-  // 3D trees: cells per side of the camera-centred grid (0 = off), 7 m cells
-  let treeG = { low: 0, medium: 88, high: 104, ultra: 128 }[q.level] ?? 88;
-  if (raw.terrTrees !== undefined) treeG = Math.max(0, Math.min(256, +raw.terrTrees | 0));
+  // vegetation (trees.js picks its own per-quality budgets): terrTrees=0 turns it off
+  let treeG = 1;
+  if (raw.terrTrees !== undefined) treeG = +raw.terrTrees ? 1 : 0;
   return { N, TPV, k, m0, t0: S0 / TPV, shadowSteps: steps, treeG, treeCell: 7 };
 }
 
@@ -101,7 +101,7 @@ export async function createTerrain(ctx) {
   let trees = null;
   function makeTrees() {
     if (trees) { ctx.scene.remove(trees.object3D); trees.dispose(); trees = null; }
-    if (cfg.treeG > 0) { trees = createTrees(ctx, { L, G: cfg.treeG, cell: cfg.treeCell, uniforms }); ctx.scene.add(trees.object3D); }
+    if (cfg.treeG > 0) { trees = createTrees(ctx, { L, uniforms }); ctx.scene.add(trees.object3D); }
   }
   makeTrees();
 
@@ -206,7 +206,8 @@ export async function createTerrain(ctx) {
     uniforms.uTerrOrg.value.copy(org);
     if (trees) trees.update(wx, wz, org, Hd, minLevel);
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
-    stats.drawCalls = stats.treeTriangles ? 2 : 1;
+    stats.drawCalls = 1 + (trees && trees.object3D.visible ? trees.stats.drawCalls : 0);
+    stats.veg = trees ? trees.stats : null;
   }
 
   // ---- public GLSL hook for other shaders (ocean depth, shoreline foam) -------------------------------------

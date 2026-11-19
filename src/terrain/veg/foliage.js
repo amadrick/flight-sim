@@ -21,7 +21,9 @@ function makeCanvas() {
 function stamp(C, tile, cx, cy, ang, len, wid, prof, bright, tint, depth, midrib = 0.25) {
   const N = ATLAS_SIZE, ox = (tile % TILES) * TILE, oy = Math.floor(tile / TILES) * TILE;
   const ca = Math.cos(ang), sa = Math.sin(ang);
-  const ex = Math.abs(ca) * len + Math.abs(sa) * wid + 2, ey = Math.abs(sa) * len + Math.abs(ca) * wid + 2;
+  const ex = Math.abs(ca) * len * 0.5 + Math.abs(sa) * wid + 2, ey = Math.abs(sa) * len * 0.5 + Math.abs(ca) * wid + 2;
+  const PL = new Float32Array(33);
+  for (let i = 0; i <= 32; i++) PL[i] = prof(i / 32);
   const mx = cx + ca * len * 0.5, my = cy + sa * len * 0.5;
   const x0 = Math.max(0, Math.floor(mx - ex)), x1 = Math.min(TILE - 1, Math.ceil(mx + ex));
   const y0 = Math.max(0, Math.floor(my - ey)), y1 = Math.min(TILE - 1, Math.ceil(my + ey));
@@ -29,7 +31,7 @@ function stamp(C, tile, cx, cy, ang, len, wid, prof, bright, tint, depth, midrib
     const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
     const u = (dx * ca + dy * sa) / len, v = (-dx * sa + dy * ca);
     if (u < 0 || u > 1) continue;
-    const hw = wid * prof(u);
+    const fi = u * 32, i0 = fi | 0, hw = wid * (i0 >= 32 ? PL[32] : PL[i0] + (PL[i0 + 1] - PL[i0]) * (fi - i0));
     const e = hw - Math.abs(v);                       // px inside the edge
     if (e <= -0.5) continue;
     const a = Math.min(1, e + 0.5);
@@ -66,7 +68,8 @@ function cluster(C, tile, r, { n, len, wid, prof, spread = 1.0, bright = 0.5, va
     const per = Math.round(n / nb);
     for (let i = 0; i < per; i++) {
       const t = 0.25 + 0.75 * (i / per) + 0.05 * r();
-      const px = cx + (ex - cx) * t, py = cy + (ey - cy) * t;
+      const off = (r() - 0.5) * 50 * t;
+      const px = cx + (ex - cx) * t - Math.sin(ang) * off, py = cy + (ey - cy) * t + Math.cos(ang) * off;
       const side = i & 1 ? 1 : -1;
       const la = ang + side * (0.6 + 0.5 * r());
       const s = 0.75 + 0.5 * r();
@@ -79,9 +82,9 @@ function cluster(C, tile, r, { n, len, wid, prof, spread = 1.0, bright = 0.5, va
 export function createFoliageAtlas() {
   const C = makeCanvas();
   const r = rng32(1234567);
-  cluster(C, 0, r, { n: 150, len: 30, wid: 9, prof: lobed });
-  cluster(C, 1, r, { n: 150, len: 28, wid: 11, prof: oval });
-  cluster(C, 2, r, { n: 120, len: 17, wid: 7.5, prof: pointed, spread: 1.15, bright: 0.58, var: 0.45 });
+  cluster(C, 0, r, { n: 300, len: 19, wid: 6, prof: lobed });
+  cluster(C, 1, r, { n: 300, len: 17, wid: 7, prof: oval });
+  cluster(C, 2, r, { n: 260, len: 12, wid: 5.5, prof: pointed, spread: 1.15, bright: 0.58, var: 0.45 });
   // spruce / fir bough: a drooping main twig with side twiglets, densely clad in short needles
   {
     const t = 3;
@@ -128,7 +131,7 @@ export function createFoliageAtlas() {
       for (const s of [-1, 1]) stamp(C, t, x, 128, s * (1.05 - 0.35 * u) + 0.12 * (r() - 0.5), Math.max(L, 8), 3.2, pointed, 0.45 + 0.3 * r(), r() < 0.07 ? 0.8 : 0.08 * r(), 0.5 + 0.5 * u, 0.15);
     }
   }
-  cluster(C, 6, r, { n: 60, len: 58, wid: 21, prof: oval, spread: 1.1, bright: 0.48 });
+  cluster(C, 6, r, { n: 110, len: 40, wid: 15, prof: oval, spread: 1.1, bright: 0.48 });
   cluster(C, 7, r, { n: 220, len: 14, wid: 6, prof: oval, spread: 1.25, bright: 0.5, var: 0.4 });
   // desert shrub: wiry grey twigs, sparse tiny leaves
   {

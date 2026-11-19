@@ -1,222 +1,140 @@
-// 3D trees near the camera. One instanced draw call of low-poly crowns on a camera-centred grid of G x G cells.
-// Where a tree stands is decided on the GPU with the SAME land-cover function the surface shader paints forests with
-// (terrCover in surface.glsl.js), so the 3D trees and the painted canopy further out always agree:
-//   pass 1 (G x G fragments / frame): per cell -> ground height, tree height (0 = none), species, terrain shadow
-//   pass 2: instanced crowns read their cell with one texelFetch; cells without a tree collapse to nothing.
-// Cells are indexed in world space (stable hash => a tree never moves or changes when the camera or origin does).
+// Vegetation: trees, shrubs and grass near and far, built and baked at boot, placed on the GPU with the surface
+// shader's land cover (terrCover in surface.glsl.js) so 3-D vegetation stands exactly where the surface paints forest.
+//
+//   veg/species.js    species table (crown envelopes, leaf optics; shared with the offline path tracer)
+//   veg/foliage.js    procedural leaf / needle / frond / grass / bark atlas (pure JS rasteriser)
+//   veg/treegen.js    procedural trees (trunk, limbs, leaf-cluster cards) -> vertex-pulling texture
+//   veg/impostor.js   hemi-octahedral impostor atlases baked from those meshes (2 draw calls at boot)
+//   veg/placement.js  toroidal per-cell placement map (species, height, terrain shadow, cover)
+//   veg/near.js       full meshes near the camera (1 draw + shadow-map depth pass)
+//   veg/far.js        impostors out to ~1.4 km (1 draw)
+//   veg/grass.js      grass / turf / reeds within ~60 m (1 small map pass + 1 draw)
+//   src/neural/veg.js crown light transfer + canopy reflectance networks, baked into 3-D LUTs (veg=classic: off)
+//
+// API used by terrain/index.js: createTrees(ctx, { L, uniforms }) -> { object3D, triangles, radius, update, dispose, stats }
 import * as THREE from 'three';
-import { CURVATURE_GLSL, FULLSCREEN_VERT, fullscreenTriangle } from '../core/glsl.js';
-import { COVER_GLSL } from './surface.glsl.js';
-import { clipmapGLSL, TILE_CONSTS_GLSL } from './material.js';
+import { createFoliageAtlas } from './veg/foliage.js';
+import { buildTreeMeshes } from './veg/treegen.js';
+import { bakeImpostors } from './veg/impostor.js';
+import { createPlacement } from './veg/placement.js';
+import { createCommonUniforms } from './veg/common.js';
+import { createNearTrees } from './veg/near.js';
+import { createFarTrees } from './veg/far.js';
+import { createGrass } from './veg/grass.js';
+import { TREE_CELL } from './veg/species.js';
+import { createVegNeural } from '../neural/veg.js';
 
-const SEG = 6;           // sides of a crown
-// crown profiles (t = height fraction, r = radius fraction of the tree height): 3 rings + apex = 30 triangles
-const CONIFER = [[0.03, 0.235], [0.47, 0.080], [0.44, 0.180], [1.0, 0.0]];      // two tiers of boughs
-const BROADLEAF = [[0.0, 0.030], [0.46, 0.40], [0.80, 0.30], [1.0, 0.0]];       // trunk flaring into a round crown
+// per quality: G = far map cells per side (6.5 m), near = mesh radius (m), grass = grass cells per side (1 m),
+// frame = impostor frame size (px), blend = 4-view impostor blending
+const TIERS = {
+  low:    { G: 176, near: 0,   grass: 0,   frame: 64, blend: false },
+  medium: { G: 320, near: 70,  grass: 96,  frame: 84, blend: true },
+  high:   { G: 416, near: 90, grass: 128, frame: 84, blend: true },
+  ultra:  { G: 512, near: 130, grass: 160, frame: 84, blend: true },
+};
 
-function profileNormals(prof) {
-  // smooth lathe normals: (radial, vertical) per ring, from the neighbouring profile points
-  return prof.map((p, i) => {
-    const a = prof[Math.max(i - 1, 0)], b = prof[Math.min(i + 1, prof.length - 1)];
-    const dt = b[0] - a[0], dr = b[1] - a[1];
-    let nr = dt, ny = -dr;                         // perpendicular to the profile tangent, pointing outward
-    if (i === prof.length - 1) { nr = 0.3; ny = 1; }
-    const l = Math.hypot(nr, ny) || 1;
-    return [ny / l, nr / l];
-  });
-}
+let shared = null;      // meshes / atlases survive quality changes (rebuilding them is the expensive part of boot)
 
-function crownGeometry() {
-  const rings = CONIFER.length - 1, nv = rings * SEG + 1;
-  const pos = new Float32Array(nv * 3), A = new Float32Array(nv * 4), Nn = new Float32Array(nv * 4);
-  const nC = profileNormals(CONIFER), nB = profileNormals(BROADLEAF);
-  for (let r = 0; r <= rings; r++) {
-    const count = r === rings ? 1 : SEG;
-    for (let s = 0; s < count; s++) {
-      const v = r * SEG + s, a = (s + 0.5 * (r & 1)) / SEG * Math.PI * 2;     // alternate rings are twisted
-      pos[v * 3] = Math.cos(a); pos[v * 3 + 1] = 0; pos[v * 3 + 2] = Math.sin(a);
-      A.set([CONIFER[r][0], CONIFER[r][1], BROADLEAF[r][0], BROADLEAF[r][1]], v * 4);
-      Nn.set([nC[r][0], nC[r][1], nB[r][0], nB[r][1]], v * 4);
-    }
+export function createTrees(ctx, { L, uniforms }) {
+  const t0 = performance.now();
+  const raw = ctx.params.raw || {};
+  const tier = { ...(TIERS[ctx.quality.level] || TIERS.medium) };
+  if (raw.vegG) tier.G = Math.max(16, Math.min(640, +raw.vegG | 0));
+  if (raw.vegNear !== undefined) tier.near = Math.max(0, +raw.vegNear);
+  const neuralOn = raw.veg !== 'classic';
+  if (!shared || shared.renderer !== ctx.renderer || shared.frame !== tier.frame || shared.neural !== neuralOn) {
+    shared?.dispose();
+    const foliage = createFoliageAtlas();
+    const tA = performance.now();
+    const meshes = buildTreeMeshes();
+    const tB = performance.now();
+    const imp = bakeImpostors(ctx.renderer, meshes, foliage, ctx.uniforms.frame, { F: tier.frame });
+    const tC = performance.now();
+    const neural = createVegNeural({ neural: neuralOn });
+    shared = {
+      renderer: ctx.renderer, frame: tier.frame, neural: neuralOn, foliage, meshes, imp, nn: neural,
+      ms: { foliage: tA - t0, meshes: tB - tA, impostors: tC - tB, neural: performance.now() - tC },
+      dispose() { foliage.dispose(); meshes.texture.dispose(); imp.dispose(); neural.dispose(); },
+    };
   }
-  const idx = [];
-  for (let r = 0; r < rings - 1; r++) for (let s = 0; s < SEG; s++) {
-    const a = r * SEG + s, b = r * SEG + (s + 1) % SEG, c = a + SEG, d = b + SEG;
-    // twisted rings: choose the diagonal that keeps the strip convex
-    if (r & 1) idx.push(a, c, d, a, d, b); else idx.push(a, c, b, b, c, d);
-  }
-  const apex = rings * SEG;
-  for (let s = 0; s < SEG; s++) idx.push((rings - 1) * SEG + s, apex, (rings - 1) * SEG + (s + 1) % SEG);
-  const g = new THREE.InstancedBufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  // (a normal attribute must exist or three falls back to flat shading; the real normal is built in the vertex shader)
-  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nv * 3).fill(1), 3));
-  g.setAttribute('aTreeA', new THREE.BufferAttribute(A, 4));
-  g.setAttribute('aTreeN', new THREE.BufferAttribute(Nn, 4));
-  g.setIndex(idx);
-  return { geometry: g, triangles: idx.length / 3 };
-}
+  const { foliage, meshes, imp, nn } = shared;
+  // the canopy LUT uniforms ride along in the terrain's shared uniforms (for the surface shader's distant forest)
+  Object.assign(uniforms, nn.uniforms);
+  const G = tier.G, Gn = tier.near > 0 ? Math.ceil(2 * tier.near / TREE_CELL) + 2 : 0;
+  const placement = createPlacement(ctx, { L, G, uniforms });
+  const U = createCommonUniforms(ctx, uniforms, placement, meshes, nn);
+  U.tVegVerts = { value: meshes.texture };
+  U.tVegFoliage = { value: foliage };
+  const R = G * TREE_CELL * 0.5;
+  const farEnd = R * 0.96, farStart = R * 0.80;
+  U.uVegRange.value.set(tier.near, Math.min(18, tier.near * 0.2), farStart, farEnd);
+  if (!Gn) U.uVegRange.value.set(0, 0.0001, farStart, farEnd);
 
-const TREE_COMMON = /* glsl */`
-uniform highp sampler2D tTreeMap;
-uniform highp vec2 uTreeCell;    // world cell index of map texel (0, 0)
-uniform highp vec2 uTreeBase;    // render-space xz of that cell's corner
-uniform highp vec4 uTreeGrid;    // x = cell size (m), y = cells per side
-uniform highp vec4 uTerrTree;    // x = on (0..1), y = full radius, z = end radius
-vec2 treeHash(vec2 p) {
-  uvec2 q = uvec2(ivec2(p));
-  uint h = q.x * 0x8da6b343u + q.y * 0xd8163841u + 0x9e3779b9u;
-  h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12; h *= 0x297a2d39u; h ^= h >> 15;
-  return vec2(float(h & 0xffffu), float(h >> 16)) / 65536.0;
-}
-vec2 treeXZ(vec2 ij) { return uTreeBase + (ij + 0.12 + 0.76 * treeHash(uTreeCell + ij + 20000.0)) * uTreeGrid.x; }
-`;
+  const group = new THREE.Group();
+  group.name = 'vegetation';
+  group.matrixAutoUpdate = false;
+  const near = Gn ? createNearTrees(ctx, { L, Gn, U, neuralGLSL: nn.glsl }) : null;
+  const far = createFarTrees(ctx, { L, G, U, imp, neuralGLSL: nn.glsl, blend: tier.blend });
+  const grass = tier.grass ? createGrass(ctx, { L, Gg: tier.grass, uniforms, U }) : null;
+  if (near) group.add(near.mesh);
+  group.add(far.mesh);
+  if (grass) group.add(grass.mesh);
+  group.visible = false;
+  // the surface shader shows shaded forest floor instead of painted crowns where 3-D trees stand
+  uniforms.uTerrTree.value.set(0, farStart, farEnd, 0);
 
-export function createTrees(ctx, { L, G, cell, uniforms }) {
-  const renderer = ctx.renderer;
-  const rt = new THREE.WebGLRenderTarget(G, G, {
-    type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
-    depthBuffer: false, stencilBuffer: false, generateMipmaps: false, colorSpace: THREE.NoColorSpace,
-  });
-  const R = G * cell * 0.5;
-  const U = {
-    tTreeMap: { value: rt.texture },
-    uTreeCell: { value: new THREE.Vector2() }, uTreeBase: { value: new THREE.Vector2() },
-    uTreeGrid: { value: new THREE.Vector4(cell, G, 0, 0) },
-    uTerrTree: uniforms.uTerrTree,
+  const nearTris = near ? Gn * Gn * meshes.info.reduce((m, s) => Math.max(m, s.tris), 0) : 0;
+  const stats = {
+    bootMs: performance.now() - t0, parts: shared.ms, G, Gn, grassG: tier.grass, nearRadius: tier.near, farRadius: farEnd,
+    impostorAtlas: `${imp.W}x${imp.H} x2 RGBA8`, textureMB: 0, drawCalls: 0, trianglesSubmitted: 0,
+    species: meshes.info.map((s) => `${s.id}:${s.tris}`).join(' '), neural: neuralOn,
   };
-  uniforms.uTerrTree.value.set(0, R * 0.70, R * 0.96, 0);
-
-  // ---- pass 1: where the trees are ------------------------------------------------------------------------------
-  const mapMat = new THREE.ShaderMaterial({
-    glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
-    uniforms: {
-      tTerrH: uniforms.tTerrH, tTerrD: uniforms.tTerrD, tTerrNoise: uniforms.tTerrNoise, uTerrLvl: uniforms.uTerrLvl,
-      uTerrCam: uniforms.uTerrCam, uTerrLod: uniforms.uTerrLod, uTerrTile: uniforms.uTerrTile, uTerrRw: uniforms.uTerrRw,
-      uTerrRwL: uniforms.uTerrRwL, uOrigin: uniforms.uOrigin, uSunDir: uniforms.uSunDir, uTerrShadowOn: uniforms.uTerrShadowOn,
-      ...U,
-    },
-    vertexShader: FULLSCREEN_VERT,
-    fragmentShader: /* glsl */`
-      precision highp float; precision highp int; precision highp sampler2DArray;
-      out vec4 outColor;
-      ${clipmapGLSL(L)}
-      ${TILE_CONSTS_GLSL}
-      ${COVER_GLSL}
-      ${TREE_COMMON}
-      void main() {
-        vec2 ij = floor(gl_FragCoord.xy);
-        vec2 rxz = treeXZ(ij);
-        vec2 hs = treeHash(uTreeCell + ij + 40000.0);
-        float d = terrLodDist(rxz);
-        float lf = terrLevelAt(d);
-        vec4 Gh = terrTexH(rxz, lf), D = terrTexD(rxz, lf);
-        if (lf < uTerrLod.z) {
-          float kb = terrMorph(d / (uTerrLod.x * exp2(lf)));
-          if (kb > 0.0) { Gh = mix(Gh, terrTexH(rxz, lf + 1.0), kb); D = mix(D, terrTexD(rxz, lf + 1.0), kb); }
-        }
-        float h = Gh.x + Gh.y;
-        vec3 n = terrDecodeN(D.xy);
-        vec4 n0 = textureLod(tTerrNoise, terrUV(TERR_TILE0, uTerrTile[0], rxz), 0.0);
-        vec4 n1 = textureLod(tTerrNoise, terrUV(TERR_TILE1, uTerrTile[1], rxz), 0.0);
-        vec4 n2 = textureLod(tTerrNoise, terrUV(TERR_TILE2, uTerrTile[2], rxz), 0.0);
-        vec4 n3 = textureLod(tTerrNoise, terrUV(TERR_TILE3, uTerrTile[3], rxz), 0.0);
-        TerrCover C = terrCover(rxz, h, n, (D.z - 0.5) / 1.25, Gh.z, clamp(Gh.w, 0.0, 1.0), n0, n1, n2, n3);
-        float exists = step(hs.x, C.forest * 1.1 - 0.05);
-        float conif = step(fract(hs.x * 61.0 + hs.y * 17.0), C.conifer);
-        float size = mix(mix(8.5, 17.0, hs.y), mix(13.0, 27.0, hs.y * hs.y + 0.25 * hs.y), conif);
-        size *= mix(0.4, 1.0, ss(C.treeline + 60.0, C.treeline - 320.0, h));       // stunted near the tree line
-        size *= mix(1.0, 0.8, C.tropic) * (0.75 + 0.25 * ss(0.3, 1.0, C.forest));
-        size *= exists;
-        float sh = size > 0.0 ? terrShadow(vec3(rxz.x, h + size * 0.6, rxz.y), vec3(0.0, 1.0, 0.0), lf, 10) : 1.0;
-        float hi = floor(h * 0.25 + 0.5) * 4.0;
-        outColor = vec4(hi, h - hi, size, conif + clamp(sh, 0.0, 1.0) * 0.9);
-      }`,
-  });
-  const tri = fullscreenTriangle();
-  const mapScene = new THREE.Scene(), mapMesh = new THREE.Mesh(tri, mapMat), mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  mapMesh.frustumCulled = false; mapScene.add(mapMesh);
-
-  // ---- pass 2: the crowns -----------------------------------------------------------------------------------------
-  const { geometry, triangles } = crownGeometry();
-  geometry.instanceCount = G * G;
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 });
-  mat.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, U, { uTerrCam: uniforms.uTerrCam, uTerrCurv: uniforms.uTerrCurv, uOrigin: uniforms.uOrigin });
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', /* glsl */`#include <common>
-        ${CURVATURE_GLSL}
-        ${TREE_COMMON}
-        uniform highp vec4 uTerrCam; uniform float uTerrCurv; uniform vec3 uOrigin;
-        attribute vec4 aTreeA; attribute vec4 aTreeN;
-        varying vec3 vTreeCol; varying vec2 vTreeLit;
-      `)
-      .replace('#include <beginnormal_vertex>', /* glsl */`
-        float tG = uTreeGrid.y;
-        vec2 tij = vec2(float(gl_InstanceID % int(tG)), float(gl_InstanceID / int(tG)));
-        vec4 tM = texelFetch(tTreeMap, ivec2(tij), 0);
-        vec2 tBase = treeXZ(tij);
-        vec2 tH3 = treeHash(uTreeCell + tij + 60000.0);
-        float tDist = distance(tBase, uTerrCam.xz);
-        float tSize = tM.z * uTerrTree.x * (1.0 - smoothstep(uTerrTree.y, uTerrTree.z, tDist));
-        float tConif = step(0.95, tM.w);
-        float tShadow = fract(tM.w) / 0.9;
-        vec4 tProf = tConif > 0.5 ? vec4(aTreeA.xy, aTreeN.xy) : vec4(aTreeA.zw, aTreeN.zw);
-        float tAng = tH3.x * 6.2831853, tc = cos(tAng), ts = sin(tAng);
-        vec2 tDir = vec2(tc * position.x - ts * position.z, ts * position.x + tc * position.z);
-        float tWide = mix(0.82, 1.22, tH3.y) * mix(1.0, 1.0 + 0.5 * (treeHash(uTreeCell + tij + float(gl_VertexID) * 7.0).x - 0.5), 1.0 - tConif);
-        vec3 tLocal = vec3(tDir.x * tProf.y * tWide, tProf.x, tDir.y * tProf.y * tWide) * tSize;
-        vec3 tPos = vec3(tBase.x, tM.x + tM.y - 0.4, tBase.y) + tLocal;
-        tPos.y -= uTerrCurv * curvatureDrop(tDist);
-        // soft foliage normal: lathe normal bent upward
-        vec3 objectNormal = normalize(vec3(tDir.x * tProf.w, tProf.z + mix(1.0, 0.45, tConif), tDir.y * tProf.w));
-        // colour: species, per-tree variety, darker inside / low in the canopy
-        float tTropic = smoothstep(35.0, 70.0, (tBase.y + uOrigin.z) * 0.001);
-        vec3 tCol = mix(vec3(0.050, 0.086, 0.030), vec3(0.030, 0.053, 0.026), tConif);
-        tCol = mix(tCol, tCol * vec3(1.40, 1.22, 0.85), smoothstep(0.55, 1.0, tH3.y) * (1.0 - tConif) * 0.7);
-        tCol = mix(tCol, vec3(0.036, 0.062, 0.020), tTropic * 0.5 * (1.0 - tConif));
-        tCol *= 0.80 + 0.45 * tH3.x;
-        float tUp = smoothstep(0.08, 0.95, tProf.x);
-        vTreeCol = tCol * mix(0.95, 1.35, tConif);
-        float tLow = mix(0.30, 0.46, tConif);
-        vTreeLit = vec2(tShadow * mix(tLow, 1.0, tUp), mix(tLow + 0.05, 1.0, tUp));
-      `)
-      .replace('#include <begin_vertex>', 'vec3 transformed = tPos;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vTreeCol; varying vec2 vTreeLit;')
-      .replace('#include <map_fragment>', 'diffuseColor.rgb = vTreeCol;')
-      .replace('#include <aomap_fragment>', /* glsl */`
-        reflectedLight.indirectDiffuse *= vTreeLit.y;
-        reflectedLight.indirectSpecular *= vTreeLit.y * vTreeLit.y * 0.3;   // foliage: hardly any sky sheen
-        reflectedLight.directDiffuse *= vTreeLit.x;
-        reflectedLight.directSpecular *= vTreeLit.x * 0.3;
-      `);
+  // debug (tools only): read an impostor atlas back as base64 RGBA, every `step`-th texel
+  stats.readAtlas = (which = 0, step = 2) => {
+    const rt = which ? imp.rtB : imp.rtA, buf = new Uint8Array(imp.W * imp.H * 4);
+    ctx.renderer.readRenderTargetPixels(rt, 0, 0, imp.W, imp.H, buf);
+    const w = Math.floor(imp.W / step), h = Math.floor(imp.H / step), out = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 4; c++) out[(y * w + x) * 4 + c] = buf[((y * step) * imp.W + x * step) * 4 + c];
+    let s = ''; for (let i = 0; i < out.length; i += 8192) s += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
+    return JSON.stringify({ w, h, b64: btoa(s) });
   };
-  mat.customProgramCacheKey = () => 'skyward-terrain-trees';
-  const mesh = new THREE.Mesh(geometry, mat);
-  mesh.name = 'terrain-trees'; mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
-  mesh.matrixAutoUpdate = false; mesh.visible = false;
-
+  const vtexBytes = meshes.texture.image.data.byteLength;
+  stats.textureMB = +((imp.bytes + 1024 * 1024 * 4 * 4 / 3 + vtexBytes + G * G * 8 + (tier.grass ? tier.grass ** 2 * 8 : 0) + nn.textureBytes) / 1048576).toFixed(1);
+  let lastTime = -1;
+  const shadowsOn = () => !!ctx.quality.shadows;
   return {
-    object3D: mesh,
-    triangles: G * G * triangles,
+    object3D: group,
+    get triangles() { return stats.trianglesSubmitted; },
     radius: R,
+    stats,
     /** camWX/camWZ: camera world position; org: world origin; Hd: camera clearance above the ground. */
     update(camWX, camWZ, org, Hd, minLevel) {
-      // only worth drawing low down, and only once the fine clipmap levels exist
-      const on = minLevel <= 3 ? 1 - Math.min(Math.max((Hd - 650) / 250, 0), 1) : 0;
+      // trees fade out with clearance: impostors shrink to a few pixels by ~1.6 km
+      const on = minLevel <= 4 ? 1 - Math.min(Math.max((Hd - 1250) / 350, 0), 1) : 0;
       uniforms.uTerrTree.value.x = on;
-      mesh.visible = on > 0;
-      if (!mesh.visible) return;
-      const cx = Math.floor(camWX / cell) - (G >> 1), cz = Math.floor(camWZ / cell) - (G >> 1);
-      U.uTreeCell.value.set(cx, cz);
-      U.uTreeBase.value.set(cx * cell - org.x, cz * cell - org.z);
-      const prev = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
-      renderer.autoClear = false;
-      renderer.setRenderTarget(rt);
-      renderer.render(mapScene, mapCam);
-      renderer.setRenderTarget(prev); renderer.autoClear = prevAuto;
+      group.visible = on > 0;
+      stats.drawCalls = 0; stats.trianglesSubmitted = 0;
+      // the neural LUTs follow the sun at every altitude (the surface shader's distant canopy uses them too)
+      if (ctx.time && ctx.time.now !== lastTime) { lastTime = ctx.time.now; nn.update(ctx.uniforms.frame.uSunDir.value.y); }
+      if (!group.visible) return;
+      placement.update(camWX, camWZ, org);
+      const w = ctx.weather;
+      if (w) {
+        const ws = w.windSpeed ?? (w.wind ? Math.hypot(w.wind.x, w.wind.z) : 3);
+        let dx = w.wind?.x ?? 1, dz = w.wind?.z ?? 0;
+        const l = Math.hypot(dx, dz) || 1;
+        U.uVegWind.value.set(dx / l, dz / l, Math.min(ws / 12, 2.2), Math.min(1, (w.turbulence ?? 0.2) + ws / 30));
+      }
+      const doy = ctx.time?.dayOfYear ?? 172;
+      U.uVegSeason.value.x = Math.max(0, Math.min(1, (doy - 262) / 30)) * (1 - Math.max(0, Math.min(1, (doy - 325) / 20)));
+      if (near) { near.update(camWX, camWZ); near.mesh.castShadow = shadowsOn(); }
+      if (grass) grass.update(camWX, camWZ, org, Hd);
+      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0);
+      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 4 : 0);
     },
-    dispose() { rt.dispose(); mapMat.dispose(); mat.dispose(); geometry.dispose(); tri.dispose(); uniforms.uTerrTree.value.x = 0; },
+    dispose() {
+      placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose();
+      uniforms.uTerrTree.value.x = 0;
+    },
   };
 }

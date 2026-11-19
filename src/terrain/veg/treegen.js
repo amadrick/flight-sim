@@ -135,7 +135,8 @@ function buildBroadleaf(b, sp, r, o) {
     if (perp) { up = n.clone(); n = new THREE.Vector3().crossVectors(n, v3(0, 1, 0)).normalize(); if (n.lengthSq() < 0.1) n.set(1, 0, 0); }
     if (Math.abs(n.dot(up)) > 0.95) up = v3(1, 0, 0);
     const s = o.card * (0.75 + 0.5 * r()) * (0.7 + 0.3 * rn);
-    b.card(c, n, up, s, s, sp.tile, null, shade, leafWind);
+    const nc = n.clone().multiplyScalar(n.dot(crownNormal(sp, c, 0)) < 0 ? -0.4 : 0.4);
+    b.card(c, n, up, s, s, sp.tile, null, (p) => shade(p).add(nc).normalize(), leafWind);
   }
 }
 
@@ -220,7 +221,8 @@ function buildDome(b, sp, r, o) {
     const n = crownNormal(sp, c, 0.1).add(v3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.8)).normalize();
     const up = Math.abs(n.y) > 0.9 ? v3(1, 0, 0) : v3(0, 1, 0);
     const s = o.card * (0.75 + 0.5 * r());
-    b.card(c, n, up, s * 1.2, s, sp.tile, null, shade, leafWind);
+    const nc = n.clone().multiplyScalar(0.4);
+    b.card(c, n, up, s * 1.2, s, sp.tile, null, (p) => shade(p).add(nc).normalize(), leafWind);
   }
 }
 

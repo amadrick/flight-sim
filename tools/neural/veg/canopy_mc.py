@@ -337,13 +337,18 @@ def crown_samples(stand, sun_elevs, rng, per_tree=60):
         x = t['x'] + rn * rr * np.cos(az)
         y = t['y'] + rn * rr * np.sin(az)
         z = z0 + tc * (H - z0)
-        i = np.floor(x / DX).astype(np.int64) % NX
-        j = np.floor(y / DX).astype(np.int64) % NX
-        k = np.clip(np.floor(z / DX).astype(np.int64), 0, NZ - 1)
-        sky = sum(wk * T[i, j, k] for wk, T in zip(skyw, skyT))
+        def look(T, e, a):
+            # the light reaching foliage at this point: transmittance sampled one voxel toward the light, so the
+            # point's own (dense, outer-shell) voxel does not shadow it
+            ce = math.cos(e)
+            i = np.floor((x + ce * math.cos(a) * DX) / DX).astype(np.int64) % NX
+            j = np.floor((y + ce * math.sin(a) * DX) / DX).astype(np.int64) % NX
+            k = np.clip(np.floor((z + math.sin(e) * DX) / DX).astype(np.int64), 0, NZ - 1)
+            return T[i, j, k]
+        sky = sum(wk * look(T, e, a) for wk, T, (e, a) in zip(skyw, skyT, SKY_DIRS))
         for e, T in zip(sun_elevs, Ts):
             rows.append(np.stack([tc, 1.0 - rn, np.cos(az), np.full(m, math.sin(e))], 1))
-            ts.append(T[i, j, k])
+            ts.append(look(T, e, 0.0))
             sv.append(sky)
             gs.append(np.full(m, t['g']))
     if not rows:

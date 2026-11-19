@@ -148,7 +148,7 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 84
   renderer.setRenderTarget(prev); renderer.autoClear = prevAuto; renderer.setClearColor(prevCC, prevCA);
   geo.dispose(); mat.dispose();
   return {
-    atlasA: rtA.texture, atlasB: rtB.texture, F, W, H, N,
+    atlasA: rtA.texture, atlasB: rtB.texture, F, W, H, N, rtA, rtB,
     bytes: 2 * W * H * 4 * 4 / 3,
     ms: performance.now() - t0,
     dispose() { rtA.dispose(); rtB.dispose(); },

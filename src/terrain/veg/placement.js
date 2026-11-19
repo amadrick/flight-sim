@@ -79,8 +79,8 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
         float open = (1.0 - C.pad) * (1.0 - water) * (1.0 - playa) * ss(1.5, 4.0, h) * (1.0 - ss(0.3, 0.55, slope));
         float belowTL = ss(C.treeline + 60.0, C.treeline - 260.0, h);
         // solitary trees and bushes in open country (more along creeks and on rough ground), shrubs in the drylands
-        float pSolo = open * (1.0 - desertAmt) * belowTL * (0.006 + 0.03 * ss(0.45, 0.75, n2.g) + 0.10 * C.forest) * (1.0 - 0.85 * C.crop);
-        float pBush = open * (1.0 - desertAmt) * belowTL * (0.012 + 0.05 * ss(0.5, 0.8, n3.g)) * (1.0 - 0.9 * C.crop) + open * ss(0.2, 0.45, arid) * (1.0 - desertAmt) * 0.10;
+        float pSolo = open * (1.0 - desertAmt) * belowTL * (0.0012 + 0.010 * ss(0.55, 0.8, n2.g) + 0.10 * C.forest) * (1.0 - 0.85 * C.crop);
+        float pBush = open * (1.0 - desertAmt) * belowTL * (0.002 + 0.012 * ss(0.6, 0.85, n3.g) + 0.15 * C.forest) * (1.0 - 0.9 * C.crop) + open * ss(0.2, 0.45, arid) * (1.0 - desertAmt) * 0.08;
         float pShrub = open * desertAmt * (0.06 + 0.30 * ss(0.3, 0.7, n2.g) + 6.0 * max((D.z - 0.5) / 1.25, 0.0));
         float u = hs.x, sp = -1.0, size = 0.0;
         vec2 hr = vec2(0.0);

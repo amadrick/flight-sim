@@ -24,6 +24,7 @@ def main():
     ap.add_argument('--views', type=int, default=40)
     ap.add_argument('--rays', type=int, default=2000)
     ap.add_argument('--out', default='data/canopy.npz')
+    ap.add_argument('--crown-only', action='store_true', help='skip the path tracing (crown transfer data only)')
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
@@ -42,8 +43,13 @@ def main():
         az = math.pi * rng.permutation((np.arange(nv) + rng.random(nv)) / nv)
         sv = np.sqrt(1 - mu * mu)
         views = np.stack([sv * np.cos(az), sv * np.sin(az), mu], 1)
-        brf, gap, sunlit = C.trace_brf(st, views, a.rays, SUN_ELEVS, rng)
+        if a.crown_only:
+            brf = np.zeros((nv, len(SUN_ELEVS), 3)); gap = np.zeros(nv); sunlit = np.zeros((nv, len(SUN_ELEVS)))
+        else:
+            brf, gap, sunlit = C.trace_brf(st, views, a.rays, SUN_ELEVS, rng)
         for k, e in enumerate(SUN_ELEVS):
+            if a.crown_only:
+                break
             X.append(np.stack([np.full(nv, math.sin(e)), mu, np.cos(az), np.full(nv, cover), np.full(nv, conif)], 1))
             Y.append(np.concatenate([brf[:, k, :], gap[:, None], sunlit[:, k:k + 1]], 1))
         f, tsun, sky, g = C.crown_samples(st, SUN_ELEVS, rng, per_tree=24)
@@ -52,7 +58,7 @@ def main():
             CY.append(np.stack([tsun, sky], 1))
         print(f'stand {s + 1}/{a.stands} cover {cover:.2f} conifer {conif:.2f} trees {len(st["trees"])} '
               f'brf(nadir-ish g) {brf[np.argmax(mu), 4, 1]:.4f}  {time.time() - t0:.0f}s', flush=True)
-    np.savez_compressed(a.out, X=np.concatenate(X).astype(np.float32), Y=np.concatenate(Y).astype(np.float32),
+    np.savez_compressed(a.out, X=(np.concatenate(X) if X else np.zeros((0, 5))).astype(np.float32), Y=(np.concatenate(Y) if Y else np.zeros((0, 5))).astype(np.float32),
                         CX=np.concatenate(CX).astype(np.float32), CY=np.concatenate(CY).astype(np.float32))
     print('wrote', a.out)
 
