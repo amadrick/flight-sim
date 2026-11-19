@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CLOUD_LIGHT_MODEL } from './weights-light.js';
-import { createNeuralCloudLight, getCloudLightNets, lightNetJ, lightNetV } from './cloud-light.js';
+import { createNeuralCloudLight, getCloudLightNets, lightNetJ, lightNetV, CLOUD_LIGHT_TRAINED } from './cloud-light.js';
 import { createNeuralCloudScatter, createNeuralCloudScatter4 } from './cloud-scatter.js';
 
 const vec = JSON.parse(readFileSync(fileURLToPath(new URL('./test-vectors-light.json', import.meta.url)), 'utf8'));
@@ -27,6 +27,7 @@ test('round-two LUTs: CPU twin follows the network, sane physical ranges, fast b
   assert.ok(m.info.buildMs < 1000, `build ${m.info.buildMs} ms`);
   let worst = 0;
   for (let i = 0; i < vec.tauSun.length; i++) {
+    if (vec.tauUp[i] > CLOUD_LIGHT_TRAINED.tauUp || vec.tauSun[i] > CLOUD_LIGHT_TRAINED.tauSun) continue;   // clamped there
     const lut = Math.log(m.sampleMulti(vec.tauSun[i], vec.tauUp[i], vec.cosTheta[i]));
     worst = Math.max(worst, Math.abs(lut - vec.lnJms[i]));
   }
@@ -38,6 +39,8 @@ test('round-two LUTs: CPU twin follows the network, sane physical ranges, fast b
   }
   // deep inside (much cloud above) the sky share drops, near the top it dominates
   assert.ok(m.sampleAmbient(0.1, 20)[0] > m.sampleAmbient(20, 0.1)[0]);
+  // beyond the trained range (storm columns) the sky share keeps falling with the cloud above
+  assert.ok(m.sampleAmbient(64, 10)[0] < 0.6 * m.sampleAmbient(20, 10)[0]);
   for (const c of [-1, -0.3, 0.5, 0.99]) for (const ts of [0, 1, 10, 60]) {
     const j = m.sample(ts, 3, c);
     assert.ok(Number.isFinite(j) && j > 0 && j < 25, `J(${ts}, 3, ${c}) = ${j}`);

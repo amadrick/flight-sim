@@ -22,6 +22,12 @@ import { phaseGLSL } from './cloud-scatter.js';
 
 export const CLOUD_LIGHT_LUT_SIZE = 32;
 export const CLOUD_AMB_LUT_SIZE = 32;
+// Input ranges covered by the training points (99.9th percentiles: tauSun 82, tauUp 24, tauDown 26). Beyond them
+// the LUTs do not trust the networks: J is held constant along tauUp / tauSun, and the ambient visibility follows the
+// two-stream slab solution from the edge of the trained range (thick storm columns: bases go dark as they should).
+export const CLOUD_LIGHT_TRAINED = { tauSun: 95, tauUp: 26, amb: 26 };
+const G_MEAN = 0.864;
+const twoStream = (u, d) => (d * (1 - G_MEAN) + 0.71) / ((u + d) * (1 - G_MEAN) + 1.42);
 
 function b64ToF32(b64) {
   let bytes;
@@ -107,19 +113,24 @@ export function createNeuralCloudLight(opts = {}) {
   const toH = THREE.DataUtils.toHalfFloat, fromH = THREE.DataUtils.fromHalfFloat;
   // J LUT: [tauSun (x), tauUp (y), angle (z)] node values = ln J_ms
   const jl = new Uint16Array(n * n * n);
+  const tauAt = (u) => Math.expm1(u * LOG_TAU), ambAt = (u) => Math.expm1(u * LOG_AMB);
+  const T = CLOUD_LIGHT_TRAINED;
   for (let k = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const net = getCloudLightNets().j;
-    _x[0] = 2 * i / (n - 1) - 1; _x[1] = 2 * j / (n - 1) - 1; _x[2] = 2 * k / (n - 1) - 1;
+    _x[0] = 2 * lightAxes.tau(Math.min(tauAt(i / (n - 1)), T.tauSun)) - 1;
+    _x[1] = 2 * lightAxes.tau(Math.min(tauAt(j / (n - 1)), T.tauUp)) - 1;
+    _x[2] = 2 * k / (n - 1) - 1;
     jl[i + n * (j + n * k)] = toH(clamp(mlpForward(net.layers, _x, net.out, net.a, net.b)[0], -30, 12));
   }
   // ambient LUT: [tauUp (x), tauDown (y)] -> (Vsky, Vground), stored linear
   const vl = new Uint16Array(na * na * 2);
   for (let j = 0; j < na; j++) for (let i = 0; i < na; i++) {
     const net = getCloudLightNets().v;
-    _x[0] = 2 * i / (na - 1) - 1; _x[1] = 2 * j / (na - 1) - 1;
+    const u = ambAt(i / (na - 1)), d = ambAt(j / (na - 1)), uc = Math.min(u, T.amb), dc = Math.min(d, T.amb);
+    _x[0] = 2 * lightAxes.amb(uc) - 1; _x[1] = 2 * lightAxes.amb(dc) - 1;
     const o = mlpForward(net.layers, _x, net.out, net.a, net.b);
-    vl[2 * (i + na * j)] = toH(Math.exp(clamp(o[0], -12, 3)));
-    vl[2 * (i + na * j) + 1] = toH(Math.exp(clamp(o[1], -12, 3)));
+    vl[2 * (i + na * j)] = toH(Math.exp(clamp(o[0], -12, 3)) * twoStream(u, d) / twoStream(uc, dc));
+    vl[2 * (i + na * j) + 1] = toH(Math.exp(clamp(o[1], -12, 3)) * twoStream(d, u) / twoStream(dc, uc));
   }
   const texJ = tex3D(jl, n), texV = tex2D(vl, na);
   texJ.name = 'cloudLightJ'; texV.name = 'cloudLightAmb';
