@@ -38,8 +38,9 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.base) });
-  const cFus = atlas.chart('fus', { type: 'unwrap', z: [-11.95, 6.4], girth: 6.4, vScale: 0.85, strips: 2 });
-  const cNac = { R: atlas.chart('nacR', { type: 'unwrap', z: [-5.8, 6.35], girth: 4.6, vScale: 0.8 }), L: atlas.chart('nacL', { type: 'unwrap', z: [-5.8, 6.35], girth: 4.6, vScale: 0.8 }) };
+  const cFus = atlas.chart('fus', { type: 'unwrap', z: [-11.95, 6.4], girth: 6.4, vScale: 0.85, strips: 2, density: 1.15 });
+  const NSPLIT = 0.6;
+  const cNac = { R: atlas.chart('nacR', { type: 'unwrap', z: [-5.8, 2 * NSPLIT + 5.8], girth: 4.6, vScale: 0.8, strips: 2 }), L: atlas.chart('nacL', { type: 'unwrap', z: [-5.8, 2 * NSPLIT + 5.8], girth: 4.6, vScale: 0.8, strips: 2 }) };
   const cCft = atlas.chart('cft', { type: 'unwrap', z: [-3.75, 3.75], girth: 2.4, vScale: 0.8, density: 0.8 });
   const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [1.5, 6.6], z: [-2.9, 3.6], view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-6.6, -1.5], z: [-2.9, 3.6], view: 'top' }) };
   const cWB = atlas.chart('wingBot', { type: 'plan', x: [1.5, 6.6], z: [-2.9, 3.6], view: 'bottom', mirror: true, density: 0.7 });
@@ -131,11 +132,13 @@ export function createVisual(ctx, opts = {}) {
   const nac = {}, nacPatch = {};
   for (const [key, sx] of [['R', 1], ['L', -1]]) {
     const ch = cNac[key];
-    const l = K.loft({
-      stations: nacStations(sx), segments: Math.max(24, Math.round(48 * detail / 4) * 4), step: 0.14 / detail, capStart: 'flat', capUV: U.black,
-      uvFn: (x, y, z, t, ring) => (ring.run === 0 ? U.duct : ch.uvUnwrap(z, t)),
-      cutouts: [{ name: 'mlg', z: [-1.02, 0.62], t: [0, 0.1], mirror: true }],
+    const nopt = { stations: nacStations(sx), segments: Math.max(24, Math.round(48 * detail / 4) * 4), step: 0.14 / detail };
+    const l = K.loft({ ...nopt, zRange: [-6, NSPLIT], capStart: 'flat', capUV: U.black,
+      uvFn: (x, y, z, t, ring) => (ring.run === 0 ? U.duct : ch.uvUnwrap(z, t, 0)),
+      cutouts: [{ name: 'mlg', z: [-1.02, NSPLIT], t: [0, 0.1], mirror: true }],
     });
+    const l2 = K.loft({ ...nopt, zRange: [NSPLIT, 6.4], uvFn: (x, y, z, t) => ch.uvUnwrap(z, t, 1) });
+    stat.add(l2.mesh);
     for (const m of [l.mesh, ...Object.values(l.patches)]) {
       for (let i = 0; i < m.p.length; i += 3) { const z = m.p[i + 2], f = Math.min(1, Math.max(0, (-4.3 - z) / 1.3)); m.p[i + 2] = z - (m.p[i + 1] - 0.04) * RAKE * f; }
     }
@@ -198,12 +201,12 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   const glare = (z0, z1, y0, y1, hw) => { const gs = K.prism([[z0, y0], [z0, y1], [z1 - 0.05, y1 + 0.03], [z1, y1], [z1, y0]], -hw, hw, U.black); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.55 + 0.45 * Math.min(1, (gs.p[i + 2] - z0) / (z1 - z0)); return gs; };
-  stat.add(glare(-8.12, -7.72, 0.55, 0.86, 0.4));
-  stat.add(glare(-6.98, -6.72, 0.62, 1.0, 0.36));
+  stat.add(glare(-8.12, -7.66, 0.7, 0.79, 0.4));
+  stat.add(glare(-6.98, -6.66, 0.9, 0.99, 0.34));
   const panelQuad = (z, y0, y1, hw, b0, b1) => { const i0 = stat.vertexCount; for (const [x, y, b] of [[-hw, y0, b1], [hw, y0, b1], [hw, y1, b0], [-hw, y1, b0]]) { const uv = cPanel.uv(x + 0.45, b); stat.vert(x, y, z, 0, 0.2, 1, uv[0], uv[1]); } stat.quad(i0, i0 + 1, i0 + 2, i0 + 3); };
-  panelQuad(-7.73, 0.48, 0.9, 0.42, 0.0, 0.42);           // front panel (top half of the chart)
+  panelQuad(-7.75, 0.38, 0.79, 0.42, 0.0, 0.42);           // front panel (top half of the chart)
   panelQuad(-6.71, 0.6, 1.0, 0.36, 0.48, 0.88);           // rear panel (bottom half)
-  stat.add(K.box(0.22, 0.4, 0.45, U.console).translate(0, 0.22, -7.5));
+  stat.add(K.box(0.22, 0.3, 0.45, U.console).translate(0, 0.17, -7.5));
   for (const [z0, z1, y] of [[-7.7, -6.6, 0.55], [-6.6, -4.9, 0.62]]) for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.1, z1 - z0, U.console).translate(sx * 0.37, y, (z0 + z1) / 2));
   stat.add(K.stick({ base: [0, 0.3, -7.45], height: 0.32, uv: U.black, uvGrip: U.dark }));
   stat.add(K.box(0.07, 0.07, 0.12, U.dark).translate(-0.36, 0.63, -7.25));
@@ -523,7 +526,7 @@ function paint(atlas, o) {
     for (const y of [0.45, -0.25]) Q.yLine(-5.4, 4.0, y, line);
     Q.ring(-5.45, 0, 1, { px: 1.5, depth: 0.5, dark: 0.25 });
     // main gear door outline
-    Q.line([[-1.02, 0.9], [-1.02, 1.0]], gap); Q.line([[-1.02, 0], [-1.02, 0.1], [0.62, 0.1], [0.62, 0]], gap); Q.line([[-1.02, 0.9], [0.62, 0.9], [0.62, 1.0]], gap);
+    Q.line([[-1.02, 0.9], [-1.02, 1.0]], gap); Q.line([[-1.02, 0], [-1.02, 0.1], [0.6, 0.1], [0.6, 0]], gap); Q.line([[-1.02, 0.9], [0.6, 0.9], [0.6, 1.0]], gap);
     // markings: national insignia on the intake outer face, intake danger stencil, rescue/fuel stencils
     Q.decalOn(-3.7, 0.05, side === 'R' ? 'R' : 'L', (g) => K.drawStarBar(g, 0.62, { lowVis: '#2e3134' }));
     Q.decalOn(-5.25, 0.35, side, (g) => { g.fillStyle = '#a02a24'; g.beginPath(); g.moveTo(-0.09, 0.08); g.lineTo(0.09, 0.08); g.lineTo(0, -0.08); g.closePath(); g.fill(); });
