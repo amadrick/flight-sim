@@ -510,8 +510,8 @@ export function createVisual(ctx, opts = {}) {
       if (ab > 0.02 && abPrev[i] >= 0 && abPrev[i] <= 0.02) teb[i] = 0.9;
       abPrev[i] = ab; teb[i] = Math.max(0, teb[i] - (dt > 0 ? dt : 0));
       const g = Math.min(1, teb[i] / 0.5), k = Math.max(ab, g * 0.8) * (1 - 0.45 * S.night);
-      plumeMat[i].color.setRGB(1.15 * k, 0.5 * k, 0.26 * k).lerp(GREEN.clone().multiplyScalar(k), g);
-      diaMat[i].color.setRGB(1.25 * k, 0.9 * k, 0.55 * k).lerp(GREEN.clone().multiplyScalar(k * 1.1), g);
+      plumeMat[i].color.setRGB(0.5 * k, 0.2 * k, 0.1 * k).lerp(GREEN.clone().multiplyScalar(k * 0.5), g);
+      diaMat[i].color.setRGB(0.55 * k, 0.36 * k, 0.17 * k).lerp(GREEN.clone().multiplyScalar(k * 0.5), g);
       if (g > 0) glowMat[i].color.lerp(GREEN, g * 0.8);
       plumeNodes[i].visible = diaNodes[i].visible = k > 0.02;
     }
