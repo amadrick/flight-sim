@@ -209,6 +209,14 @@ float terrShadow(vec3 rp, vec3 ng, float lvl0, int steps) {
 const NEURAL_SURFACE_GLSL = /* glsl */`
 uniform mediump sampler2DArray tTerrMat;   // detail layers: rg = height gradient, b = height, a = tint
 uniform vec4 uTerrTree;          // 3D trees: x = on, y = full radius, z = end radius
+// anisotropy the detail fades may count on (below the texture setting of the quality level: 2 / 4 / 8+)
+#if TERR_Q > 1
+const float TERR_ANISO = 5.0;
+#elif TERR_Q > 0
+const float TERR_ANISO = 3.0;
+#else
+const float TERR_ANISO = 1.5;
+#endif
 uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
 
 struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; };
@@ -336,7 +344,11 @@ TerrSurf terrSurface(vec3 rp) {
   vec2 w = rp.xz + uOrigin.xz;                        // world metres
   float h = rp.y;
   float d = terrLodDist(rp.xz);
-  float px = max(length(dFdx(rp.xz)), length(dFdy(rp.xz))) + 0.001;   // metres per pixel (map distance)
+  float pxa = length(dFdx(rp.xz)), pxb = length(dFdy(rp.xz));
+  float px = max(pxa, pxb) + 0.001;                   // metres per pixel (map distance, long axis of the footprint)
+  // what a texture lookup resolves: anisotropic filtering covers the long axis of a grazing footprint, so detail
+  // stays sharp toward the horizon instead of fading with the foreshortening
+  float pxt = max(min(pxa, pxb), px / TERR_ANISO) + 0.001;
   vec3 dpx = dFdx(rp), dpy = dFdy(rp);
   vec2 dxz = dpx.xz, dyz = dpy.xz;
   float px3 = max(length(dpx), length(dpy)) + 0.001;                  // metres per pixel on the surface
@@ -372,7 +384,7 @@ TerrSurf terrSurface(vec3 rp) {
   vec4 n3 = n3c;
 #endif
   vec4 n4 = vec4(0.5), n5 = vec4(0.5);
-  float near4 = ss(46.0, 12.0, px), near5 = ss(8.0, 2.0, px);          // fine breakup fades before it can alias
+  float near4 = ss(46.0, 12.0, pxt), near5 = ss(8.0, 2.0, pxt);          // fine breakup fades before it can alias
   if (near4 > 0.0) n4 = mix(n4, textureGrad(tTerrNoise, terrUV(TERR_TILE4, uTerrTile[4], rp.xz) + 0.34 * (n3.rg - 0.5) + 0.6 * (n2.gr - 0.5),
                                             terrUV(TERR_TILE4, vec2(0.0), dxz), terrUV(TERR_TILE4, vec2(0.0), dyz)), near4);
 #if TERR_Q > 0
@@ -457,7 +469,7 @@ TerrSurf terrSurface(vec3 rp) {
   // bushes are a metre or two across (the cells of the 23 m tile): single plants close up, irregular clumps and
   // finally a tint of the ground from further off. Stand density drifts over hundreds of metres. (The cells of the
   // larger tiles are not used: a jittered grid of 7 m cells shows as a weave from the air.)
-  float bushes = ss(1.3, 0.4, px);
+  float bushes = ss(1.3, 0.4, pxt);
   float shrubN = 0.5 + 0.85 * (bk2 - 0.5) + (0.45 - n4.b) * 0.55 * bushes;
   float shrubF = eShrub / openFrac * 1.1 * (1.0 - 0.5 * desertAmt) + 0.035 * desertAmt * (1.0 - playa);
   shrubF *= mix(1.0, 0.5 + 1.0 * ss(0.25, 0.75, 0.5 + (C.mac.y - 0.5) + 0.6 * (n2.g - 0.5)), 0.5 + 0.5 * dry);
@@ -478,7 +490,7 @@ TerrSurf terrSurface(vec3 rp) {
   float canopy = 0.0;
   if (forest > 0.004) {
     vec4 cn = terrMatTex(TERR_TILE3, uTerrTile[3], rp.xz, 0.035 * (n2.rg - 0.5), M_CANOPY, dxz, dyz);
-    float fine = ss(7.0, 1.6, px);                     // crowns (7 m) resolve below a few metres per pixel
+    float fine = ss(7.0, 1.6, pxt);                    // crowns (7 m) resolve below a few metres per pixel
     crown = mix(0.5, cn.b, fine);
     crownG = terrUnrot(TERR_TILE3, cn.rg - 0.5) * fine;
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
@@ -486,10 +498,10 @@ TerrSurf terrSurface(vec3 rp) {
     fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine) * mix(1.0, 0.86, conifer);
     canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine);
     // from further off the canopy reads as an uneven, mottled surface (no cell pattern: it would show its grid)
-    float fineF = ss(40.0, 8.0, px) * (1.0 - 0.7 * fine);
+    float fineF = ss(40.0, 8.0, pxt) * (1.0 - 0.7 * fine);
     fcol *= 1.0 + fineF * (0.9 * (n3.g - 0.5) + 0.5 * (n3.r - 0.5));
     canopyAO *= 1.0 + fineF * 0.8 * (n3.g - 0.5);
-    fcol *= 0.84 + 0.32 * n2.g;                        // stand-to-stand variety
+    fcol *= (0.84 + 0.32 * n2.g) * (0.80 + 0.40 * C.mac.y);   // stand-to-stand variety
   }
   float floorAmt = canopy * t3d;                       // forest floor under real trees
   vec3 floorCol = mix(vec3(0.060, 0.050, 0.032), vec3(0.050, 0.072, 0.030), ss(0.4, 0.7, bk)) * (0.8 + 0.4 * n4.r);
@@ -629,7 +641,7 @@ TerrSurf terrSurface(vec3 rp) {
   vec2 dn = vec2(0.0);
   float hgt = 0.0, tint = 0.0;                         // accumulated height and tint, centred on 0
   // a scale is shown while its features (tile / 8 .. tile / 128) are resolved; beyond that only its mean remains
-  float fade3 = ss(9.0, 2.2, px), fade4 = ss(1.9, 0.46, px), fade5 = ss(0.34, 0.08, px), fade6 = ss(0.06, 0.014, px);
+  float fade3 = ss(9.0, 2.2, pxt), fade4 = ss(1.9, 0.46, pxt), fade5 = ss(0.34, 0.08, pxt), fade6 = ss(0.06, 0.014, pxt);
   float top = 1.0;                                    // weight of the top-down projection
   vec3 dnSide = vec3(0.0);
 #if TERR_Q > 0
