@@ -81,10 +81,19 @@ the same LWC.
 
 ### 1.3 Vertical profile of LWC (adiabatic and sub-adiabatic)
 
-* **Adiabatic LWC rises linearly above base:** LWC_ad(z) = Gamma_ad * (z - z_base). Gamma_ad depends on base temperature
-  and pressure. It is about 2.0 to 2.5 g/m^3/km for warm bases (+15 to +20 C, ~900 hPa), about 1.5 at +5 C, and about
-  1.0 near 0 C. (Albrecht et al. 1990 tabulation; Brenguier 1991.) [K] https://doi.org/10.1175/1520-0450(1990)029<0013:...>
-  [UNVERIFIED exact digits; the order of magnitude is solid]. Liquid water path is then LWP = 0.5 Gamma_ad H^2 for a cloud of depth H.
+* **Adiabatic LWC rises linearly above base:** LWC_ad(z) = Gamma_ad * (z - z_base), where Gamma_ad = rho_air * (c_p/L_v)(Gamma_d - Gamma_s)
+  depends on base temperature and pressure (formula: Curry & Webster ch. 6.5, as quoted in the Warsaw University cloud physics
+  course notes [V] https://www.igf.fuw.edu.pl/en/courses/d/7ZLY5MFPN4LGKAWSLQXZEKDPIH6WI47MDQB7XDQ4MHWUZELURTHA/adiabaticlwc.pdf).
+  I integrated a moist adiabat numerically (Bolton e_s, mean gradient over the first km above base) [derived]:
+
+  | Base T | 950 hPa | 850 hPa | 700 hPa |
+  |---|---|---|---|
+  | +20 C | 2.2 g/m^3/km | 2.05 | 1.8 |
+  | +10 C | 1.85 | 1.75 | 1.55 |
+  | 0 C | 1.35 | 1.3 | 1.2 |
+  | -10 C | 0.85 | 0.85 | 0.8 |
+
+  Liquid water path is then LWP = 0.5 Gamma_ad H^2 for a cloud of depth H (1 km Cu: ~900 g/m^2 adiabatic, ~300-500 real).
 * **Sub-adiabatic factor** f_ad = LWC_obs / LWC_ad. It is 0.6 to 0.9 in stratocumulus (nearly adiabatic) and 0.2 to 0.5 averaged over
   cumulus, and it falls with height in Cu as entrainment accumulates (Warner 1955; Gerber 2000). Cumulus cores near the
   base can be close to adiabatic. [K] https://doi.org/10.1175/1520-0469(1955)012<0436:TWCOCC>2.0.CO;2
@@ -118,14 +127,14 @@ less opaque per metre and the top half dominates optical depth. Multiply the edg
 * **Rain:** drops of 0.1 to 5 mm, Marshall-Palmer distribution N(D) = N0 exp(-Lambda D), N0 = 8000 m^-3 mm^-1,
   Lambda = 4.1 R^-0.21 mm^-1 (R in mm/h). [K] https://doi.org/10.1175/1520-0469(1948)005<0165:TDORWS>2.0.CO;2
   Rain visible extinction in geometric optics is beta = (pi/2) ∫ N(D) D^2 dD = pi N0 / Lambda^3. That gives
-  ~0.6/km at R = 1 mm/h, ~1.6/km at 10 mm/h and ~2.6/km at 50 mm/h (computed from MP; thus visibility 1.5 to 6 km in rain,
-  much less in Cb downpours, where drop counts exceed MP). [derived]
+  ~0.36/km at R = 1 mm/h, ~1.6/km at 10 mm/h and ~4.3/km at 50 mm/h (computed from MP; so visibility 3.9/beta is ~11 km, 2.5 km
+  and 0.9 km; drop spectra in Cb downpours deviate from MP). [derived]
   Rain is *much less extinguishing per gram* than cloud (r_e ~ 0.5 to 1 mm vs 10 um, so 50 to 100x less per unit water).
   Rain shafts look like translucent grey curtains, not opaque columns.
 * **Virga:** precipitation evaporating before it reaches the ground, typical below high-based Ac/Cu in dry air (bases 3 to 5 km,
   dew-point depression > 15 K). It shows as hanging streaks, often curved by shear, fading out downward. [K] https://cloudatlas.wmo.int/en/virga.html
 
--> shader: rain shafts get their own low extinction (~1e-3 to 3e-3 1/m) with a phase function of g ~ 0.88 (big drops,
+-> shader: rain shafts get their own low extinction (~4e-4 to 4e-3 1/m, from the rain rate as above) with a phase function of g ~ 0.88 (big drops,
 strong forward peak, plus a rainbow at 138 deg scattering angle). Let them hang from bases, tilt them with the shear
 vector, and fade them with exp(-(z_base - z)/H_evap) where H_evap ~ 500 m (dry) to infinity (saturated).
 
@@ -366,13 +375,19 @@ L ~ 300-800 m, modulated by local density, plus flicker timing as above.
 
 ### 3.1 Schneider / Guerrilla "Nubis" (2015, 2017, 2022, 2023)
 
-**2015 (HZD, Advances).** [K] https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn
-* Modelling: 2.5D weather map (coverage, precipitation, cloud type). A height gradient per type (stratus, cumulus,
-  cumulonimbus) shapes the vertical density profile. Shape uses a 128^3 Perlin-Worley texture and a 32^3 Worley detail texture
-  that *erodes* the edges (inverse Worley at the bottom gives wispy, billowy at the top). Curl noise distorts the detail.
-* Lighting: Beer's law × HG phase × "powder" `1 - exp(-2d)`, combined as `2 exp(-d)(1 - exp(-2d))`. 6 light samples in a
-  cone toward the sun plus one long-distance sample.
-* Performance: 1/16 of the pixels updated per frame (4×4 Bayer), with the rest reprojected. Under 2 ms on PS4.
+**2015 (HZD, Advances).** [V] https://d3d3g8mu99pzk9.cloudfront.net/AndrewSchneider/The-Real-time-Volumetric-Cloudscapes-of-Horizon-Zero-Dawn.pdf
+* Modelling: a 2.5D weather map (coverage, precipitation, cloud type). Three height-gradient presets (stratus, cumulus,
+  cumulonimbus) blended by type shape the vertical density profile. Precipitation pushes the map toward Cb at 70% coverage.
+* Noise: a 128^3 RGBA base texture (Perlin-Worley in R, Worley at increasing frequency in GBA), a 32^3 RGB Worley detail
+  texture that *erodes* the base shape (wispy at the bottom, billowy at the top), and a 128^2 curl noise for turbulent distortion.
+* Volumetric low clouds sit at 1500-4000 m; alto and cirro above 4000 m are 2D. The cloudscape radius is 35 km, with
+  transitions from 15 km.
+* Lighting: Beer's law × HG × a "powder sugar" darkening that depends on depth and the view-light angle. The combined
+  form usually quoted from the talk is `2 exp(-d)(1 - exp(-2d))` [K]. Light samples: 5-6 in a cone toward the sun plus one
+  long-distance sample. Absorption is raised in rain clouds. Ambient grows with height.
+* March: 64 samples, rising to 128 at the horizon; cheap sampling once alpha > 0.3 (2× faster); early exit.
+* Performance: a quarter-resolution buffer updates 1 of 16 pixels per 4×4 block per frame, with reprojection for the rest.
+  ~2 ms and ~20 MB on PS4 (down from ~20 ms before the optimisations).
 
 **2017 (Nubis "in a nutshell"):** combined HG with a 'silver lining' lobe as a max() of two HG lobes plus an
 eccentricity/intensity control; added "in-scatter probability" based on height and density. [UNVERIFIED details]
