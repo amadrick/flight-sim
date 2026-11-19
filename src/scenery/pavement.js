@@ -126,6 +126,9 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec3 base = kind < 1.5 ? vec3(0.25, 0.245, 0.232) : vec3(0.215, 0.21, 0.198);
             col = base * tone * (0.8 + 0.4 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
             col *= vec3(1.0, 0.99 + 0.02 * h2, 0.97 + 0.05 * h3);                         // cement batches differ
+            // pour campaigns / later reconstruction: blocks of slabs with a different overall tone
+            vec2 zc = floor(sl / (slab * vec2(9.0, 6.0)));
+            col *= 0.88 + 0.2 * scnHash(zc * 3.1 + seed + 11.0);
             float jx = scnLines(sl.x + 0.01, slab, 0.02), jy = scnLines(sl.y + 0.01, slab, 0.02);
             float ob = max(scnLines(sl.x + 0.06, slab, 0.14) * step(0.55, h2), scnLines(sl.y + 0.06, slab, 0.14) * step(0.6, h3));
             float j = max(jx, jy);
