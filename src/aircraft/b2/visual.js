@@ -568,11 +568,11 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps -------------------------------------------------------------------------------------------------------------
   const Lt = Gm.lights;
-  rig.lamp('nav', Lt.navLeft, { color: [1, 0.04, 0.02], size: 0.06, squash: [0.6, 0.5, 1.4] });
-  rig.lamp('nav', Lt.navRight, { color: [0.02, 1, 0.25], size: 0.06, squash: [0.6, 0.5, 1.4] });
+  rig.lamp('nav', Lt.navLeft, { color: [1, 0.04, 0.02], size: 0.11, squash: [0.6, 0.5, 1.4] });
+  rig.lamp('nav', Lt.navRight, { color: [0.02, 1, 0.25], size: 0.11, squash: [0.6, 0.5, 1.4] });
   rig.lamp('nav', Lt.tail, { color: [1, 1, 1], size: 0.05, parent: glaNode });
-  rig.lamp('strobe', Lt.strobe, { color: [1, 1, 1], size: 0.06, squash: [1, 0.5, 1] });
-  rig.lamp('beacon', Lt.beacon, { color: [1, 0.05, 0.03], size: 0.08, squash: [1, 0.5, 1] });
+  rig.lamp('strobe', Lt.strobe, { color: [1, 1, 1], size: 0.1, squash: [1, 0.5, 1] });
+  rig.lamp('beacon', Lt.beacon, { color: [1, 0.05, 0.03], size: 0.12, squash: [1, 0.5, 1] });
 
   // ---- animation ---------------------------------------------------------------------------------------------------------
   rig.onUpdate((S) => {
