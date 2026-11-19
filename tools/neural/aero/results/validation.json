@@ -1,0 +1,353 @@
+[
+ {
+  "case": "elliptic AR 6, 12 strips/half",
+  "quantity": "CL_alpha vs Helmbold",
+  "solver": 4.4268,
+  "reference": 4.5297,
+  "error_pct": -2.3,
+  "source": "Helmbold lifting surface"
+ },
+ {
+  "case": "elliptic AR 6, 12 strips/half",
+  "quantity": "CL_alpha vs lifting line",
+  "solver": 4.4268,
+  "reference": 4.7132,
+  "error_pct": -6.1,
+  "source": "Prandtl lifting line"
+ },
+ {
+  "case": "elliptic AR 6, 12 strips/half",
+  "quantity": "span efficiency e",
+  "solver": 1.0437,
+  "reference": 1.0,
+  "error_pct": 4.4,
+  "source": "elliptic loading"
+ },
+ {
+  "case": "elliptic AR 6, 40 strips/half",
+  "quantity": "CL_alpha vs Helmbold",
+  "solver": 4.3967,
+  "reference": 4.5297,
+  "error_pct": -2.9,
+  "source": "Helmbold lifting surface"
+ },
+ {
+  "case": "elliptic AR 6, 40 strips/half",
+  "quantity": "span efficiency e",
+  "solver": 1.029,
+  "reference": 1.0,
+  "error_pct": 2.9,
+  "source": "elliptic loading"
+ },
+ {
+  "case": "elliptic AR 10, 12 strips/half",
+  "quantity": "CL_alpha vs Helmbold",
+  "solver": 5.0757,
+  "reference": 5.1517,
+  "error_pct": -1.5,
+  "source": "Helmbold lifting surface"
+ },
+ {
+  "case": "elliptic AR 10, 12 strips/half",
+  "quantity": "CL_alpha vs lifting line",
+  "solver": 5.0757,
+  "reference": 5.2366,
+  "error_pct": -3.1,
+  "source": "Prandtl lifting line"
+ },
+ {
+  "case": "elliptic AR 10, 12 strips/half",
+  "quantity": "span efficiency e",
+  "solver": 1.0377,
+  "reference": 1.0,
+  "error_pct": 3.8,
+  "source": "elliptic loading"
+ },
+ {
+  "case": "elliptic AR 10, 40 strips/half",
+  "quantity": "CL_alpha vs Helmbold",
+  "solver": 5.063,
+  "reference": 5.1517,
+  "error_pct": -1.7,
+  "source": "Helmbold lifting surface"
+ },
+ {
+  "case": "elliptic AR 10, 40 strips/half",
+  "quantity": "span efficiency e",
+  "solver": 1.0187,
+  "reference": 1.0,
+  "error_pct": 1.9,
+  "source": "elliptic loading"
+ },
+ {
+  "case": "elliptic AR 20, 12 strips/half",
+  "quantity": "CL_alpha vs Helmbold",
+  "solver": 5.6465,
+  "reference": 5.6866,
+  "error_pct": -0.7,
+  "source": "Helmbold lifting surface"
+ },
+ {
+  "case": "elliptic AR 20, 12 strips/half",
+  "quantity": "CL_alpha vs lifting line",
+  "solver": 5.6465,
+  "reference": 5.7124,
+  "error_pct": -1.2,
+  "source": "Prandtl lifting line"
+ },
+ {
+  "case": "elliptic AR 20, 12 strips/half",
+  "quantity": "span efficiency e",
+  "solver": 1.0325,
+  "reference": 1.0,
+  "error_pct": 3.3,
+  "source": "elliptic loading"
+ },
+ {
+  "case": "elliptic AR 20, 40 strips/half",
+  "quantity": "CL_alpha vs Helmbold",
+  "solver": 5.649,
+  "reference": 5.6866,
+  "error_pct": -0.7,
+  "source": "Helmbold lifting surface"
+ },
+ {
+  "case": "elliptic AR 20, 40 strips/half",
+  "quantity": "span efficiency e",
+  "solver": 1.0122,
+  "reference": 1.0,
+  "error_pct": 1.2,
+  "source": "elliptic loading"
+ },
+ {
+  "case": "rectangular AR 6",
+  "quantity": "CL_alpha",
+  "solver": 4.2849,
+  "reference": 4.5279,
+  "error_pct": -5.4,
+  "source": "Glauert lifting line"
+ },
+ {
+  "case": "rectangular AR 6",
+  "quantity": "CL_alpha",
+  "solver": 4.2849,
+  "reference": 4.5287,
+  "error_pct": -5.4,
+  "source": "Helmbold"
+ },
+ {
+  "case": "rectangular AR 6",
+  "quantity": "span efficiency e",
+  "solver": 1.0786,
+  "reference": 0.956,
+  "error_pct": 12.8,
+  "source": "Glauert lifting line"
+ },
+ {
+  "case": "Warren-12 swept wing",
+  "quantity": "CL_alpha",
+  "solver": 2.781,
+  "reference": 2.743,
+  "error_pct": 1.4,
+  "source": "standard VLM test case"
+ },
+ {
+  "case": "Warren-12 swept wing",
+  "quantity": "Cm_alpha (apex)",
+  "solver": -3.095,
+  "reference": -3.1,
+  "error_pct": 0.2,
+  "source": "standard VLM test case"
+ },
+ {
+  "case": "swept 45 deg AR 5, 4 strips/half",
+  "quantity": "CL_alpha",
+  "solver": 3.4277,
+  "reference": 3.443,
+  "error_pct": -0.4,
+  "source": "Bertin & Smith VLM example (measured 3.4, Weber & Brebner)"
+ },
+ {
+  "case": "swept 45 deg AR 5, 12 strips/half",
+  "quantity": "CL_alpha",
+  "solver": 3.2512,
+  "reference": 3.4,
+  "error_pct": -4.4,
+  "source": "Weber & Brebner wind tunnel"
+ },
+ {
+  "case": "rectangular AR 8",
+  "quantity": "Cl_p",
+  "solver": -0.5373,
+  "reference": -0.5236,
+  "error_pct": -2.6,
+  "source": "lifting line, elliptic loading (-a0 A / 8(A+4))"
+ },
+ {
+  "case": "rectangular AR 8, 5 deg dihedral",
+  "quantity": "Cl_beta",
+  "solver": -0.0876,
+  "reference": -0.1017,
+  "error_pct": 13.9,
+  "source": "strip theory -(a Gamma / 4), an upper bound"
+ },
+ {
+  "case": "elliptic AR 8 wake",
+  "quantity": "downwash at 0.5 span aft",
+  "solver": 0.0366,
+  "reference": 0.0379,
+  "error_pct": -3.2,
+  "source": "horseshoe of span pi b / 4"
+ },
+ {
+  "case": "elliptic AR 8 wake",
+  "quantity": "downwash at 1.0 span aft",
+  "solver": 0.034,
+  "reference": 0.0346,
+  "error_pct": -1.6,
+  "source": "horseshoe of span pi b / 4"
+ },
+ {
+  "case": "elliptic AR 8 wake",
+  "quantity": "downwash at 5 spans aft",
+  "solver": 0.0331,
+  "reference": 0.0333,
+  "error_pct": -0.8,
+  "source": "2 CL / (pi A), far wake"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.075",
+  "solver": 0.3022,
+  "reference": 0.439,
+  "error_pct": -31.2,
+  "source": "Prandtl biplane sigma (Wieselsberger)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.075",
+  "solver": 0.3022,
+  "reference": 0.5902,
+  "error_pct": -48.8,
+  "source": "McCormick formula (the analytic model)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.1",
+  "solver": 0.4179,
+  "reference": 0.515,
+  "error_pct": -18.9,
+  "source": "Prandtl biplane sigma (Wieselsberger)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.1",
+  "solver": 0.4179,
+  "reference": 0.7191,
+  "error_pct": -41.9,
+  "source": "McCormick formula (the analytic model)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.15",
+  "solver": 0.5724,
+  "reference": 0.63,
+  "error_pct": -9.1,
+  "source": "Prandtl biplane sigma (Wieselsberger)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.15",
+  "solver": 0.5724,
+  "reference": 0.8521,
+  "error_pct": -32.8,
+  "source": "McCormick formula (the analytic model)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.2",
+  "solver": 0.6722,
+  "reference": 0.71,
+  "error_pct": -5.3,
+  "source": "Prandtl biplane sigma (Wieselsberger)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.2",
+  "solver": 0.6722,
+  "reference": 0.911,
+  "error_pct": -26.2,
+  "source": "McCormick formula (the analytic model)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.25",
+  "solver": 0.7417,
+  "reference": 0.77,
+  "error_pct": -3.7,
+  "source": "Prandtl biplane sigma (Wieselsberger)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CDi/CL^2 ratio, h/b 0.25",
+  "solver": 0.7417,
+  "reference": 0.9412,
+  "error_pct": -21.2,
+  "source": "McCormick formula (the analytic model)"
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CL / CL free, h/b 0.075",
+  "solver": 1.2276
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CL / CL free, h/b 0.1",
+  "solver": 1.1511
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CL / CL free, h/b 0.15",
+  "solver": 1.089
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CL / CL free, h/b 0.2",
+  "solver": 1.0619
+ },
+ {
+  "case": "ground effect, rect AR 8, 4 deg",
+  "quantity": "CL / CL free, h/b 0.25",
+  "solver": 1.0464
+ },
+ {
+  "case": "stall progression, rectangular AR 7",
+  "quantity": "CLmax, alpha, most separated station eta, Cm break over 2 deg past CLmax",
+  "solver": [
+   1.119,
+   14.5,
+   0.05,
+   -0.0002
+  ]
+ },
+ {
+  "case": "stall progression, tapered 0.4, unswept",
+  "quantity": "CLmax, alpha, most separated station eta, Cm break over 2 deg past CLmax",
+  "solver": [
+   1.19,
+   14.5,
+   0.6,
+   0.0001
+  ]
+ },
+ {
+  "case": "stall progression, swept 35 deg, taper 0.3, AR 8",
+  "quantity": "CLmax, alpha, most separated station eta, Cm break over 2 deg past CLmax",
+  "solver": [
+   1.005,
+   13.0,
+   0.76,
+   0.0444
+  ]
+ }
+]

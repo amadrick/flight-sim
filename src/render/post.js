@@ -1,6 +1,7 @@
 // Post-processing shaders: temporal AA, bloom pyramid, lens + tone map, final resample (FXAA / CAS) + dither.
 import * as THREE from 'three';
 import { FRAME_UNIFORMS_GLSL, DEPTH_GLSL, FULLSCREEN_VERT, FullscreenPass } from '../core/glsl.js';
+import { createNeuralFlare, flareGLSL } from '../neural/flare.js';
 
 const HEAD = /* glsl */`
 precision highp float; precision highp sampler2D;
@@ -136,6 +137,7 @@ uniform vec3 uLensColor;   // sun irradiance at the camera (tints the glare)
 uniform vec4 uGrade;       // x: AgX look power (contrast), y: saturation, z: 8-bit dither amplitude (0 = float target), w: frame
 uniform float uDebug;
 uniform float uNightGrade; // 0..1: rod-vision grade for dark-adapted scenes
+${flareGLSL()}
 
 vec3 agxContrast(vec3 x) {
   vec3 x2 = x * x, x4 = x2 * x2;
@@ -164,8 +166,9 @@ vec3 agx(vec3 color) {
 vec3 oetf(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 
-// Veiling glare + diffraction spikes + a few ghosts. p in aspect-corrected screen units (height = 1).
-vec3 lens(vec2 uv) {
+// Classic (hand-tuned) flare, kept for A/B (?flare=classic): veiling glare + diffraction spikes + a few ghosts.
+// p in aspect-corrected screen units (height = 1).
+vec3 lensClassic(vec2 uv) {
   vec2 asp = vec2(uTone.w, 1.0);
   vec2 sp = (uLensSun.xy - 0.5) * asp, p = (uv - 0.5) * asp;
   vec2 dv = p - sp; float r = length(dv);
@@ -186,6 +189,13 @@ vec3 lens(vec2 uv) {
   gh += vec3(0.9, 0.7, 0.5) * halo * 0.07;
   g += uLensColor * gh * (0.0045 * uLensSun.w);
   return g * uLensSun.z;
+}
+// Lens flare learned from a ray-traced double-Gauss (src/neural/flare.js): starburst + veil + 12 ghosts, physical
+// brightness (sun irradiance x point-spread density / screen solid angle), faded by the sun's visibility.
+vec3 lens(vec2 uv) {
+  if (uFlareParams.y < 0.5) return lensClassic(uv);
+  vec2 asp = vec2(uTone.w, 1.0) * 2.0;
+  return flareNeural((uv - 0.5) * asp, (uLensSun.xy - 0.5) * asp, uLensColor) * uLensSun.z;
 }
 
 void main() {
@@ -291,12 +301,14 @@ export function createPostPasses(ctx) {
   }, TAA_FRAG);
   const down = mat({ tSrc: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uKaris: { value: 0 } }, DOWN_FRAG);
   const up = mat({ tLow: { value: null }, tHigh: { value: null }, uLowTexel: { value: new THREE.Vector2() }, uScatter: { value: 0.65 } }, UP_FRAG);
+  const flare = createNeuralFlare();      // bakes the flare networks into two small textures (once)
   const tonemap = mat({
     tHDR: { value: null }, tBloom: { value: null },
     uTone: { value: new THREE.Vector4(1, 0.05, 0.2, 1.777) }, uLensSun: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
     uLensColor: { value: new THREE.Vector3() }, uGrade: { value: new THREE.Vector4(1.18, 1.16, 0, 0) }, uDebug: { value: 0 }, uNightGrade: { value: 0 },
+    ...flare.uniforms,
   }, TONEMAP_FRAG);
   const final = mat({ tLDR: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uFinal: { value: new THREE.Vector4(0, 0.5, 0, 1 / 255) } }, FINAL_FRAG);
   const copy = mat({ tSrc: { value: null } }, COPY_FRAG);
-  return { taa, down, up, tonemap, final, copy };
+  return { taa, down, up, tonemap, final, copy, flare };
 }

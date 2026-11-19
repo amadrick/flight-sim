@@ -155,6 +155,7 @@ export function resolveConfig(def) {
     dtMax: num(ct.diffTail && ct.diffTail.max, 0) * DEG, trimMax: num(ct.trim && ct.trim.max, num(cEl.max, 25)) * DEG,
     groundEffect: a.groundEffect !== false,
     sweep: null, flaps: null,
+    neural: null,          // network set of the neural aerodynamics layer (attached by the sim core, see src/neural/AERO.md)
   };
   const ad = yaw.alphaDir || (heavy ? [22, 40] : [28, 42]);
   A.aDir0 = ad[0] * DEG; A.aDirInv = 1 / ((ad[1] - ad[0]) * DEG);

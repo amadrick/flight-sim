@@ -7,13 +7,18 @@ import { makeRng } from '../core/math.js';
 
 /**
  * opts: { groundHeight (m, default 0), surface ('runway'), wind: [x, y, z] m/s world (air mass velocity),
- *         turbulence 0..1, precipitation 0..1, seed, groundFn(x, z, out) custom surface }
+ *         turbulence 0..1, precipitation 0..1, seed, groundFn(x, z, out) custom surface,
+ *         aero ('classic' switches the neural aerodynamics layer off; default from the env variable SKYWARD_AERO),
+ *         aeroOff (comma-separated network outputs to switch off, default from SKYWARD_AERO_OFF),
+ *         aeroGe (0..1 strength of the ground-effect pitch term, default from SKYWARD_AERO_GE, else off) }
  */
+const ENV = typeof process !== 'undefined' && process.env ? process.env : {};
+
 export function createMockContext(opts = {}) {
   const events = new Events();
   const wind = new THREE.Vector3(...(opts.wind || [0, 0, 0]));
   const ctx = {
-    params: { seed: opts.seed ?? 1337 },
+    params: { seed: opts.seed ?? 1337, raw: { aero: opts.aero ?? ENV.SKYWARD_AERO, aeroOff: opts.aeroOff ?? ENV.SKYWARD_AERO_OFF, aeroGe: opts.aeroGe ?? ENV.SKYWARD_AERO_GE } },
     events,
     rng: makeRng(opts.seed ?? 1337),
     controls: createControls(),

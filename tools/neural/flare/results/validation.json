@@ -1,0 +1,74 @@
+{
+ "first_order": {
+  "efl_mm": {
+   "486.13": 50.20183456254789,
+   "550.0": 50.31096716306763,
+   "587.56": 50.35816695831366,
+   "656.27": 50.42337530370378
+  },
+  "bfl_mm": 36.0635296664923,
+  "total_track_mm": 68.1035296664923,
+  "entrance_pupil_z_mm": 19.955840565440617,
+  "pupil_magnification": 1.4520343784195056,
+  "f_number_wide_open": 2.0262342724998477,
+  "f_number_working": 4.0,
+  "stop_radius_mm": 4.331075757468425,
+  "axial_colour_bfl_F_minus_C_mm": -0.1991646669714342
+ },
+ "imaging": [
+  {
+   "field_deg": 0.0,
+   "rms_spot_um": 4.222153198694593,
+   "distortion_pct": 0.0,
+   "relative_illumination": 0.9700018215560594
+  },
+  {
+   "field_deg": 5.0,
+   "rms_spot_um": 4.097715535245074,
+   "distortion_pct": -0.044857948036813866,
+   "relative_illumination": 0.9731764298148299
+  },
+  {
+   "field_deg": 10.0,
+   "rms_spot_um": 4.87619452504296,
+   "distortion_pct": -0.2250725421942268,
+   "relative_illumination": 0.9755631851122181
+  },
+  {
+   "field_deg": 15.0,
+   "rms_spot_um": 7.891282221020065,
+   "distortion_pct": -0.5639359840411529,
+   "relative_illumination": 0.9784171057754939
+  },
+  {
+   "field_deg": 20.0,
+   "rms_spot_um": 15.13216789582131,
+   "distortion_pct": -1.1318396315873058,
+   "relative_illumination": 0.9361091853673467
+  }
+ ],
+ "coating_R_normal_incidence_S1": {
+  "400": 0.023758649047435524,
+  "450": 0.01132284925366336,
+  "500": 0.005549669715697644,
+  "550": 0.004182164757763938,
+  "600": 0.0053930368278506694,
+  "650": 0.007968354826015522,
+  "700": 0.011168651195774927
+ },
+ "uncoated_R_S1_550": 0.06339839329939544,
+ "ghost_paraxial_check_r0.6": {
+  "n": 14,
+  "centre_rel_err_median": 0.03149080999698377,
+  "centre_rel_err_max": 0.1330374395341948,
+  "size_ratio_traced_over_paraxial_median": 1.1841035874504118
+ },
+ "energy_bookkeeping_axis_550": {
+  "direct_transmission": 0.9674137510513473,
+  "single_reflections_back_out": 0.03210738332000731,
+  "two_reflection_ghosts_forward": 0.0004065927642645838,
+  "sum": 0.9999277271356192,
+  "residual": 7.227286438082903e-05,
+  "note": "residual = absorbed by rims (none on axis) + three-and-more reflections (O(R^3)) + ghosts leaving backward"
+ }
+}

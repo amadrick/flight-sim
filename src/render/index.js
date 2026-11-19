@@ -235,7 +235,7 @@ export async function createPipeline(ctx) {
   };
   {
     // sun disc radiance so that its integral over the disc is the illuminance (per channel, with limb darkening)
-    const area = Math.PI * ATM.SUN_RADIUS * ATM.SUN_RADIUS, u = [0.44, 0.58, 0.74];
+    const area = Math.PI * ATM.SUN_RADIUS * ATM.SUN_RADIUS, u = atmosphere.sunLimb;
     compositeUniforms.uSkySunDisc.value.set(SUN_ILLUMINANCE / area / (1 - u[0] / 3), SUN_ILLUMINANCE / area / (1 - u[1] / 3), SUN_ILLUMINANCE / area / (1 - u[2] / 3));
   }
   const probeUniforms = { tMeter: { value: null }, tClouds: compositeUniforms.tClouds, uHasClouds: compositeUniforms.uHasClouds, uProbeSun: { value: new THREE.Vector4() }, uProbeFocus: { value: new THREE.Vector4(0, 0, 0, 1.777) } };
@@ -688,8 +688,11 @@ export async function createPipeline(ctx) {
       lighting.sunVisibility = sunVis;
       u.tHDR.value = dbg.rdebug === 'scene' ? sceneTarget.texture : (dbg.rdebug === 'hdr' ? hdrTarget.texture : hdr.texture); u.tBloom.value = bloomTex;
       u.uTone.value.set(exposure, bloomTex ? 0.055 : 0, 0.22, size.w / size.h);
-      u.uLensSun.value.set(ps.x, ps.y, dbg.noflare === '1' ? 0 : sunVis, 1);
+      // lens flare: neural by default, ?flare=classic for the old hand-tuned one, ?flare=off (or noflare=1) for none
+      u.uLensSun.value.set(ps.x, ps.y, dbg.noflare === '1' || dbg.flare === 'off' ? 0 : sunVis, 1);
       u.uLensColor.value.copy(sunE);
+      if (dbg.flare !== 'classic') post.flare.update((ps.x - 0.5) * 2 * size.w / size.h, (ps.y - 0.5) * 2, Math.tan(camera.fov * Math.PI / 360), ctx.cameraRig?.isInterior ? 0.35 : 1);
+      u.uFlareParams.value.y = dbg.flare === 'classic' ? 0 : 1;
       u.uGrade.value.set(1.5, 1.3, caps.float ? 0 : 1 / 255, frameNo % 64);
       u.uDebug.value = dbg.rdebug === 'notonemap' ? 1 : 0;
       u.uNightGrade.value = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));

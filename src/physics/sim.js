@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { createAircraftState } from '../core/state.js';
 import { resolveConfig } from './config.js';
 import { isaAtmosphere, casFromMach, P0, T0 } from './atmosphere.js';
-import { computeAero, createAeroIn, createAeroOut } from './aero.js';
+import { attachNeural, computeAero, createAeroIn, createAeroOut } from './aero.js';
 import { createEngineState, thrustLapse, setEngineSteady, engineOutput, stepEngine } from './propulsion.js';
 import { createFcsState, createApState, updateFcs, updateAutopilot } from './fcs.js';
 import { createTurbulence } from './turbulence.js';
@@ -26,6 +26,9 @@ const fin = (x) => x === x && x !== Infinity && x !== -Infinity;
 export function createSim(ctx, def, init) {
   const model = resolveConfig(def);
   const A = model.aero, C = model.ctl, GR = model.gear, FL = A.flaps, LIM = model.limits;
+  // neural aerodynamics layer: on by default, off with the URL parameter aero=classic
+  const rawParams = (ctx && ctx.params && ctx.params.raw) || {};
+  if (rawParams.aero !== 'classic') attachNeural(A, model.id, rawParams.aeroOff, +rawParams.aeroGe || 0);
   const wheels = GR.wheels, points = model.points, nW = wheels.length, nE = model.engines.length;
   const s = createAircraftState();
   const pos = s.position, vel = s.velocity, Q = s.quaternion;
@@ -54,6 +57,7 @@ export function createSim(ctx, def, init) {
   let hookTarget = 0, hookPos = 0, canopyTarget = 0, canopyPos = 0, sweepMode = -1, sweepPos = 0;
   let parkingBrake = false, lever = 0, brakeCmd = 0, groundSpoilers = false, reverse = false, lastLeverWritten = -1;
   let wowMain = false, anyGround = false, airTime = 0, groundTime = 0;
+  let geAir = 1;                               // 1 airborne .. 0 on the main wheels (lagged): weight of the ground-effect pitch term
   let nzAero = 1, nzOut = 1, nyOut = 0, nzSlow = 1, machPrev = 0, boomArmed = true, iasPrev = 0, osTime = 0;
   let quiet = false, wreckGround = false, arrested = false, catTravel = -1, settleBrake = false, stoppedWreck = false;
   let lastInit = init, trimInfo = null, tailScrape = false;
@@ -461,7 +465,8 @@ export function createSim(ctx, def, init) {
     ai.de = fcs.de; ai.da = fcs.da; ai.dr = fcs.dr; ai.trim = model.fcs.fbw ? 0 : fcs.trim;
     ai.flap = flapPos; ai.slat = slatPos; ai.spL = spL; ai.spR = spR; ai.sb = C.spoilers ? 0 : sbPos; ai.gear = gearPos; ai.sweep = sweepPos;
     ai.drSplit = C.splitRudder ? sbPos : 0;
-    ai.hWing = pos.y - G.h0; ai.nBuffet = turb.fast; ai.nDrop = turb.slow;
+    geAir += ((wowMain ? 0 : 1) - geAir) * (h < 0.8 ? h * 1.25 : 1);       // 0.8 s lag
+    ai.hWing = pos.y - G.h0; ai.bank = phi; ai.geAir = geAir; ai.nBuffet = turb.fast; ai.nDrop = turb.slow;
     computeAero(A, ai, ao);
 
     // ---- body forces/moments (aero axes), contacts in world axes
@@ -633,7 +638,7 @@ export function createSim(ctx, def, init) {
     ai.u = V * Math.cos(alpha); ai.v = 0; ai.w = V * Math.sin(alpha); ai.p = ai.q = ai.r = 0; ai.rho = atm.rho; ai.a = atm.a;
     ai.de = de; ai.da = 0; ai.dr = 0; ai.trim = 0;
     ai.flap = flapPos; ai.slat = slatSchedule(alpha, V / atm.a); ai.spL = ai.spR = 0; ai.sb = 0; ai.gear = gearPos; ai.sweep = sweepPos; ai.drSplit = 0;
-    ai.hWing = 1e4; ai.nBuffet = 0; ai.nDrop = 0;
+    ai.hWing = 1e4; ai.bank = 0; ai.geAir = 1; ai.nBuffet = 0; ai.nDrop = 0;
     computeAero(A, ai, ao);
     const theta = atm.T / T0, delta = atm.p / P0;
     let Tx = 0, Tz = 0, TM = 0;
@@ -692,6 +697,7 @@ export function createSim(ctx, def, init) {
     fuel = clamp(typeof i.fuel === 'number' ? (i.fuel <= 1 ? i.fuel * model.mass.fuelCap : i.fuel) : model.mass.fuelInit, 0, model.mass.fuelCap);
     updateMass();
     const onGround = !!i.onGround;
+    geAir = onGround ? 0 : 1;
     const hdg = i.heading || 0;
     gearTarget = gearPos = (i.gearDown || onGround) ? 1 : 0;
     // flaps: explicit detent index, else nearest detent to the 0..1 request; ground starts get the take-off setting
