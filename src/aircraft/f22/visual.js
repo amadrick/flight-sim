@@ -343,7 +343,7 @@ export function createVisual(ctx, opts = {}) {
     const cx = sx * NAC.x, cy = NAC.y;
     const fixed = new K.Mesh();
     for (const sg of [-1, 1]) {      // side walls with a raked trailing edge
-      fixed.add(K.prism([[0, -NZ.hh], [0, NZ.hh], [0.5, NZ.hh * 0.82], [0.9, NZ.hh * 0.42], [0.9, -NZ.hh * 0.42], [0.5, -NZ.hh * 0.82]], sg * NZ.hw + (sg > 0 ? 0 : -0.035), sg * NZ.hw + (sg > 0 ? 0.035 : 0), U.side));
+      fixed.add(K.prism([[0, -NZ.hh], [0, NZ.hh], [0.55, NZ.hh * 0.95], [0.93, NZ.hh * 0.72], [0.93, -NZ.hh * 0.72], [0.55, -NZ.hh * 0.95]], sg * NZ.hw + (sg > 0 ? 0 : -0.035), sg * NZ.hw + (sg > 0 ? 0.035 : 0), U.side));
     }
     // dark duct + turbine face
     fixed.add(grid([0, 1].map(k => roundedRing([[-NZ.hw + 0.02, -NZ.hh + 0.04], [NZ.hw - 0.02, -NZ.hh + 0.04], [NZ.hw - 0.02, NZ.hh - 0.04], [-NZ.hw + 0.02, NZ.hh - 0.04]], 0.08, 24).map(b => [b.p[0], b.p[1], k ? 0.05 : -0.8])), { flip: true, uv: () => U.exhaust }));
@@ -451,6 +451,15 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.03 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.035 });
   rig.lamp('beacon', L.beacon, { color: [1, 0.08, 0.04], size: 0.04, squash: [1, 0.6, 1] });
+  // formation "slime" strip lights: forebody chines, fin outer faces, tail booms
+  const strip = (p, d, len, n) => { const m = K.box(0.012, 0.03, len, [0, 0]); if (d) m.rotateZ(d); return m.translate(p[0] + n[0] * 0.006, p[1] + n[1] * 0.006, p[2]); };
+  for (const sx of [1, -1]) {
+    const z = -6.6, hw = probe.halfWidthAt(z), cp = probe.at(z, sx > 0 ? tAtX(z, hw - 0.002) : 1 - tAtX(z, hw - 0.002)).p;
+    rig.lamp('formation', null, { mesh: strip([cp[0] - sx * 0.01, cp[1] + 0.035, z], 0, 0.55, [sx, 0, 0]), color: [0.55, 1, 0.42] });
+    const fp = fin[sx > 0 ? 'R' : 'L'].at(2.55, 0.42, 'lower'), cn = [sx * Math.cos(FIN.cant), Math.sin(FIN.cant)];
+    rig.lamp('formation', null, { mesh: strip(fp, -sx * FIN.cant, 0.55, cn), color: [0.55, 1, 0.42] });
+    rig.lamp('formation', null, { mesh: strip([sx * 1.905, -0.03, 6.3], 0, 0.5, [sx, 0, 0]), color: [0.55, 1, 0.42] });
+  }
 
   // ---- animation ----------------------------------------------------------------------------------------------------------------
   rig.onUpdate((S) => {
@@ -462,7 +471,7 @@ export function createVisual(ctx, opts = {}) {
     ctl.rudR.set((sf.rudder * 30 + sb * 25) * DEG); ctl.rudL.set((sf.rudder * 30 - sb * 25) * DEG);
     setStabR(sf.elevatorR * 25 * DEG); setStabL(sf.elevatorL * 25 * DEG);
     for (const n of nozzles) {
-      const e = S.eng[n.i] || {}, pitch = sf.nozzlePitch * 20 * DEG, area = (e.nozzle ?? 0) * 9 * DEG;
+      const e = S.eng[n.i] || {}, pitch = sf.nozzlePitch * 20 * DEG, area = (e.nozzle ?? 0) * 6 * DEG;
       n.u(pitch + area); n.l(pitch - area);
       K.abGlowColor(glowM[n.i].color, e, S.night);
     }
