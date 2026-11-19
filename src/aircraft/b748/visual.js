@@ -162,7 +162,7 @@ function humpSkin(hump, fus, cHump, cFus, wins, detail) {
   const NF = 5, NL = Math.max(28, Math.round(48 * detail) & ~1);
   const rings = zs.map((z) => {
     const q = meet(z); if (!q) return null;
-    const tI = hump.tAtY(z, q.y), tIf = fus.tAtY(z, q.y), sf = Math.min(0.5, 0.17 + 0.4 * q.ext);
+    const tI = hump.tAtY(z, q.y), tIf = fus.tAtY(z, q.y), sf = Math.min(0.52, 0.3 + 0.3 * q.ext);
     const tA = Math.min(z > D(5) && z < D(7.6) ? 0.322 : 0.485, tI + sf / Math.max(0.5, hump.girthAt(z, tI))), tB = Math.max(0.01, tIf - sf / Math.max(0.5, fus.girthAt(z, tIf)));
     const A = hump.at(z, tA), B = fus.at(z, tB);
     const tan = (L, t) => { const a = L.at(z, t - 0.003).p, b = L.at(z, t + 0.003).p, l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
