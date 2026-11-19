@@ -100,6 +100,23 @@ async function boot() {
       }`,
   }));
 
+  // standoff=D: march the view direction (CPU density mirror) and move the camera so the first cloud along it sits
+  // D metres ahead (reproducible "cloud at 2 km" / "turret at 200 m" views); standoffMin skips clouds nearer than that
+  // and aimUp=1 tilts the camera to the cloud's mid-height
+  function standoff(D) {
+    const dir = ctx.camera.getWorldDirection(new THREE.Vector3()), p = new THREE.Vector3();
+    dir.y = 0; dir.normalize();
+    const y = camPos.y, tMin = num('standoffMin', 0);
+    for (let t = tMin; t < 60000; t += 40) {
+      p.set(camPos.x + dir.x * t, y, camPos.z + dir.z * t);
+      if (ctx.clouds.densityAt(p) > num('standoffD', 0.2)) {
+        camPos.addScaledVector(dir, t - D);
+        sim.standoff = { t, D, x: camPos.x, z: camPos.z };
+        return;
+      }
+    }
+    sim.standoff = { miss: true };
+  }
   const wxSwitch = raw.wx, wxAt = num('wxAt', 3), flashAt = num('flashAt', -1);
   sim.lightning = [];
   ctx.events.on('lightning', (e) => sim.lightning.push({ x: e.worldPos.x, y: e.worldPos.y, z: e.worldPos.z, intensity: e.intensity, frame: ctx.time.frame }));
@@ -109,6 +126,7 @@ async function boot() {
     ctx.time.advance(realDt);
     const dt = ctx.time.dt;
     if (wxSwitch && ctx.time.frame === wxAt) ctx.weather.setPreset(wxSwitch, raw.wxInstant === '1');
+    if (raw.standoff && !tour && ctx.time.frame === num('standoffAt', 2)) standoff(+raw.standoff);
     if (ctx.time.frame === flashAt) {
       const f = ctx.camera.getWorldDirection(new THREE.Vector3()), r = num('flashDist', 9000);
       ctx.clouds.debug.spawnFlash(ctx.world.origin.x + ctx.camera.position.x + f.x * r, ctx.world.origin.z + ctx.camera.position.z + f.z * r);
@@ -171,6 +189,7 @@ async function boot() {
       }
       ctx.events.emit('weather:change', { preset: ctx.weather.preset, instant: true });
     }
+    if (tourK % tourFrames === 2 && raw.standoff) standoff(+raw.standoff);
     const tf0 = performance.now();
     frame(dt);
     if (tourK % tourFrames >= 2) tourMs += performance.now() - tf0;      // (the first frames re-bake the maps)
