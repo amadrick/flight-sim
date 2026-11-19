@@ -23,7 +23,7 @@ const DEG = Math.PI / 180, TAU = Math.PI * 2;
 export const LIVERIES = ['amc', 'euro1'];
 
 const SCHEMES = {
-  amc: { name: 'Air Mobility Command grey', body: '#7d848a', radome: '#5a5f64', mark: '#2a2e32', band: '#1d3768', bandText: 'BRANDT FIELD', serial: '12-9217', style: 'grey' },
+  amc: { name: 'Air Mobility Command grey', body: '#7d848a', radome: '#646a6f', mark: '#2a2e32', band: '#1d3768', bandText: 'BRANDT FIELD', serial: '12-9217', style: 'grey' },
   euro1: { name: 'European One (early delivery)', body: '#4b5449', alt: '#3c4140', radome: '#3d4140', mark: '#16181a', band: null, serial: '91-0388', style: 'camo' },
 };
 
@@ -231,7 +231,7 @@ export function createVisual(ctx, opts = {}) {
     sleeveAll.add(sl); sleeveTravel = n.sleeveTravel;
     // pylon: long strut from the fan cowl up and forward of the leading edge, under the wing to an aft fairing
     { const x = Math.abs(c[0]), yl = W.R.at(x, 0.25, 'lower')[1], zl = zLE(x);
-      stB.add(K.pylon([{ y: c[1] + 1.12, z0: c[2] + 0.55, z1: c[2] + 5.4, x: c[0] }, { y: yl + 0.05, z0: zl - 1.9, z1: zl + 3.4, x: c[0] }], { uv: UB.grey, tc: 0.11 }));
+      stB.add(K.pylon([{ y: c[1] + 1.12, z0: c[2] + 0.55, z1: c[2] + 5.4, x: c[0] }, { y: yl + 0.05, z0: zl - 1.9, z1: zl + 3.4, x: c[0] }], { uv: UB.grey, tc: 0.17 }));
       const z0 = zl + 2.2, len = (zTE(x) - zl) * 0.75, yb = W.R.at(x, 0.4, 'lower')[1] - 0.05;
       const st = [[0, 0.02, 0.02], [0.18, 0.3, 0.32], [0.5, 0.34, 0.4], [0.82, 0.2, 0.26], [1, 0.02, 0.04]].map(r => ({ z: z0 + r[0] * len, x: c[0], y: yb + r[0] * 0.25, w: r[1], top: 0.5, bot: r[2] }));
       stB.add(K.loft({ stations: st, segments: 14, step: 0.5, uv: UB.grey }).mesh); }
