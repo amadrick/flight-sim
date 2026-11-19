@@ -6,7 +6,7 @@ import * as THREE from 'three';
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m3 = new THREE.Matrix3(), _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion();
 
 export class Mesh {
-  constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; this.p2 = null; this.occ = null; }
+  constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; this.p2 = null; this.occ = null; this.side = null; }
   get vertexCount() { return this.p.length / 3; }
   get triCount() { return this.idx.length / 3; }
   /** Add a vertex, return its index. */
@@ -39,18 +39,32 @@ export class Mesh {
     if (!o) return this;
     if (matrix) o = o.clone().transform(matrix);
     const base = this.vertexCount;
-    if (o.p2 && !this.p2) this.enableMorph();
+    // an optional morph (the pilot's head turn) is kept only by a mesh that starts with it or already morphs; merged into
+    // plain static geometry it is dropped, so it never turns a whole static mesh into a morphing one
+    if (o.p2 && !this.p2 && (!o.morphOptional || base === 0)) { this.enableMorph(); if (base === 0 && o.morphOptional) this.morphOptional = true; }
+    else if (o.p2 && this.p2 && !o.morphOptional) this.morphOptional = false;
     const { p, n, uv, idx } = this;
     for (let i = 0; i < o.p.length; i++) { p.push(o.p[i]); n.push(o.n[i]); }
     for (let i = 0; i < o.uv.length; i++) uv.push(o.uv[i]);
     for (let i = 0; i < o.idx.length; i++) idx.push(o.idx[i] + base);
     if (this.p2) { const s = o.p2 || o.p; for (let i = 0; i < s.length; i++) this.p2.push(s[i]); }
     if (o.occ || this.occ) { if (!this.occ) this.occ = []; const d = this.occ, so = o.occ, nb = o.p.length / 3; while (d.length < base) d.push(0); d.length = base; for (let i = 0; i < nb; i++) d.push(so ? so[i] || 0 : 0); }
+    if (o.onPart && !this.onPart) this.onPart = o.onPart;             // animation hook of a kit part (e.g. the pilot's head) travels with it
+    if (o.side) for (const k in o.side) this.sidecar(k).add(o.side[k]);
     return this;
   }
+  /**
+   * Geometry that belongs with this mesh but needs a kit-owned material the visual never registered (cockpit displays,
+   * HUD symbology…). It follows every transform / add / clone of this mesh; rig.addStatic / rig.part draw it with the rig's
+   * own material for that kind. sidecar(kind) → the Mesh for that kind (created empty).
+   */
+  sidecar(kind) { if (!this.side) this.side = {}; return this.side[kind] || (this.side[kind] = new Mesh()); }
   clone() {
     const m = new Mesh();
     m.p = this.p.slice(); m.n = this.n.slice(); m.uv = this.uv.slice(); m.idx = this.idx.slice(); m.p2 = this.p2 ? this.p2.slice() : null; m.occ = this.occ ? this.occ.slice() : null;
+    if (this.onPart) m.onPart = this.onPart;
+    if (this.morphOptional) m.morphOptional = true;
+    if (this.side) { m.side = {}; for (const k in this.side) m.side[k] = this.side[k].clone(); }
     return m;
   }
   /** Apply a Matrix4 in place (normals use the normal matrix; winding flips for mirroring transforms). */
@@ -63,9 +77,10 @@ export class Mesh {
       if (p2) { _v.set(p2[i], p2[i + 1], p2[i + 2]).applyMatrix4(m); p2[i] = _v.x; p2[i + 1] = _v.y; p2[i + 2] = _v.z; }
     }
     if (m.determinant() < 0) this.flipWinding();
+    if (this.side) for (const k in this.side) this.side[k].transform(m);
     return this;
   }
-  translate(x, y, z) { const { p, p2 } = this; for (let i = 0; i < p.length; i += 3) { p[i] += x; p[i + 1] += y; p[i + 2] += z; if (p2) { p2[i] += x; p2[i + 1] += y; p2[i + 2] += z; } } return this; }
+  translate(x, y, z) { const { p, p2 } = this; for (let i = 0; i < p.length; i += 3) { p[i] += x; p[i + 1] += y; p[i + 2] += z; if (p2) { p2[i] += x; p2[i + 1] += y; p2[i + 2] += z; } } if (this.side) for (const k in this.side) this.side[k].translate(x, y, z); return this; }
   scale(x, y = x, z = x) { return this.transform(_m4.makeScale(x, y, z)); }
   rotateX(a) { return this.transform(_m4.makeRotationX(a)); }
   rotateY(a) { return this.transform(_m4.makeRotationY(a)); }
@@ -84,6 +99,7 @@ export class Mesh {
     const m = this.clone();
     for (let i = 0; i < m.p.length; i += 3) { m.p[i] = -m.p[i]; m.n[i] = -m.n[i]; if (m.p2) m.p2[i] = -m.p2[i]; }
     m.flipWinding();
+    if (m.side) for (const k in m.side) m.side[k] = m.side[k].mirrorX();
     if (fixUV) for (let i = 0, k = 0; i < m.p.length; i += 3, k += 2) { const r = fixUV(m.p[i], m.p[i + 1], m.p[i + 2], i / 3); if (r) { m.uv[k] = r[0]; m.uv[k + 1] = r[1]; } }
     return m;
   }
@@ -225,6 +241,107 @@ export function ellipsoid(rx, ry, rz, opts = {}) {
   return m.transform(_m4);
 }
 
+/**
+ * Skin over a stack of rings — the organic-shape primitive (limbs, torsos, helmets, cushions, rounded boxes).
+ * ring: { c: [x, y, z], u: [x, y, z], v: [x, y, z] (the ring's two axes, need not be unit), rx = 1, ry = rx, n = 2 (superellipse
+ *         exponent: 2 ellipse … 8 rounded rectangle), uv, hard (crease: do not share normals with the previous ring) }
+ * Ring point at angle θ = c + u·rx·C(θ) + v·ry·S(θ); rx = ry = 0 makes a pole (end cap). The skin faces outward when the rings
+ * advance along u × v. opts: { segments = 12, uv = [u, v] | (ringIndex, j / segments) => [u, v], occ: (ringIndex) => occlusion }
+ * Normals are smooth (area-weighted) along and around; two rings at the same place with `hard` on the second make a crease.
+ */
+export function shell(rings, opts = {}) {
+  const seg = opts.segments ?? 12, m = new Mesh(), nr = rings.length, P = new Float64Array(nr * seg * 3), uvO = opts.uv ?? UV0;
+  for (let a = 0; a < nr; a++) {
+    const R = rings[a], rx = R.rx ?? 1, ry = R.ry ?? rx, e = 2 / (R.n ?? 2), c = R.c, u = R.u, v = R.v;
+    for (let j = 0; j < seg; j++) {
+      const th = (j / seg) * Math.PI * 2, cs = Math.cos(th), sn = Math.sin(th);
+      const x = rx * Math.sign(cs) * Math.pow(Math.abs(cs), e), y = ry * Math.sign(sn) * Math.pow(Math.abs(sn), e), o = (a * seg + j) * 3;
+      P[o] = c[0] + u[0] * x + v[0] * y; P[o + 1] = c[1] + u[1] * x + v[1] * y; P[o + 2] = c[2] + u[2] * x + v[2] * y;
+    }
+  }
+  // smoothing groups: rows of rings between creases share normals; vertices of one row are welded around the seam
+  const N = new Float64Array(nr * seg * 3), N2 = new Float64Array(nr * seg * 3);   // N: normal from the band after the ring, N2: from the band before
+  const quads = [];
+  for (let a = 0; a < nr - 1; a++) for (let j = 0; j < seg; j++) {
+    const j1 = (j + 1) % seg, i0 = a * seg + j, i1 = a * seg + j1, i2 = (a + 1) * seg + j1, i3 = (a + 1) * seg + j;
+    const ax = P[i2 * 3] - P[i0 * 3], ay = P[i2 * 3 + 1] - P[i0 * 3 + 1], az = P[i2 * 3 + 2] - P[i0 * 3 + 2];
+    const bx = P[i3 * 3] - P[i1 * 3], by = P[i3 * 3 + 1] - P[i1 * 3 + 1], bz = P[i3 * 3 + 2] - P[i1 * 3 + 2];
+    const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;                 // diagonal cross product = quad normal × area
+    if (nx * nx + ny * ny + nz * nz < 1e-20) continue;
+    for (const i of [i0, i1]) { N[i * 3] += nx; N[i * 3 + 1] += ny; N[i * 3 + 2] += nz; }
+    for (const i of [i2, i3]) { N2[i * 3] += nx; N2[i * 3 + 1] += ny; N2[i * 3 + 2] += nz; }
+    quads.push(a, j);
+  }
+  // emit: each ring row once (plus a seam column so UV functions may vary around); creased rings get their own normals
+  const row = [];
+  for (let a = 0; a < nr; a++) {
+    const R = rings[a], hardHere = !!R.hard, hardNext = a + 1 < nr && !!rings[a + 1].hard, pole = (R.rx ?? 1) === 0 && (R.ry ?? R.rx ?? 1) === 0;
+    let px = 0, py = 0, pz = 0;
+    if (pole) for (let j = 0; j < seg; j++) { const o = (a * seg + j) * 3; px += N[o] + N2[o]; py += N[o + 1] + N2[o + 1]; pz += N[o + 2] + N2[o + 2]; }
+    row.push(m.vertexCount);
+    for (let j = 0; j <= seg; j++) {
+      const o = (a * seg + (j % seg)) * 3;
+      let nx = pole ? px : (hardHere ? 0 : N2[o]) + (hardNext ? 0 : N[o]), ny = pole ? py : (hardHere ? 0 : N2[o + 1]) + (hardNext ? 0 : N[o + 1]), nz = pole ? pz : (hardHere ? 0 : N2[o + 2]) + (hardNext ? 0 : N[o + 2]);
+      if (hardHere && hardNext) { nx = N[o]; ny = N[o + 1]; nz = N[o + 2]; }
+      const l = Math.hypot(nx, ny, nz) || 1, uv = R.uv || (typeof uvO === 'function' ? uvO(a, j / seg) : uvO);
+      m.vert(P[o], P[o + 1], P[o + 2], nx / l, ny / l, nz / l, uv[0], uv[1]);
+    }
+  }
+  for (let q = 0; q < quads.length; q += 2) { const a = quads[q], j = quads[q + 1], i0 = row[a] + j, i3 = row[a + 1] + j; m.quad(i0, i0 + 1, i3 + 1, i3); }
+  if (opts.occ) { const o = m._occ(); for (let a = 0; a < nr; a++) { const v = opts.occ(a); for (let j = 0; j <= seg; j++) o[row[a] + j] = v; } }
+  return m;
+}
+
+const _X = [1, 0, 0], _Z = [0, 0, 1];
+/**
+ * Rounded box ("pillow") centred at the origin: size sx × sy × sz, edge radius r, built as a shell along Y.
+ * opts: { segments = 16, n = 6 (corner squareness in plan), uv }
+ */
+export function rbox(sx, sy, sz, r = 0.02, opts = {}) {
+  const a = sx / 2, b = sz / 2, h = sy / 2, n = opts.n ?? 6; r = Math.min(r, h * 0.98, a * 0.9, b * 0.9);
+  const ring = (y, k) => ({ c: [0, y, 0], u: _Z, v: _X, rx: Math.max(0, b - r * (1 - k)), ry: Math.max(0, a - r * (1 - k)), n });
+  const R = [{ c: [0, -h, 0], u: _Z, v: _X, rx: 0, ry: 0 }, ring(-h, 0), ring(-h + r * 0.3, 0.7), ring(-h + r, 1), ring(h - r, 1), ring(h - r * 0.3, 0.7), ring(h, 0), { c: [0, h, 0], u: _Z, v: _X, rx: 0, ry: 0 }];
+  return shell(R, { segments: opts.segments ?? 16, uv: opts.uv });
+}
+
+/**
+ * Smooth tube through points with per-point radii — arms, legs, hoses, padded rolls. points: [[x, y, z], …];
+ * radii: number | [r | [rx, ry], …] (rx along `side`, ry along the other ring axis).
+ * opts: { segments = 8, sub = 3 (rings per span, Catmull-Rom), side = [1, 0, 0] (reference for the ring's X axis), caps = 'round' | 'flat' | 'none', n = 2,
+ *         ripple = 0 (alternate ring radii by ± this fraction: corrugated hoses), uv }
+ */
+export function limb(points, radii, opts = {}) {
+  const sub = opts.sub ?? 3, np = points.length, side = opts.side || _X, caps = opts.caps ?? 'round';
+  const rad = (i) => { const r = Array.isArray(radii) ? radii[i] : radii; return Array.isArray(r) ? r : [r, r]; };
+  const cr = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3); };
+  const pts = [];
+  for (let i = 0; i < np - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(np - 1, i + 2)], r1 = rad(i), r2 = rad(i + 1);
+    for (let k = 0; k < sub + (i === np - 2 ? 1 : 0); k++) { const t = k / sub; pts.push({ c: [cr(p0[0], p1[0], p2[0], p3[0], t), cr(p0[1], p1[1], p2[1], p3[1], t), cr(p0[2], p1[2], p2[2], p3[2], t)], rx: r1[0] + (r2[0] - r1[0]) * t, ry: r1[1] + (r2[1] - r1[1]) * t }); }
+  }
+  if (opts.ripple) pts.forEach((q, i) => { const f = 1 + opts.ripple * (i % 2 ? 1 : -1); q.rx *= f; q.ry *= f; });   // corrugated hoses
+  const rings = [], n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)].c, b = pts[Math.min(n - 1, i + 1)].c; let w = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; const wl = Math.hypot(...w) || 1; w = w.map(q => q / wl);
+    // ring axes: u ≈ side made perpendicular to the tangent, v = w × u (so u × v = w and the skin faces outward)
+    let d = side[0] * w[0] + side[1] * w[1] + side[2] * w[2], u = [side[0] - w[0] * d, side[1] - w[1] * d, side[2] - w[2] * d]; let ul = Math.hypot(...u);
+    if (ul < 1e-3) { u = Math.abs(w[1]) < 0.9 ? [-w[2], 0, w[0]] : [1, 0, 0]; d = u[0] * w[0] + u[1] * w[1] + u[2] * w[2]; u = [u[0] - w[0] * d, u[1] - w[1] * d, u[2] - w[2] * d]; ul = Math.hypot(...u); }
+    u = u.map(q => q / ul);
+    const v = [w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0]];
+    rings.push({ c: pts[i].c, u, v, rx: pts[i].rx, ry: pts[i].ry, n: opts.n ?? 2, w });
+  }
+  const round = (R, sgn) => {                                         // three shrinking rings ending in a pole, moving away along sgn × tangent
+    const k = Math.min(R.rx, R.ry), out = [];
+    for (const [f, e] of [[0.5, 0.87], [0.87, 0.5], [1, 0]]) out.push({ ...R, c: [R.c[0] + R.w[0] * k * f * sgn, R.c[1] + R.w[1] * k * f * sgn, R.c[2] + R.w[2] * k * f * sgn], rx: R.rx * e, ry: R.ry * e });
+    return out;
+  };
+  const R0 = rings[0], Rn = rings[n - 1];
+  let all = rings;
+  if (caps === 'flat') all = [{ ...R0, rx: 0, ry: 0 }, { ...R0 }, { ...R0, hard: true }, ...rings.slice(1), { ...Rn, hard: true }, { ...Rn, rx: 0, ry: 0 }];
+  else if (caps !== 'none') all = [...round(R0, -1).reverse(), ...rings, ...round(Rn, 1)];
+  return shell(all, { segments: opts.segments ?? 8, uv: opts.uv });
+}
+
 /** Box centred at the origin with flat faces. */
 export function box(sx, sy, sz, uv = UV0) {
   const m = new Mesh(), x = sx / 2, y = sy / 2, z = sz / 2;
@@ -302,9 +419,10 @@ function boundaryEdges(mesh) {
 
 /**
  * Give an open skin patch thickness: adds an inner face (offset by `t` against the normals) and edge walls.
- * `uvInner` (optional [u, v]) recolours the inner face and the walls (e.g. interior primer).
+ * `uvInner` (optional [u, v]) recolours the inner face and the walls (e.g. interior primer); with it the inner face also gets
+ * stiffeners (see ribs()): opts.ribs = false switches them off, an object passes { pitch, height, longerons, uv } on.
  */
-export function thicken(patch, t = 0.02, uvInner = null) {
+export function thicken(patch, t = 0.02, uvInner = null, opts = {}) {
   const m = patch.clone(), nv = patch.vertexCount, { p, n, uv } = patch;
   for (let i = 0; i < nv; i++) {
     const u = uvInner || [uv[i * 2], uv[i * 2 + 1]];
@@ -312,14 +430,20 @@ export function thicken(patch, t = 0.02, uvInner = null) {
   }
   for (let k = 0; k < patch.idx.length; k += 3) m.tri(patch.idx[k] + nv, patch.idx[k + 2] + nv, patch.idx[k + 1] + nv);
   for (const [a, b] of boundaryEdges(patch)) wall(m, patch, a, b, t, uvInner, false);
+  // the inside of a door is structure, not a flat panel: stiffeners by default when the inner face has its own finish
+  if (uvInner && opts.ribs !== false) {
+    const o = m._occ(); for (let i = nv; i < 2 * nv; i++) o[i] = Math.max(o[i], 0.16);
+    m.add(ribs(patch, { uv: uvInner, base: t, lip: false, ...(typeof opts.ribs === 'object' ? opts.ribs : {}) }));
+  }
   return m;
 }
 
 /**
  * Recess behind a removed skin patch (wheel well, spoiler tray, speedbrake bay): floor = the patch pushed in by `depth`
- * (along -normal, or along `dir` if given), plus walls facing into the cavity. Returns a new Mesh.
+ * (along -normal, or along `dir` if given), plus walls facing into the cavity. Returns a new Mesh. With a `uv` the bay also
+ * gets frames across its roof and stiffeners down its walls (opts.ribs = false: bare; an object passes { pitch, height, longerons }).
  */
-export function well(patch, depth = 0.3, uv = null, dir = null) {
+export function well(patch, depth = 0.3, uv = null, dir = null, opts = {}) {
   const m = new Mesh(), nv = patch.vertexCount, { p, n } = patch;
   for (let i = 0; i < nv; i++) {
     const u = uv || [patch.uv[i * 2], patch.uv[i * 2 + 1]];
@@ -332,7 +456,39 @@ export function well(patch, depth = 0.3, uv = null, dir = null) {
   // baked occlusion: the floor of the cavity is dark, the walls fade from the rim to the floor (i2, i3 of each wall quad are deep)
   const deep = Math.min(0.78, 0.5 + Math.abs(depth) * 0.6), o = m._occ();
   for (let i = 0; i < m.vertexCount; i++) o[i] = i < nFloor ? deep : ((i - nFloor) % 4 < 2 ? 0.18 : deep);
+  // structure: frames and a longeron across the roof of the bay, continued down the walls as stiffeners
+  if (uv && opts.ribs !== false && Math.abs(depth) > 0.12) {
+    const ro = typeof opts.ribs === 'object' ? opts.ribs : {}, hh = ro.height ?? Math.min(0.07, Math.max(0.025, Math.abs(depth) * 0.09));
+    const back = dir ? [-dir[0], -dir[1], -dir[2]] : null;           // fins stand off the floor toward the opening
+    const floor = new Mesh(); floor.p = m.p.slice(0, nv * 3); floor.n = patch.n.map(q => -q); floor.uv = m.uv.slice(0, nv * 2); floor.idx = patch.idx.slice();
+    const r = ribs(floor, { uv, height: hh, dir: back, lip: false, occ: [deep, Math.max(0.3, deep - 0.25)], ...ro });
+    m.add(r);
+    if (r.vertexCount) wallRibs(m, patch, depth, dir, uv, hh * 0.8, ro, deep);
+  }
   return m;
+}
+
+// stiffeners down the walls of a well where the roof frames meet them
+function wallRibs(m, patch, depth, dir, uv, h, ro, deep) {
+  const { p, n } = patch, b = patch.bounds(), ext = [0, 1, 2].map(k => b.max[k] - b.min[k]), order = [0, 1, 2].sort((i, j) => ext[j] - ext[i]), aL = order[0];
+  const L = ext[aL], pitch = ro.pitch ?? Math.min(0.5, Math.max(0.17, L / 5)), nF = Math.max(1, Math.round(L / pitch) - 1), c0 = centroid(patch), O = m._occ();
+  for (const [ia, ib] of boundaryEdges(patch)) for (let k = 1; k <= nF; k++) {
+    const c = b.min[aL] + L * k / (nF + 1), sa = p[ia * 3 + aL] - c, sb = p[ib * 3 + aL] - c;
+    if ((sa < 0) === (sb < 0)) continue;
+    const f = sa / (sa - sb), q = [0, 0, 0], d = [0, 0, 0];
+    for (let e = 0; e < 3; e++) { q[e] = p[ia * 3 + e] + (p[ib * 3 + e] - p[ia * 3 + e]) * f; d[e] = dir ? dir[e] : -(n[ia * 3 + e] + (n[ib * 3 + e] - n[ia * 3 + e]) * f); }
+    // into the cavity: toward the patch centroid, perpendicular to the frame plane normal and (roughly) to the wall
+    const w = [c0[0] - q[0], c0[1] - q[1], c0[2] - q[2]]; w[aL] = 0; const dl = Math.hypot(...d) || 1, dd = (w[0] * d[0] + w[1] * d[1] + w[2] * d[2]) / (dl * dl);
+    for (let e = 0; e < 3; e++) w[e] -= d[e] * dd; const wl = Math.hypot(...w); if (wl < 1e-4) continue;
+    for (let e = 0; e < 3; e++) w[e] *= h / wl;
+    const A = [q[0] + d[0] * 0.02, q[1] + d[1] * 0.02, q[2] + d[2] * 0.02], B = [q[0] + d[0] * depth, q[1] + d[1] * depth, q[2] + d[2] * depth], N = [0, 0, 0]; N[aL] = 1;
+    for (const sg of [1, -1]) {
+      const i0 = m.vertexCount;
+      for (const v of [A, B, [B[0] + w[0], B[1] + w[1], B[2] + w[2]], [A[0] + w[0], A[1] + w[1], A[2] + w[2]]]) m.vert(v[0], v[1], v[2], N[0] * sg, N[1] * sg, N[2] * sg, uv[0], uv[1]);
+      O[i0] = 0.3; O[i0 + 1] = O[i0 + 2] = deep; O[i0 + 3] = 0.2;
+      if (sg > 0) m.quad(i0, i0 + 1, i0 + 2, i0 + 3); else m.quad(i0 + 3, i0 + 2, i0 + 1, i0);
+    }
+  }
 }
 
 function wall(m, patch, a, b, t, uvW, inward, dir) {
@@ -350,6 +506,62 @@ function wall(m, patch, a, b, t, uvW, inward, dir) {
   const i0 = m.vert(A[0], A[1], A[2], wx, wy, wz, ua[0], ua[1]), i1 = m.vert(B[0], B[1], B[2], wx, wy, wz, ub[0], ub[1]);
   const i2 = m.vert(B2[0], B2[1], B2[2], wx, wy, wz, ub[0], ub[1]), i3 = m.vert(A2[0], A2[1], A2[2], wx, wy, wz, ua[0], ua[1]);
   if (inward) m.quad(i0, i1, i2, i3); else m.quad(i1, i0, i3, i2);
+}
+
+/**
+ * Stiffeners for the hidden side of a skin patch (gear doors, wheel wells, speedbrakes): thin sheet fins standing off the
+ * surface where planes at a regular pitch cut it — frames across the long axis and one or two longerons along it — plus a lip
+ * around the open edge. Returns a new Mesh (double-sided fins, occluded at their roots).
+ * opts: { uv, base = 0 (offset of the fin root from the patch along the stand-off direction), height = .03,
+ *         dir = null ([x, y, z] stand-off direction; default: against the patch normals), pitch (default from the patch size),
+ *         longerons (default 1 or 2), lip = true, occ = [root, tip] occlusion }
+ */
+export function ribs(patch, o = {}) {
+  const m = new Mesh(), { p, n, idx } = patch, nv = patch.vertexCount, uv = o.uv || [0, 0];
+  if (!nv) return m;
+  const b = patch.bounds(), ext = [0, 1, 2].map(k => b.max[k] - b.min[k]), order = [0, 1, 2].sort((i, j) => ext[j] - ext[i]), aL = order[0], aW = order[1];
+  const L = ext[aL], W = ext[aW];
+  if (W < (o.minWidth ?? 0.14) || L < 0.2) return m;
+  const h = o.height ?? Math.min(0.05, Math.max(0.016, W * 0.06)), base = o.base ?? 0, dir = o.dir || null, occ = o.occ || [0.55, 0.12];
+  const off = (i, d) => dir ? [dir[0] * d, dir[1] * d, dir[2] * d] : [-n[i * 3] * d, -n[i * 3 + 1] * d, -n[i * 3 + 2] * d];
+  const O = m._occ();
+  const fin = (A, B, a2, b2, nx, ny, nz) => {                            // quad A, B (roots) → a2, b2 (tips), both faces
+    for (const sg of [1, -1]) {
+      const i0 = m.vertexCount;
+      for (const q of [A, B, b2, a2]) m.vert(q[0], q[1], q[2], nx * sg, ny * sg, nz * sg, uv[0], uv[1]);
+      O[i0] = O[i0 + 1] = occ[0]; O[i0 + 2] = O[i0 + 3] = occ[1];
+      if (sg > 0) m.quad(i0, i0 + 1, i0 + 2, i0 + 3); else m.quad(i0 + 3, i0 + 2, i0 + 1, i0);
+    }
+  };
+  const slice = (axis, c, hh) => {
+    const N = [0, 0, 0]; N[axis] = 1;
+    for (let t = 0; t < idx.length; t += 3) {
+      const pts = [];
+      for (let k = 0; k < 3; k++) {
+        const i = idx[t + k], j = idx[t + (k + 1) % 3], si = p[i * 3 + axis] - c, sj = p[j * 3 + axis] - c;
+        if ((si < 0) === (sj < 0)) continue;
+        const f = si / (si - sj), oi = off(i, 1), oj = off(j, 1), q = [0, 0, 0], d = [0, 0, 0];
+        for (let e = 0; e < 3; e++) { q[e] = p[i * 3 + e] + (p[j * 3 + e] - p[i * 3 + e]) * f; d[e] = oi[e] + (oj[e] - oi[e]) * f; }
+        pts.push([q, d]);
+      }
+      if (pts.length !== 2) continue;
+      const [[qa, da], [qb, db]] = pts;
+      if (Math.hypot(qa[0] - qb[0], qa[1] - qb[1], qa[2] - qb[2]) < 1e-5) continue;
+      const at = (q, d, k) => [q[0] + d[0] * k, q[1] + d[1] * k, q[2] + d[2] * k];
+      fin(at(qa, da, base), at(qb, db, base), at(qa, da, base + hh), at(qb, db, base + hh), N[0], N[1], N[2]);
+    }
+  };
+  const pitch = o.pitch ?? Math.min(0.5, Math.max(0.17, L / 5)), nF = Math.max(1, Math.round(L / pitch) - 1);
+  for (let k = 1; k <= nF; k++) slice(aL, b.min[aL] + L * k / (nF + 1), h);
+  const nLg = o.longerons ?? (W > 0.7 ? 2 : 1);
+  for (let k = 1; k <= nLg; k++) slice(aW, b.min[aW] + W * k / (nLg + 1), h * 0.7);
+  if (o.lip !== false) for (const [a, c] of boundaryEdges(patch)) {
+    const A = [p[a * 3], p[a * 3 + 1], p[a * 3 + 2]], B = [p[c * 3], p[c * 3 + 1], p[c * 3 + 2]], oa = off(a, 1), ob = off(c, 1);
+    const e = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], nn = [e[1] * oa[2] - e[2] * oa[1], e[2] * oa[0] - e[0] * oa[2], e[0] * oa[1] - e[1] * oa[0]], l = Math.hypot(...nn) || 1;
+    const at = (q, d, k) => [q[0] + d[0] * k, q[1] + d[1] * k, q[2] + d[2] * k];
+    fin(at(A, oa, base), at(B, ob, base), at(A, oa, base + h * 0.8), at(B, ob, base + h * 0.8), nn[0] / l, nn[1] / l, nn[2] / l);
+  }
+  return m;
 }
 
 /** Centroid of a mesh's vertices as [x, y, z]. */

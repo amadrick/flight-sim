@@ -109,10 +109,18 @@ export function afterburnerGlow(o) {
   return m.translate(c[0], c[1], c[2]);
 }
 /** Radiance for the glow material from an engine state view: dull red when hot and dry, bright orange-white in afterburner. */
+/**
+ * Glow radiance for glowMaterial() from an engine state. Dry thrust: the turbine exit seen down the jet pipe, ≈ 900–1150 K, a
+ * dull orange-red that is invisible against a sunlit airframe and plainly visible at night (scene-referred, so the night
+ * exposure does the rest); idle is a faint ember. Afterburner: the flame, hundreds of times brighter (dimmed at night for the
+ * bloom). glowMaterial switches from the turbine-exit pattern to the flame-holder pattern on brightness (red > 0.1).
+ */
 export function abGlowColor(color, eng, night = 0) {
-  const ab = eng.afterburner, hot = Math.max(0, Math.min(1, (eng.n1 - 0.55) / 0.45)) * (eng.running ? 1 : 0);
-  const k = 1 - 0.6 * night;
-  return color.setRGB((0.3 * hot + 16 * ab) * k, (0.04 * hot + 6.4 * ab * (0.55 + 0.45 * ab)) * k, (0.005 * hot + 2.6 * ab * ab) * k);
+  const ab = eng.afterburner || 0, run = eng.running === false ? 0 : 1, n1 = eng.n1 || 0;
+  const hot = Math.max(0, Math.min(1, (n1 - 0.2) / 0.8)) * run, T = hot * hot * hot;
+  const dry = (0.004 + 0.085 * T) * run, k = 1 - 0.6 * night;                 // dry stays below 0.08 so the pattern switch is clean
+  const warm = 0.18 + 0.14 * T;                                            // hotter → a little more yellow
+  return color.setRGB(dry + 16 * ab * k, dry * warm + 6.4 * ab * (0.55 + 0.45 * ab) * k, dry * warm * 0.14 + 2.6 * ab * ab * k);
 }
 
 /**

@@ -221,7 +221,17 @@ K.buildGear(rig, atlas, {
   Presets: `GLASS.clear`, `smoke`, `gold`, `airliner`, `hud`.
 * Inside: `K.tub({ x, y0, y1, z0, z1, uv })`, `K.ejectionSeat({ eye, recline, uv })`, `K.pilot({ eye, uv, stick, throttle })`
   (hide it from the cockpit camera: `pilotNode.visible = !rig.cameraInCockpit`), `K.hud({ eye, dist, width, height })`
-  → `{ glass, frame }`, `K.stick`, an instrument panel quad UV-mapped to a `rect` chart with emissive screens.
+  → `{ glass, frame }` (the frame carries the HUD symbology, drawn by the rig on the post layer and only from the cockpit),
+  `K.stick`, `K.throttle`, `K.pedals`, and either your own instrument panel quad UV-mapped to a `rect` chart, or
+  `K.instrumentPanel({ eye | eyes, kind: 'fighter' | 'airline', uv })` (panel face, display units, glareshield) /
+  `K.display({ centre, width, page, uv })` / `K.glareshield({ eye, uv })` — their screens and panel faces use kit-owned
+  materials (`Mesh.sidecar`), so nothing has to be registered: screens are emissive pages from `displays.js`, panel faces
+  get backlit legends and a dim flood at night (the rig drives the levels from `S.night`).
+  Crew: `K.pilot({ eye, kind: 'fighter' | 'airline', recline, stick, throttle, uv })` — helmet, visor, mask and corrugated
+  hose for fighters (`mask: false` = pressure suit), shirt, epaulettes and headset for airliners; its head turns (an
+  optional morph: kept when the pilot is its own part, dropped when merged into static geometry). `K.crewSeat` is the
+  airliner seat; both sit on the same layout as `K.ejectionSeat` built from the same eye point.
+  `kitdemo=fighter|airline` in the harness previews these parts alone at an aircraft's eye point (views `cpanel`, `ccrew`).
 * **Airliner flight deck**: paint the windows (dark `FINISH.paintedGlass`), then line the inside with
   `K.liner(fus, [[z, t] × 4], { uv, mirror: true })` patches that share edges and leave the window polygons open,
   `K.bulkhead(fus, z, { facing })`, `K.deck(fus, z0, z1, y)`, `K.crewSeat`, `K.yoke`, a glareshield `K.prism`.
@@ -360,11 +370,23 @@ Chart: `uv(a, b)`, `uv3(x, y, z)`, `uvUnwrap(z, t)`, `body`.
 
 **gear.js** — `buildGear(rig, atlas, spec)` → `{ leg, steer, piston, wheels, axis, axle, stroke, pivot, bottom }`, `wheel(opts)`,
 `tyreStrips(atlas)`, `swing(pivot, from, to)`, `arrestorHook(opts)`. New optional spec fields: `lines: false` (no hydraulic lines on the
-strut), `brakes: true | false` (brake stacks; default from `geometry.gear[i].braked`), `plainWheels: true` (flat tyre / hub swatches).
+strut), `brakes: true | false` (brake stacks; default from `geometry.gear[i].braked`), `plainWheels: true` (flat tyre / hub swatches),
+`bolts: n` (hub tie bolts, default 12, 8 on small wheels), `wheelSegments` (default 32). Wheels carry tie bolts, a bearing cap and a
+valve; offset wheels a brake housing with a visible disc stack, piston bosses and a brake line; struts a gland seal and lock bolts;
+torque links their pins. Doors thickened with an inner finish (`K.thicken(patch, t, uv)`) and wells (`K.well(patch, depth, uv)`)
+get frames / stiffeners (`ribs: false` to switch off).
 
 **propulsion.js** — `fan`, `fanBackdrop`, `petalNozzle`, `afterburnerGlow`, `abGlowColor`, `nozzle2D`, `nacelle`, `pylon`, `intake2DStations`.
 
-**cockpit.js** — `pilot`, `ejectionSeat`, `crewSeat`, `hud`, `stick`, `yoke`, `tub`, `liner`, `bulkhead`, `deck`.
+**cockpit.js** — `pilot`, `ejectionSeat`, `crewSeat`, `hud`, `display`, `glareshield`, `instrumentPanel`, `stick`, `throttle`, `yoke`,
+`pedals`, `tub`, `liner`, `bulkhead`, `deck`. **displays.js** — `displayTexture()`, `displayUV(page, u, v)`, `DISPLAY_TILES`.
+
+**rig.js** — also `lampFlash(kind, t)`: the strobe / beacon pattern shared with the effects light sprites (use `S.tLamp`, the sim
+clock, for t) — visuals that animate their own halos should use it so lens, halo and sprite flash together. Point sprites named
+`halos` are depth-pulled toward the camera by the rig so the skin no longer clips them. `Mesh.sidecar(kind)` ('display' | 'panel' |
+'hud') holds geometry for kit-owned materials; it follows transforms / add / clone and the rig draws it.
+`glowMaterial()` draws on the post layer (the night grade cannot desaturate it); `abGlowColor` gives a dim turbine-exit glow at dry
+thrust (visible at night) and switches the pattern to the flame holder in afterburner.
 
 **stores.js** — `missile`, `launchRail`, `tank`, `probe`, `bladeAntenna`, `staticWicks`, `vortexGenerators`, `fence`.
 
