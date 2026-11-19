@@ -18,7 +18,7 @@ ctx.scenery = {
   surfaceAt(x, z, out),              // the registered surface provider (also usable directly)
   nearest(x, z),                     // nearest airport record
   lights,                            // light system (uniforms: uGain, uOn, uDayK, uMinPx …)
-  stats(),                           // { bootMs, drawables, triangles, lights, instances }
+  stats(),                           // { bootMs, bootBreakdown, textureMB, drawables, triangles, lights, instances, perAirport }
   dispose(),
 }
 ```
@@ -27,7 +27,12 @@ Surface provider: `out.type` = `'runway'` (runway + blast pads), `'taxiway'` (ta
 `out.height` = airport elevation; `out.friction` = 0.8 runway / 0.75 others, reduced up to 45 % in rain. Rejects by
 per-airport AABB first, so it is cheap for far queries.
 
-What is built per airport (all procedural, generated at boot)
+What is built per airport (all procedural). Pavement, markings, lights and the surface provider are built at boot for
+every airport; buildings, parked aircraft, GSE, cars, trees and fixtures only for the start airport (`params.airport`
+or `sap`). Other airports get them the first frame the camera is within 40 km (one airport per frame, ~15-60 ms).
+`?sbuildall=1` builds everything at boot.
+
+What is built per airport
 - Pavement (one draw): asphalt with paving-lane tone steps, seams, soft-edged patches, tar-sealed crack network,
   transverse cracks; concrete with 7.5/6 m slabs, sealed joints, tar over-banding, spalled corners, stains; rubber in
   both touchdown zones; wet response. Small strips use asphalt aprons. Soft soil / dry-grass verges around every
