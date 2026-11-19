@@ -19,6 +19,23 @@ Owner: clouds agent. Files: `src/clouds/**` only. Nothing outside this directory
 Events: listens to `quality:change`, `weather:change`, `camera:mode`, `session:start`; emits `lightning` with
 `{ worldPos: Vector3, intensity: 0..1 }` at the first stroke of each flash (audio can delay thunder by distance / 343 m/s).
 
+## Round five (physics pass; details, numbers and switches in docs/clouds/SHAPE.md)
+
+- **Light model**: the learned multiple scattering of `src/neural/cloud-ms.js` (docs/clouds/NEURAL.md) is created by
+  this module at boot and is the default (`api.lightModel === 'ms5'`). The model main.js installs with
+  `setScatterModel` is the fallback (`clMs=0`); `scatter=classic` keeps the analytic model. `setScatterModel` is
+  unchanged.
+- **Extinction in real units** from liquid water (adiabatic above a flat 30 m-ramp base, diluted edges) and droplet
+  number; ice extinction in anvils (`clPhys=0` = round four). `cloudShadowTau()` / `cloudShadow()` keep their
+  signatures; their optical depths are now physical, so thick decks shade the ground more than before.
+- **Life cycle** of cumulus cells (`clLife=0` freezes): clouds grow, mature and dissolve over ~15-25 min.
+- **Sun / moon**: `uAtmSunIllum` / `uAtmMoonIllum` x `atmLightTransmittance` at the cloud's altitude and local
+  vertical (requires those names in the pipeline's atmosphere GLSL; detected at boot, otherwise the round-four
+  path). The artistic moon (`uClMoonE`) is only used with `clLight=0`. Request (a) below is therefore done.
+- **Spawn guard**: the start is sunlit (target weather, 90 s look-ahead, menu changes, GPU read-back).
+  Listens to `time:change` in addition to the events listed above.
+- Harness: `standoff=D` puts the camera D metres in front of the first cloud along the view.
+
 ## Round three (cloud shapes)
 
 The density model now draws cumulus as **individual clouds** instead of thresholded 3-D noise; the decks and the
@@ -137,7 +154,7 @@ wx=<preset>&wxAt=<frame> (switch weather mid-run), flashAt=<frame> (force a ligh
 
 ## Requests to the integrator
 
-- None are blocking. Nice to have: (a) a moon illuminance in the frame uniforms, (b) the final pipeline applying
+- None are blocking. Nice to have: (a) [done in round five: read from the atmosphere uniforms], (b) the final pipeline applying
   `cloudShadow` to the sun disc/bloom is NOT needed (the cloud texture's transmittance already occludes the sky),
   (c) if TAA jitter is ever added to the scene projection, pass the unjittered `uPrevViewProj` / tell this module,
   since the cloud history assumes an unjittered camera.
