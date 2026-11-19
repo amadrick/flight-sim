@@ -17,6 +17,6 @@ export default {
     { nozzle: [8, -1.2, -2.1], intake: [8, -1.2, -7.1], nozzleRadius: 0.95 },
     { nozzle: [16.5, -0.8, 2.1], intake: [16.5, -0.8, -2.9], nozzleRadius: 0.95 },
   ],
-  wingtips: [[-25.88, 3.4, 6.9], [25.88, 3.4, 6.9]],
-  lights: { navLeft: [-25.9, 5.8, 7.3], navRight: [25.9, 5.8, 7.3], tail: [0, 8, 27.3], strobe: [0, 6.4, 26], beacon: [0, -2.6, 1.5], landing: [0, -2.4, -16.5] },
+  wingtips: [[-25.88, 4.83, 7.6], [25.88, 4.83, 7.6]],
+  lights: { navLeft: [-24.45, 1.84, 4.12], navRight: [24.45, 1.84, 4.12], tail: [0, 2.1, 27.6], strobe: [0, 12.7, 27.55], beacon: [0, -2.8, 1.5], landing: [0, -2.8, -16.5] },
 };
