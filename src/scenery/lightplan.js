@@ -118,18 +118,18 @@ export function buildLightPlan(L, heightFn = () => 0) {
         for (let j = 0; j < nl; j++) {
           const v = (j - (nl - 1) / 2) * spacing;
           const p = Q(u, v);
-          push(p.x, lift(p.x, p.z, 0.8), p.z, col, I, aim, 0.9, 0, 0, 0, 0.26, 0.5);
+          push(p.x, lift(p.x, p.z, 0.8), p.z, col, I, aim, 0.9, 0, 0, 0, 0.26, 0.2);
         }
       };
       if (full) {
         // ALSF-2: 720 m, barrettes every 30 m, 1000 ft and 500 ft crossbars, red side rows in the inner 300 m,
         // sequenced flashers (the "rabbit") from 330 m to 720 m, twice per second toward the threshold
         for (let u = 30; u <= 720; u += 30) bar(-u, 5, 1.05, COLORS.white, 1.6);
-        for (const sg of [-1, 1]) for (let j = 0; j < 8; j++) { const p = Q(-300, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.5); }
-        for (const sg of [-1, 1]) for (let j = 0; j < 4; j++) { const p = Q(-150, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.5); }
+        for (const sg of [-1, 1]) for (let j = 0; j < 8; j++) { const p = Q(-300, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.2); }
+        for (const sg of [-1, 1]) for (let j = 0; j < 4; j++) { const p = Q(-150, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.2); }
         for (let u = 30; u <= 270; u += 30) for (const sg of [-1, 1]) for (let j = 0; j < 3; j++) {
           const p = Q(-u, sg * (11 + j * 1.5));
-          push(p.x, lift(p.x, p.z, 0.6), p.z, COLORS.red, 1.2, aim, 0.9, 0, 0, 0, 0.24, 0.3);
+          push(p.x, lift(p.x, p.z, 0.6), p.z, COLORS.red, 1.2, aim, 0.9, 0, 0, 0, 0.24, 0.15);
         }
         const nF = 14;
         for (let k = 0; k < nF; k++) {
@@ -140,7 +140,7 @@ export function buildLightPlan(L, heightFn = () => 0) {
       } else if (ei === 0) {
         // MALSR: steady barrettes every 60 m to 420 m, 1000 ft crossbar, runway alignment indicator flashers beyond
         for (let u = 60; u <= 420; u += 60) bar(-u, 5, 1.05, COLORS.white, 1.4);
-        for (const sg of [-1, 1]) for (let j = 0; j < 5; j++) { const p = Q(-300, sg * (3.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.4, aim, 0.9, 0, 0, 0, 0.26, 0.5); }
+        for (const sg of [-1, 1]) for (let j = 0; j < 5; j++) { const p = Q(-300, sg * (3.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.4, aim, 0.9, 0, 0, 0, 0.26, 0.2); }
         const nF = 5;
         for (let k = 0; k < nF; k++) {
           const u = 720 - k * 60;

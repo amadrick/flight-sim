@@ -148,6 +148,9 @@ export function makePavementMaterial(ctx, shared, pools) {
             col = vec3(base) * vec3(1.0, 0.985, 0.955) * (0.7 + 0.6 * aggr) * (0.84 + 0.32 * nB.g) * (0.88 + 0.24 * nC.b);
             float lane = kind < 2.5 ? 7.5 : 5.0;
             float seam = scnLines(sl.y + 0.06, lane, 0.12);
+            // each paving lane was laid from a different batch: lane-to-lane tone steps, slightly streaky along the lane
+            float laneH = scnHash(vec2(floor(sl.y / lane), seed + 0.5));
+            col *= 0.9 + 0.2 * laneH + 0.05 * (texture(tNoise, vec2(sl.x / 180.0, sl.y / 9.0) + 0.37).g - 0.5);
             col *= 1.0 - 0.28 * seam;
             // patches: random rectangles inside a coarse grid, soft-edged, with a sealed border
             vec2 pg = vec2(48.0, lane);

@@ -323,7 +323,7 @@ function lotMarkings(L, q) {
       if (R.lanes >= 4) {
         for (const sg of [-1, 1]) q((a.x + b.x) / 2 + rx * sg * 0.25, (a.z + b.z) / 2 + rz * sg * 0.25, hdg, len, 0.12, 'y');
         for (const sg of [-1, 1]) dashedAlong({ x: a.x + rx * sg * R.wid / 4, z: a.z + rz * sg * R.wid / 4 }, { x: b.x + rx * sg * R.wid / 4, z: b.z + rz * sg * R.wid / 4 }, 3, 9, 0.12, 'w', q);
-      } else dashedAlong(a, b, 3, 9, 0.12, 'y', q);
+      } else if (!R.service) dashedAlong(a, b, 3, 9, 0.12, 'y', q);
     }
   }
 }

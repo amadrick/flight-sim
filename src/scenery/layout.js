@@ -207,6 +207,7 @@ export function buildLayout(airport) {
 
   // ---------------- runway-side objects shared by all kinds ----------------
   for (const R of L.runways) runwayFurniture(L, F, R, spec);
+  if (airport.kind === 'international' || airport.kind === 'military') perimeter(L, F);
 
   return L;
 }
@@ -549,6 +550,55 @@ function layoutSmall(L, F, spec, kind) {
     }
     for (let k = 0; k < 10; k++) L.palms.push(F.P(aC - 120 + k * 9, cOut + s * 42 + s * (k % 2) * 3));
   }
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+/** Airside perimeter: security fence with a gate where each landside road leaves, and a service road inside it. */
+function perimeter(L, F) {
+  let aMax = 0, cMin = Infinity, cMax = -Infinity;
+  for (const R of L.runways) { aMax = Math.max(aMax, Math.abs(R.a) + R.len / 2 + R.blast + 260); cMin = Math.min(cMin, R.c - 330); cMax = Math.max(cMax, R.c + 330); }
+  for (const b of L.buildings) { const p = F.toAC(b.x, b.z); cMin = Math.min(cMin, p.c - 120); cMax = Math.max(cMax, p.c + 120); }
+  // stay inside the flattened area
+  const lim = L.radius * 0.9;
+  const fit = () => Math.hypot(aMax, Math.max(-cMin, cMax)) > lim;
+  while (fit() && aMax > 500) aMax -= 25;
+  const corners = [[-aMax, cMin], [aMax, cMin], [aMax, cMax], [-aMax, cMax]];
+  // gates: where a road polyline crosses the fence rectangle
+  const gates = [];
+  for (const R of L.roads) for (let i = 0; i + 1 < R.pts.length; i++) {
+    const p0 = F.toAC(R.pts[i].x, R.pts[i].z), p1 = F.toAC(R.pts[i + 1].x, R.pts[i + 1].z);
+    for (const [ax, val] of [['a', -aMax], ['a', aMax], ['c', cMin], ['c', cMax]]) {
+      const t = (val - p0[ax]) / ((p1[ax] - p0[ax]) || 1e-9);
+      if (t <= 0 || t >= 1) continue;
+      const q = { a: p0.a + (p1.a - p0.a) * t, c: p0.c + (p1.c - p0.c) * t };
+      const other = ax === 'a' ? 'c' : 'a';
+      if (q[other] < (other === 'a' ? -aMax : cMin) || q[other] > (other === 'a' ? aMax : cMax)) continue;
+      gates.push({ ax, val, at: q[other], w: R.wid + 10, q });
+    }
+  }
+  for (let k = 0; k < 4; k++) {
+    const [a0, c0] = corners[k], [a1, c1] = corners[(k + 1) % 4];
+    const ax = a0 === a1 ? 'a' : 'c', other = ax === 'a' ? 'c' : 'a';
+    const val = ax === 'a' ? a0 : c0, from = ax === 'a' ? c0 : a0, to = ax === 'a' ? c1 : a1;
+    const cuts = gates.filter((g) => g.ax === ax && g.val === val).map((g) => [g.at - g.w / 2, g.at + g.w / 2]).sort((x, y) => x[0] - y[0]);
+    const lo = Math.min(from, to), hi = Math.max(from, to);
+    let s0 = lo;
+    const segs = [];
+    for (const [u0, u1] of cuts) { if (u0 > s0) segs.push([s0, u0]); s0 = Math.max(s0, u1); }
+    if (s0 < hi) segs.push([s0, hi]);
+    const P = (u) => (ax === 'a' ? F.P(val, u) : F.P(u, val));
+    for (const [u0, u1] of segs) L.fences.push({ pts: [P(u0), P(u1)], perimeter: true });
+    void other;
+  }
+  for (const g of gates) {
+    const inward = g.ax === 'a' ? -Math.sign(g.val) : -Math.sign(g.val - (cMin + cMax) / 2);
+    const p = g.ax === 'a' ? F.P(g.val + inward * 14, g.at + g.w / 2 + 6) : F.P(g.at + g.w / 2 + 6, g.val + inward * 14);
+    L.buildings.push({ type: 'gatehouse', x: p.x, z: p.z, hdg: F.H, len: 8, wid: 6, h: 3.6 });
+  }
+  // inside service road (no centre markings), a few metres in from the fence
+  const ins = 9, rp = [[-aMax + ins, cMin + ins], [aMax - ins, cMin + ins], [aMax - ins, cMax - ins], [-aMax + ins, cMax - ins], [-aMax + ins, cMin + ins]];
+  L.roads.push({ pts: rp.map(([a, c]) => F.P(a, c)), wid: 6, lanes: 1, service: true });
+  L.perimeter = { aMax, cMin, cMax };
 }
 
 // --------------------------------------------------------------------------------------------------------------------

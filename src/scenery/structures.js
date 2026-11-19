@@ -50,9 +50,16 @@ export function buildStructures(L, B, signIndex, poles) {
   }
   // floodlight masts
   for (const f of L.floods) {
-    B.box('plain', f.x, 0, f.z, 0, 0.7, 0.7, f.h, C.grey);
-    const ah = Math.atan2(f.aim.x, -f.aim.z) / DEG;
-    B.box('plain', f.x, f.h - 0.2, f.z, ah, 0.8, 4.2, 1.1, C.dgrey);
+    // tapered galvanised pole on a plinth, service platform, a bank of floodlight heads tilted toward the apron
+    B.box('concrete', f.x, 0, f.z, 0, 1.6, 1.6, 0.6, C.concrete);
+    B.cylinder('plain', f.x, 0.6, f.z, 0.42, f.h - 0.6, 8, C.steel, null, 0.2);
+    const ah = Math.atan2(f.aim.x, -f.aim.z) / DEG, d = dirs(ah);
+    B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, f.x, f.h - 1.3, f.z, ah, 2.2, 4.6, 0.15, C.dgrey);
+    B.box('plain', f.x, f.h - 1.15, f.z, ah, 0.06, 4.6, 0.9, C.grey);   // rail
+    for (const row of [0, 1]) for (let k = -2; k <= 2; k++) {
+      const x = f.x + d.rx * k * 0.9 + d.dx * (0.5 + row * 0.15), z = f.z + d.rz * k * 0.9 + d.dz * (0.5 + row * 0.15);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, x, f.h - 0.4 + row * 0.75, z, ah, 0.35, 0.7, 0.55, C.dgrey, { cols: { pa: C.white } });
+    }
   }
   for (const s of L.streetLights) {
     B.box('plain', s.x, 0, s.z, 0, 0.22, 0.22, s.h, C.grey);
@@ -64,7 +71,7 @@ export function buildStructures(L, B, signIndex, poles) {
       const a = f.pts[i], b = f.pts[i + 1];
       const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
       const ux = dx / len, uz = dz / len;
-      const n = Math.max(1, Math.round(len / 3));
+      const n = Math.max(1, Math.round(len / (f.perimeter ? 6 : 3)));
       for (let k = 0; k <= n; k++) B.box('plain', a.x + ux * len * k / n, 0, a.z + uz * len * k / n, 0, 0.08, 0.08, 2.5, C.grey);
       const nx = -uz, nz = ux;
       B.quad('fence', [a.x, 0.05, a.z], [b.x, 0.05, b.z], [a.x, 2.4, a.z], [b.x, 2.4, b.z], [nx, 0, nz], C.white, [0, 0, len, 2.35]);
@@ -216,6 +223,12 @@ function building(B, b, L) {
       B.box({ pa: 'concrete', na: 'concrete', pr: 'glass', nr: 'glass' }, b.x, 9, b.z, b.hdg, b.len, b.wid, b.h - 9, C.glassTint);
       B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len + 0.6, b.wid + 0.6, 1.2, C.offwhite);
       B.box({ pa: 'metal', na: 'metal', pr: 'metal', nr: 'metal', top: 'roof' }, b.x, b.h + 1.2, b.z, b.hdg, b.len * 0.6, b.wid * 0.6, 4, C.grey);
+      break;
+    }
+    case 'gatehouse': {
+      B.box({ pa: 'office', na: 'office', pr: 'office', nr: 'office', top: 'roof' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, C.offwhite);
+      B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h + 0.6, b.z, b.hdg, b.len + 10, b.wid + 14, 0.5, C.white);
+      for (const sa of [-1, 1]) for (const sc of [-1, 1]) B.box('plain', b.x + d.dx * sa * (b.len / 2 + 4) + d.rx * sc * (b.wid / 2 + 6), 0, b.z + d.dz * sa * (b.len / 2 + 4) + d.rz * sc * (b.wid / 2 + 6), b.hdg, 0.3, 0.3, b.h + 0.6, C.grey);
       break;
     }
     case 'thangar': {

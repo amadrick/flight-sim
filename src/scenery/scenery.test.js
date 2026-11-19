@@ -185,3 +185,17 @@ test('layout: direction signs face traffic and point toward their connector; rol
   assert.ok(layouts[0].buildings.some((b) => b.type === 'cargo') && layouts[0].stands.some((s) => s.cargo), 'KHVN cargo area');
   for (const L of layouts) for (const p of L.props) if (p.type === 'jetbridge') assert.ok(p.stand && p.px !== undefined, 'jet bridge knows its stand');
 });
+
+test('layout: hubs and the air base are fenced, with a gate on every landside road and everything airside inside', () => {
+  AIRPORTS.forEach((ap, i) => {
+    const L = layouts[i];
+    if (ap.kind !== 'international' && ap.kind !== 'military') return;
+    const P = L.perimeter;
+    assert.ok(P, ap.id + ' perimeter');
+    const inside = (x, z) => { const p = L.frame.toAC(x, z); return Math.abs(p.a) < P.aMax && p.c > P.cMin && p.c < P.cMax; };
+    for (const R of L.runways) for (const E of R.ends) assert.ok(inside(E.thr.x, E.thr.z), ap.id + ' runway inside fence');
+    for (const s of L.stands) assert.ok(inside(s.x, s.z), ap.id + ' stand inside fence');
+    for (const f of L.fences) for (const p of f.pts) assert.ok(Math.hypot(p.x, p.z) < ap.flattenRadius, ap.id + ' fence on flat ground');
+    assert.ok(L.buildings.some((b) => b.type === 'gatehouse'), ap.id + ' gate');
+  });
+});
