@@ -21,9 +21,9 @@ const DEG = Math.PI / 180;
 export const LIVERIES = ['usaf', 'lowvis', 'raaf'];
 
 const SCHEMES = {
-  usaf: { name: 'USAF 388th FW (HL)', skin: '#666a6d', tape: '#83888b', mark: '#3e4245', code: 'HL', serial: 'AF 19-5427', unit: '388 FW', star: 'usaf', tip: '#2c2f31' },
-  lowvis: { name: 'Low-visibility (sanitised)', skin: '#5d6063', tape: '#6d7174', mark: '#4a4e51', code: '', serial: '5481', unit: '', star: 'usaf', tip: null },
-  raaf: { name: 'RAAF No. 3 Sqn', skin: '#64686b', tape: '#7f8487', mark: '#3c4043', code: '', serial: 'A35-052', unit: '3SQN', star: 'raaf', tip: null },
+  usaf: { name: 'USAF 388th FW (HL)', skin: '#666a6d', tape: '#777c7f', mark: '#3e4245', code: 'HL', serial: 'AF 19-5427', unit: '388 FW', star: 'usaf', tip: '#2c2f31' },
+  lowvis: { name: 'Low-visibility (sanitised)', skin: '#5d6063', tape: '#696d70', mark: '#4a4e51', code: '', serial: '5481', unit: '', star: 'usaf', tip: null },
+  raaf: { name: 'RAAF No. 3 Sqn', skin: '#64686b', tape: '#75797c', mark: '#3c4043', code: '', serial: 'A35-052', unit: '3SQN', star: 'raaf', tip: null },
 };
 
 export function createVisual(ctx, opts = {}) {
@@ -52,7 +52,7 @@ export function createVisual(ctx, opts = {}) {
     heat: atlas.swatch('heat', { color: '#7a746e', rough: 0.5, metal: 0.75 }), heat2: atlas.swatch('heat2', { color: '#3e3a37', rough: 0.55, metal: 0.8 }),
     ceramic: atlas.swatch('ceramic', { color: '#b9b2a6', rough: 0.6, metal: 0.1 }),
     well: atlas.swatch('well', F.gearWhite), interior: atlas.swatch('interior', { color: '#34383b', rough: 0.75, metal: 0 }), console: atlas.swatch('console', { color: '#1b1d1f', rough: 0.6, metal: 0 }),
-    seat: atlas.swatch('seat', { color: '#232628', rough: 0.7, metal: 0 }), cushion: atlas.swatch('cushion', F.fabric), accent: atlas.swatch('accent', { color: '#d6b21e', rough: 0.5, metal: 0 }),
+    seat: atlas.swatch('seat', { color: '#232628', rough: 0.7, metal: 0 }), cushion: atlas.swatch('cushion', { color: '#2e3130', rough: 0.95, metal: 0 }), accent: atlas.swatch('accent', { color: '#d6b21e', rough: 0.5, metal: 0 }),
     suit: atlas.swatch('suit', { color: '#4d5540', rough: 0.9, metal: 0 }), helmet: atlas.swatch('helmet', { color: '#2b2d2f', rough: 0.4, metal: 0.1 }), visor: atlas.swatch('visor', { color: '#0a0b0d', rough: 0.05, metal: 0.5 }),
     glove: atlas.swatch('glove', { color: '#3a3d33', rough: 0.9, metal: 0 }), frame: atlas.swatch('frame', F.ram('#4a4e51')), steel: atlas.swatch('steel', F.steel),
     eots: atlas.swatch('eots', { color: '#2a2418', rough: 0.04, metal: 0.65 }), lens: atlas.swatch('lens', F.lens),
@@ -80,8 +80,8 @@ export function createVisual(ctx, opts = {}) {
     [-1.00, 0.160, 1.490, 0.990, 0.980, 0.6, 0.88, 26, 68],
     [0.60, 0.100, 1.500, 0.980, 0.920, 0.6, 0.88, 24, 72],
     [2.00, 0.100, 1.450, 0.910, 0.890, 0.6, 0.86, 26, 72],
-    [3.20, 0.100, 1.250, 0.810, 0.820, 0.62, 0.8, 32, 72],
-    [4.20, 0.100, 0.900, 0.700, 0.700, 0.62, 0.7, 48, 70],
+    [3.20, 0.100, 1.300, 0.820, 0.820, 0.66, 0.8, 30, 72],
+    [4.20, 0.100, 1.080, 0.740, 0.700, 0.68, 0.72, 38, 70],
     [5.00, 0.100, 0.640, 0.620, 0.620, 0.5523, 0.5523, 90, 90],
   ].map(r => ({ z: r[0], y: r[1], w: r[2], top: r[3], bot: r[4], kTop: r[5], kBot: r[6], aTop: r[7], aBot: r[8] }));
   const T_SILL = 0.385, T_NG = 0.05, T_MLG = [0.07, 0.16];
@@ -98,14 +98,13 @@ export function createVisual(ctx, opts = {}) {
   stat.add(fus.mesh);
 
   // ---- tail booms (carry the fins and stabilators either side of the nozzle) ---------------------------------------------------
-  const BX = 1.02, BY = 0.42;
+  const BX = 1.0, BS = (z, y, w, top, bot, extra) => ({ z, x: BX, y, w, top, bot, kTop: [0.86, 0.8], kBot: [0.8, 0.74], aTop: 55, aBot: 80, ...extra });
   const boom = K.loft({
     stations: [
-      { z: 1.2, x: BX, y: BY, w: 0.04, top: 0.04, bot: 0.04 }, { z: 2.2, x: BX, y: BY, w: 0.22, top: 0.36, bot: 0.34, kTop: 0.66, kBot: 0.66 },
-      { z: 3.5, x: BX, y: BY, w: 0.27, top: 0.43, bot: 0.42, kTop: 0.72, kBot: 0.72 }, { z: 5.0, x: BX, y: BY - 0.04, w: 0.25, top: 0.4, bot: 0.36, kTop: 0.72, kBot: 0.72 },
-      { z: 5.75, x: BX, y: BY - 0.2, w: 0.17, top: 0.2, bot: 0.16, kTop: 0.66, kBot: 0.66 }, { z: 6.15, x: BX, y: 0.14, w: 0.02, top: 0.02, bot: 0.02 },
+      BS(2.0, 0.4, 0.05, 0.05, 0.05), BS(2.8, 0.38, 0.27, 0.36, 0.32), BS(3.8, 0.37, 0.31, 0.39, 0.37), BS(5.0, 0.36, 0.29, 0.36, 0.36),
+      BS(5.7, 0.3, 0.2, 0.22, 0.22), BS(6.15, 0.18, 0.02, 0.02, 0.02),
     ],
-    segments: Math.max(16, Math.round(24 * detail / 4) * 4), step: 0.25, chart: cBoom,
+    segments: Math.max(16, Math.round(24 * detail / 4) * 4), step: 0.25, chart: cBoom, creases: ['side'],
   });
   stat.add(boom.mesh).add(boom.mesh.clone().mirrorX());
 
@@ -139,15 +138,15 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   {  // wide flat glare shield over the panoramic display
-    const gs = K.prism([[-6.32, 0.77], [-6.32, 0.91], [-5.95, 1.005], [-5.86, 1.0], [-5.86, 0.96], [-5.9, 0.77]], -0.42, 0.42, U.black);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.62 + 0.38 * Math.min(1, (gs.p[i + 2] + 6.32) / 0.4);
+    const gs = K.prism([[-6.32, 0.77], [-6.32, 0.91], [-5.95, 1.005], [-5.86, 1.0], [-5.86, 0.96], [-5.9, 0.77]], -0.34, 0.34, U.black);
+    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.62 + 0.38 * Math.min(1, (gs.p[i + 2] + 6.32) / 0.46);
     stat.add(gs);
   }
   {  // one large panoramic cockpit display (painted chart, emissive), side consoles, side stick, throttle
-    const z = -5.9, i0 = stat.vertexCount, q = [[-0.36, 0.72], [0.36, 0.72], [0.36, 0.98], [-0.36, 0.98]];
-    for (const p of q) { const uv = cPanel.uv(p[0] + 0.36, (0.98 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + (0.98 - p[1]) * 0.25, 0, 0.24, 1, uv[0], uv[1]); }
+    const z = -5.9, i0 = stat.vertexCount, q = [[-0.3, 0.72], [0.3, 0.72], [0.3, 0.98], [-0.3, 0.98]];
+    for (const p of q) { const uv = cPanel.uv((p[0] + 0.3) * 1.2, (0.98 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + (0.98 - p[1]) * 0.25, 0, 0.24, 1, uv[0], uv[1]); }
     stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-    stat.add(K.box(0.74, 0.5, 0.08, U.console).translate(0, 0.47, -5.93));
+    stat.add(K.box(0.62, 0.5, 0.08, U.console).translate(0, 0.47, -5.93));
     for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.12, 1.3, U.console).translate(sx * 0.33, 0.63, -4.95));
     stat.add(K.stick({ base: [0.33, 0.69, -4.98], height: 0.14, uv: U.black, uvGrip: U.dark }));
     stat.add(K.box(0.06, 0.08, 0.12, U.dark).translate(-0.33, 0.73, -5.0));
@@ -214,7 +213,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- nozzle (serrated petals), jet pipe, afterburner glow ------------------------------------------------------------------------
   const NZ = { c: [0, 0.1, 0], z0: 4.98, z1: 5.75, petals: 15 };
-  const nozzleMesh = K.petalNozzle({ z0: NZ.z0, z1: NZ.z1, r0: 0.6, rClosed: 0.44, rOpen: 0.55, petals: NZ.petals, centre: NZ.c, uvOuter: U.heat, uvInner: U.heat2, thickness: 0.03, gap: 0.04, chart: cNoz });
+  const nozzleMesh = K.petalNozzle({ z0: NZ.z0, z1: NZ.z1, r0: 0.635, rClosed: 0.44, rOpen: 0.55, petals: NZ.petals, centre: NZ.c, uvOuter: U.heat, uvInner: U.heat2, thickness: 0.03, gap: 0.04, chart: cNoz });
   serrate(nozzleMesh, NZ, 0.13);
   stat.add(K.lathe([[0.6, 5.02], [0.54, 4.6], [0.52, 4.2], [0, 4.2]], { segments: 28, uv: U.exhaust }).translate(0, NZ.c[1], 0));
   for (let i = 0; i < 14; i++) stat.add(K.box(0.03, 0.5, 0.05, U.heat2).translate(0, 0.25, 0).rotateZ(i * Math.PI / 7).translate(0, NZ.c[1], 4.4));
@@ -249,7 +248,7 @@ export function createVisual(ctx, opts = {}) {
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
-  rig.glass('canopy', K.glassMaterial(ctx, K.GLASS.gold));
+  rig.glass('canopy', K.glassMaterial(ctx, { ...K.GLASS.gold, tint: '#6a5426', opacity: 0.2, edgeOpacity: 0.78 }));
   const glow = rig.material('glow', K.glowMaterial(), { shadow: false });
   rig.addStatic(stat, 'paint');
 
