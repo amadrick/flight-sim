@@ -7,11 +7,22 @@
 | `fighter.js` | conformal F-16-style HUD (cockpit camera, `def.hudType === 'fighter'`) |
 | `airliner.js` | Boeing-style PFD / ND / upper EICAS deck (cockpit camera, `def.hudType === 'airliner'`); phone layouts |
 | `external.js` | flight-data strip for every exterior camera |
-| `notices.js` | DOM layer (`.hud-root` in `ctx.uiRoot`): toasts, crash banner, paused tag, first-flight key hint |
+| `notices.js` | DOM layer (`.hud-root` in `ctx.uiRoot`): glass toasts, crash card, paused tag, controls card |
 | `nav.js` | pure maths: destination, bearing/distance, ILS deviations, ground-collision prediction |
 | `projection.js` | conformal projection of world directions through `ctx.camera` |
 | `hud.test.js` | `node --test src/ui/hud/` — projection, conformity of the drawn HUD, ILS, GCAS, formatters |
 | `harness.js` | dev-only entry for screenshots with a frozen, posed aircraft (not part of the main bundle) |
+
+## Glass
+The external strip sits on a DOM glass plate (`.hud-plate.glass`, see the material in `index.template.html`) inserted
+between `#view` and the HUD canvas, so the backdrop blur never touches the numbers; the canvas then draws only a light
+scrim. `?glass=off` keeps the old opaque canvas panel. Toasts, the paused tag, the crash card and the controls card are
+glass too. The fighter HUD stays green collimated symbology, and the airliner deck stays an instrument panel.
+
+## Controls card
+Shown at the start of the first six flights (count in `localStorage` `skyward.hud.hint`; `hint=1` forces it, `hint=0`
+suppresses it), up for 7 s of unpaused flying, then it fades. `F1`, or `cmd { name: 'help' }` (the menu's corner help
+button), brings it back for 12 s or puts it away. Hidden on touch screens.
 
 ## Public API
 ```js

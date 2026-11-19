@@ -261,7 +261,7 @@ export async function createMenu(ctx) {
   const panelPlan = h('section', { class: 'menu-panel menu-panel-plan glass', 'aria-label': 'Flight setup' }, planScroll);
 
   const clearLine = h('b', { id: 'menu-clearance' });
-  const flyBtn = h('button', { class: 'menu-fly glass-tint glass-lens', id: 'menu-fly', type: 'button', onclick: () => fly() }, 'Fly', h('span', { class: 'menu-fly-arrow', 'aria-hidden': 'true' }), h('span', { class: 'menu-fly-key', 'aria-hidden': 'true', text: '↵' }));
+  const flyBtn = h('button', { class: 'menu-fly glass-tint', id: 'menu-fly', type: 'button', onclick: () => fly() }, 'Fly', h('span', { class: 'menu-fly-arrow', 'aria-hidden': 'true' }), h('span', { class: 'menu-fly-key', 'aria-hidden': 'true', text: '↵' }));
   const flybar = h('div', { class: 'menu-flybar glass' }, h('div', { class: 'menu-clear' }, h('span', { text: 'CLR' }), clearLine), flyBtn);
 
   const vMain = h('section', { class: 'menu-view menu-main', 'data-view': 'main' },
@@ -300,7 +300,9 @@ export async function createMenu(ctx) {
   const keysWrap = h('div', { class: 'menu-keys' });
   function renderKeys() {
     keysWrap.textContent = '';
-    const src = Array.isArray(ctx.input?.bindings) && ctx.input.bindings.length ? ctx.input.bindings : DEFAULT_BINDINGS;
+    let src = Array.isArray(ctx.input?.bindings) && ctx.input.bindings.length ? ctx.input.bindings : DEFAULT_BINDINGS;
+    // F1 (the in-flight controls card) is handled here and in the HUD, not by input
+    if (!src.some(b => /controls card/i.test(b.action || ''))) src = [...src, { group: 'Sim', action: 'Controls card show / hide', keys: ['F1'] }];
     const groupNames = [...BINDING_GROUPS, ...new Set(src.map(b => b.group).filter(g => g && !BINDING_GROUPS.includes(g)))];
     for (const g of groupNames) {
       const rows = src.filter(b => (b.group || 'Sim') === g);
@@ -666,6 +668,51 @@ export async function createMenu(ctx) {
     else updateCorner();
   });
 
+  // ---- gamepad: D-pad / left stick move focus, A activates, B goes back, LB / RB switch sections ----------------
+  // (input ignores these buttons while the menu is open; Start still toggles the menu through input)
+  const pad = { prev: [], rep: 0, repT: 0 };
+  const tabbable = () => [...root.querySelectorAll('button, input, [tabindex="0"]')].filter(el => !el.disabled && el.tabIndex >= 0 && el.offsetParent && !el.closest('[inert]') && !el.closest('[hidden]'));
+  function moveFocus(dir) {
+    const t = document.activeElement;
+    const inRoot = t && root.contains(t);
+    if (inRoot && (dir === 'left' || dir === 'right') && t.closest('[data-nav]') && t.matches('[data-item]')) {
+      t.dispatchEvent(new KeyboardEvent('keydown', { key: dir === 'left' ? 'ArrowLeft' : 'ArrowRight', bubbles: true })); return;
+    }
+    if (inRoot && t.type === 'range' && (dir === 'left' || dir === 'right')) {
+      t.value = String(+t.value + (dir === 'left' ? -1 : 1) * (+t.step || 1) * (t.id.endsWith('tod') ? 2 : 5)); t.dispatchEvent(new Event('input', { bubbles: true })); t.dispatchEvent(new Event('change', { bubbles: true })); return;
+    }
+    if (inRoot && (dir === 'up' || dir === 'down') && t.closest('[data-nav]') && t.matches('[data-item]') && t.closest('[role="listbox"]')) {
+      // inside a list: up/down walk the list until its ends, then leave it
+      const items = [...t.closest('[data-nav]').querySelectorAll('[data-item]')].filter(x => !x.hidden);
+      const i = items.indexOf(t), n = items[i + (dir === 'down' ? 1 : -1)];
+      if (n) { t.dispatchEvent(new KeyboardEvent('keydown', { key: dir === 'down' ? 'ArrowDown' : 'ArrowUp', bubbles: true })); return; }
+    }
+    const list = tabbable(); if (!list.length) return;
+    let i = inRoot ? list.indexOf(t) : -1;
+    // skip the other members of a roving group (only its tabindex=0 member is in the list anyway)
+    i = clamp(i + (dir === 'down' || dir === 'right' ? 1 : -1), 0, list.length - 1);
+    const n = list[i];
+    try { n.focus({ preventScroll: true }); reveal(n); } catch {}
+  }
+  function pollPad(rdt) {
+    let gp = null;
+    try { for (const g of navigator.getGamepads?.() || []) if (g && g.connected && g.mapping === 'standard') { gp = g; break; } } catch {}
+    if (!gp) return;
+    const b = gp.buttons, ax = gp.axes;
+    const down = (i) => !!b[i]?.pressed;
+    const edge = (i) => { const d = down(i), w = !!pad.prev[i]; pad.prev[i] = d; return d && !w; };
+    const dir = down(12) || ax[1] < -0.6 ? 'up' : down(13) || ax[1] > 0.6 ? 'down' : down(14) || ax[0] < -0.6 ? 'left' : down(15) || ax[0] > 0.6 ? 'right' : null;
+    if (dir) {
+      if (pad.rep !== dir) { pad.rep = dir; pad.repT = 0.38; moveFocus(dir); }
+      else { pad.repT -= rdt; if (pad.repT <= 0) { pad.repT = 0.11; moveFocus(dir); } }
+    } else pad.rep = 0;
+    if (edge(0)) { const t = document.activeElement; if (t && root.contains(t) && t.tagName === 'BUTTON') t.click(); else if (view === 'main') fly(); }
+    if (edge(1)) back();
+    const order = inFlight() ? null : ['main', 'settings', 'controls'];
+    if (edge(4) && order) go(order[(order.indexOf(view) + 2) % 3]);
+    if (edge(5) && order) go(order[(order.indexOf(view) + 1) % 3]);
+  }
+
   // ---- per-frame ---------------------------------------------------------------------------------
   const menu = {
     isOpen: false,
@@ -679,6 +726,9 @@ export async function createMenu(ctx) {
       if (spawnTimer > 0) { spawnTimer -= rdt; if (spawnTimer <= 0 && inHangar) spawnHangar(); }
       if (crashTimer > 0) { crashTimer -= rdt; if (crashTimer <= 0) showCrash(); }
       if (inHangar) holdParked();
+      if (menu.isOpen) pollPad(rdt);
+      else pad.prev.length = 0;
+      if (!corner.hidden) corner.classList.toggle('touch', !!ctx.input?.touchEnabled);
       if (!corner.hidden && !corner.classList.contains('dim')) { cornerT += rdt; if (cornerT > 6 && !corner.matches(':hover, :focus-within')) corner.classList.add('dim'); }
       if (menu.isOpen) {
         clockTimer -= rdt;

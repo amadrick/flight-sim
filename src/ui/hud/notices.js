@@ -4,7 +4,7 @@ import { num, FPM } from './common.js';
 
 const CSS = `
 .hud-root{position:absolute;inset:0;pointer-events:none!important;overflow:hidden;font-family:var(--font-body,'Saira','Segoe UI',system-ui,Arial,sans-serif);color:var(--fg,#f2f6fa)}
-.hud-root[hidden]{display:none}
+.hud-root[hidden],.hud-root [hidden]{display:none!important}
 .hud-toasts{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 max(16px,env(safe-area-inset-left,0px))}
 .hud-toast{--r:999px;display:flex;align-items:center;gap:10px;max-width:100%;box-sizing:border-box;height:38px;padding:0 18px 0 14px;
   font-size:13.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;

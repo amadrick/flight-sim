@@ -39,15 +39,15 @@ export const CSS = /* css */`
 
 /* ---------- top bar: three floating capsules ---------------------------------------------------- */
 .menu-top {
-  display: flex; align-items: center; gap: 10px; min-width: 0; pointer-events: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; pointer-events: none;
   padding: var(--gt) var(--gr) 0 var(--gl);
 }
 .menu-top > * { pointer-events: auto; }
 .menu-cap { --r: var(--r-pill); height: 44px; display: flex; align-items: center; box-sizing: border-box; }
-.menu-brand { gap: 10px; padding: 0 18px 0 14px; flex: none; }
+.menu-brand { gap: 10px; padding: 0 18px 0 14px; justify-self: start; grid-column: 1; }
 .menu-brand-mark { width: 22px; height: 22px; flex: none; color: var(--accent, #ffb000); }
 .menu-brand-name { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: 0.3em; text-transform: uppercase; line-height: 1; padding-left: 0.1em; }
-.menu-tabs { position: relative; padding: 4px; gap: 2px; margin: 0 auto; }
+.menu-tabs { position: relative; padding: 4px; gap: 2px; grid-column: 2; }
 .menu-tabs > .menu-ind { border-radius: var(--r-pill); }
 .menu-tab {
   position: relative; z-index: 1; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-radius: var(--r-pill);
@@ -56,7 +56,7 @@ export const CSS = /* css */`
 .menu-tab svg { width: 16px; height: 16px; flex: none; opacity: 0.9; }
 .menu-tab:hover { color: var(--fg); }
 .menu-tab[aria-current="page"] { color: var(--fg); }
-.menu-status { gap: 0; padding: 0 4px 0 16px; flex: none; }
+.menu-status { gap: 0; padding: 0 4px 0 16px; justify-self: end; grid-column: 3; min-width: 0; }
 .menu-status-item { display: flex; align-items: baseline; gap: 7px; padding-right: 14px; }
 .menu-status-item + .menu-status-item { padding-left: 14px; border-left: 1px solid var(--hair-2); }
 .menu-status-k { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; }
@@ -326,6 +326,8 @@ export const CSS = /* css */`
 .menu-corner { position: absolute; z-index: 15; top: var(--gt); right: var(--gr); display: flex; gap: 8px; pointer-events: auto; margin-top: 4px; transition: opacity 0.6s; }
 .menu-corner.dim { opacity: 0.55; }
 .menu-corner.dim:hover, .menu-corner:focus-within { opacity: 1; }
+.menu-corner.touch { right: calc(var(--gr) + 136px); top: max(10px, env(safe-area-inset-top, 0px)); margin-top: 0; }
+.menu-corner.touch #menu-fab, .menu-corner.touch #menu-help { display: none; }
 .menu-cbtn { --r: var(--r-pill); height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; box-sizing: border-box; color: var(--fg);
   font-size: 13px; font-weight: 600; letter-spacing: 0.04em; transition: transform 0.25s var(--spring); }
 .menu-cbtn:active { transform: scale(0.94); }
@@ -345,6 +347,9 @@ export const CSS = /* css */`
 .menu-btn:hover { background: rgb(255 255 255 / 0.14); }
 .menu-btn.glass-tint { box-shadow: none; font-weight: 700; }
 .menu-btn:active { transform: scale(0.97); }
+
+.menu-act.glass-tint, .menu-btn.glass-tint, .menu-fly.glass-tint { background: var(--tint-bg); color: var(--accent-ink); box-shadow: var(--tint-shadow); }
+.menu-act.glass-tint:hover, .menu-btn.glass-tint:hover { background: var(--tint-bg); filter: brightness(1.06); }
 
 /* touch flight controls (input module) restyled as clear glass */
 .inp-pnl, .inp-btn, .inp-base { background: rgb(var(--glass-rgb) / var(--glass-a-clear)) !important; -webkit-backdrop-filter: blur(12px) saturate(1.6); backdrop-filter: blur(12px) saturate(1.6);
@@ -384,8 +389,9 @@ export const CSS = /* css */`
   .menu-hero-tag { display: none; }
 }
 @media (max-width: 900px) and (min-width: 721px) {
-  .menu-main { grid-template-columns: minmax(240px, 1fr) 0 minmax(270px, 1fr); }
+  .menu-main { grid-template-columns: minmax(232px, 262px) minmax(0, 1fr) minmax(262px, 292px); column-gap: 12px; }
   .menu-hero { display: none; }
+  .menu-filter .menu-segbtn small { display: none; }
   .menu-brand-name { display: none; }
   .menu-brand { padding: 0 11px; }
 }
@@ -414,13 +420,14 @@ export const CSS = /* css */`
 
 /* sheet layout: phones and portrait tablets — panels collapse into one bottom sheet */
 @media (max-width: 720px), (max-aspect-ratio: 1/1) and (max-width: 1100px) {
-  .menu-top { gap: 8px; }
+  .menu-top { gap: 8px; grid-template-columns: auto minmax(0, 1fr); }
   .menu-status { display: none; }
   .menu-brand { padding: 0 12px; }
-  .menu-tabs { margin: 0 0 0 auto; }
+  .menu-tabs { justify-self: end; }
   .menu-tab { padding: 0 13px; font-size: 13.5px; }
   .menu-view { padding: 0; }
   .menu-main { display: block; }
+  .menu-main .menu-panel-ac, .menu-main .menu-panel-plan { align-self: stretch; min-width: 0; }
   .menu-root .menu-sheet, .menu-dock > .menu-panel {
     --r: var(--r-xl); position: absolute; left: 0; right: 0; bottom: 0; width: auto !important; max-height: 58%;
     border-radius: var(--r-xl) var(--r-xl) 0 0; box-sizing: border-box;
@@ -459,7 +466,7 @@ export const CSS = /* css */`
   .menu-spec-key, .menu-spec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-spec-key > .menu-kv:nth-child(3)::before { display: none; }
   .menu-sheet > .menu-flybar { position: sticky; bottom: 0; z-index: 3; margin: 6px calc(-1 * var(--gr)) 0 calc(-1 * var(--gl)); padding: 8px var(--gr) var(--gb) var(--gl) !important;
-    background: linear-gradient(to bottom, rgb(var(--glass-rgb) / 0), rgb(var(--glass-rgb) / 0.75) 30%) !important; }
+    background: linear-gradient(to bottom, rgb(var(--glass-rgb) / 0), rgb(var(--glass-rgb) / 0.94) 22px) !important; }
   .menu-fly { min-height: 54px; }
   .menu-devices { grid-template-columns: 1fr; }
   .menu-keys { columns: 1; }
