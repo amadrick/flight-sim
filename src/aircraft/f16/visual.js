@@ -161,7 +161,7 @@ export function createVisual(ctx, opts = {}) {
   }
   // instrument panel: kit panel (two MFDs, up-front display under the HUD, standby, caution lights) and its glareshield,
   // kept low (top ≈ 0.8) — the F-16 pilot sees over the nose
-  const panelMesh = K.instrumentPanel({ eye, kind: 'fighter', dist: 0.64, drop: 0.54, height: 0.42, width: 0.66, uv: U.console, uvPad: U.coaming });
+  const panelMesh = K.instrumentPanel({ eye, kind: 'fighter', dist: 0.64, drop: 0.54, height: 0.42, width: 0.66, pages: ['mfdRadar', 'mfdHsd'], uv: U.console, uvPad: U.coaming });
   stat.add(panelMesh);
   {  // pedestal + side consoles
     stat.add(K.box(0.22, 0.3, 0.45, U.console).translate(0, 0.06, -4.86));
