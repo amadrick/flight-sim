@@ -10,8 +10,9 @@
 //     TE swept forward, tip chord 1.6 with a Hoerner drooped tip; LE root z −1.05; t/c 16.5 % → 11 %
 //     inboard slats x 0.8 … 2.2, slotted flaps x 0.8 … 2.2 and 3.0 … 4.65 (28 % chord), split ailerons ("decelerons") x 4.75 … 8.15
 //   main-gear pods: x ±2.5 under the centre section, z −2.25 … 1.8; wheels retract forward and stay half exposed
-//   engines: TF34 pods, centres x ±1.45, y 1.3 (above the aft fuselage, on short canted pylons), highlight z 1.65,
-//     fan exit z 4.4, core nozzle 5.1
+//   engines: TF34 pods, centres x ±1.2, y 1.45 (from front / rear the gap between the pods is about one pod diameter and
+//     the pods sit above the spine), each on a short upright pylon canted ~30° outboard; highlight z 1.65, fan exit z 4.4,
+//     core nozzle 5.1; separate-flow exhaust (no mixer)
 //   tailplane: straight, span 5.5 (tips ±2.75), y 0.68, LE z 6.4, chord 1.85; twin fins at the tips, y 0.08 … 2.82, TE z ≈ 8.95
 //   gear (geometry.js): nose [0.3, −1.65, −4.7] r 0.28 offset right, retracts forward; mains [±2.5, −1.65, 0.4] r 0.45
 //   pilot eye [0, 1.3, −3.95]
@@ -777,10 +778,10 @@ function paint(atlas, o) {
         Q.wear((g) => { const a = [w0[0] * s, w0[1]], b = [w3[0] * s, w3[1]]; g.moveTo(a[0], a[1] + 0.05); g.lineTo(b[0], b[1] + 0.05); }, 0.12, { color: '#6e7275', rough: 0.7, metal: 0.25 }, { alpha: 0.35 * wx });
         const p = at(3.6, 0.45); Q.text('NO STEP', p[0] * s, p[1], 0.07, { color: mark, rot: s > 0 ? -90 : 90 });
         for (const x of [5.2, 7.0]) { const q = at(x, 0.35); Q.text('NO STEP', q[0] * s, q[1], 0.05, { color: mark, rot: s > 0 ? -90 : 90 }); }
-        if (key === 'L') { const c = at(6.0, 0.4); Q.decal(c[0] * s, c[1], (g) => K.drawStarBar(g, 0.7, { lowVis: markLow })); }
+        if (key === 'L') { const c = at(6.0, 0.4); Q.decal(c[0] * s, c[1], (g) => K.drawStarBar(g, 0.85, { lowVis: markLow })); }
         const fl = at(7.6, 0.3); Q.fill((g) => g.rect(fl[0] * s - 0.25, fl[1] - 0.03, 0.5, 0.06), slime);
       } else {
-        if (key === 'R') { const c = at(6.0, 0.4); Q.decal(c[0] * s, c[1], (g) => K.drawStarBar(g, 0.7, { lowVis: markLow })); }
+        if (key === 'R') { const c = at(6.0, 0.4); Q.decal(c[0] * s, c[1], (g) => K.drawStarBar(g, 0.85, { lowVis: markLow })); }
         for (const x of [1.55, 3.45, 4.9, 6.35]) { const q = at(x, 0.5); Q.streak(q[0] * s, q[1], q[0] * s, q[1] + 0.9, 0.08, { alpha: 0.12 * wx }); }   // pylon drag streaks
         const t = at(4.0, 0.4); Q.decal(t[0] * s, t[1], (g) => stencil(g, 0.3, 3));
       }
