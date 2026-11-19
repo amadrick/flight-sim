@@ -150,7 +150,7 @@ export async function createScenery(ctx) {
     const pave = new THREE.Mesh(buildPavementGeometry(L), paveMat);
     pave.receiveShadow = true; far.add(pave);
     const fringe = new THREE.Mesh(buildFringeGeometry(L), fringeMat);
-    fringe.receiveShadow = true; fringe.renderOrder = -1; mid.add(fringe);
+    fringe.receiveShadow = true; fringe.renderOrder = -1; fringe.userData.scnLowOff = true; mid.add(fringe);
     const paint = new THREE.Mesh(buildPaintGeometry(L, markings[i]), makePaintMaterial(ctx, shared, paveMat.userData.pools));
     paint.receiveShadow = true; paint.renderOrder = 1; far.add(paint);
     if (ctx.params.raw?.shide?.includes('paint')) paint.visible = false;
@@ -246,12 +246,14 @@ export async function createScenery(ctx) {
         for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * 6; vadd('arff', { x: b.x + d.x * off - r.x * (b.wid / 2 + 9), z: b.z + d.z * off - r.z * (b.wid / 2 + 9) }, b.hdg + 90); }
       }
       for (const [k, list] of Object.entries(lists)) if (list.length) (k === 'light' ? near : mid).add(aircraftInstances(GEO[k], parkedMat, list));
-      for (const [k, list] of Object.entries(veh)) if (list.length && GEO.veh[k]) near.add(instances(GEO.veh[k], vehMat, list));
+      // GSE is static: bake every vehicle into one merged mesh per airport (one draw call instead of one per type)
+      const gse = bakeStatic(Object.entries(veh).filter(([k, l]) => l.length && GEO.veh[k]).map(([k, l]) => [GEO.veh[k], l]));
+      if (gse) { const m = new THREE.Mesh(gse, vehMat); m.castShadow = true; m.receiveShadow = true; near.add(m); }
     }
     // trees (landside planting; conifers at the alpine strip)
     for (const kind of ['broad', 'conifer']) {
       const list = L.trees.filter((t) => t.kind === kind).map((t, k) => ({ x: t.x, z: t.z, hdg: (k * 137.5) % 360, scale: t.s * (kind === 'conifer' ? 1.6 : 1.2), color: new THREE.Color().setHSL(0.2 + 0.06 * Math.sin(k * 1.7), 0.3, 0.8 + 0.12 * Math.sin(k * 2.3)).getHex() }));
-      if (list.length) mid.add(instances(treeGeo[kind], treeMat, list));
+      if (list.length) { const m = instances(treeGeo[kind], treeMat, list); m.userData.scnLowOff = true; mid.add(m); }
     }
     // windsocks (animated)
     const socks = [];
@@ -300,6 +302,7 @@ export async function createScenery(ctx) {
   const applyQuality = () => {
     rangeK = { low: 0.35, medium: 0.7, high: 1, ultra: 1.25 }[ctx.quality.level] ?? 1;
     const sh = ctx.quality.shadows !== false;
+    for (const A of airports) A.root.traverse((o) => { if (o.userData.scnLowOff) o.visible = ctx.quality.level !== 'low'; });
     for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.userData.scnCaster) o.castShadow = sh; });
   };
   for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.castShadow) o.userData.scnCaster = true; });
@@ -382,6 +385,40 @@ function computeStats(airports, base) {
     });
   }
   return { ...base, drawables: draws, drawablesPerAirport: +(draws / airports.length).toFixed(1), triangles: Math.round(tris), instances: inst };
+}
+
+/** Merge transformed, colour-tinted copies of small static geometries: [[geometry, [{ x, z, y?, hdg, color, scale }]]]. */
+function bakeStatic(groups) {
+  let nv = 0, ni = 0;
+  for (const [g, list] of groups) { nv += g.attributes.position.count * list.length; ni += g.index.count * list.length; }
+  if (!nv) return null;
+  const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), col = new Float32Array(nv * 3), idx = new Uint32Array(ni);
+  const c = new THREE.Color();
+  let vo = 0, io = 0;
+  for (const [g, list] of groups) {
+    const P = g.attributes.position.array, N = g.attributes.normal.array, C = g.attributes.color.array, I = g.index.array, n = g.attributes.position.count;
+    for (const o of list) {
+      const h = -o.hdg * DEG, ch = Math.cos(h), sh = Math.sin(h), s = o.scale || 1, y0 = o.y || 0;
+      c.set(o.color ?? 0xffffff);
+      for (let v = 0; v < n; v++) {
+        const x = P[v * 3] * s, y = P[v * 3 + 1] * s, z = P[v * 3 + 2] * s, k = (vo + v) * 3;
+        // rotation about +Y by h (same convention as instances(): heading 0 = -Z)
+        pos[k] = o.x + x * ch + z * sh; pos[k + 1] = y0 + y; pos[k + 2] = o.z - x * sh + z * ch;
+        const nx = N[v * 3], nz = N[v * 3 + 2];
+        nrm[k] = nx * ch + nz * sh; nrm[k + 1] = N[v * 3 + 1]; nrm[k + 2] = -nx * sh + nz * ch;
+        col[k] = C[v * 3] * c.r; col[k + 1] = C[v * 3 + 1] * c.g; col[k + 2] = C[v * 3 + 2] * c.b;
+      }
+      for (let i = 0; i < I.length; i++) idx[io + i] = I[i] + vo;
+      vo += n; io += I.length;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeBoundingSphere();
+  return g;
 }
 
 function mulberry(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }

@@ -240,9 +240,9 @@ export function buildLightPlan(L, heightFn = () => 0) {
   tally('guard');
   // ---- apron floodlights (lamp heads on masts), street lights
   for (const f of L.floods) {
-    for (const j of [-1, 0, 1]) {
+    for (const j of [-2, -1, 0, 1, 2]) {
       const rx = -f.aim.z, rz = f.aim.x;
-      push(f.x + rx * j * 1.2, f.h + 0.4, f.z + rz * j * 1.2, COLORS.led, 2.2, [f.aim.x * 0.6, -0.8, f.aim.z * 0.6], -0.2, 0, 0, 0, 0.5, 0);
+      push(f.x + rx * j * 0.9 + f.aim.x * 0.75, f.h - 0.05, f.z + rz * j * 0.9 + f.aim.z * 0.75, COLORS.led, 1.6, [f.aim.x * 0.6, -0.8, f.aim.z * 0.6], -0.2, 0, 0, 0, 0.45, 0);
     }
   }
   for (const s of L.streetLights) push(s.x, s.h, s.z, COLORS.sodium, 1.0, [0, -1, 0], -0.3, 0, 0, 0, 0.35, 0);
