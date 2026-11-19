@@ -426,7 +426,10 @@ export async function createPipeline(ctx) {
     // Partial adaptation: bright scenes stay bright, dark scenes stay dark (the eye does not grey-card the world).
     const Lr = 0.2;
     const e = L > Lr ? Math.pow(L / Lr, -0.6) : Math.pow(L / Lr, -0.8);
-    return clamp(e * 0.95, 0.22, 40);
+    // daylight is exposed like a sunny-16 photograph (white paint in sun just short of clipping); the boost fades out
+    // towards night so dark scenes keep their mood
+    const day = clamp((Math.log10(Math.max(L, 1e-6)) + 2) / 1.0, 0, 1);
+    return clamp(e * (0.95 + 0.45 * day), 0.22, 40);
   }
   function applyProbe(v, early) {
     for (let i = 0; i < 16; i++) if (!Number.isFinite(v[i])) return;
@@ -687,7 +690,7 @@ export async function createPipeline(ctx) {
       u.uTone.value.set(exposure, bloomTex ? 0.055 : 0, 0.22, size.w / size.h);
       u.uLensSun.value.set(ps.x, ps.y, dbg.noflare === '1' ? 0 : sunVis, 1);
       u.uLensColor.value.copy(sunE);
-      u.uGrade.value.set(1.16, 1.14, caps.float ? 0 : 1 / 255, frameNo % 64);
+      u.uGrade.value.set(1.5, 1.3, caps.float ? 0 : 1 / 255, frameNo % 64);
       u.uDebug.value = dbg.rdebug === 'notonemap' ? 1 : 0;
       u.uNightGrade.value = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));
       post.tonemap.render(renderer, ldrTarget);

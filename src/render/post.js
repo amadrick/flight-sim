@@ -151,7 +151,10 @@ vec3 agx(vec3 color) {
   color = clamp((log2(max(color, 1e-10)) - minEv) / (maxEv - minEv), 0.0, 1.0);
   color = agxContrast(color);
   // look (ASC CDL power + saturation in the log-ish display domain)
-  color = pow(max(color, 0.0), vec3(uGrade.x));
+  // contrast as a sigmoid symmetric about display mid-grey: keeps black, white and the AgX highlight roll-off, and
+  // unlike a plain power does not darken the whole picture
+  vec3 cp = pow(max(color, 0.0), vec3(uGrade.x)), cq = pow(max(1.0 - color, 0.0), vec3(uGrade.x));
+  color = cp / max(cp + cq, 1e-6);
   float l = dot(color, LUMA);
   color = l + uGrade.y * (color - l);
   color = outset * color;
