@@ -568,9 +568,13 @@ TerrSurf terrSurface(vec3 rp) {
   // late-lying snow from the simulation (shaded faces, loaded gullies, avalanche cones); it cannot hold on the
   // steepest pixels, and drifts sit in the small hollows first
   float snowF = clamp(eSnow * 1.25 + 0.9 * clamp(conc, -0.06, 0.12) * ss(0.02, 0.3, eSnow), 0.0, 1.0);
+  // above the climatic firn line (not simulated: the simulation ends at the late-summer melt-out) snow is permanent
+  // wherever the ground is not too steep to hold it
+  float firn = ss(treeline + 650.0, treeline + 1350.0, h + 260.0 * (C.mac.x - 0.5)) * (1.0 - 0.8 * desertAmt);
+  snowF = max(snowF, 0.92 * firn);
   // drifts linger in the hollows and gullies first; a little broad noise so the edges are not contour lines
   float bkS = 0.5 + 1.0 * clamp(conc, -0.10, 0.10) + 0.8 * clamp(curv, -0.06, 0.06) + 0.55 * (n2.r - 0.5) + 0.30 * (n3.g - 0.5) + 0.6 * farN * (C.mac.x - 0.5);
-  float snow = terrPatch(snowF, bkS, 0.12, eps + 0.03) * ss(0.04, 0.14, eSnow) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
+  float snow = terrPatch(snowF, bkS, 0.12, eps + 0.03) * max(ss(0.04, 0.14, eSnow), firn) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
   snow *= 1.0 - 0.8 * paint * ss(0.9, 0.5, eSnow);
   vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.95 + 0.07 * n3.r);
   // old firn / glacier ice shows through in the big hollows; dust and debris bands near the snow margin
