@@ -14,6 +14,7 @@ export default {
   aero: {
     ref: { span: 64.8, chord: 6.6 },     // wing area from geometry; mean chord from the planform
     lift: { cl0: 0.26, cla: 5.3, clMax: 1.30, sharpness: 34, clMaxNeg: 0.9, postStallCl: 1.0, cd90: 1.3, spoiler: 0.75 },
+    // Mach tables: supercritical wing, 31.6 deg sweep, drag divergence ~M0.85 (cd0 hump), buffet boundary falls to ~0.5 CLmax at MMO 0.89
     mach: {
       m:     [0,      0.3,    0.5,    0.6,    0.7,    0.75,   0.78,   0.80,   0.82,   0.84,   0.86,   0.89,   0.93,   1.0],
       cla:   [1.00,   1.03,   1.09,   1.14,   1.21,   1.26,   1.29,   1.31,   1.32,   1.32,   1.30,   1.22,   1.10,   1.00],
@@ -29,6 +30,7 @@ export default {
     roll: { clb: -0.11, clbCl: -0.05, clp: -0.45, clr: 0.08, clrCl: 0.20, clda: 0.050, cldr: 0.012, clSpoiler: 0.035 },
     yaw: { cnb: 0.13, cnp: -0.02, cnpCl: -0.07, cnr: -0.22, cnda: 0.002, cndaCl: 0.012, cndr: 0.085, cnSpoiler: 0.004, alphaDir: [22, 40], cnbPostStall: 0.05 },
     stall: { wingDrop: 0.015, clpPost: 0.02, buffetMargin: 2.5, warnMargin: 3.5 },
+    // Flap detents 1/5/15/20/25/30 (FCOM). clMax: 30 -> 2.51 (Vs 64 m/s at 280 t), takeoff 15 -> 2.0; slats extend with flaps >= 1
     flaps: {
       detents: [
         { name: 'UP', deg: 0,  pos: 0.00, slat: 0, dcl0: 0.00, clMax: 1.30 },
@@ -51,40 +53,46 @@ export default {
     trim: { max: 20, rate: 0.03, authority: 1 },
   },
   engines: {
-    type: 'turbofan-hb', throttleRatio: 1.06, machLapse: 0.62, altLapse: 0.82,
+    // GE90-115B, 513 kN static each. machLapse/altLapse fitted so that: 280 t climb at 250 kt is ~4000 ft/min, M0.87 at FL360 is
+    // thrust-limited, and the ceiling margin is positive at 12 km (installed lapse of a BPR-9 engine; exponent < 1 = flat-rated lapse)
+    type: 'turbofan-hb', throttleRatio: 1.06, machLapse: 0.80, altLapse: 0.45,
     n1Idle: 0.20, n2Idle: 0.58, spoolUp: 8, spoolDown: 5, idleThrust: 0.035, idleFuelFlow: 0.16,
-    tsfc: [0.31, 0.22], egt: [430, 900, 900], startTime: 22,
+    tsfc: [0.32, 0.28],                  // lb/lbf/h: ~0.32 static, ~0.54 at M0.84 cruise -> ~7.3 t/h total at 280 t egt: [430, 900, 900], startTime: 22,
     reverser: { fraction: 0.40, time: 2.5, power: 0.8, minSpeed: 30, stowSpeed: 26 },
   },
   gear: {
     nose: { travel: 0.40 }, main: { travel: 0.50 },
-    retractTime: 14, steerMax: 70, steerLatG: 0.20, brakeMu: 0.40, maxSinkRate: 3.66, crashSinkRate: 6,
+    retractTime: 14,                     // FCOM: gear retracts in ~14 s; six-wheel bogies are modelled as one contact point per side
+    steerMax: 70, steerLatG: 0.20, brakeMu: 0.40, maxSinkRate: 3.66,     // 12 ft/s: gear design reserve-energy sink rate crashSinkRate: 6,
   },
   structure: { tailStrikeDeg: 9.5, bellyY: -3.1 },
   limits: { vmo: 170, mmo: 0.89, gearSpeed: 135 },       // 330 KCAS / M0.89
   fcs: {
-    type: 'fbw-airliner',
+    type: 'fbw-airliner',                 // Boeing normal law: load-factor demand + flight-path hold, 67/35 deg bank protection, pitch limits, soft AoA and overspeed protection
     bankMax: 67, bankNeutral: 35, pitchMax: 30, pitchMin: -15,
-    nzMax: 2.5, nzMin: -1, rollRate: 8, alphaMax: 20, nzGain: 0.5, pitchBandwidth: 6, pitchIntegral: 1, alphaStallMargin: 0.5, pitchGainMax: 30,
+    nzMax: 2.5, nzMin: -1, rollRate: 6,                         // deg/s at full wheel (data sheet: 5-6 deg/s; the 777 is a gentle roller)
+    alphaMax: 20, alphaStallMargin: 0.5, // soft AoA protection: the limiter sits 0.5 deg below the stall angle (stick shaker first, no hard stop)
+    nzGain: 0.5, pitchBandwidth: 6, pitchIntegral: 1, pitchGainMax: 30,   // C*-style load-factor demand, tuned for a 1 s short-period settle
     yawDamper: 1, sasAuthority: 0.35, betaGain: 3, ari: 0.10,
-    rotationRate: 2.8, gearDown: { nzMax: 3, pitchRateMax: 12 },
+    rotationRate: 2.8,                   // deg/s: pilots rotate a 777 at ~2.5-3 deg/s; tail-strike protection caps pitch at tailStrikeDeg - 2.2
+    gearDown: { nzMax: 3, pitchRateMax: 12 },   // landing gains: crisper column authority for the flare (alpha limiter still protects)
   },
   autopilot: { bankMax: 25, vsMax: 10, turnRate: 3 },
   targets: {
-    stallSpeedLanding: [64, 0.07],
-    stallSpeedClean: [89, 0.07],
-    takeoffRoll: [1900, 0.3],
-    rotateSpeed: 77, rotatePitch: 8, climbPitch: 12,
-    landingRoll: [1000, 0.35],
+    stallSpeedLanding: [64, 0.07],       // m/s CAS, flaps 30, 280 t (Vref30 at MLW 251 t = 145 kt -> 1.23 Vs; scaled to 280 t); measured at the AoA limiter
+    stallSpeedClean: [89, 0.07],         // m/s CAS, 280 t (flaps-up manoeuvre speed ~ Vref30+80 = 1.3 Vs)
+    takeoffRoll: [1700, 0.3],              // m, flaps 15, TOGA, 280 t, SL ISA (FCOM: ~2300 m field length at this weight)
+    rotateSpeed: 77,                            // m/s, VR ~150 kt at 280 t flaps 15 rotatePitch: 8, climbPitch: 12,
+    landingRoll: [1000, 0.35],            // m, touchdown to stop, max manual braking + reversers (FCOM: ~1000 m at MLW)
     climbRate: [20, 0.3], climbSpeed: 129,
     maxSpeedSL: [170, 0.03], maxSpeedSLisCas: true,
-    maxSpeedAlt: [0.87, 0.04], maxSpeedAltitude: 11000,
-    ceiling: 12000,
-    rollRate: [8, 0.35], rollSpeed: 130,
+    maxSpeedAlt: [0.87, 0.04],            // level-flight thrust limit at 280 t; MMO 0.89 is only reached in a descent maxSpeedAltitude: 11000,
+    ceiling: 12000,                           // thrust-limited at 280 t (the 13 137 m certified ceiling needs a much lighter aircraft)
+    rollRate: [6, 0.35], rollSpeed: 130,
     sustainedTurn: [0, 0], instantTurn: [0, 0],
-    maxG: [2.5, 0.2], maxGSpeed: 150,
-    glideRatio: [18, 0.12], glideSpeed: 113,
-    cruise: { altitude: 11000, mach: 0.84, fuelFlow: [7200, 0.15] },
+    maxG: [2.5, 0.2], maxGSpeed: 150,    // 2.5 g is only reachable clean above ~140 m/s CAS (CLmax-limited below)
+    glideRatio: [19, 0.12], glideSpeed: 113,
+    cruise: { altitude: 11000, mach: 0.84, fuelFlow: [7300, 0.15] },
     approachAoA: [5.5, 0.25],
   },
 };
