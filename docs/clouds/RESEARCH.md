@@ -322,8 +322,10 @@ A 22 deg ring on the cirrus deck is a major realism win at low cost.
 * **Dark edges with the sun behind the observer (side- or front-lit cumulus):** a real effect. The outer shell of a cloud
   (depth < ~1-2 transport mean free paths ~ (1-g)^-1 / beta ~ 50-200 m) has not been "filled" by multiply scattered light
   from all directions, and light that enters there leaks out of the nearby boundary. In the diffusion picture
-  the source function (in-scattered radiance) is low near a free surface (Milne problem: the surface value is about 1/sqrt(3) of
-  the extrapolated interior value) and rises inward. Crevices between turrets, where the viewer sees "shallow" volume
+  the source function (in-scattered radiance) is lowest at a free surface, because escaping photons are not replaced (the
+  diffusion boundary condition puts the zero of the extrapolated density ~0.71 transport mean free paths *outside* the
+  surface; Milne problem, Chandrasekhar 1960). Below a sunlit face it rises over roughly the first 1-2 transport mean free paths
+  (~100-300 m in Cu), peaks, and then decays with depth. [K] Crevices between turrets, where the viewer sees "shallow" volume
   that is surrounded by more cloud on the sun side, look dark. The bulging lit turrets look bright. Schneider's "powder"
   term is an empirical version: `E = 2 exp(-d) (1 - exp(-2 d))` (Beer-powder), applied to view-facing lit regions.
   [K] Schneider 2015 https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn
