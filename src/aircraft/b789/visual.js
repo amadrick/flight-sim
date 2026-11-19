@@ -4,8 +4,8 @@
 // Reference numbers (docs/aircraft/b789.md; d = distance aft of the nose tip, z = d - 29.9):
 //   length 62.81 m, span 60.12 m (raked tips), height 17.02 m (fin tip at y = 12.82).
 //   Fuselage: oval 5.78 m wide x 5.95 m tall centred on y = 0 (crown 2.95, keel -3.0) from d 11 to d 44; short drooped
-//   radome, the flight-deck windows are four swept "cat-eye" panes on the shoulders of the nose (windshield d 3.0-4.2,
-//   side panes to d 5.6, eye at d 5.0 / y 0.9); upswept blunt tail cone ending in the APU exhaust (d 62.8, y 0.3-1.5).
+//   radome, the flight-deck windows are four swept "cat-eye" panes on the shoulders of the nose (windshield d 2.75-3.95,
+//   side panes to d 5.9, eye at d 4.6 / y 1.25); upswept blunt tail cone ending in the APU exhaust (d 62.8, y 0.3-1.5).
 //   Wing: LE z -7.9 / chord 10.6 at the body side (x 2.9), kink x 11 (LE z -2.3, chord 6.8), x 28 (LE z 8.3, chord 2.8)
 //   then a raked tip to x 30.06 (chord 1.3); LE sweep 35° inboard / 32° outboard / ~54° on the rake; dihedral 6.5° from
 //   y -1.25 at the body side (ground shape; it bends up ~2.6 m at the tip at 1 g in flight, morph driven by the load factor).
@@ -111,9 +111,9 @@ export function createVisual(ctx, opts = {}) {
   // ---- fuselage -------------------------------------------------------------------------------------------------------------
   //          d      top    bot    w        (top / bot = absolute body heights of crown and keel, w = half-width)
   const FS = [
-    [0.00, -0.50, -0.50, 0.00], [0.10, -0.20, -0.80, 0.33], [0.40, 0.00, -1.02, 0.60], [1.00, 0.27, -1.32, 0.92], [2.00, 0.62, -1.76, 1.36],
-    [3.00, 0.97, -2.10, 1.76], [3.60, 1.30, -2.28, 1.97], [4.20, 1.68, -2.44, 2.17], [5.00, 2.08, -2.62, 2.40], [6.00, 2.43, -2.77, 2.60],
-    [7.20, 2.70, -2.88, 2.75], [8.80, 2.88, -2.96, 2.85], [10.5, 2.94, -2.99, 2.885], [12.0, 2.95, -3.00, 2.89],
+    [0.00, -0.45, -0.45, 0.00], [0.10, -0.10, -0.82, 0.38], [0.40, 0.18, -1.10, 0.70], [1.00, 0.50, -1.42, 1.08], [1.80, 0.85, -1.80, 1.48],
+    [2.60, 1.15, -2.08, 1.80], [3.30, 1.45, -2.28, 2.03], [4.00, 1.80, -2.45, 2.24], [5.00, 2.18, -2.64, 2.46], [6.20, 2.50, -2.80, 2.65],
+    [7.50, 2.74, -2.90, 2.78], [9.00, 2.88, -2.96, 2.86], [10.5, 2.94, -2.99, 2.885], [12.0, 2.95, -3.00, 2.89],
     [44.0, 2.95, -3.00, 2.89], [46.5, 2.93, -2.93, 2.87], [49.0, 2.86, -2.68, 2.72], [52.0, 2.70, -2.15, 2.40], [55.0, 2.48, -1.55, 1.98],
     [57.5, 2.25, -1.05, 1.52], [60.0, 1.96, -0.45, 1.00], [61.8, 1.70, 0.02, 0.62], [62.81, 1.48, 0.30, 0.38],
   ].map(r => { const yc = (r[1] + r[2]) / 2 - (r[3] > 0 && r[0] < 12 ? 0.08 * (1 - r[0] / 12) : 0); return { z: D(r[0]), y: yc, w: r[3], top: r[1] - yc, bot: yc - r[2] }; });
@@ -128,13 +128,14 @@ export function createVisual(ctx, opts = {}) {
   stA.add(K.well(K.merge(fus.patches.ngdR, fus.patches.ngdL), 1.15, UA.well, [0, 1, 0]));
 
   // long, smooth wing-to-body fairing with the main-gear bays cut into its flat bottom
-  const fairStations = [[-11.2, 1.0, 0.45, 0.45], [-9.0, 2.3, 0.75, 0.75], [-6.5, 3.0, 0.85, 0.88], [-3.5, 3.5, 0.9, 0.98], [0.0, 3.8, 0.9, 1.02], [3.5, 3.9, 0.9, 1.04],
-    [6.0, 3.6, 0.9, 1.0], [8.2, 3.0, 0.85, 0.9], [10.2, 2.1, 0.7, 0.72], [12.2, 0.9, 0.45, 0.45]]
-    .map(r => ({ z: r[0], y: -2.25, w: r[1], top: r[2], bot: r[3], kTop: 0.62, kBot: [0.86, 0.6] }));
+  //                     z     w     top   bot   yc
+  const fairStations = [[-12.5, 1.0, 0.3, 0.42, -2.45], [-10.0, 2.1, 0.5, 0.72, -2.4], [-7.0, 2.85, 0.6, 0.86, -2.36], [-3.5, 3.2, 0.62, 0.9, -2.36], [0.0, 3.3, 0.62, 0.92, -2.36], [3.5, 3.32, 0.62, 0.92, -2.36],
+    [6.0, 3.0, 0.75, 0.84, -2.3], [8.0, 2.5, 0.85, 0.7, -2.2], [10.0, 1.85, 0.8, 0.52, -2.12], [11.8, 0.9, 0.5, 0.3, -2.1]]
+    .map(r => ({ z: r[0], y: r[4], w: r[1], top: r[2], bot: r[3], kTop: [0.42, 0.5], kBot: [0.86, 0.6] }));
   const fairOpts = { stations: fairStations, segments: Math.max(28, Math.round(48 * detail / 4) * 4), step: 0.9, uv: UA.fair };
   let fair = K.loft(fairOpts);
   const tAtX = (z, x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(z, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
-  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'mgw', z: [0.4, 4.6], t: [tAtX(2.5, 2.1), tAtX(2.5, 3.6)], mirror: true }] });
+  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'mgw', z: [0.4, 4.6], t: [tAtX(2.5, 2.05), tAtX(2.5, 3.3)], mirror: true }] });
   stA.add(fair.mesh);
   for (const k of ['mgwR', 'mgwL']) stA.add(K.well(fair.patches[k], 1.9, UA.well, [0, 1, 0]));
 
@@ -142,11 +143,11 @@ export function createVisual(ctx, opts = {}) {
   const tY = (d, y) => fus.tAtY(D(d), y);
   const T0 = 0.493;                                                       // ring parameter of the centre post edge
   // right-hand windows: W1 windshield [inner-low, outer-low, outer-top, inner-top], W2 side "cat-eye" [front-low, aft-low, aft-top, front-top]
-  const w1 = { a: [3.02, T0], b: [3.52, tY(3.52, 0.56)], c: [4.12, tY(4.12, 1.36)], e: [3.86, T0] };
-  const w2 = { p: [3.63, tY(3.63, 0.55)], q: [5.62, tY(5.62, 0.80)], r: [5.12, tY(5.12, 1.17)], s: [4.22, tY(4.22, 1.34)] };
-  const HI = w1.c[1], LO = 0.215, ZBd = 6.7, DF = 2.99;
+  const w1 = { a: [2.76, T0], b: [3.25, tY(3.25, 0.86)], c: [3.95, tY(3.95, 1.64)], e: [3.66, T0] };
+  const w2 = { p: [3.36, tY(3.36, 0.85)], q: [5.9, tY(5.9, 1.04)], r: [5.28, tY(5.28, 1.56)], s: [4.06, tY(4.06, 1.63)] };
+  const HI = w1.c[1], LO = 0.215, ZBd = 6.6, DF = 2.73;
   const WIN = [[w1.a, w1.b, w1.c, w1.e], [w2.p, w2.q, w2.r, w2.s]].map(w => w.map(([d, t]) => [D(d), t]));
-  const eye = G.pilotEye, FY = -0.2;
+  const eye = G.pilotEye, FY = eye[1] - 1.15, EY0 = eye[1];
   {
     const L = (c, uv, nu = 3, nv = 3) => stA.add(K.liner(fus, c.map(([d, t]) => [D(d), t]), { uv, nu, nv, mirror: true, inset: 0.05 }));
     L([[DF, 0.5], [DF, T0], [w1.e[0], T0], [w1.e[0], 0.5]], UA.post, 1, 4);                                  // centre post
@@ -162,10 +163,10 @@ export function createVisual(ctx, opts = {}) {
     stA.add(K.bulkhead(fus, D(ZBd), { uv: UA.liner, facing: -1 }));                                            // flight-deck door wall
     stA.add(K.bulkhead(fus, D(DF + 0.01), { uv: UA.shield, facing: 1 }));                                     // forward wall under the windshield
     const zp = eye[2] - 0.8;                                                                                   // main instrument panel plane
-    { const gs = K.prism([[zp - 0.3, 0.64], [zp + 0.15, 0.69], [zp + 0.18, 0.66], [zp + 0.15, 0.61], [zp - 0.3, 0.56]], -1.05, 1.05, UA.shield); stA.add(gs); }   // glareshield
-    { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.2, 0.6], [2.2, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.1, 0.0 + (0.6 - b), zp + 0.12 + (0.6 - b) * 0.08, 0, 0.1, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    { const gy = EY0 - 0.36, gs = K.prism([[zp - 0.3, gy - 0.05], [zp + 0.15, gy], [zp + 0.18, gy - 0.03], [zp + 0.15, gy - 0.08], [zp - 0.3, gy - 0.13]], -1.05, 1.05, UA.shield); stA.add(gs); }   // glareshield
+    { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.2, 0.6], [2.2, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.1, EY0 - 1.07 + (0.6 - b), zp + 0.12 + (0.6 - b) * 0.08, 0, 0.1, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     stA.add(K.box(0.48, 0.45, 1.0, UA.shield).translate(0, FY + 0.3, zp + 0.6));                              // pedestal
-    { const i0 = stA.vertexCount, y = 1.72; for (const [a, b] of [[0, 0], [0.7, 0], [0.7, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.35, y + b * 0.2, zp + 0.3 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    { const i0 = stA.vertexCount, y = EY0 + 0.82; for (const [a, b] of [[0, 0], [0.7, 0], [0.7, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.35, y + b * 0.2, zp + 0.3 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
       stA.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.sheep } }));
@@ -198,7 +199,7 @@ export function createVisual(ctx, opts = {}) {
   // flap-track fairings ("canoes"): small pods, the front part fixed under the wing, the rear part rides on the flap
   const canoeAt = (x, len, side) => {
     const zf = W.R.at(x, 0.76, 'lower'), z0 = zf[2] - len * 0.45, y = zf[1] - 0.06;
-    const st = [[0, 0.01, 0.01], [0.12, 0.13, 0.16], [0.35, 0.2, 0.32], [0.6, 0.2, 0.34], [0.86, 0.13, 0.2], [1, 0.012, 0.025]].map(r => ({ z: z0 + r[0] * len, x: side * x, y: y - r[2] * 0.5 + (r[0] > 0.6 ? (r[0] - 0.6) * 0.3 : 0), w: r[1], top: r[2] * 0.6, bot: r[2] }));
+    const st = [[0, 0.01, 0.01], [0.15, 0.09, 0.1], [0.4, 0.13, 0.2], [0.65, 0.13, 0.21], [0.88, 0.08, 0.12], [1, 0.01, 0.02]].map(r => ({ z: z0 + r[0] * len, x: side * x, y: y - r[2] * 0.5 + (r[0] > 0.65 ? (r[0] - 0.65) * 0.25 : 0), w: r[1], top: r[2] * 0.6, bot: r[2] }));
     const split = zf[2] + 0.12;
     return { front: K.loft({ stations: st, segments: 12, step: 0.4, uv: UB.canoe, zRange: [z0, split] }).mesh, rear: K.loft({ stations: st, segments: 12, step: 0.4, uv: UB.canoe, zRange: [split, z0 + len], capStart: 'flat' }).mesh };
   };
@@ -298,7 +299,7 @@ export function createVisual(ctx, opts = {}) {
     const C = W[key].controls, a = {};
     for (const [nm, xs, span, dd] of [['In', [7.2], [3.1, 10.75], 1.25], ['Out', [14.6, 18.0, 21.3], [13.05, 22.5], 1.0]]) {
       const main = C['flap' + nm], mesh = main.mesh.clone();
-      for (const x of xs) { const cn = canoeAt(x, nm === 'In' ? 4.2 : 3.8 - (x - 14) * 0.12, sx); stB.add(flexMorph(cn.front, wingFlex)); mesh.add(cn.rear); }
+      for (const x of xs) { const cn = canoeAt(x, nm === 'In' ? 4.8 : 4.4 - (x - 14) * 0.12, sx); stB.add(flexMorph(cn.front, wingFlex)); mesh.add(cn.rear); }
       a['flap' + nm] = ctl(`flap${nm}${key}`, mesh, drop(main, dd, 0.1), main.ref, DOWN, span, sx);
     }
     a.flaperon = ctl('flaperon' + key, C.flaperon.mesh, C.flaperon.hinge, C.flaperon.ref, UP, [10.95, 12.85], sx);
@@ -331,7 +332,7 @@ export function createVisual(ctx, opts = {}) {
     const c = gp[i].pos, R = gp[i].wheelRadius, P = [sx * 5.1, -1.1, 1.6];
     const g = K.buildGear(rig, A, {
       name: 'main' + key, index: i, contact: c, wheels: [-0.71, 0.71], axles: [-1.4, 0, 1.4], wheelRadius: R, wheelWidth: 0.42, pivot: P, stroke: 0.48, staticFrac: 0.4,
-      strutR: 0.2, links: 'front', retract: { to: [sx * 2.75, -2.25, 2.5] }, window: [0.2, 0.86], brace: [sx * 5.0, -1.45, -0.7], uv: gearUV, wheelSegments: 22,
+      strutR: 0.2, links: 'none', retract: { to: [sx * 2.4, -2.0, 2.6] }, window: [0.2, 0.86], brace: [sx * 5.0, -1.45, -0.7], uv: gearUV, wheelSegments: 22,
       extra: legDoor(P, [c[0], -3.0, c[2] - 0.2], sx, 0.55),
       doors: [{ name: 'mainDoor' + key, ...doorOf(fair.patches['mgw' + key], sx > 0 ? fair.edges['mgw' + key].tLo : fair.edges['mgw' + key].tHi), open: 95, closes: true }],
     });
@@ -366,7 +367,7 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.16, squash: [1, 0.6, 1] });
   for (const sx of [-1, 1]) rig.lamp('landing', [sx * Math.abs(L.landing[0]), L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.2, squash: [1.6, 0.8, 0.5] });
   for (const sx of [-1, 1]) { const p = stab.R.at(3.2, 0.25, 'upper'); rig.lamp('nav', [sx * p[0], p[1] + 0.04, p[2]], { color: [1, 0.98, 0.92], size: 0.07 }); }       // logo lights (fin floodlights)
-  for (const sx of [-1, 1]) { const z = -10.5, p = fus.at(z, fus.tAtY(z, 0.2)).p; rig.lamp('taxi', [sx * (p[0] + 0.02), p[1], p[2]], { color: [1, 0.97, 0.9], size: 0.07 }); }   // wing inspection lights
+  for (const sx of [-1, 1]) { const z = -10.5, p = fus.at(z, fus.tAtY(z, 0.2)).p; rig.lamp('landing', [sx * (p[0] + 0.02), p[1], p[2]], { color: [1, 0.97, 0.9], size: 0.07 }); }   // wing inspection lights
 
   // ---- animation --------------------------------------------------------------------------------------------------------------
   const fanAng = [0, 0];
@@ -449,7 +450,7 @@ function paintFuselage(A, o) {
   }
   P.textOn(SC.reg, 20.5, 1.3, 'both', 0.42, { color: SC.style === 'ribbon' ? '#ffffff' : SC.titleColor, font: K.FONT.sans, weight: 700 });
   // radome joint (the composite barrels have no lap joints or rivet rows)
-  P.ring(D(2.4), 0, 1, { px: 1.4, depth: 0.5, dark: 0.22 });
+  P.ring(D(2.1), 0, 1, { px: 1.2, depth: 0.4, dark: 0.1 });
   // --- flight-deck windows: painted glass inside a black mask ---
   for (const s of [1, -1]) {
     const m = (p) => [p[0], s > 0 ? p[1] : 1 - p[1]];
@@ -464,7 +465,7 @@ function paintFuselage(A, o) {
   const doorsD = [7.5, 18.0, 38.5, 53.5];
   const zs = []; for (let d = 9.0; d < 55.6; d += 0.53) if (doorsD.every(dd => Math.abs(d - dd) > 1.05)) zs.push(D(d));
   const frame = SC.style === 'bands' ? '#d9dde0' : '#c2c6c9';
-  P.windows(zs, 0.5, { w: 0.28, h: 0.47, r: 0.12, frame });
+  P.windows(zs, 0.5, { w: 0.29, h: 0.49, r: 0.13, frame });
   const door = { px: 1.3, depth: 0.6, dark: 0.35 };
   for (const dd of doorsD) { P.doorOn(D(dd) - 0.55, D(dd) + 0.55, -1.0, 1.0, { ...door, handle: true }); P.windows([D(dd)], 0.55, { w: 0.2, h: 0.28, r: 0.08, lit: 0 }); }
   P.doorOn(D(15.0), D(17.7), -2.65, -1.0, { ...door, side: 'R' }); P.doorOn(D(40.5), D(43.0), -2.62, -1.0, { ...door, side: 'R' }); P.doorOn(D(46.6), D(47.8), -2.45, -1.3, { ...door, side: 'R' });   // cargo doors
