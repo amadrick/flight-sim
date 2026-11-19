@@ -75,9 +75,62 @@ export const GLASS = {
   hud: { tint: '#7fae8a', opacity: 0.08, edgeOpacity: 0.5, roughness: 0.02, reflect: 0.6 },
 };
 
-/** HDR emissive material for lamps; set `material.color.setRGB(r, g, b)` (linear radiance, may exceed 1) each frame. */
-export function lampMaterial() {
-  return new THREE.MeshBasicMaterial({ color: 0x000000, vertexColors: true, fog: false });
+/**
+ * HDR emissive material for lamps; set `material.color.setRGB(r, g, b)` (linear radiance, may exceed 1) each frame; the
+ * vertex colours tint it. It reads as a lamp rather than a flat disc:
+ *   - the emitter is hot in the middle and falls off towards the rim of the lens,
+ *   - switched off (or by day, when it is dim) the lens is still there: tinted glass that picks up the sky at its rim,
+ *   - with the optional vertex attribute `kitLamp` (xyz = lamp centre, w = radius, written by rig.lamp) a lamp never
+ *     shrinks below about one pixel, with its energy scaled down accordingly, so small lamps do not flicker out at distance.
+ */
+export function lampMaterial(ctx) {
+  const env = ctx?.env || {};
+  const m = new THREE.MeshBasicMaterial({ color: 0x000000, vertexColors: true, fog: false });
+  const u = {
+    uLampAmb: { value: env.ambientSky || new THREE.Color(0.3, 0.45, 0.75) },
+    uLampRes: ctx?.uniforms?.frame?.uResolution || { value: new THREE.Vector2(1920, 1080) },
+    uLampNight: { value: 0 },
+  };
+  m.userData.lampUniforms = u;
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute vec4 kitLamp; uniform vec2 uLampRes; uniform float uLampNight;
+        varying vec3 vLampN; varying vec3 vLampV; varying float vLampE;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec4 lc = modelViewMatrix * vec4( kitLamp.xyz, 1.0 );
+          float lpx = kitLamp.w * projectionMatrix[1][1] * 0.5 * uLampRes.y / max( - lc.z, 0.05 );
+          float lk = max( 1.0, 1.15 / max( lpx, 1e-4 ) );
+          transformed = kitLamp.xyz + ( transformed - kitLamp.xyz ) * lk;
+          vLampE = max( 1.0 / ( lk * lk ), mix( 0.02, 0.22, uLampNight ) );
+          vLampN = normalize( normalMatrix * normal );
+        }`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vLampV = - mvPosition.xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uLampAmb; varying vec3 vLampN; varying vec3 vLampV; varying float vLampE;`)
+      .replace('#include <opaque_fragment>', `
+        {
+          float lnv = clamp( dot( normalize( vLampN ), normalize( vLampV ) ), 0.0, 1.0 );
+          #ifdef USE_COLOR
+            vec3 lTint = vColor.rgb;
+          #else
+            vec3 lTint = vec3( 1.0 );
+          #endif
+          vec3 lE = diffuseColor.rgb * vLampE;                                         // radiance set by the rig × lens tint
+          float lI = max( lE.r, max( lE.g, lE.b ) );
+          vec3 lEmit = lE * ( 0.16 + 0.84 * lnv * lnv );
+          lEmit = mix( lEmit, vec3( lI ), 0.3 * pow( lnv, 8.0 ) );                       // white-hot filament / LED die
+          vec3 lLens = ( lTint * 0.22 + 0.035 ) * uLampAmb * 1.3 + uLampAmb * 0.9 * pow( 1.0 - lnv, 3.0 );
+          outgoingLight = lEmit + lLens;
+        }
+        #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'kit-lamp';
+  return m;
 }
 
 /**
@@ -90,6 +143,21 @@ export function glowMaterial() {
   const map = new THREE.DataTexture(d, N, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
   map.magFilter = map.minFilter = THREE.LinearFilter; map.needsUpdate = true;
   const m = new THREE.MeshBasicMaterial({ color: 0x000000, map, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+  // Meshes from afterburnerGlow() carry the angle in uv.y (> 1.5): draw the flame holder (V-gutter rings and radial
+  // gutters around a dark tail cone) and a streaky liner instead of a flat disc. Other meshes are unaffected.
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      if ( vMapUv.y > 1.5 ) {
+        float ga = fract( vMapUv.y ) * 6.2831853, gx = vMapUv.x;
+        float gDisc = smoothstep( 0.89, 0.905, gx ), gr = clamp( ( 1.0 - gx ) / 0.1, 0.0, 1.0 );
+        float gRings = 0.4 + 0.6 * pow( abs( sin( gr * 9.42 ) ), 2.5 );
+        float gSpokes = 0.62 + 0.38 * pow( abs( cos( ga * 8.0 ) ), 8.0 );
+        float gCone = smoothstep( 0.1, 0.34, gr );
+        float gLiner = ( 0.74 + 0.26 * sin( ga * 24.0 + gx * 9.0 ) * sin( ga * 7.0 + 1.3 ) ) * ( 0.55 + 0.45 * gx );
+        diffuseColor.rgb *= mix( gLiner, gRings * gSpokes * gCone * 1.3, gDisc );
+      }`);
+  };
+  m.customProgramCacheKey = () => 'kit-glow';
   const dispose = m.dispose.bind(m); m.dispose = () => { map.dispose(); dispose(); };
   return m;
 }

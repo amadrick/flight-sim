@@ -166,6 +166,29 @@ export function createAtlas(o = {}) {
       if (finish.emissive) { const L = lazyLayer('emis'), g = L.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = finish.emissive; g.fillRect(x * L.scale, y * L.scale, SW * L.scale, SW * L.scale); }
       uv = [(x + SW / 2) / size, 1 - (y + SW / 2) / size]; swatches.set(key, uv); return uv;
     },
+    /**
+     * A row of `cells` swatch cells painted as one small gradient texture (tyre cross-sections, wheel dishes, heat-stained
+     * pipes…): fn(g, layerName) draws in a unit square (x 0 → 1 along the strip) on 'color', 'orm' (use atlas.ormStyle) and
+     * 'height'. Returns { uv(t) } (t 0 → 1 along the strip) or null when the swatch block is full (use a flat swatch then).
+     */
+    strip(key, cells, fn) {
+      if (!packed) throw new Error('atlas: pack() before strip()');
+      if (strips.has(key)) return strips.get(key);
+      if ((swatchN % swatchCols) + cells > swatchCols) swatchN += swatchCols - (swatchN % swatchCols);
+      if (cells > swatchCols || swatchN + cells > swatchCols * swatchRows || (tex && !pending)) { strips.set(key, null); return null; }
+      const i = swatchN; swatchN += cells;
+      const x = swatchRect.x + (i % swatchCols) * SW, y = swatchRect.y + Math.floor(i / swatchCols) * SW, w = cells * SW;
+      for (const name of ['color', 'orm', 'height']) {
+        const L = layers[name], g = L.ctx, k = L.scale;
+        g.save(); g.setTransform(w * k, 0, 0, SW * k, x * k, y * k); g.beginPath(); g.rect(0, 0, 1, 1); g.clip();
+        g.fillStyle = name === 'height' ? '#808080' : name === 'orm' ? ormStyle(0.5, 0) : '#888'; g.fillRect(0, 0, 1, 1);
+        fn(g, name); g.restore();
+      }
+      if (atlas.tex) atlas.tex.map.needsUpdate = true;
+      const st = { uv: (t) => [(x + 2 + Math.min(1, Math.max(0, t)) * (w - 4)) / size, 1 - (y + SW / 2) / size] };
+      strips.set(key, st); return st;
+    },
+    ormStyle,
     /** A pen paints one chart. */
     pen(chart) { return new Pen(atlas, typeof chart === 'string' ? byName[chart] : chart, layers, lazyLayer); },
     layers, skin: o.skin || null,
@@ -235,7 +258,8 @@ export function createAtlas(o = {}) {
       for (const k in layers) { layers[k].canvas.width = layers[k].canvas.height = 1; }
     },
   };
-  let targets = null, pending = null;
+  let targets = null, pending = null, tex = null; const strips = new Map();
+  Object.defineProperty(atlas, 'tex', { get: () => tex, set: (v) => { tex = v; }, enumerable: true });
   let tone = null;
   function lazyLayer(name = 'emis') {
     if (name === 'tone') {

@@ -37,13 +37,14 @@ export function fan(o) {
     }
   }
   const sl = o.spinner ?? R * 0.55;
+  m.occlude((x, y, z) => 0.5 - 0.35 * Math.min(1, Math.hypot(x, y) / R));     // blade roots sit deep between their neighbours
   m.add(lathe([[0, -sl], [hub * 0.35, -sl * 0.82], [hub * 0.72, -sl * 0.42], [hub, 0.02], [hub, ch * 1.0, 1], [0, ch * 1.0]], { segments: 20, uv: o.uvSpinner || uvB }));
   return m;
 }
 
 /** Dark disc + short duct wall behind a fan so nothing shows through: disc at z, facing -Z. */
 export function fanBackdrop(radius, z, uv) {
-  return lathe([[0, z], [radius, z]], { segments: 24, uv });
+  return lathe([[0, z], [radius, z]], { segments: 24, uv }).occlude(0.8);
 }
 
 /**
@@ -75,6 +76,7 @@ export function petalNozzle(o) {
         const uv = ch && !inner ? ch.uv(a / TAU * ch.spec.w, u * ch.spec.h) : (inner ? uvI : uvO);
         const id = m.vert(c[0] + rc * cs, c[1] + rc * sn, c[2] + z, nr * cs, nr * sn, nz, uv[0], uv[1]);
         m.setMorph(id, c[0] + ro * cs, c[1] + ro * sn, c[2] + z);
+        if (inner) m._occ()[id] = 0.62 - 0.5 * u * u;                    // the throat is dark, the exit lip sees the sky
       }
       for (let k = 0; k < NL; k++) for (let j = 0; j < na; j++) {
         const a = base + k * (na + 1) + j, b = a + 1, d = a + na + 1, e = d + 1;
@@ -100,8 +102,10 @@ export function petalNozzle(o) {
  */
 export function afterburnerGlow(o) {
   const c = o.centre || [0, 0, 0];
-  const zm = o.zDeep + (o.zExit - o.zDeep) * 0.45, rm = o.rDeep + (o.rExit - o.rDeep) * 0.45, U = [0, 0.3, 0.8, 1, 1];
-  const m = lathe([[o.rExit, o.zExit], [rm, zm], [o.rDeep, o.zDeep + 0.02], [o.rDeep * 0.98, o.zDeep], [0, o.zDeep]], { segments: 24, uv: (k) => [U[k], 0.5] });
+  // uv.x: 0 exit … 0.9 liner at the flame holder, 0.9 … 1 across the flame-holder disc (rim → centre); uv.y = 2 + angle fraction
+  // (a value above 1.5 switches on the flame-holder / liner structure in glowMaterial).
+  const zm = o.zDeep + (o.zExit - o.zDeep) * 0.45, rm = o.rDeep + (o.rExit - o.rDeep) * 0.45, U = [0, 0.3, 0.8, 0.9, 1];
+  const m = lathe([[o.rExit, o.zExit], [rm, zm], [o.rDeep, o.zDeep + 0.02], [o.rDeep * 0.98, o.zDeep], [0, o.zDeep]], { segments: 32, uv: (k, j) => [U[k], 2 + j] });
   return m.translate(c[0], c[1], c[2]);
 }
 /** Radiance for the glow material from an engine state view: dull red when hot and dry, bright orange-white in afterburner. */
@@ -167,6 +171,8 @@ export function nacelle(o) {
   stations.push(st(zOuterEnd, rAt(zOuterEnd), 0.15));
   const uvFn = o.chart ? undefined : (x, y, z, t, ring) => (ring.k < 3.5 ? uvIn : ring.k <= 7 && o.uvLip ? o.uvLip : (o.uv || [0, 0]));
   const body = loft({ stations, segments: seg, step: L / 14, chart: o.chart, uAxis: 's', uv: o.uv, uvFn });
+  // baked occlusion down the inlet duct (the inner skin is everything inside the highlight radius)
+  body.mesh.occlude((x, y, z) => { const r = Math.hypot(x - cx, y - cy + droop * 0.5), zz = z - cz; return r < rHi - 0.015 && zz > 0.01 ? Math.min(0.6, 0.12 + 0.48 * zz / Math.max(0.05, zFan)) : 0; });
   const out = { body, cowl: body.mesh, fanZ: cz + zFan, exitZ: cz + L, sleeveTravel: L * 0.17 };
   if (sl > 0) {
     const sStations = [st(zS, rAt(zS), 0.15), st((zS + L) / 2, rAt((zS + L) / 2), 0.05), st(L - 0.01, rExit + 0.004, 0), { ...st(L, rExit - 0.01, 0), hard: true }, st(L - 0.02, rExit - 0.035, 0), st(zS, rFan + 0.03, 0)];
@@ -174,7 +180,7 @@ export function nacelle(o) {
     out.cascade = lathe([[rAt(zS) - 0.03, zS - 0.02], [rAt(zS + out.sleeveTravel) - 0.045, zS + out.sleeveTravel + 0.05], [rFan + 0.03, zS + out.sleeveTravel + 0.05]], { segments: seg, uv: o.uvCascade || uvIn }).translate(cx, cy, cz);
   }
   // inner wall of the bypass duct behind the fan (static)
-  out.cowl.add(lathe([[rFan + 0.02, Math.max(zS, zFan + L * 0.2)], [rFan, zFan + L * 0.12]], { segments: seg, uv: uvIn }).translate(cx, cy, cz));
+  out.cowl.add(lathe([[rFan + 0.02, Math.max(zS, zFan + L * 0.2)], [rFan, zFan + L * 0.12]], { segments: seg, uv: uvIn }).occlude(0.7).translate(cx, cy, cz));
   const co = o.core || { r0: rFan * 0.62, r1: rFan * 0.42, length: L * 0.55, z0: zFan + L * 0.15 };
   const cz0 = co.z0 ?? zFan + L * 0.15, cz1 = L + co.length;
   out.core = lathe([[co.r0 * 0.9, cz0], [co.r0, cz0 + (L - cz0) * 0.5], [co.r0 * 0.98, L], [co.r1 * 1.08, L + co.length * 0.7], [co.r1, cz1, 1], [co.r1 - 0.03, cz1, 1], [co.r1 - 0.035, cz1 - co.length * 0.5]], { segments: seg, uv: o.uvCore || o.uv }).translate(cx, cy, cz);
@@ -182,7 +188,7 @@ export function nacelle(o) {
   const pl = o.plug || { r: co.r1 * 0.55, length: co.length * 0.55 };
   out.plug = lathe([[pl.r * 1.02, cz1 - co.length * 0.5], [pl.r, cz1 - 0.05], [pl.r * 0.5, cz1 + pl.length * 0.6], [0, cz1 + pl.length]], { segments: 20, uv: o.uvPlug || o.uvCore || o.uv }).translate(cx, cy, cz);
   // dark turbine face inside the core nozzle
-  out.plug.add(lathe([[co.r1 - 0.035, cz1 - co.length * 0.5], [0, cz1 - co.length * 0.5]], { segments: 20, uv: uvIn }).translate(cx, cy, cz));
+  out.plug.add(lathe([[co.r1 - 0.035, cz1 - co.length * 0.5], [0, cz1 - co.length * 0.5]], { segments: 20, uv: uvIn }).occlude(0.8).translate(cx, cy, cz));
   return out;
 }
 

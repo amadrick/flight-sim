@@ -21,7 +21,9 @@ const SURF_DEFAULTS = { aileronL: 0, aileronR: 0, elevatorL: 0, elevatorR: 0, ru
 const LIGHT_DEFAULTS = { nav: true, strobe: true, beacon: true, landing: false, taxi: false };
 
 // lamp radiance (linear, HDR) by kind: [day, night]
-const LAMP_LEVEL = { nav: [22, 7], strobe: [900, 150], beacon: [420, 70], landing: [700, 110], taxi: [320, 50], formation: [6, 2.5] };
+// By day a position light is only about as bright as sunlit white paint (≈ 1) while a landing lamp or a xenon strobe is
+// hundreds of times brighter; at night the camera's exposure rises 10 – 40×, so the levels come down to keep the bloom sane.
+const LAMP_LEVEL = { nav: [5, 7], strobe: [300, 150], beacon: [110, 70], landing: [340, 110], taxi: [130, 50], formation: [0.9, 2.5] };
 
 /**
  * createRig(ctx, { geometry, name }) → rig
@@ -102,7 +104,9 @@ export function createRig(ctx, o = {}) {
       const size = opt.size ?? 0.05, sq = opt.squash || [1, 1, 1];
       const m = opt.mesh || ellipsoid(size * sq[0], size * sq[1], size * sq[2], { segments: 8, rings: 5 });
       if (!opt.mesh) m.translate(pos[0], pos[1], pos[2]);
-      lamps.push({ kind, mesh: m, color: opt.color || [1, 1, 1], parent: opt.parent || null, phase: opt.phase ?? 0, group: opt.group ?? '' });
+      let c = pos, r = size * Math.max(sq[0], sq[1], sq[2]);
+      if (opt.mesh || !pos) { const b = m.bounds(); c = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]; r = Math.max(0.01, Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) / 2); }
+      lamps.push({ kind, mesh: m, color: opt.color || [1, 1, 1], parent: opt.parent || null, phase: opt.phase ?? 0, group: opt.group ?? '', centre: c, radius: r });
       return rig;
     },
     onUpdate(fn) { updaters.push(fn); return rig; },
@@ -114,23 +118,24 @@ export function createRig(ctx, o = {}) {
         obj.name = 'static:' + key; root.add(obj); tris += m.triCount; if (!firstStatic && info.layer === undefined) firstStatic = obj;
       }
       // lamps: one mesh per (kind, parent, group, phase) with vertex colours
-      const lampMat = lampMaterial(), lampGroups = new Map();
+      const lampGroups = new Map();
       for (const L of lamps) {
         const key = L.kind + '|' + (L.parent ? L.parent.uuid : '') + '|' + L.group + '|' + L.phase;
-        let g = lampGroups.get(key); if (!g) lampGroups.set(key, g = { kind: L.kind, parent: L.parent, phase: L.phase, mesh: new Mesh(), colors: [] });
-        g.mesh.add(L.mesh); for (let i = 0; i < L.mesh.vertexCount; i++) g.colors.push(L.color[0], L.color[1], L.color[2]);
+        let g = lampGroups.get(key); if (!g) lampGroups.set(key, g = { kind: L.kind, parent: L.parent, phase: L.phase, mesh: new Mesh(), colors: [], centres: [] });
+        g.mesh.add(L.mesh); for (let i = 0; i < L.mesh.vertexCount; i++) { g.colors.push(L.color[0], L.color[1], L.color[2]); g.centres.push(L.centre[0], L.centre[1], L.centre[2], L.radius); }
       }
       const lampObjs = [];
       for (const g of lampGroups.values()) {
         const pivot = g.parent ? g.parent.userData.pivot : [0, 0, 0];
         const geo = g.mesh.translate(-pivot[0], -pivot[1], -pivot[2]).toGeometry();
         geo.setAttribute('color', new THREE.Float32BufferAttribute(g.colors, 3));
-        const mat = lampMat.clone(); owned.push(mat);
+        for (let i = 0; i < g.centres.length; i += 4) { g.centres[i] -= pivot[0]; g.centres[i + 1] -= pivot[1]; g.centres[i + 2] -= pivot[2]; }
+        geo.setAttribute('kitLamp', new THREE.Float32BufferAttribute(g.centres, 4));
+        const mat = lampMaterial(ctx); owned.push(mat);
         const obj = new THREE.Mesh(geo, mat); obj.name = 'lamp:' + g.kind; obj.castShadow = false; obj.receiveShadow = false;
         (g.parent || root).add(obj); tris += g.mesh.triCount;
         lampObjs.push({ obj, mat, kind: g.kind, phase: g.phase });
       }
-      lampMat.dispose();
       if (firstStatic) firstStatic.onBeforeRender = (renderer, scene, camera) => {
         if (!camera.isPerspectiveCamera) return;
         _inv.copy(root.matrixWorld).invert();
@@ -157,7 +162,7 @@ export function createRig(ctx, o = {}) {
             else if (L.kind === 'landing') on = lt.landing ? 1 : 0;
             else if (L.kind === 'taxi') on = lt.taxi ? 1 : 0;
             const I = on * (lv[0] + (lv[1] - lv[0]) * night);
-            L.obj.visible = I > 0.001; if (L.obj.visible) L.mat.color.setRGB(I, I, I);
+            L.mat.color.setRGB(I, I, I); L.mat.userData.lampUniforms.uLampNight.value = night;      // unlit lamps stay visible as lenses
           }
         },
         dispose() {

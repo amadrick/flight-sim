@@ -69,7 +69,7 @@ function boot() {
     quality: { level, anisotropy: 8, shadows: true },
     env: { sunDir, moonDir: sunDir.clone().negate(), sunColor: new THREE.Color(SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day), ambientSky: new THREE.Color(0.25 * day, 0.4 * day, 0.7 * day), ambientGround: new THREE.Color(0.1 * day, 0.09 * day, 0.08 * day), sunLight: sun, exposure: 1, nightFactor: night },
     world: { origin: new THREE.Vector3(), groundHeightAt: () => 0, groundAt: (x, z, out = {}) => { out.height = 0; out.type = 'runway'; return out; }, toRender: (w, out = new THREE.Vector3()) => out.copy(w), toWorld: (r, out = new THREE.Vector3()) => out.copy(r) },
-    events: { on: () => () => {}, emit: () => {} }, time: { now: 0, dt: 0 }, uniforms: { frame: {} }, player: null,
+    events: { on: () => () => {}, emit: () => {} }, time: { now: 0, dt: 0 }, uniforms: { frame: { uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) } } }, player: null,
   };
   sim.ctx = ctx;
 
