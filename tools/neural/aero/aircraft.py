@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = os.path.join(HERE, 'results', 'models.json')
 
 FLAP_GRID = np.array([0.0, 0.5, 1.0])
-MACH_GRID = np.array([0.0, 0.4, 0.6, 0.75, 0.9])
+MACH_GRID = np.array([0.0, 0.3, 0.5, 0.65, 0.75, 0.85])
 
 
 CALFILE = os.path.join(HERE, 'results', 'calibration.json')
@@ -65,6 +65,8 @@ class Aircraft:
         self.has_flap = bool(self.spec['wing'].get('flap')) and m['flaps']['dcl0'][-1] > 0.02
         self.has_tail = any(k == 'htail' for _, k, _, _ in self.g.parts)
         self.has_fin = any(k == 'fin' for _, k, _, _ in self.g.parts)
+        wspec = dict(self.spec); wspec.pop('htail', None); wspec['fins'] = []
+        self.g_wing = S.build_geometry(wspec, n_wing=n_wing)
         self.cal = {}
         if cal is not None:                                 # stored calibration (results/calibration.json)
             self.apply_cal(cal)
@@ -75,7 +77,7 @@ class Aircraft:
         sec = self.sec
         sec.aL0 = c['aL0_deg'] * DEG; sec.flap_dalpha = c['flap_dalpha_deg'] * DEG
         sec.a_stall = c['a_stall_deg'] * DEG; sec.a_stall_neg = c['a_stall_neg_deg'] * DEG; sec.width = c['width_deg'] * DEG
-        S.shift_reference(self.g, c['cg_shift'])
+        S.shift_reference(self.g, c['cg_shift']); S.shift_reference(self.g_wing, c['cg_shift'])
         self.cal = c
 
     # ---- tuned-model angles ----------------------------------------------------------------------------------------
@@ -95,6 +97,10 @@ class Aircraft:
     def run(self, alpha, **kw):
         return S.solve(self.g, self.sec, alpha, **kw)
 
+    def run_wing(self, alpha, **kw):
+        """The wing alone (same moment reference): used to split the pitching moment into wing and tail parts."""
+        return S.solve(self.g_wing, self.sec, alpha, **kw)
+
     def calibrate(self, verbose=False):
         m, g, sec = self.model, self.g, self.sec
         a2 = np.array([0.0, 4 * DEG])
@@ -108,7 +114,7 @@ class Aircraft:
         o = S.solve(g, sec, a2, mach=0.2)
         dcm = (o['Cm'][1] - o['Cm'][0]) / (o['CL'][1] - o['CL'][0])
         dx = (-m['sm'] - dcm) * g.cref
-        S.shift_reference(g, dx)
+        S.shift_reference(g, dx); S.shift_reference(self.g_wing, dx)
         o = S.solve(g, sec, a2, mach=0.2)
         cla = (o['CL'][1] - o['CL'][0]) / a2[1]
         sm = -(o['Cm'][1] - o['Cm'][0]) / (o['CL'][1] - o['CL'][0])
@@ -155,17 +161,23 @@ class Aircraft:
 
     # ---- reference tables for the normalisation --------------------------------------------------------------------
     def peak_table(self):
-        """Angle of maximum lift (positive and negative side) on the (flap, Mach) grid."""
+        """Angle of maximum lift (positive and negative side) on the (flap, Mach) grid. Separable: the flap effect is
+        taken at low speed, the Mach effect clean (flaps are not used fast). The negative side is taken clean."""
         al = np.arange(0.0, 70.01, 0.5) * DEG
-        F, M = np.meshgrid(FLAP_GRID, MACH_GRID, indexing='ij')
-        pos = np.zeros(F.shape); neg = np.zeros(F.shape)
-        for i in range(F.shape[0]):
-            for j in range(F.shape[1]):
-                fl = F[i, j] if self.has_flap else 0.0
-                pos[i, j] = peak_alpha(al, S.solve(self.g, self.sec, al, mach=M[i, j], flap=fl)['CL'])[0]
-                neg[i, j] = peak_alpha(al, -S.solve(self.g, self.sec, -al, mach=M[i, j], flap=fl)['CL'])[0]
-        self.peak_pos, self.peak_neg = pos, neg
-        return pos, neg
+        sec, g = self.sec, self.g
+
+        def pk(flap, mach, sign):
+            cap = 1.6 * (sec.a_stall if sign > 0 else sec.a_stall_neg) + 8 * DEG
+            a = al[al <= max(cap, 20 * DEG)]
+            cl = sign * S.solve(g, sec, sign * a, mach=mach, flap=flap)['CL']
+            return peak_alpha(a, cl)[0]
+        pf = np.array([pk(f if self.has_flap else 0.0, 0.2, 1) for f in FLAP_GRID])
+        pm = np.array([pk(0.0, m, 1) for m in MACH_GRID])
+        nm = np.array([pk(0.0, m, -1) for m in MACH_GRID])
+        p0 = pk(0.0, 0.2, 1)
+        self.peak_pos = pf[:, None] * pm[None, :] / p0
+        self.peak_neg = np.tile(nm[None, :], (len(FLAP_GRID), 1))
+        return self.peak_pos, self.peak_neg
 
     def peaks(self, flap, mach):
         """Bilinear lookup of the solver's own angles of maximum lift (positive, negative) at (flap, Mach)."""

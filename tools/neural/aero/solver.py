@@ -89,11 +89,12 @@ def build_geometry(spec, n_wing=12, n_tail=6, n_fin=5):
     xcg, zcg = spec['cg']
     parts, arrs = [], []
     keys = ['A', 'B', 'TA', 'TB', 'BM', 'CP', 'TE', 't', 's', 'n', 'c', 'w', 'cosL', 'inc']
-    extra = {k: [] for k in ['flap', 'ail', 'elev', 'rud', 'allmov', 'eta', 'side', 'kind']}
+    extra = {k: [] for k in ['flap', 'ail', 'elev', 'rud', 'allmov', 'eta', 'side', 'kind', 'sweep']}
 
-    def add(name, kind, d, flap=None, ail=None, elev=None, rud=None, allmov=None, eta=None, side=None):
+    def add(name, kind, d, flap=None, ail=None, elev=None, rud=None, allmov=None, eta=None, side=None, sweep=0.0):
         m = len(d['c'])
         z = np.zeros(m)
+        extra['sweep'].append(np.full(m, sweep))
         parts.append((name, kind, sum(len(a['c']) for a in arrs), sum(len(a['c']) for a in arrs) + m))
         arrs.append(d)
         extra['flap'].append(z if flap is None else flap)
@@ -142,7 +143,8 @@ def build_geometry(spec, n_wing=12, n_tail=6, n_fin=5):
             ev = S.get('elevator')
             el = both(cover(e_lo, e_hi, ev[:2])) * tau(ev[2]) if ev else np.zeros(2 * n)
             am = np.zeros(2 * n)
-        add(name, kind, d, flap=fl, ail=al, elev=el, allmov=am, eta=both(0.5 * (e_lo + e_hi)), side=sgn)
+        sw = math.degrees(math.atan2(secs[-1][1] - secs[0][1], secs[-1][0] - secs[0][0]))
+        add(name, kind, d, flap=fl, ail=al, elev=el, allmov=am, eta=both(0.5 * (e_lo + e_hi)), side=sgn, sweep=sw)
 
     horizontal('wing', 'wing', spec['wing'])
     if spec.get('htail'):
@@ -161,7 +163,7 @@ def build_geometry(spec, n_wing=12, n_tail=6, n_fin=5):
             rd = np.zeros(n_fin); am = np.ones(n_fin)
         else:
             rd = np.full(n_fin, tau(F.get('rudder', 0.28))); am = np.zeros(n_fin)
-        add(f'fin{k}', 'fin', d, rud=rd, allmov=am, eta=0.5 * (s[:-1] + s[1:]) / F['height'], side=np.full(n_fin, sgn))
+        add(f'fin{k}', 'fin', d, rud=rd, allmov=am, eta=0.5 * (s[:-1] + s[1:]) / F['height'], side=np.full(n_fin, sgn), sweep=F['sweep'])
 
     g = Geometry()
     for k in keys:
@@ -170,6 +172,9 @@ def build_geometry(spec, n_wing=12, n_tail=6, n_fin=5):
         setattr(g, k, np.concatenate(extra[k]))
     g.parts = parts
     g.kind = g.kind.astype(int)
+    # tail / fin sections: swept, low-aspect-ratio surfaces keep their flow attached to larger angles
+    g.tail_stall = (14.0 + 0.3 * np.clip(g.sweep, 0.0, 60.0)) * DEG
+    g.tail_width = (2.0 + 0.08 * np.clip(g.sweep, 0.0, 60.0)) * DEG
     # elevons: wing strips that act in pitch as well
     ev = spec['wing'].get('elevon')
     if ev:
@@ -371,6 +376,12 @@ def _solve_chunk(g, sec, alpha, beta, mach, p, q, r, da, de, dr, flap, bank, h, 
         gm = ground[:, None, None, None]
         Vcp = Vcp - np.where(gm, horseshoe(CP, Ai * st, Bi * st, TAi * st, TBi * st, Uis, tight), 0.0)
         Vbm = Vbm - np.where(gm, trefftz(BMp, TAi, TBi, Ui, tight), 0.0)
+        # the image of the bound system slows the flow at the real bound vortex (and tilts it): the part of the ground
+        # effect that takes lift away at high lift coefficients
+        rA = BMp[:, :, None, :] - Ai[:, None, :, :]; rB = BMp[:, :, None, :] - Bi[:, None, :, :]
+        rTA = BMp[:, :, None, :] - TAi[:, None, :, :]; rTB = BMp[:, :, None, :] - TBi[:, None, :, :]
+        vb = _segment(rA, rB, tight[None])[0] + _segment(rTA, rA, tight[None])[0] + _segment(rB, rTB, tight[None])[0]
+        Vbm = Vbm - np.where(gm, vb / (4.0 * PI), 0.0)
     # back to physical perturbation velocities: (u, v, w) = (u'/beta, v', w')
     Vcp[..., 0] /= bpg[:, None, None]
 
@@ -399,10 +410,10 @@ def _solve_chunk(g, sec, alpha, beta, mach, p, q, r, da, de, dr, flap, bank, h, 
     a_slope = 2.0 * PI * g.cosL[None]
     mfac = 1.0 - sec.mach_stall * np.clip((mach - 0.25) / 0.65, 0.0, 1.0)[:, None] ** 1.5
     kst = sec.k_flap_stall * a_flap + sec.k_ctl_stall * a_other      # a trailing edge going down lowers the stall angle
-    as_p = np.where(wing, sec.a_stall, sec.tail_stall)[None] * mfac + kst
-    as_n = np.where(wing, sec.a_stall_neg, sec.tail_stall)[None] * mfac - kst
+    as_p = np.where(wing, sec.a_stall, g.tail_stall)[None] * mfac + kst
+    as_n = np.where(wing, sec.a_stall_neg, g.tail_stall)[None] * mfac - kst
     as_p = np.maximum(as_p, 2 * DEG); as_n = np.maximum(as_n, 2 * DEG)
-    width = np.where(wing, sec.width, sec.tail_width)[None]
+    width = np.where(wing, sec.width, g.tail_width)[None]
     cd0 = sec.cd0
 
     # section-plane onset flow at the control points
@@ -497,6 +508,7 @@ def _solve_chunk(g, sec, alpha, beta, mach, p, q, r, da, de, dr, flap, bank, h, 
     lift_dir = np.stack([-sa, np.zeros(Bn), ca], 1)
     out['CL'] = np.einsum('bk,bk->b', Ft, lift_dir) / S
     out['CD'] = D
+    out['CDv'] = np.einsum('bnk,bk->b', vdir * (cd_v * q_loc * area)[..., None], U) / S       # viscous (profile + separation) part
     if detail:
         out['G'] = G; out['f'] = f; out['ae'] = ae; out['cl'] = cl_v; out['qr'] = qr; out['delta'] = delta
         out['Fz'] = F[:, :, 2] / area
