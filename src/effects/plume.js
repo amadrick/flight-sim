@@ -121,11 +121,11 @@ export function createPlumeMaterial(shared, header, classic = false) {
         float turb = 0.3 + 1.35 * nz.r * (0.6 + 0.8 * nz2.g);
         float env = exp(-(r * r) / (re * re) * 2.0) * pow(max(1.0 - zn, 0.0), 1.4) * turb * smoothstep(-0.05, uR0 * 0.4, z);
         vec3 envCol = mix(vec3(1.0, 0.44, 0.12), vec3(0.85, 0.2, 0.08), smoothstep(0.25, 0.85, zn + (nz2.r - 0.5) * 0.3));
-        col += envCol * env * 1.0;
+        col += envCol * env * 0.6;
         // 4) soft outer plume: wide, dim and mostly transparent; only really shows against a dark sky
         float ro = uR0 * (1.15 + 1.45 * zn) * uExpand;
         float outer = exp(-(r * r) / (ro * ro) * 1.6) * smoothstep(1.0, 0.15, zn) * (0.25 + 0.9 * nz2.b) * smoothstep(0.0, uR0 * 1.2, z);
-        col += vec3(0.9, 0.32, 0.12) * outer * 0.1;
+        col += vec3(0.9, 0.32, 0.12) * outer * 0.05;
         absorb = (env * 0.1 + outer * 0.03) * ab;
         col *= ab * uFlicker;
         return vec4(col, absorb);
@@ -204,11 +204,11 @@ export class Plume {
     u.uLen.value = D * (2.6 + 5.8 * Math.sqrt(ab)) * (0.9 + 0.35 * (expand - 1) / 0.6) + 0;
     u.uSpacing.value = D * (0.75 + 0.4 * ab) * expand;
     u.uRb.value = r0 * (this.classic ? 2.2 : 2.8) * expand;
-    // compression knee / ceiling in display units: 1.2 / 5 by day (restrained), up to 3 / 14 at dusk / night
+    // compression knee / ceiling in display units: 1 / 5 by day (restrained), up to 2.2 / 11 at dusk / night
     const ex = Math.max(1e-3, exposure || 1);
     const nt = Math.min(1, Math.max(0, Math.log(ex / 2) / Math.log(15)));
     const ns = nt * nt * (3 - 2 * nt);
-    u.uCap.value.set(1.2 + 1.8 * ns, 5 + 9 * ns);
+    u.uCap.value.set(1.0 + 1.2 * ns, 5 + 6 * ns);
     u.uExpand.value = expand;
     u.uSteps.value = Math.round(14 + 18 * (quality ?? 1));
     // flicker: few-Hz pulsing + fast shimmer

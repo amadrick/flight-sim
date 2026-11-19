@@ -32,15 +32,18 @@ float bayer4(vec2 p) {
 }
 vec3 vpos(vec2 uv) { return viewPosFromDepth(uv, sceneDepthRaw(uv)); }
 void main() {
-  float d = sceneDepthRaw(vUv);
+  // snap to a full-resolution texel centre: the half-res pixel centre sits exactly between four depth texels, where
+  // nearest sampling of the centre and its neighbours would round inconsistently (garbage normals)
+  vec2 uv0 = (floor(vUv / uAOFullTexel) + 0.5) * uAOFullTexel;
+  float d = sceneDepthRaw(uv0);
   if (depthIsSky(d)) { outColor = vec4(1.0, 60000.0, 1.0, 1.0); return; }   // half-float safe
-  vec3 P = viewPosFromDepth(vUv, d);
+  vec3 P = viewPosFromDepth(uv0, d);
   float dist = length(P);
   if (dist > uAOParams.z) { outColor = vec4(1.0, min(dist, 60000.0), 1.0, 1.0); return; }
   // normal from depth: the smaller of the two one-sided differences on each axis (no halos at silhouettes)
   vec2 tx = uAOFullTexel;
-  vec3 pr = vpos(vUv + vec2(tx.x, 0.0)) - P, pl = P - vpos(vUv - vec2(tx.x, 0.0));
-  vec3 pu = vpos(vUv + vec2(0.0, tx.y)) - P, pd = P - vpos(vUv - vec2(0.0, tx.y));
+  vec3 pr = vpos(uv0 + vec2(tx.x, 0.0)) - P, pl = P - vpos(uv0 - vec2(tx.x, 0.0));
+  vec3 pu = vpos(uv0 + vec2(0.0, tx.y)) - P, pd = P - vpos(uv0 - vec2(0.0, tx.y));
   vec3 dx = dot(pr, pr) < dot(pl, pl) ? pr : pl;
   vec3 dy = dot(pu, pu) < dot(pd, pd) ? pu : pd;
   vec3 N = normalize(cross(dx, dy));
@@ -55,7 +58,7 @@ void main() {
     float f = (float(i) + 0.5) / 12.0;
     float ang = a0 + float(i) * 2.39996323;
     vec2 off = vec2(cos(ang) / uAOParams.w, sin(ang)) * rUV * sqrt(f);
-    vec2 suv = vUv + off;
+    vec2 suv = uv0 + off;
     if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
     float sd = sceneDepthRaw(suv);
     if (depthIsSky(sd)) continue;

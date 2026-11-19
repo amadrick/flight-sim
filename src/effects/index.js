@@ -330,6 +330,7 @@ export async function createEffects(ctx) {
 
   // debug camera (screenshots only): moves the camera after the rig and refreshes the camera frame uniforms
   const dcam = raw.fxcam;
+  const dbgVP = new THREE.Matrix4(), dbgPrevVP = new THREE.Matrix4(); let dbgPrevValid = false;
   function debugCamera() {
     if (!dcam || !P) return;
     const s = P.player.state, cam = ctx.camera, L = P.g.length || 15;
@@ -350,6 +351,10 @@ export async function createEffects(ctx) {
     u.uCameraPos.value.setFromMatrixPosition(cam.matrixWorld);
     u.uCameraWorld.value.copy(cam.matrixWorld);
     u.uViewMatrix.value.copy(cam.matrixWorldInverse);
+    // temporal passes (TAA, cloud reprojection) need last frame's DEBUG view-projection, not the rig's
+    dbgVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    u.uPrevViewProj.value.copy(dbgPrevValid ? dbgPrevVP : dbgVP);
+    dbgPrevVP.copy(dbgVP); dbgPrevValid = true;
   }
 
   const fx = {
