@@ -192,7 +192,7 @@ export function createVisual(ctx, opts = {}) {
     stations: [
       IS(-1.3, -0.27, 0.40, 0.24, 0.31), IS(-2.6, -0.39, 0.45, 0.13, 0.32), IS(-3.40, -0.425, 0.463, 0.12, 0.318, { hard: true }),
       IS(-3.575, -0.425, 0.482, 0.133, 0.336), IS(-3.6, -0.425, 0.5, 0.15, 0.352), IS(-3.575, -0.425, 0.518, 0.166, 0.368),
-      IS(-3.3, -0.425, 0.545, 0.175, 0.38), IS(-2.6, -0.42, 0.60, 0.22, 0.37), IS(-1.9, -0.36, 0.69, 0.3, 0.385), IS(-1.45, -0.3, 0.74, 0.3, 0.40),
+      IS(-3.3, -0.425, 0.545, 0.175, 0.38), IS(-2.6, -0.42, 0.60, 0.22, 0.37), IS(-1.9, -0.36, 0.69, 0.3, 0.385), IS(-1.45, -0.3, 0.73, 0.3, 0.395), IS(-1.0, -0.3, 0.68, 0.26, 0.37),
     ],
     segments: Math.max(28, Math.round(44 * detail / 4) * 4), step: 0.14, capStart: 'flat', capUV: U.black,
     uvFn: (x, y, z, t, ring) => (ring.run === 0 ? (z > -2.3 ? U.ductDeep : U.duct) : cInt.uvUnwrap(z, t)),
@@ -247,9 +247,9 @@ export function createVisual(ctx, opts = {}) {
   stat.add(fin.mesh);
   // dorsal fin fillet + extended base fairing (Block 50: ECM / drag-chute housing) running aft over the nozzle
   stat.add(K.loft({
-    stations: [{ z: 0.9, y: 0.86, w: 0.01, top: 0.01, bot: 0.03 }, { z: 1.7, y: 0.875, w: 0.08, top: 0.075, bot: 0.1 }, { z: 2.6, y: 0.9, w: 0.13, top: 0.17, bot: 0.2 },
-      { z: 3.8, y: 0.96, w: 0.165, top: 0.24, bot: 0.3 }, { z: 5.1, y: 1.0, w: 0.17, top: 0.25, bot: 0.36 }, { z: 5.95, y: 1.02, w: 0.155, top: 0.22, bot: 0.3 },
-      { z: 6.3, y: 1.04, w: 0.12, top: 0.16, bot: 0.17 }, { z: 6.36, y: 1.04, w: 0.1, top: 0.13, bot: 0.12 }],
+    stations: [{ z: 0.9, y: 0.86, w: 0.01, top: 0.01, bot: 0.03 }, { z: 1.7, y: 0.875, w: 0.07, top: 0.06, bot: 0.1 }, { z: 2.6, y: 0.89, w: 0.105, top: 0.13, bot: 0.17 },
+      { z: 3.8, y: 0.92, w: 0.125, top: 0.17, bot: 0.24 }, { z: 5.0, y: 0.95, w: 0.13, top: 0.18, bot: 0.3 }, { z: 5.7, y: 0.97, w: 0.12, top: 0.16, bot: 0.27 },
+      { z: 6.08, y: 0.99, w: 0.095, top: 0.12, bot: 0.17 }, { z: 6.14, y: 0.99, w: 0.08, top: 0.1, bot: 0.12 }],
     segments: 20, step: 0.25, uv: U.fin, capEnd: 'flat', capUV: U.dark,
   }).mesh);
   for (const sx of [1, -1]) {  // ventral fins, canted 15° outward
@@ -565,9 +565,8 @@ function paint(atlas, o) {
   }
   if (SC.demo) {
     P.textOn('SKYWARD', -0.15, 0.3, 'both', 0.2, { color: SC.navy, italic: true, font: K.FONT.wide });
-    P.decalT(1.2, 0.0, { rot: 90 }, (g) => K.drawText(g, 'SKYWARD', 0.42, { color: '#f2f2ef', italic: true, font: K.FONT.wide }));
   } else {
-    P.decalOn(-1.2, -0.33, 'both', (g) => K.drawStarBar(g, 0.42, { lowVis }));
+    P.decalOn(-0.95, -0.34, 'both', (g) => K.drawStarBar(g, 0.38, { lowVis }));
   }
   for (const z of [-1.0, 1.0]) for (const s of [0.31, 0.69]) P.decalT(z, s, { rot: s < 0.5 ? 180 : 0 }, (g) => K.drawText(g, 'NO STEP', 0.04, { color: SC.demo ? SC.navy : '#2b2e31' }));
   // ---- weathering ------------------------------------------------------------------------------------------------------
@@ -676,7 +675,6 @@ function paint(atlas, o) {
     const fwd = key === 'L' ? -1 : 1;   // reading direction runs aft on the left, forward on the right
     Q.text(SC.serial[0], d[0] + fwd * 0.3, d[1] - 0.03, 0.09, { color: code, weight: 700 });
     Q.text(SC.serial[1], d[0] - fwd * 0.12, d[1], 0.19, { color: code, weight: 700 });
-    if (!SC.demo) Q.text('20 FW', at(1.15, 0.3)[0], at(1.15, 0.3)[1], 0.06, { color: code, weight: 700 });
     const fl = at(2.92, 0.5); Q.fill((g) => g.rect(fl[0] - 0.25, fl[1] - 0.03, 0.5, 0.06), slime);
     Q.noise({ alpha: 0.05 * (0.5 + WX), scale: 1.2, stretch: [1, 1.5], rough: 0.05 });
     Q.streak(at(1.0, 0.9)[0], at(1.0, 0.9)[1], at(1.0, 0.9)[0] + 0.6, at(1.0, 0.9)[1] - 0.1, 0.06, { alpha: 0.1 * WX });
@@ -731,14 +729,17 @@ function paint(atlas, o) {
   }
 }
 
-/** Soft-edged Su-27 style blotch camouflage over a chart region (aggressor "Flanker" scheme). */
+/** Su-27 style "Flanker" camouflage: soft-edged wavy bands of three blues slanting across a chart region (aggressor scheme). */
 function flanker(P, SC, rnd, ar, br, body, side) {
-  const cols = SC.flanker, F = K.FINISH, planar = !body, n = planar ? 7 : 22;
-  for (let i = 0; i < n; i++) {
-    const a = ar[0] + rnd() * (ar[1] - ar[0]), b = br[0] + rnd() * (br[1] - br[0]);
-    const la = (ar[1] - ar[0]) * (planar ? 0.28 : 0.09) * (0.6 + rnd() * 0.8), lb = (br[1] - br[0]) * (planar ? 0.28 : 0.22) * (0.6 + rnd() * 0.8);
-    const ang = rnd() * Math.PI, k = 7, pts = [];
-    for (let j = 0; j < k; j++) { const q = ang + j / k * Math.PI * 2, r = 0.7 + rnd() * 0.5; pts.push([a + Math.cos(q) * la * r, b + Math.sin(q) * lb * r * (side ? 0.8 : 1)]); }
-    P.fill((g) => { const m = pts.length; for (let j = 0; j < m; j++) { const p0 = pts[j], p1 = pts[(j + 1) % m], mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2; if (j === 0) g.moveTo(mx, my); else g.quadraticCurveTo(p0[0], p0[1], mx, my); } const p0 = pts[0], p1 = pts[1]; g.quadraticCurveTo(p0[0], p0[1], (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2); g.closePath(); }, F.semigloss(cols[i % cols.length]), { feather: 3 });
+  const cols = SC.flanker, F = K.FINISH, span = ar[1] - ar[0], bw = br[1] - br[0];
+  const stepMin = body ? 1.2 : side ? 0.6 : 0.95, slope = (body ? 9 : side ? 0.7 : 0.9) * (rnd() < 0.5 ? 1 : -1);
+  const ph = [rnd() * 6, rnd() * 6, rnd() * 6], edge = (a, b, k) => a + slope * (b - (br[0] + bw / 2)) * (body ? 0.12 : 1) + Math.sin((b - br[0]) / bw * 5.5 + ph[k % 3] + k) * stepMin * 0.18 + Math.sin((b - br[0]) / bw * 13 + k * 2.1) * stepMin * 0.06;
+  const bounds = []; let a = ar[0] - span * 0.3;
+  while (a < ar[1] + span * 0.3) { bounds.push(a); a += stepMin * (0.7 + rnd() * 0.8); }
+  for (let k = 0; k < bounds.length - 1; k++) {
+    const ci = k % 4; if (ci === 3) continue;                     // every fourth band leaves the base colour showing
+    const n = 14, l = [], r = [];
+    for (let i = 0; i <= n; i++) { const b = br[0] - bw * 0.05 + (bw * 1.1) * i / n; l.push([edge(bounds[k], b, k), b]); r.push([edge(bounds[k + 1], b, k + 1), b]); }
+    P.fill(l.concat(r.reverse()), F.semigloss(cols[(ci + (side ? 1 : 0)) % cols.length]), { feather: 3 });
   }
 }
