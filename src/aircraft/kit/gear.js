@@ -150,7 +150,7 @@ export function buildGear(rig, atlas, spec) {
     for (const f of [0.3, 0.72]) outer.add(tube(A(P.clone().addScaledVector(d, Lo * f - 0.012)), A(P.clone().addScaledVector(d, Lo * f + 0.012)), strutR * 1.07, strutR * 1.07, { segments: 14, uv: uv.link }));
   }
   if (spec.extra) outer.add(spec.extra);
-  rig.part(spec.name + '.strut', outer, { parent: leg, pivot: A(P) });
+  rig.part(spec.name + '.strut', outer, { parent: leg, pivot: A(P), ao: false });
   for (const L of spec.lamps || []) rig.lamp(L.kind, L.pos, { ...L, parent: leg });
 
   // steer / twist node: rotates about the strut axis through B
@@ -183,7 +183,7 @@ export function buildGear(rig, atlas, spec) {
       if (!bogie) pm.add(ellipsoid(pistonR * 1.5, pistonR * 1.5, pistonR * 1.5, { segments: 10, rings: 5, uv: uv.strut }).translate(c.x, c.y, c.z));
     }
   }
-  rig.part(spec.name + '.rod', pm, { parent: pistonN, pivot: A(C) });
+  rig.part(spec.name + '.rod', pm, { parent: pistonN, pivot: A(C), ao: false });
   // wheels: one spinning node per axle
   const spinners = [];
   for (const z of axlesZ) {
@@ -199,7 +199,7 @@ export function buildGear(rig, atlas, spec) {
       one.transform(new THREE.Matrix4().makeRotationFromQuaternion(q)).translate(c.x + axW.x * x, c.y + axW.y * x, c.z + axW.z * x);
       wm.add(one);
     }
-    spinners.push(rig.part(`${spec.name}.wheel${spinners.length}`, wm, { parent: pistonN, pivot: A(c) }));
+    spinners.push(rig.part(`${spec.name}.wheel${spinners.length}`, wm, { parent: pistonN, pivot: A(c), ao: false }));
   }
   // torque links
   let linkU = null, linkL = null, linkGeom = null;
@@ -228,15 +228,15 @@ export function buildGear(rig, atlas, spec) {
       }
       return m;
     };
-    linkU = rig.part(spec.name + '.linkU', mkLink(U0), { parent: steer, pivot: A(U0) });
-    linkL = rig.part(spec.name + '.linkL', mkLink(L0), { parent: pistonN, pivot: A(L0) });
+    linkU = rig.part(spec.name + '.linkU', mkLink(U0), { parent: steer, pivot: A(U0), ao: false });
+    linkL = rig.part(spec.name + '.linkL', mkLink(L0), { parent: pistonN, pivot: A(L0), ao: false });
     linkGeom = { w, th0, theta, Dp };
   }
   // doors
   const doors = [];
   for (const dr of spec.doors || []) {
-    if (dr.onLeg) { rig.part(dr.name, dr.mesh, { parent: leg, pivot: A(P), key: dr.key }); continue; }
-    const node = rig.part(dr.name, dr.mesh, { pivot: dr.hinge.a, key: dr.key });
+    if (dr.onLeg) { rig.part(dr.name, dr.mesh, { parent: leg, pivot: A(P), key: dr.key, ao: false }); continue; }
+    const node = rig.part(dr.name, dr.mesh, { pivot: dr.hinge.a, key: dr.key, ao: false });
     const set = rig.hinge(node, dr.hinge.a, dr.hinge.b, { ref: dr.ref, toward: dr.toward || [0, -1, 0] });
     doors.push({ set, open: (dr.open ?? 90) * DEG, closes: !!dr.closes, window: dr.window, fn: dr.fn });
   }

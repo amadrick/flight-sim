@@ -1,6 +1,7 @@
 // Aircraft kit — non-atlas materials: glass and emissive lamps.
 // (Painted / metal / rubber surfaces all live in the atlas material — see atlas.js FINISH.)
 import * as THREE from 'three';
+import { noiseVolume } from './skin.js';
 
 /**
  * Canopy / windshield glass that reads correctly without the transmission pass:
@@ -8,8 +9,11 @@ import * as THREE from 'three';
  *   - reflections (IBL and sun glint) are ADDED on top instead of being faded by the opacity,
  *   - falls back to an analytic sky/ground reflection and its own sun glint when the pass it is drawn in has no
  *     environment map or no lights (e.g. LAYERS.POST in a pipeline that only lights layer 0).
+ *   - a pane has two surfaces: the dielectric reflection is that of both (≈ 1.9 × a single interface),
+ *   - a thin, uneven film of dust scatters the light that falls on it, so sunlit glass shows a faint haze and reads as a
+ *     surface instead of a hole (`dust`, 0 = factory clean).
  * opts: { tint = '#1c2a33', opacity = 0.16, edgeOpacity = 0.72, metalness = 0 (raise for gold / mirrored coatings),
- *         roughness = 0.03, reflect = 1 }
+ *         roughness = 0.03, reflect = 1, dust = 0.05 }
  * Presets: GLASS.clear, GLASS.smoke, GLASS.gold, GLASS.airliner
  */
 export function glassMaterial(ctx, opts = {}) {
@@ -28,12 +32,18 @@ export function glassMaterial(ctx, opts = {}) {
     uGlassSunDir: { value: env.sunDir || new THREE.Vector3(0.3, 0.8, 0.5).normalize() },
     uGlassSunColor: { value: env.sunColor || new THREE.Color(4, 4, 4) },
     uGlassReflect: { value: opts.reflect ?? 1 },
+    uGlassDust: { value: opts.dust ?? 0.05 },
+    tKitNoise: { value: noiseVolume() },
   };
   m.userData.glassUniforms = u;
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGlassP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlassP = position;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
+        varying vec3 vGlassP; uniform float uGlassDust; uniform highp sampler3D tKitNoise;
         uniform float uGlassEdge; uniform vec3 uGlassSky; uniform vec3 uGlassGround; uniform vec3 uGlassSunDir; uniform vec3 uGlassSunColor; uniform float uGlassReflect;`)
       .replace('#include <opaque_fragment>', `
         {
@@ -43,11 +53,11 @@ export function glassMaterial(ctx, opts = {}) {
           float gFr = pow( 1.0 - gNV, 5.0 );
           vec3 gF0 = mix( vec3( 0.04 ), diffuseColor.rgb, metalnessFactor );
           vec3 gF = gF0 + ( 1.0 - gF0 ) * gFr;
-          vec3 gSpec = totalSpecular;
+          vec3 gSpec = totalSpecular * mix( 1.9, 1.0, metalnessFactor );   // outer + inner surface
           #ifndef USE_ENVMAP
             vec3 gRw = inverseTransformDirection( reflect( -gV, gN ), viewMatrix );
             vec3 gEnv = mix( uGlassGround, uGlassSky * 1.6, smoothstep( -0.12, 0.3, gRw.y ) );
-            gSpec += gEnv * gF * uGlassReflect;
+            gSpec += gEnv * gF * uGlassReflect * mix( 1.9, 1.0, metalnessFactor );
           #endif
           #if NUM_DIR_LIGHTS == 0
             vec3 gL = normalize( ( viewMatrix * vec4( uGlassSunDir, 0.0 ) ).xyz );
@@ -58,6 +68,14 @@ export function glassMaterial(ctx, opts = {}) {
             gSpec += uGlassSunColor * gF * min( gD, 4000.0 ) * gNL * 0.25 * uGlassReflect;
           #endif
           float gA = mix( opacity, uGlassEdge, pow( 1.0 - gNV, 3.0 ) );
+          // dust film: lit like a pale diffuse surface, thicker where the noise says so and where the pane is seen obliquely
+          float gDust = uGlassDust * ( 0.3 + 1.4 * texture( tKitNoise, vGlassP * vec3( 0.45, 0.45, 0.2 ) ).r * texture( tKitNoise, vGlassP * 2.1 + 0.3 ).g ) / max( gNV, 0.35 );
+          vec3 gIrr = totalDiffuse / max( diffuseColor.rgb * ( 1.0 - metalnessFactor ), vec3( 0.03 ) );
+          #if NUM_DIR_LIGHTS == 0
+            gIrr += ( uGlassSky + uGlassSunColor * max( dot( gN, normalize( ( viewMatrix * vec4( uGlassSunDir, 0.0 ) ).xyz ) ), 0.0 ) * 0.3183 ) * 0.5;
+          #endif
+          gSpec += gIrr * 0.55 * gDust;
+          gA = min( 1.0, gA + gDust );
           outgoingLight = totalDiffuse * gA + gSpec + totalEmissiveRadiance;
           diffuseColor.a = clamp( gA + dot( gSpec, vec3( 0.3333 ) ), 0.0, 1.0 );
         }
@@ -72,7 +90,7 @@ export const GLASS = {
   smoke: { tint: '#14181c', opacity: 0.3, edgeOpacity: 0.8 },
   gold: { tint: '#6e5a34', opacity: 0.1, edgeOpacity: 0.7, metalness: 0.4, roughness: 0.04, reflect: 1 },   // ITO / gold-film canopies (F-16, F-22)
   airliner: { tint: '#0d151c', opacity: 0.45, edgeOpacity: 0.85, roughness: 0.04 },
-  hud: { tint: '#7fae8a', opacity: 0.08, edgeOpacity: 0.5, roughness: 0.02, reflect: 0.6 },
+  hud: { tint: '#7fae8a', opacity: 0.08, edgeOpacity: 0.5, roughness: 0.02, reflect: 0.6, dust: 0.015 },
 };
 
 /**

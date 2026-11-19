@@ -479,6 +479,12 @@ export class Pen {
     if (o.rough) this.each('orm', (g) => { g.globalCompositeOperation = 'lighter'; g.fillStyle = `rgba(0,255,0,${o.rough})`; g.beginPath(); g.moveTo(a0, b0 - width / 2); g.lineTo(a1, b1 - width / 2); g.lineTo(a1, b1 + width / 2); g.lineTo(a0, b0 + width / 2); g.fill(); });
     return this;
   }
+  /** Paint baked ambient occlusion on the chart (amount 0 … 1 = black; o.feather = soft edge in atlas pixels). The skin material darkens ambient light by it. */
+  shade(path, amount = 0.5, o = {}) {
+    const pf = this._path(path);
+    this.each('ao', (g, setT, s, L) => { g.fillStyle = `rgba(0,0,0,${amount})`; if (o.feather) { g.shadowColor = `rgba(0,0,0,${amount})`; g.shadowBlur = o.feather * L.scale; } g.beginPath(); pf(g, s); g.fill(); });
+    return this;
+  }
   /** Chipped / worn paint along a path (leading edges): irregular dashes of a lighter finish. */
   wear(path, width, finish = FINISH.bareMetal, o = {}) {
     const r = this.rand, dash = []; for (let i = 0; i < 24; i++) dash.push(2 + r() * 14, 3 + r() * 22);

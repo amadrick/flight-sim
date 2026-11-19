@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { Mesh, ellipsoid } from './mesh.js';
 import { lampMaterial } from './materials.js';
+import { bakeContactAO } from './occlusion.js';
 import { LAYERS } from '../../core/constants.js';
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -39,7 +40,7 @@ const LAMP_LEVEL = { nav: [5, 7], strobe: [300, 150], beacon: [110, 70], landing
 export function createRig(ctx, o = {}) {
   const geometry = o.geometry || { engines: [], gear: [], pilotEye: [0, 0, 0] };
   const root = new THREE.Group(); root.name = o.name || 'aircraft';
-  const mats = new Map(), statics = new Map(), parts = {}, updaters = [], lamps = [], owned = [];
+  const mats = new Map(), statics = new Map(), parts = {}, updaters = [], lamps = [], owned = [], occluders = [];
   const t0 = performance.now();
   let tris = 0, built = false;
   const S = makeStateView(geometry);
@@ -78,6 +79,7 @@ export function createRig(ctx, o = {}) {
       const info = mats.get(opt.key || 'paint'); if (!info) throw new Error('rig: unknown material key ' + opt.key);
       const pivot = opt.pivot || (opt.parent ? opt.parent.userData.pivot : [0, 0, 0]);
       const m = mesh.clone().translate(-pivot[0], -pivot[1], -pivot[2]);
+      if (opt.ao !== false && !m.p2) occluders.push({ mesh, key: opt.key || 'paint' });   // rest pose counts for the contact-occlusion bake
       tris += m.triCount;
       const obj = setupMesh(new THREE.Mesh(m.toGeometry(), info.mat), info);
       if (m.p2) obj.morphTargetInfluences = [0];
@@ -142,9 +144,21 @@ export function createRig(ctx, o = {}) {
         rig.cameraBody.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_inv);
         rig.cameraInCockpit = rig.cameraBody.distanceTo(eye) < (o.cockpitRadius ?? 0.75);
       };
-      for (const d of rig.disposables) d?.bake?.();                    // pack the atlas layers into their GPU textures
+      // contact occlusion (wing roots, tail, pylons, nacelles → fuselage charts), then pack the atlas layers into GPU textures
+      const isSkin = (key) => !!mats.get(key)?.mat?.userData?.kitSkin, tA = performance.now();
+      if (o.contactAO !== false && (ctx?.quality?.level || 'high') !== 'low') {
+        try {
+          const occ = []; for (const [key, m] of statics) if (isSkin(key)) occ.push(m);
+          for (const q of occluders) if (isSkin(q.key)) occ.push(q.mesh);
+          rig.aoInfo = bakeContactAO(occ, rig.disposables, typeof o.contactAO === 'object' ? o.contactAO : {});
+        } catch (e) { console.warn('[kit] contact occlusion bake failed', e); }
+      }
+      occluders.length = 0;
+      const tB = performance.now();
+      for (const d of rig.disposables) d?.bake?.();
+      const tC = performance.now();
       let draws = 0; root.traverse(n => { if (n.isMesh) draws++; });
-      const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0 };
+      const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0, occlusionMs: Math.round(tB - tA), packMs: Math.round(tC - tB) };
       const visual = {
         object3D: root, parts, stats, rig,
         update(state, dt) {

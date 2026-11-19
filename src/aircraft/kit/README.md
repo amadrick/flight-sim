@@ -63,7 +63,7 @@ sizes, and never build visuals in a loop inside `--eval` (each atlas holds ~50 M
 | Param | Meaning |
 |---|---|
 | `aircraft=<id>` `livery=<name>` | registry id, livery passed as `createVisual(ctx, { livery })` |
-| `view=` | `sheet` (6 views in one image) · `quarter` `side` `sider` `top` `bottom` `front` `rear` `rearq` `below` `noseq` `tailq` `cockpit` |
+| `view=` | `sheet` (6 views in one image) · `quarter` `side` `sider` `top` `bottom` `front` `rear` `rearq` `below` `noseq` `tailq` `cockpit` · `closeups` (4 close views) · close-ups placed from geometry.js: `cnose` `ccanopy` `croot` `cwing` `cgear` `cwheel` `cnoz` |
 | `views=a,b,c` | your own sheet |
 | `cam=az,el,dist` `tgt=x,y,z` `fov=` | free camera (az 0 = from the nose, 90 = from the right, 270 = from the left; el in degrees) |
 | `gear=0..1` `flaps` `slats` `spoiler` `sb` `hook` `canopy` `sweep` `rev` | surface positions |
@@ -74,6 +74,7 @@ sizes, and never build visuals in a loop inside `--eval` (each atlas holds ~50 M
 | `atlas=color\|orm\|height\|emis` `atlasN=0\|1` | show an atlas layer with chart names instead of the 3D view |
 | `look=yaw,pitch` `near=` | cockpit view direction |
 | `sun=az,el` `exposure=` `quality=low…ultra` `bg=` | environment |
+| `prof=1` | time spent per pen method → `sim.penProf` (find what makes a paint function slow) |
 
 The HUD line shows triangles, draw calls and build time. `window.__sim = { ready, step, ctx, visual, state, stats, K }`.
 Also run the real sim once: `node tools/shot.mjs --params "aircraft=<id>&start=runway&cam=chase"` (wheels on the
@@ -252,12 +253,30 @@ P.noise({ alpha: 0.08, scale: 2.2, rough: 0.06 });  P.streak(z0, t0, z1, t1, 0.0
   `groove(path, { px, depth, dark })`, `line(points, opts)`, `panel(a0, b0, a1, b1, { r })`, `rivets(a0, b0, a1, b1, spacing, opts)`,
   `decal(a, b, fn)` (draw in metres; pre-mirrored on bottom/right views so text reads correctly), `text(str, a, b, h, opts)`,
   body-side helpers `decalOn / textOn / band / yLine / ring / windows / doorOn` (need `chart.body = loft`),
-  `decalT(z, t, fn)`, `noise`, `streak`, `wear(path, width, finish)`.
+  `decalT(z, t, fn)`, `noise`, `streak`, `wear(path, width, finish)`, `shade(path, amount, { feather })` (occlusion layer).
 * On `unwrap` charts the two axes have different scales: give line widths in pixels (`px`) there.
 * Weight of detail: panel lines `dark ≈ 0.1–0.16`, control-surface gaps `px 2, depth 0.8, dark 0.5`, rivets
   `dark ≤ 0.05`. Anything heavier looks like a tiled floor at normal viewing distances. Look at `atlas=color`.
 * Liveries: keep a `SCHEMES` table (colours, finish, markings) and branch inside the paint function; export `LIVERIES`.
 * Finally `const mat = atlas.material(ctx); rig.material('paint', mat, { shared: true }); rig.disposables.push(atlas);`
+  (`rig.disposables.push(atlas)` matters: `rig.build()` bakes contact occlusion into the atlas and packs its textures.)
+
+#### What the skin material adds by itself (section 6 has the options)
+You paint colour, roughness, metalness and grooves; `atlas.material()` turns that into a surface that is not plastic.
+Everything below is keyed on the **roughness / metalness you painted**, runs in object space in the shader (so it also
+works on flat swatches and costs neither texels nor build time) and needs no code in a visual:
+
+| Painted finish | The material adds |
+|---|---|
+| gloss paint (`rough ≲ 0.3`, not metal) | a clear coat over a duller pigment layer (sharp sky / horizon reflection + broad sheen), orange peel in the coat, dried run-off streaks in its roughness |
+| matt / semigloss paint | patchy sheen (handled areas go glossier), chalking on sun-facing surfaces, grime underneath and in run-off streaks |
+| bare metal (`metal ≳ 0.6`) | brushed micro-normal along the airflow, roughness breakup; warm colours (titanium, `heatStained`) get straw / purple / blue heat tint |
+| everything but rubber | "oil canning": bays between frames and stringers pull in or out by a fraction of a degree — visible only in grazing reflections |
+| grooves, rivet rows | dirt: the height layer is blurred into a cavity mask that darkens and roughens gaps (no extra pen calls) |
+| cavities | per-vertex occlusion (`mesh.occlude`, set automatically by `K.well`, nacelle inlets, fans, nozzle petals, wheel dishes) and the atlas `ao` layer (contact occlusion baked by the rig; paint more with `P.shade`) |
+
+So: do **not** paint fake specular highlights, do not over-use `noise` (two calls per chart are plenty; they are
+composited at quarter resolution), and choose finishes by what the surface is — the material does the rest.
 
 ### Step 8 — rig and animation
 ```js
@@ -309,7 +328,7 @@ then every animated part at both extremes (`surf=1`, `surf=-1`, `flaps=1&slats=1
 
 **mesh.js** — `new Mesh()` (`vert`, `tri`, `quad`, `add(mesh[, Matrix4])`, `clone`, `transform`, `translate`, `scale`,
 `rotateX/Y/Z`, `aim(dir)`, `mirrorX`, `flip`, `setUV(uv)`, `inflate(d)`, `smooth(creaseDeg)`, `bounds`, `toGeometry`,
-`vertexCount`, `triCount`, raw arrays `p`, `n`, `uv`, `idx`) · `merge(...meshes)` · `lathe(profile [[r, z, hard?]], { segments, uv, arc, sx, sy, morph })`
+`occlude(v | (x, y, z, i) => v)`, `vertexCount`, `triCount`, raw arrays `p`, `n`, `uv`, `idx`, optional `occ`) · `merge(...meshes)` · `lathe(profile [[r, z, hard?]], { segments, uv, arc, sx, sy, morph })`
 (walk the profile with z increasing for an outward skin) · `tube(a, b, r0, r1, { segments, caps, uv })` · `pipe(points, radius, opts)`
 · `ellipsoid(rx, ry, rz, { segments, rings, uv, z0, z1 })` · `box(sx, sy, sz, uv)` · `boxBetween(min, max, uv)` ·
 `prism(outline [[z, y]], x0, x1, uv)` · `plate(p0, p1, p2, p3, t, uv)` · `thicken(patch, t, uvInner)` · `well(patch, depth, uv, dir)` · `centroid(mesh)`.
@@ -322,20 +341,26 @@ has `run` (index of the run between `hard` stations), `s`, `k` (fractional stati
 
 **surface.js** — `wing(opts)`, `blendedWinglet(tip, opts)` (section 3, step 3).
 
-**atlas.js** — `createAtlas({ size, base, swatchRows, maxDensity })` → `chart(name, spec)`, `pack()`, `swatch(key, finish)`,
-`pen(chart)`, `material(ctx, { envMapIntensity, normalScale, emissiveIntensity })`, `textures(ctx)`, `layers`, `charts`, `dispose()` ·
+**atlas.js** — `createAtlas({ size, base, swatchRows, maxDensity, heightScale = 1, skin })` → `chart(name, spec)`, `pack()`, `swatch(key, finish)`,
+`strip(key, cells, (g, layer) => …)` → `{ uv(t) }` (a row of swatch cells painted as a 1-D gradient texture: tyre sections, wheel dishes; `null` when the swatch block is full),
+`pen(chart)`, `material(ctx, { envMapIntensity, normalScale, normalStrength, emissiveIntensity, skin })`, `textures(ctx)`, `flush()`, `bake()`, `layer('ao' | 'emis')`, `layers`, `charts`, `dispose()` ·
 `FINISH`, `FONT` (`sans`, `wide`, `round`, `serif`, `mono`), `drawText(g, str, h, opts, layer)`, `drawStarBar(g, size, { lowVis })`.
 Chart: `uv(a, b)`, `uv3(x, y, z)`, `uvUnwrap(z, t)`, `body`.
 
-**materials.js** — `glassMaterial(ctx, { tint, opacity, edgeOpacity, metalness, roughness, reflect })`, `GLASS`, `glowMaterial()`, `lampMaterial()`.
+**skin.js** — `SKIN_DEFAULTS`, `skinMaterial(ctx, tex, opts)` (what `atlas.material` returns; see section 6).
 
-**rig.js** — `createRig(ctx, { geometry, name, cockpitRadius, glassLayer })` → `material(key, mat, { layer, shadow, shared })`,
-`glass(key, mat)`, `addStatic(mesh, key)`, `node(name, { parent, pivot })`, `part(name, mesh, { key, parent, pivot })`,
+**occlusion.js** — `bakeContactAO(meshes, atlases, { cell, strength })` (called by `rig.build()`).
+
+**materials.js** — `glassMaterial(ctx, { tint, opacity, edgeOpacity, metalness, roughness, reflect, dust })`, `GLASS`, `glowMaterial()`, `lampMaterial(ctx)`.
+
+**rig.js** — `createRig(ctx, { geometry, name, cockpitRadius, glassLayer, contactAO })` → `material(key, mat, { layer, shadow, shared })`,
+`glass(key, mat)`, `addStatic(mesh, key)`, `node(name, { parent, pivot })`, `part(name, mesh, { key, parent, pivot, ao })`,
 `hinge(node, a, b, { ref, toward })`, `hingePart(name, control, { toward, key, parent })`, `lamp(kind, pos, opts)`,
 `onUpdate(fn)`, `build()`, `cameraInCockpit`, `disposables` · `seq`, `keys`, `smooth01`.
 
 **gear.js** — `buildGear(rig, atlas, spec)` → `{ leg, steer, piston, wheels, axis, axle, stroke, pivot, bottom }`, `wheel(opts)`,
-`swing(pivot, from, to)`, `arrestorHook(opts)`.
+`tyreStrips(atlas)`, `swing(pivot, from, to)`, `arrestorHook(opts)`. New optional spec fields: `lines: false` (no hydraulic lines on the
+strut), `brakes: true | false` (brake stacks; default from `geometry.gear[i].braked`), `plainWheels: true` (flat tyre / hub swatches).
 
 **propulsion.js** — `fan`, `fanBackdrop`, `petalNozzle`, `afterburnerGlow`, `abGlowColor`, `nozzle2D`, `nacelle`, `pylon`, `intake2DStations`.
 
@@ -347,7 +372,44 @@ Each function has a doc comment with all options at its definition.
 
 ---------------------------------------------------------------------------------------------------------------
 
-## 6. Pitfalls we already hit
+## 6. Photorealism options (all optional, defaults are good)
+
+```js
+const atlas = K.createAtlas({ size, base, skin: { weathering: 0.7, framePitch: 0.35 } });   // per atlas …
+const mat = atlas.material(ctx, { skin: { waviness: 0 } });                                 // … or per material (wins)
+```
+
+| `skin` option | Default | Meaning |
+|---|---|---|
+| `weathering` | `0.5` | 0 factory fresh … 1 hard-used: sheen patches, streaks, chalking, grime, dirt in panel gaps (gloss paint gets 60 % of it) |
+| `waviness` | `1` | oil-canning strength (1 ≈ 0.3° of skin slope). `0` for thick machined or composite skins |
+| `framePitch` | `0.45` | metres between frames (airliners ≈ 0.5, fighters ≈ 0.3–0.4); stringer pitch is 55 % of it |
+| `orangePeel` | `1` | clear-coat texture on gloss paint |
+| `clearcoat` | `1` | `0` drops the second specular lobe (it is always off at quality `low`) |
+| `heatTint` | `1` | temper colours on warm bare metal |
+| `cavity` | `1` | dirt in grooves and around fasteners, from the height layer |
+| `mipBias` | `-0.35` | sharper stencils at glancing angles |
+| `detail` | `true` | `false`: plain packed PBR without any procedural detail |
+
+Other optional additions:
+* **Occlusion**: `mesh.occlude(0.6)` or `mesh.occlude((x, y, z) => …)` darkens ambient light on ducts, bays and tubs you
+  build yourself (jet pipes, intake ducts from `K.loft`, cockpit tubs). `P.shade(path, amount, { feather })` paints
+  occlusion on a chart. `K.createRig(ctx, { contactAO: false })` or `{ contactAO: { strength, cell } }` controls the automatic
+  bake onto fuselage charts (`chart.body` must be set — it is whenever you use `decalOn`); `chart(name, { …, ao: false })`
+  skips one chart; `rig.part(name, mesh, { ao: false })` keeps a part out of the occluders (parts that are not in their
+  built pose most of the time).
+* **Glass**: `dust` (default 0.05) is the haze of a used canopy in sunlight; `0` for museum glass.
+* **Lamps** are always drawn (an unlit lamp is a dark lens), are hot in the middle, and never shrink below a pixel.
+  Levels by day are modest on purpose: a position light is no brighter than sunlit paint.
+* **Afterburner**: `K.afterburnerGlow` + `K.glowMaterial()` draw a flame holder (rings, radial gutters, dark tail
+  cone) and a streaky liner. Your own glow meshes are unaffected unless their `uv.y` is `2 + angle fraction`.
+
+## 7. Pitfalls we already hit
+
+* The atlas textures are **packed in `rig.build()`** (`atlas.bake()`): swatches, strips and pen strokes made after
+  `atlas.material()` still land in the textures as long as they happen before `rig.build()`. After it, only the colour
+  layer can still change.
+* `noise()` is deferred: it lands on top of everything painted on that chart, including markings painted after it.
 
 * `rig.addStatic(mesh, key)` **copies** the mesh at call time. Finish adding to your static `Mesh` first.
 * Fold-over lofts must start inside the duct; otherwise the lip is inside-out (looks black / see-through).
