@@ -456,4 +456,279 @@ erosion type, ambient occlusion, and MS probability. The game can derive it from
 down, and a few lateral directions at 2-3 scales (from mips), plus cos theta and g. Small MLP (2-3 layers of 16-32), baked
 into a LUT where possible. Train on path-traced ground truth of *the game's own density field*. Predict log(1 + L_ms).
 
-(sections 3.5+ and 4, 5 continue below)
+### 3.5 Bouthors et al. 2008, "Interactive multiple anisotropic scattering in clouds" (I3D)
+
+[K] https://evasion.inrialpes.fr/Publications/2008/BNMBC08 (the abstract page and HAL copy were not readable in this pass;
+the summary below is from my reading of the paper and Bouthors' 2008 PhD thesis, so check the details.)
+* Representation: a cloud is a closed **surface mesh plus a hypertexture** (a thin noisy boundary layer) around a homogeneous
+  interior. Density is uniform inside, so the optical distance depends only on geometry.
+* Key physical insight: in a thick, forward-scattering cloud, the light reaching an exit point P comes mostly through a
+  "**collector**": a disc-shaped area on the lit surface around the point closest to P along the light direction, whose size
+  grows with depth. Transport from the collector to P is precomputed by Monte Carlo on a **plane-parallel slab** and
+  parameterised by slab thickness, depth of P, and the angles (view, light, normal). The result is stored as fitted functions or
+  tables.
+* At runtime they find the collector per pixel iteratively (it grows), integrate incoming light over it, and apply the
+  slab transfer function. Low orders (single plus double scattering through the hypertexture skin) are handled separately.
+* Results: they reproduce the glory, fogbow, pseudo-specular reflection and "light pipe" channelling, interactively
+  (~2-10 fps on 2008 GPUs). [UNVERIFIED fps]
+* Bouthors' thesis also gives the slab statistics: most of the reflected light comes from the first ~ 1-3 transport mean free
+  paths. [K] Bouthors PhD thesis 2008, https://theses.hal.science/tel-00332994 [UNVERIFIED URL id]
+
+-> shader: the useful idea for us is to **parameterise the multiple-scattering lookup by the distance to the lit surface along
+the sun direction and the local "slab thickness"**, not by raw tau along a straight line. The game's (tauSun, tauUp) features
+are a version of this; adding a "thickness along the sun ray through the whole cloud" feature (tau_sun_total) lets the
+network tell a thin sheet from a deep tower.
+
+### 3.6 Disney cloud dataset
+
+Walt Disney Animation Studios released a production cumulus VDB (CC BY-SA 3.0), used in Kallweit 2017 and many
+follow-ups as a reference for density structure and for path-traced ground truth. Recommended render settings: albedo ~ 1, a
+Mie or high-g HG phase function. [K] https://disneyanimation.com/resources/clouds/ [UNVERIFIED exact URL path and voxel
+dims ~ 2k^3]
+-> use: an offline reference to compare the game's density histograms and edge profiles against: the density gradient
+across the boundary, the proportion of near-zero voxels, and the turret size spectrum.
+
+### 3.7 Unreal Engine volumetric clouds
+
+[V] https://dev.epicgames.com/documentation/unreal-engine/volumetric-cloud-component-properties-in-unreal-engine
+* Material outputs: Phase G, Phase G2, Phase Blend (dual HG). Multi-scattering *Contribution*, *Occlusion* and *Eccentricity*
+  all default to 0.5 (these are Wrenninge's b, a, c), with **at most 2 octaves**. There is optional "Ground Contribution"
+  (shadowed ground light, single scattered) and a "Conservative Density" used for empty-space skipping.
+* Clouds are a layer with a bottom altitude and height in km. View rays are capped by
+  `r.VolumetricCloud.ViewRaySampleMaxCount`, and the shadow tracing distance is in km.
+* Based on Hillaire's 2016/2020 work. [K] https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf
+
+### 3.8 Microsoft Flight Simulator 2020/2024
+
+No public technical talk on MSFS cloud rendering turned up in this pass (searches returned only forums and press). From
+public statements, they use voxel-based volumetric clouds driven by live weather (Meteoblue) data. Treat any specifics as
+**unverified**. https://www.techspot.com/news/103545-microsoft-flight-simulator-2024-presentation-outlines-ray-tracing.html
+
+### 3.9 Temporal reprojection and noise
+
+* **HZD/Nubis 2015:** at quarter resolution, update 1 of 16 pixels per frame in a 4×4 Bayer order and reproject the rest using
+  the cloud depth. [K] (Schneider 2015, link in 3.1)
+* **Nubis3 (2023):** no temporal upscaling for voxel clouds. It splits resolution by distance (480×270 under 200 m,
+  960×540 beyond) and uses a jitter that is animated within 250 m and static beyond. [V]
+* **Cloud depth for reprojection:** use the transmittance-weighted mean depth `z = Σ T_i z_i α_i / Σ T_i α_i`, or the depth
+  where T crosses 0.5. Hillaire 2016 uses a transmittance-weighted depth. [V via a 2022 CTU Prague thesis citing it] https://dcgi.fel.cvut.cz/wp-content/wpallimport-dist/theses/pdf/theses-2022-sakmamat-thesis.pdf
+* **Blue noise:** jitter the ray start by a blue-noise value (with a golden-ratio temporal offset per frame:
+  `fract(bn + frame * 0.61803)`) instead of white noise. That halves perceived noise at equal sample count. Spatio-temporal
+  blue noise (Wolfe et al. 2022, NVIDIA STBN) is optimised for TAA-style accumulation. [K]
+  https://research.nvidia.com/publication/2022-07_spatiotemporal-blue-noise-masks ; Heitz & Belcour 2019 [K]
+* Neighbourhood clamping on reprojected cloud colour (a 3×3 min/max in YCoCg) prevents ghosting with fast camera rotation. For
+  a flight sim with fast translation, reject history by depth disocclusion and blend faster near the camera.
+
+### 3.10 Cloud shadows on the ground and on other clouds; crepuscular rays
+
+* **Beer shadow map (Frostbite 2016):** render from the sun into a 2D map storing (front depth, mean extinction, max optical
+  depth). Transmittance at depth z is `T = exp(-min(max_od, mean_ext * max(0, z - front_depth)))`. This gives soft,
+  filterable, cheap shadows on terrain and on clouds. [K, Hillaire 2016 course notes, link in 3.2; UNVERIFIED exact channel layout]
+* **Cheaper alternative:** a top-down 2D optical-depth map (integrate the density vertically, or along the sun ray, at 50-100 m
+  resolution) reprojected along the sun direction. That is enough for terrain shadows and for "inter-cloud shadows" as in the
+  Nubis3 light voxel grid (256×256×32, amortised over 8 frames). [V]
+* Real cloud shadows on the ground are **sharp-edged** for low clouds (sun angular size 0.53 deg: the penumbra width is
+  ~0.0093 × height above ground, about 10 m for a 1 km base) and soft only because the cloud edge itself is soft. [derived]
+* **Crepuscular rays (god rays):** light shafts between cloud gaps, visible when aerosol or haze is present. Implement as the
+  atmospheric in-scatter integral × the cloud shadow map along the view ray (epipolar sampling: Engelhardt & Dachsbacher 2010
+  https://doi.org/10.1145/1730804.1730823 [K]) or as a screen-space radial blur (Mitchell, GPU Gems 3 ch. 13 [K]
+  https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process).
+  Rays appear to converge at the sun *and* at the antisolar point (anticrepuscular rays) by perspective.
+
+---
+
+## 4. Morphology and dynamics
+
+### 4.1 Cloud base: the lifting condensation level
+
+* `z_LCL ≈ 125 m/K × (T - T_d)` (Espy, coefficient by Lawrence 2005; max error ~ 665 m against the exact formula). [V]
+  https://www.romps.berkeley.edu/papers/pubdata/2016/lcl/16lcl.pdf
+* Better: Lawrence eq. 24, `z_LCL = (20 + (T - 273.15)/5) × 100 m × (1 - RH)` (±130 m for 0-30 C, RH 0.5-1). [V]
+* Physical reason for flat bases: all thermals rising from a well-mixed boundary layer have about the same T and T_d, so they
+  saturate at the same height. A field of cumulus shares one base, varying by ±50-100 m. [K]
+* Dry adiabatic lapse 9.8 K/km. The dew point falls ~1.8 K/km in rising air, so the depression shrinks ~8 K/km. [V, derived]
+
+-> shader: one base altitude per weather region (from the game's T and T_d). Give the base a sharp density ramp
+(10-30 m), a slight concavity or upward bulge at the centre of large Cu, and ±50 m noise. Do **not** erode bases with the same
+billowy noise as tops: real bases are flat and "smudged", with ragged scud only in decaying or rainy cells.
+
+### 4.2 Genera: what to model
+
+| Genus / species | Base (km) | Thickness | Horizontal size | Look and physical cause | Source |
+|---|---|---|---|---|---|
+| Cumulus humilis | 0.5-2 (deserts up to 3-4) | 0.2-0.5 km | 0.2-1 km | flat, wider than tall; capped by an inversion | WMO Atlas [K] https://cloudatlas.wmo.int/en/cumulus.html |
+| Cu mediocris | 0.5-2 | 0.5-1.5 km | 0.5-2 km | height ~ width, a few turrets | WMO [K] |
+| Cu congestus | 0.5-2 | 2-6 km | 1-5 km | taller than wide, hard cauliflower tops, strong updraught 5-10 m/s | WMO [K] |
+| Cumulonimbus (calvus to capillatus, incus) | 0.5-2 | to the tropopause, 8-16 km | 10-50 km (anvil to 100+ km) | glaciated fibrous top, anvil spreading at the tropopause, overshooting top dome 0.5-2 km above the anvil for 10-20 min; updraughts 10-40 m/s | NSSL [K] https://www.nssl.noaa.gov/education/svrwx101/thunderstorms/ |
+| Stratocumulus | 0.3-2 | 0.2-0.8 km | cells 5-40 km (aspect ~35:1) | lumpy layer, open/closed cells, dark bases with light gaps | Wood & Hartmann 2006 [V] |
+| Stratus | 0-0.5 | 0.1-0.5 km | 10s-100s km | uniform grey, no structure; drizzle | WMO [K] |
+| Nimbostratus | 0.5-2 (ragged scud below) | 2-5 km | 100s km | dark, diffuse, featureless with rain; no sun disc visible | WMO [K] |
+| Altocumulus | 2-6 | 0.1-0.5 km | elements 0.5-1 deg apparent (1-5 deg of sky) | rolls or patches, often supercooled liquid, iridescence and corona | WMO [K] |
+| Altostratus | 2-6 | 1-3 km | 100s km | grey sheet, sun visible as through ground glass, no halo | WMO [K] |
+| Cirrus fibratus / uncinus | 6-12 | 0.1-2 km (tau 0.03-3) | streaks 10-100s km | ice fibres; fall streaks curved by shear (hooks: generating head with a trailing tail); halos | Heymsfield 2000 [K] |
+| Cirrostratus | 6-12 | 0.5-2 km | 100s km | transparent veil, 22 deg halo | WMO [K] |
+| Cirrocumulus | 6-12 | thin | grains < 1 deg apparent | small ripples, often supercooled liquid | WMO [K] |
+| Lenticular (Acsl, Ccsl, Scsl) | 2-12 | 0.1-1 km | 1-10 km, stacked "pile of plates" | stationary at wave crests downwind of ridges; smooth, laminar, crisp edges, iridescent; air flows *through* them | WMO [K] https://cloudatlas.wmo.int/en/altocumulus-lenticularis.html |
+| Cap / pileus | just above the summit or tower | thin | | smooth hood above a rising turret or a mountain summit | WMO [K] |
+| Mammatus | under anvils | lobes extend 0.3-1.1 km down (most ~0.5 km) | lobes 0.25-8 km, mostly 1-3 km | smooth pouches, mostly ice, lit dramatically by a low sun; each lobe lives ~10 min, the field 15 min to hours | Schultz et al. 2006 [V] https://data-ww3.ifremer.fr/BIB/Schultz_etal_MWR2006.pdf |
+| Shelf / arcus | 0.3-1 | | along the gust front, 10s of km | wedge-shaped, smooth layered underside, ragged leading edge, ahead of a Cb outflow | NSSL [K] |
+
+### 4.3 Thermals, turrets and the size spectrum
+
+* Shallow Cu (stereo-photogrammetry, Oklahoma): median maximum base radius 240 ± 20 m, maximum thickness 500 ± 100 m, volume
+  0.11 km^3, **median lifetime 15 ± 2 min** (minimum tracked 5 min), cloud-base updraught 0.7 m/s (lidar). Observed clouds
+  behave mostly like **bubbles** (B ~ 0.8) rather than steady plumes. [V] Romps et al. 2019
+  https://www.romps.berkeley.edu/papers/pubdata/2019/lifecycle/19lifecycle.pdf
+* Size distribution: N(l) ∝ l^-1.7 up to a scale break at 400-1250 m (growing through the day), steeper beyond. Literature
+  exponents are -1.7 (Neggers 2003), -1.89 (Cahalan & Joseph 1989) and -1.98 (Benner & Curry 1998). Cloud fraction for shallow Cu is
+  14-27% projected (the maximum at any one level is only ~6%: clouds are narrower than their projected shadow). [V]
+  https://cdn.knmi.nl/system/data_center_publications/files/000/066/549/original/neggers_03_jas.pdf
+* Turret (sub-thermal) sizes scale with cloud size: a congestus is built of bubbles of 0.2-1 km diameter, each with smaller
+  bulges in a roughly self-similar cascade (perimeter fractal dimension ~1.35 over 1-1000 km). [K] Lovejoy 1982.
+  Individual turrets rise for 5-10 min and then decay while new ones emerge on the upshear/updraught side. [UNVERIFIED timing]
+* Cauliflower texture: it comes from the toroidal circulation of a rising thermal (vortex ring). The top is crisp and convex
+  because cloudy air is pushed into dry air by buoyancy; the sides and wake are entrained and evaporate. [K] Scorer 1957;
+  Damiani et al. 2006 https://doi.org/10.1175/JAS3710.1 [UNVERIFIED DOI]
+
+-> shader: build cumulus as a sum of spherical-ish "bubbles" with radii drawn from a power law (exponent ~ -1.7 to -2),
+2-3 levels of recursion with a radius ratio of ~0.35-0.5 per level. The top surfaces should be convex and sharp (density
+ramp ~ 5-20 m), and the base flat. Animate: each bubble rises at 1-3 m/s (Cu) or 5-15 m/s (congestus/Cb) for 5-10 min, then
+erodes.
+
+### 4.4 Edges: growing vs decaying, hard vs wispy
+
+* **Growing (actively rising) parts:** sharp, well-defined, bright cauliflower edges with high LWC right up to the boundary
+  (buoyant cloudy air, near-adiabatic). The boundary is ~ 1-10 m thick optically. [K] (WMO Atlas descriptions of cumulus as
+  "sharp outlines"; LES entrainment studies)
+* **Decaying parts:** ragged, fibrous, translucent edges. Evaporation and mixing dilute the LWC over 100s of m, number concentration
+  drops in filaments, and holes appear. The species name *fractus* means torn fragments. A dissipating Cu goes from crisp to
+  ragged in ~5 min and evaporates in another 5-10 min. [K] https://cloudatlas.wmo.int/en/cumulus-fractus.html
+* **Glaciated parts (Cb tops, anvils, cirrus):** soft, fibrous, *striated* edges (ice crystals survive in subsaturated air
+  much longer than droplets do, so ice edges are diffuse over km). [K] Korolev 2017
+* **Downshear side:** detrained, more ragged and wispy. The upshear side is crisp. [K]
+
+-> shader: the edge sharpness of the density remap should be driven by the **life-cycle phase** (the game already has a
+per-cell phase): growing means a steep remap (Nubis-style `pow(d, 0.3)` sharpening) and billowy noise; decaying means a soft
+remap, wispy/curly noise, and lower peak density. For ice, use a long soft falloff and stretched (anisotropic, wind-aligned)
+noise.
+
+### 4.5 Wind shear, streets, cells
+
+* **Shear tilt:** towers lean downshear at angle `atan(Δu / w)`. With 10 m/s of shear over the cloud depth and a 5 m/s updraught,
+  the lean is ~ 60 deg from vertical in the upper part, which is why strong shear kills small Cu and makes Cb anvils
+  stretch downwind 50-200 km. [derived]
+* **Cloud streets (horizontal convective rolls):** in a 1-2 km deep boundary layer, the wavelength/depth aspect ratio is 2:1 to
+  6:1 (up to 10:1), so streets are spaced 2-12 km apart. They are near-parallel to the mean wind in convective conditions (up to 18-30 deg to the left
+  in neutral or stable conditions), need moderate wind with shear, and last hours. [V] https://en.wikipedia.org/wiki/Horizontal_convective_rolls
+* **Mesoscale cellular convection (Sc):** the cell diameter / boundary-layer depth is ~30:1 to 40:1 (open and closed alike),
+  with BL depth 0.6-1.5 km, so cells are 10-40 km across. Closed cells: cloud fraction 0.86-0.88, cloudy cell centres with clear narrow
+  rims. Open cells: cloud fraction ~0.3, cloud rings around clear centres; they are favoured for zi 1-1.5 km, especially with
+  drizzle. [V] https://atmos.washington.edu/~robwood/papers/my_papers/Wood_Hartmann_JCLI_2006.pdf
+* **Life cycle times:** small Cu median 15 min [V]. Ordinary single-cell thunderstorm ~30-60 min, a multicell lasts hours
+  (each cell 30-60 min), supercell hours. [K] https://www.nssl.noaa.gov/education/svrwx101/thunderstorms/types/
+* **Orographic clouds:** lee-wave lenticulars sit at wave crests with lee-wave wavelengths of ~ 5-25 km [UNVERIFIED range] and are
+  stationary relative to the ground while the wind blows 10-40 m/s through them. Cap clouds sit on summits, with a "Föhn wall" on
+  the lee side. Rotor clouds are ragged, low and turbulent under the wave crests. [K] https://cloudatlas.wmo.int/en/orographic-clouds.html [UNVERIFIED path]
+
+### 4.6 Cover, base and thickness by weather type (preset table)
+
+| Weather preset | Low cloud | Base (m AGL) | Top (m AGL) | Cover (oktas) | Notes |
+|---|---|---|---|---|---|
+| Fair weather (anticyclone, summer afternoon) | Cu hum/med | 800-1500 (rising through the day) | base + 300-1500 | 1-3 (projected CF 14-27%) | inversion caps tops; size break 400-1250 m |
+| Trade-wind maritime | Cu + Sc | 500-700 | 1500-2500 | 2-4 | larger r_e, softer, some drizzle shafts |
+| Marine Sc deck | Sc closed cells | 300-800 | 600-1500 | 6-8 | cells 10-40 km; dark undersides; gaps on cell rims |
+| Pre-frontal (warm front) | Ci → Cs → As → Ns | Ci 8000+, As 3000-5000, Ns 500-1500 | to 6-8 km | 8 | progression over 12-24 h; 22 deg halo in the Cs stage |
+| Cold front / unstable | Cu con + Cb | 800-1500 | to 9-14 km | 3-7 | lines and clusters, shelf clouds, rain shafts |
+| Summer thunderstorm afternoon | Cb | 1000-2000 | 10-16 km | 2-6 | anvils, mammatus, overshooting tops |
+| Overcast stratus / fog | St | 0-300 | 300-800 | 8 | uniform; fog visibility < 1 km |
+| Mountain wave | Acsl | 3000-8000 | thin | 1-3 | stationary lenses, stacks |
+
+Sources: WMO Cloud Atlas genus pages [K] https://cloudatlas.wmo.int/en/clouds-genera.html ; Neggers 2003, Wood & Hartmann 2006,
+Romps 2019 [V]. Base and top ranges are typical mid-latitude values [K/UNVERIFIED per row].
+
+---
+
+## 5. Checklist: what a photo of real clouds has that renders usually lack
+
+Ranked by visual impact for a flight sim seen from the air and from the ground.
+
+1. **Correct vertical density profile (dense upper middle, thin base).** Cause: adiabatic LWC grows linearly above the
+   LCL (1.3). Remedy: density ∝ (z - base) × f_ad, peaking at 70-90% of the height, with the turret top falling off sharply. This makes
+   tops bright and opaque and bases grey but with a crisp outline.
+2. **Hard, sharp, flat bases at a common altitude.** Cause: the LCL (4.1). Remedy: one base height per region and a 10-30 m
+   ramp, no billowy erosion underneath.
+3. **Sharp edges on growing turrets, ragged on decaying ones.** Cause: entrainment (4.4). Remedy: tie the density-remap
+   sharpness and the noise type to the life-cycle phase; aim for density ramps of ~5-20 m on growing tops.
+4. **The silver lining and a bright forward-scatter halo around the sun through thin cloud.** Cause: the diffraction peak (2.1).
+   Remedy: the Jendersie-d'Eon phase with g_HG ~ 0.99 on direct single scattering, sampled with enough resolution near
+   the sun direction.
+5. **Blue-tinted shadows and sides, warm or green-brown underside bounce.** Cause: sky fill and ground albedo (2.6). Remedy: a
+   three-part ambient (sky, ground with terrain albedo, cloud bounce), with real sky radiance from the atmosphere model.
+6. **Contrast range.** Lit tops are ~ 5-10× brighter than the shaded bases of the same cloud, and the sun-side edge on a
+   backlit cloud is brighter than the sky. Cause: diffusion (2.5). Remedy: no artificial ambient floor, HDR plus a filmic
+   tone map, and an albedo of 1.
+7. **Dark crevices between bright turrets, with the inner glow not uniform.** Cause: boundary depletion (Milne) and
+   occlusion (2.4). Remedy: an angle-dependent powder/probability term (Nubis3 dimensional-profile MS) driven by the optical
+   depth to the surface.
+8. **Aerial perspective on distant clouds.** Distant clouds are lower contrast, bluer or hazier, and their bases blend into
+   the horizon haze. Cause: Rayleigh and Mie in-scatter between viewer and cloud. Remedy: apply the atmosphere's
+   transmittance and in-scatter at the cloud's transmittance-weighted depth (per pixel, not per scene).
+9. **Correct sunset lighting from below.** High clouds are lit orange from under after ground sunset, and the Earth's shadow
+   creeps up (2.7). Remedy: compute the sun colour per sample with the atmosphere transmittance *at the sample's altitude*,
+   and allow sun directions below the horizon.
+10. **Size spectrum and clustering.** Cause: a power law with exponent ~ -1.7 up to a ~1 km break, plus streets and cells (4.3,
+    4.5). Remedy: no uniformly sized blobs; organise into streets aligned with the wind or cells with aspect ~35:1.
+11. **Cloud shadows on terrain, and on other clouds.** Sharp-edged for low bases (10 m penumbra at 1 km). Remedy: a beer shadow map
+    or a vertical optical-depth map; inter-cloud shadows via a coarse light grid.
+12. **Rain shafts and virga** as translucent curtains tilted by shear (1.4).
+13. **Optical phenomena:** glory around the aircraft shadow on the cloud tops below, fogbow, 22 deg halo in cirrostratus, corona
+    round the moon (2.1, 2.3). Cheap decals or analytic terms, high "wow" for a flight sim.
+14. **Ice clouds look different from water clouds:** soft, fibrous, wind-stretched, translucent, halos (1.4, 4.4).
+15. **Temporal behaviour:** cumulus grow and die in 15 min. Turrets boil upward at 1-3 m/s. Lenticulars stay put while air
+    streams through them. Shadows move with the cloud speed (wind at cloud level, not surface wind).
+16. **Spectral deep-storm tint:** slight blue-green in Cb cores and the dark "green thunderstorm" look (1.6). A subtle and
+    optional per-channel absorption only at tau > 100.
+
+---
+
+## Appendix A: formulas, ready to paste
+
+```glsl
+// Henyey-Greenstein
+float hg(float c, float g){ float g2=g*g; return 0.0795775*(1.0-g2)/pow(1.0+g2-2.0*g*c,1.5); }
+// Draine (alpha=0 -> HG)
+float draine(float c, float g, float a){
+  float g2=g*g; return 0.0795775*(1.0-g2)/pow(1.0+g2-2.0*g*c,1.5)*(1.0+a*c*c)/(1.0+a*(1.0+2.0*g2)/3.0); }
+// Jendersie & d'Eon 2023, d = droplet diameter um, valid 5..50 (params computed on CPU, see 2.2)
+float mieApprox(float c, vec4 p /* gHG, gD, alpha, wD */){
+  return mix(draine(c,p.x,0.0), draine(c,p.y,p.z), p.w); }
+// Extinction from microphysics: lwc g/m3, re um -> 1/m
+float betaExt(float lwc, float re){ return 1.5*lwc/re; }   // 1.5*(lwc*1e-3)/(1000*re*1e-6) = 1.5*lwc/re
+// Energy-conserving step (Hillaire 2015)
+// Sint = (S - S*exp(-st*dx))/st ; L += T*Sint ; T *= exp(-st*dx)
+// Two-stream slab reflectance, conservative
+float slabR(float tau, float g){ float t=(1.0-g)*tau; return t/(2.0+t); }
+// LCL (m above the parcel level), Lawrence 2005
+float lcl(float T_C, float Td_C){ return 125.0*(T_C-Td_C); }
+```
+
+Note `betaExt(0.3, 10) = 0.045 1/m`, matching the table in 1.5. (Units check: 1.5 × 3e-4 kg/m^3 / (1000 kg/m^3 × 1e-5 m) = 0.045.)
+
+```js
+// CPU: Jendersie-d'Eon parameters for 5 <= d <= 50 um
+function mieParams(d){
+  return { gHG: Math.exp(-0.0990567/(d-1.67154)),
+           gD:  Math.exp(-2.20679/(d+3.91029) - 0.428934),
+           alpha: Math.exp(3.62489 - 8.29288/(d+5.52825)),
+           wD:  Math.exp(-0.599085/(d-0.641583) - 0.665888) };
+}
+```
+
+## Appendix B: what could not be verified in this pass
+
+* The Hillaire 2016 course notes PDF (the EA CDN refused the fetch): its exact octave count and a, b, c, the beer shadow map channel layout, and
+  the temporal scheme are given from memory and marked.
+* The Nubis 2017 and 2022 slide content (the CDN PDF refused); only the 2023 Nubis3 deck was read.
+* The Bouthors 2008 paper text (HAL bot wall): the summary is from memory.
+* MSFS cloud internals: no public technical source found.
+* The exact per-wavelength co-albedo digits (1.6) and the ice halo parametrisation (2.3).
