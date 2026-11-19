@@ -110,8 +110,8 @@ export function createVisual(ctx, opts = {}) {
   // ---- main fuselage --------------------------------------------------------------------------------------------------------
   //          d      yc      w     top    bot
   const FS = [
-    [0.00, -0.80, 0.00, 0.00, 0.00], [0.08, -0.80, 0.32, 0.30, 0.28], [0.40, -0.74, 0.74, 0.72, 0.64], [1.20, -0.60, 1.33, 1.28, 1.10], [2.20, -0.42, 1.90, 1.78, 1.60],
-    [3.40, -0.26, 2.42, 2.25, 2.12], [4.80, -0.12, 2.82, 2.70, 2.62], [6.50, -0.04, 3.08, 3.02, 3.00], [8.50, -0.01, 3.22, 3.21, 3.20], [11.0, 0, 3.25, 3.25, 3.25],
+    [0.00, -0.78, 0.00, 0.00, 0.00], [0.08, -0.78, 0.40, 0.36, 0.33], [0.40, -0.72, 0.90, 0.84, 0.74], [1.20, -0.58, 1.55, 1.42, 1.24], [2.20, -0.41, 2.10, 1.92, 1.72],
+    [3.40, -0.25, 2.56, 2.34, 2.20], [4.80, -0.12, 2.90, 2.74, 2.66], [6.50, -0.04, 3.11, 3.04, 3.02], [8.50, -0.01, 3.23, 3.22, 3.21], [11.0, 0, 3.25, 3.25, 3.25],
     [50.0, 0, 3.25, 3.25, 3.25], [54.0, 0.0, 3.23, 3.23, 3.22], [58.0, 0.03, 3.13, 3.17, 3.13], [64.0, 0.16, 2.70, 2.69, 2.68], [70.0, 0.34, 1.80, 1.92, 1.93],
     [73.5, 0.85, 0.96, 0.96, 0.90], [75.9, 1.10, 0.40, 0.36, 0.34], [76.3, 1.13, 0.31, 0.27, 0.26],
   ].map(r => ({ z: D(r[0]), y: r[1], w: r[2], top: r[3], bot: r[4] }));
@@ -352,14 +352,14 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps ------------------------------------------------------------------------------------------------------------------
   const L = G.lights;
-  rig.lamp('nav', L.navLeft, { color: [1, 0.04, 0.02], size: 0.08, squash: [0.6, 0.6, 1.5] });
-  rig.lamp('nav', L.navRight, { color: [0.02, 1, 0.25], size: 0.08, squash: [0.6, 0.6, 1.5] });
-  rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.07 });
-  for (const sx of [-1, 1]) { const p = W.R.at(34.0, 0.88, 'mid'); rig.lamp('strobe', [sx * (p[0] + 0.05), p[1], p[2]], { color: [1, 1, 1], size: 0.07 }); }
-  rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.07 });
-  rig.lamp('beacon', [0, hump.topAt(-14) + 0.04, -14], { color: [1, 0.05, 0.03], size: 0.12, squash: [1, 0.6, 1] });
-  rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.12, squash: [1, 0.6, 1] });
-  for (const sx of [-1, 1]) rig.lamp('landing', [sx * Math.abs(L.landing[0]), L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.13, squash: [1.6, 0.8, 0.5] });
+  rig.lamp('nav', L.navLeft, { color: [1, 0.04, 0.02], size: 0.14, squash: [0.6, 0.6, 1.5] });
+  rig.lamp('nav', L.navRight, { color: [0.02, 1, 0.25], size: 0.14, squash: [0.6, 0.6, 1.5] });
+  rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.12 });
+  for (const sx of [-1, 1]) { const p = W.R.at(34.0, 0.88, 'mid'); rig.lamp('strobe', [sx * (p[0] + 0.05), p[1], p[2]], { color: [1, 1, 1], size: 0.12 }); }
+  rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.12 });
+  rig.lamp('beacon', [0, hump.topAt(-14) + 0.04, -14], { color: [1, 0.05, 0.03], size: 0.18, squash: [1, 0.6, 1] });
+  rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.18, squash: [1, 0.6, 1] });
+  for (const sx of [-1, 1]) rig.lamp('landing', [sx * Math.abs(L.landing[0]), L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.22, squash: [1.6, 0.8, 0.5] });
 
   // ---- animation --------------------------------------------------------------------------------------------------------------
   const fanAng = [0, 0, 0, 0];
@@ -536,9 +536,11 @@ function paintSurfaces(B, o) {
     }
     Q.text(SC.reg, fa(4.2, 0.62)[0], fa(4.2, 0.62)[1], 0.36, { color: SC.style === 'bands' ? SC.titleColor : '#ffffff', font: K.FONT.sans, weight: 700 });
     Q.fill([fa(2.6, 0), fa(14.1, 0), fa(14.1, 0.03), fa(2.6, 0.03)], metal);
-    Q.line([fa(3.55, 1), fa(3.55, 0.7), fa(8.65, 0.7), fa(8.65, 1)], gap); Q.line([fa(8.75, 1), fa(8.75, 0.7), fa(13.85, 0.7), fa(13.85, 1)], gap);
-    for (const y of [5.2, 7.0, 10.5, 12.2]) Q.line([fa(y, 0.7), fa(y, 1)], line);
-    for (const f of [0.22, 0.46]) Q.line([fa(2.8, f), fa(13.9, f)], line);
+    const fg = { px: 1.6, depth: 0.5, dark: 0.3 };
+    Q.line([fa(3.55, 1), fa(3.55, 0.7), fa(8.65, 0.7), fa(8.65, 1)], fg); Q.line([fa(8.75, 1), fa(8.75, 0.7), fa(13.85, 0.7), fa(13.85, 1)], fg);
+    const fl = { px: 1, depth: 0.18, dark: 0.07 };
+    for (const y of [5.2, 7.0, 10.5, 12.2]) Q.line([fa(y, 0.7), fa(y, 1)], fl);
+    for (const f of [0.22, 0.46]) Q.line([fa(2.8, f), fa(13.9, f)], fl);
     Q.noise({ alpha: 0.03, scale: 3 });
   }
 }
