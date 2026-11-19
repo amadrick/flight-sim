@@ -526,7 +526,7 @@ export function createVisual(ctx, opts = {}) {
     // one kit instrument panel per pilot (displays, up-front display, standby, cautions), meeting on the centreline, under one
     // glareshield across both (its lip where instrumentPanel would put it: 0.03 above the panel's top edge, 0.06 aft of it)
     const pH = 0.42, pT = 14 * DEG, pY = EYEY - 0.43, pZ = EYEZ - 0.78;
-    for (const e of eyes) cabAll.add(K.instrumentPanel({ eye: e, kind: 'fighter', dist: 0.78, drop: 0.43, height: pH, width: 1.1, mfd: 0.18, glareshield: false, pages: e[0] < 0 ? ['mfdSA', 'mfdRadar'] : ['mfdEngine', 'mfdSA'], uv: U.console }));
+    for (const e of eyes) cabAll.add(K.instrumentPanel({ eye: e, kind: 'fighter', dist: 0.78, drop: 0.43, height: pH, width: 1.1, mfd: 0.18, glareshield: false, ufc: false, centreDisplay: e[0] < 0 ? 'mfdHsd' : 'mfdTsd', pages: e[0] < 0 ? ['mfdSA', 'mfdRadar'] : ['mfdEngine', 'mfdSA'], uv: U.console }));
     cabAll.add(K.glareshield({ centre: [0, pY + pH / 2 * Math.cos(pT) + 0.03, pZ - pH / 2 * Math.sin(pT) + 0.06], width: 2.24, depth: 0.26, rise: 0.03, uv: U.console, uvPad: U.glareshield }));
     cabAll.add(K.boxBetween([-0.22, FLOOR, PZ + 0.05], [0.22, PB - 0.03, EYEZ + 0.3], U.console));                                              // centre console
     for (const e of eyes) {
@@ -538,7 +538,7 @@ export function createVisual(ctx, opts = {}) {
   // crew: the pilot (left seat, the cockpit camera's eye point) is a part hidden from the cockpit camera; the mission commander
   // (right seat) is static and stays visible from the left seat
   const crewUV = { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove };
-  const pilots = K.pilot({ eye: eyes[0], recline: 13, stick: [0, -0.5, -0.4], throttle: [0.3, -0.5, -0.3], uv: crewUV });
+  const pilots = K.pilot({ eye: eyes[0], recline: 13, stick: [0, -0.5, -0.4], throttle: [0.1, -0.52, -0.3], uv: crewUV });
   cabAll.add(K.pilot({ eye: eyes[1], recline: 13, stick: [0, -0.5, -0.4], throttle: [-0.3, -0.5, -0.3], uv: crewUV }));
   stat.add(cabAll);
 
