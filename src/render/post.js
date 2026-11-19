@@ -26,7 +26,7 @@ uniform mat4 uTaaCurVP;        // this frame's UNJITTERED proj * view
 uniform mat4 uTaaObjInv;       // render space -> aircraft body space (this frame)
 uniform mat4 uTaaObjPrev;      // aircraft body space -> where that point was last frame, in this frame's render space
 uniform vec3 uTaaBoxMin; uniform vec3 uTaaBoxMax;
-uniform vec4 uTaaParams;       // x: history weight, y: 1 = reset history, z: variance gamma, w: unused
+uniform vec4 uTaaParams;       // x: history weight, y: 1 = reset history, z: variance gamma, w: 1 = motion-adaptive (0: previous TAA)
 uniform vec2 uTaaJitter;       // this frame's jitter in pixels
 
 vec3 taa_fwd(vec3 c) { return c / (1.0 + max(c.r, max(c.g, c.b))); }
@@ -49,22 +49,7 @@ vec3 taa_history(vec2 uv, vec2 texel) {
 bool taa_closer(float a, float b) { return uDepthReversed > 0.5 ? a > b : a < b; }
 void main() {
   vec2 texel = 1.0 / uResolution;
-  // 3x3 neighbourhood (tonemapped YCoCg): statistics + a Gaussian-weighted estimate of the current pixel centred on
-  // where the jittered sample really is.
-  vec3 m1 = vec3(0.0), m2 = vec3(0.0), mn = vec3(1e9), mx = vec3(-1e9), cur = vec3(0.0);
-  float wsum = 0.0;
-  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-    vec2 o = vec2(float(i), float(j));
-    vec3 c = taa_cur(vUv + o * texel);
-    m1 += c; m2 += c * c; mn = min(mn, c); mx = max(mx, c);
-    vec2 dd = o - uTaaJitter;
-    float w = exp(-2.29 * dot(dd, dd));
-    cur += c * w; wsum += w;
-  }
-  cur /= wsum;
-  if (uTaaParams.y > 0.5) { outColor = vec4(taa_inv(taa_rgb(cur)), 1.0); return; }
-
-  // velocity of the closest surface in a 5-tap cross
+  // velocity of the closest surface in a 5-tap cross (computed first: the reconstruction filter depends on it)
   float d = sceneDepthRaw(vUv); vec2 uvD = vUv;
   vec2 offs[4] = vec2[4](vec2(texel.x, 0.0), vec2(-texel.x, 0.0), vec2(0.0, texel.y), vec2(0.0, -texel.y));
   for (int k = 0; k < 4; k++) { float dk = sceneDepthRaw(vUv + offs[k]); if (taa_closer(dk, d)) { d = dk; uvD = vUv + offs[k]; } }
@@ -80,22 +65,44 @@ void main() {
     cc = uTaaCurVP * vec4(P, 1.0); cp = uPrevViewProj * vec4(Pp, 1.0);
   }
   vec2 vel = (cc.xy / cc.w - cp.xy / cp.w) * 0.5;
+  float speed = cp.w > 0.0 ? length(vel * uResolution) : 99.0;
+  // motion 0 (still) .. 1 (fast): written to alpha so the final pass can sharpen moving pixels a little more
+  float motion = clamp((speed - 0.5) / 12.0, 0.0, 1.0) * uTaaParams.w;
+
+  // 3x3 neighbourhood (tonemapped YCoCg): statistics + an estimate of the current pixel centred on where the jittered
+  // sample really is. Still pixels use a wide Gaussian (≈ Blackman-Harris, most anti-aliasing); moving pixels, which
+  // rely mostly on the current frame, a narrow one so the frame is not blurred by the reconstruction filter itself.
+  vec3 m1 = vec3(0.0), m2 = vec3(0.0), mn = vec3(1e9), mx = vec3(-1e9), cur = vec3(0.0);
+  float wsum = 0.0, kf = mix(2.29, 5.5, motion);
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 o = vec2(float(i), float(j));
+    vec3 c = taa_cur(vUv + o * texel);
+    m1 += c; m2 += c * c; mn = min(mn, c); mx = max(mx, c);
+    vec2 dd = o - uTaaJitter;
+    float w = exp(-kf * dot(dd, dd));
+    cur += c * w; wsum += w;
+  }
+  cur /= wsum;
+  if (uTaaParams.y > 0.5) { outColor = vec4(taa_inv(taa_rgb(cur)), motion); return; }
+
   vec2 huv = vUv - vel;
-  if (cp.w <= 0.0 || huv.x < 0.0 || huv.x > 1.0 || huv.y < 0.0 || huv.y > 1.0) { outColor = vec4(taa_inv(taa_rgb(cur)), 1.0); return; }
+  if (cp.w <= 0.0 || huv.x < 0.0 || huv.x > 1.0 || huv.y < 0.0 || huv.y > 1.0) { outColor = vec4(taa_inv(taa_rgb(cur)), motion); return; }
 
   vec3 hist = taa_ycocg(taa_fwd(taa_history(huv, texel)));
-  // variance clip toward the neighbourhood mean
+  // variance clip toward the neighbourhood mean (tighter when moving: less ghosting / smearing)
   vec3 mu = m1 / 9.0, sigma = sqrt(max(m2 / 9.0 - mu * mu, 0.0));
-  vec3 lo = max(mn, mu - uTaaParams.z * sigma), hi = min(mx, mu + uTaaParams.z * sigma);
+  float gam = mix(uTaaParams.z, 1.0, motion);
+  vec3 lo = max(mn, mu - gam * sigma), hi = min(mx, mu + gam * sigma);
   vec3 ctr = 0.5 * (lo + hi), ext = 0.5 * (hi - lo) + 1e-5;
   vec3 v = hist - ctr, a = abs(v / ext);
   float ma = max(a.x, max(a.y, a.z));
   hist = ma > 1.0 ? ctr + v / ma : hist;
-  // trust history less under fast motion (less blur), more when still (more samples)
-  float speed = length(vel * uResolution);
-  float keep = uTaaParams.x * mix(1.0, 0.82, clamp(speed / 24.0, 0.0, 1.0));
+  // trust history less under fast motion (less blur), more when still (more samples). The fractional part of the
+  // motion decides how much the bicubic history resample (a slight low-pass) accumulates.
+  float subpx = abs(fract(vel.x * uResolution.x + 0.5) - 0.5) + abs(fract(vel.y * uResolution.y + 0.5) - 0.5);
+  float keep = uTaaParams.x * mix(1.0, 0.8, clamp(speed / 20.0, 0.0, 1.0)) * mix(1.0, 0.94, clamp(subpx * 2.0, 0.0, 1.0) * step(0.5, speed) * uTaaParams.w);
   vec3 res = mix(cur, hist, keep);
-  outColor = vec4(taa_inv(taa_rgb(res)), 1.0);
+  outColor = vec4(taa_inv(taa_rgb(res)), motion);
 }`;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -137,6 +144,7 @@ uniform vec3 uLensColor;   // sun irradiance at the camera (tints the glare)
 uniform vec4 uGrade;       // x: AgX look power (contrast), y: saturation, z: 8-bit dither amplitude (0 = float target), w: frame
 uniform float uDebug;
 uniform float uNightGrade; // 0..1: rod-vision grade for dark-adapted scenes
+uniform float uAlphaMotion; // 1: pass the TAA motion (tHDR.a) through alpha for the final sharpen, 0: luma for FXAA
 ${flareGLSL()}
 
 vec3 agxContrast(vec3 x) {
@@ -199,7 +207,8 @@ vec3 lens(vec2 uv) {
 }
 
 void main() {
-  vec3 c = max(texture(tHDR, vUv).rgb, 0.0);
+  vec4 hdr = texture(tHDR, vUv);
+  vec3 c = max(hdr.rgb, 0.0);
   if (uTone.y > 0.0) c = mix(c, texture(tBloom, vUv).rgb, uTone.y);
   if (uLensSun.z > 0.0005) c += lens(vUv);
   c *= uTone.x;
@@ -217,7 +226,7 @@ void main() {
     float n = hash12(gl_FragCoord.xy + uGrade.w * 7.31) + hash12(gl_FragCoord.yx * 1.37 + uGrade.w * 3.17 + 19.0) - 1.0;
     c += n * uGrade.z;
   }
-  outColor = vec4(c, dot(c, vec3(0.299, 0.587, 0.114)));
+  outColor = vec4(c, uAlphaMotion > 0.5 ? clamp(hdr.a, 0.0, 1.0) : dot(c, vec3(0.299, 0.587, 0.114)));
 }`;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -226,6 +235,7 @@ void main() {
 const FINAL_FRAG = HEAD + /* glsl */`
 uniform sampler2D tLDR; uniform vec2 uSrcTexel;
 uniform vec4 uFinal;       // x: mode (0 plain, 1 FXAA, 2 CAS), y: sharpness 0..1, z: frame, w: dither amplitude
+uniform vec4 uFinal2;      // x: 1 = upscaling (bicubic centre tap), y: extra sharpness for moving pixels (CAS, alpha = motion)
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 
 vec3 fxaa(vec2 uv) {
@@ -272,13 +282,27 @@ vec3 fxaa(vec2 uv) {
   vec2 fuv = uv; if (horz) fuv.y += o * stepLen; else fuv.x += o * stepLen;
   return texture(tLDR, fuv).rgb;
 }
+// Catmull-Rom (5 taps, Jimenez) — used for the centre tap when the internal resolution is below the output
+vec4 bicubic(vec2 uv) {
+  vec2 pos = uv / uSrcTexel, c = floor(pos - 0.5) + 0.5, f = pos - c;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2, t0 = (c - 1.0) * uSrcTexel, t3 = (c + 2.0) * uSrcTexel, t12 = (c + w2 / w12) * uSrcTexel;
+  vec4 r = texture(tLDR, vec2(t12.x, t0.y)) * (w12.x * w0.y) + texture(tLDR, vec2(t0.x, t12.y)) * (w0.x * w12.y)
+         + texture(tLDR, t12) * (w12.x * w12.y) + texture(tLDR, vec2(t3.x, t12.y)) * (w3.x * w12.y)
+         + texture(tLDR, vec2(t12.x, t3.y)) * (w12.x * w3.y);
+  return r / ((w12.x * w0.y) + (w0.x * w12.y) + (w12.x * w12.y) + (w3.x * w12.y) + (w12.x * w3.y));
+}
 vec3 cas(vec2 uv) {
-  vec3 c = texture(tLDR, uv).rgb;
+  vec4 c4 = uFinal2.x > 0.5 ? bicubic(uv) : texture(tLDR, uv);
+  vec3 c = c4.rgb;
   vec3 a = texture(tLDR, uv - vec2(0.0, uSrcTexel.y)).rgb, b = texture(tLDR, uv - vec2(uSrcTexel.x, 0.0)).rgb;
   vec3 d = texture(tLDR, uv + vec2(uSrcTexel.x, 0.0)).rgb, e = texture(tLDR, uv + vec2(0.0, uSrcTexel.y)).rgb;
   vec3 mn = min(c, min(min(a, b), min(d, e))), mx = max(c, max(max(a, b), max(d, e)));
+  mn = min(mn, c); mx = max(mx, c);
   vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
-  vec3 w = amp * (-1.0 / mix(8.0, 5.0, uFinal.y));
+  float sharp = clamp(uFinal.y + uFinal2.y * clamp(c4.a, 0.0, 1.0), 0.0, 1.0);
+  vec3 w = amp * (-1.0 / mix(8.0, 4.5, sharp));
   return clamp((c + (a + b + d + e) * w) / (1.0 + 4.0 * w), 0.0, 1.0);
 }
 void main() {
@@ -297,7 +321,7 @@ export function createPostPasses(ctx) {
     ...F, tCurrent: { value: null }, tHistory: { value: null },
     uTaaCurVP: { value: new THREE.Matrix4() }, uTaaObjInv: { value: new THREE.Matrix4() }, uTaaObjPrev: { value: new THREE.Matrix4() },
     uTaaBoxMin: { value: new THREE.Vector3(1, 1, 1) }, uTaaBoxMax: { value: new THREE.Vector3(-1, -1, -1) },
-    uTaaParams: { value: new THREE.Vector4(0.9, 1, 1.25, 0) }, uTaaJitter: { value: new THREE.Vector2() },
+    uTaaParams: { value: new THREE.Vector4(0.9, 1, 1.25, 1) }, uTaaJitter: { value: new THREE.Vector2() },
   }, TAA_FRAG);
   const down = mat({ tSrc: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uKaris: { value: 0 } }, DOWN_FRAG);
   const up = mat({ tLow: { value: null }, tHigh: { value: null }, uLowTexel: { value: new THREE.Vector2() }, uScatter: { value: 0.65 } }, UP_FRAG);
@@ -305,10 +329,10 @@ export function createPostPasses(ctx) {
   const tonemap = mat({
     tHDR: { value: null }, tBloom: { value: null },
     uTone: { value: new THREE.Vector4(1, 0.05, 0.2, 1.777) }, uLensSun: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
-    uLensColor: { value: new THREE.Vector3() }, uGrade: { value: new THREE.Vector4(1.18, 1.16, 0, 0) }, uDebug: { value: 0 }, uNightGrade: { value: 0 },
+    uLensColor: { value: new THREE.Vector3() }, uGrade: { value: new THREE.Vector4(1.18, 1.16, 0, 0) }, uDebug: { value: 0 }, uNightGrade: { value: 0 }, uAlphaMotion: { value: 0 },
     ...flare.uniforms,
   }, TONEMAP_FRAG);
-  const final = mat({ tLDR: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uFinal: { value: new THREE.Vector4(0, 0.5, 0, 1 / 255) } }, FINAL_FRAG);
+  const final = mat({ tLDR: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uFinal: { value: new THREE.Vector4(0, 0.5, 0, 1 / 255) }, uFinal2: { value: new THREE.Vector4(0, 0, 0, 0) } }, FINAL_FRAG);
   const copy = mat({ tSrc: { value: null } }, COPY_FRAG);
   return { taa, down, up, tonemap, final, copy, flare };
 }

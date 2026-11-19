@@ -12,11 +12,27 @@ ${FRAME_UNIFORMS_GLSL}
 ${atmGLSL}
 uniform vec4 uEnvWeather;     // x: overcast amount at the player (0..1), y: cloud-deck-below amount, z: sky scale, w: unused
 uniform vec3 uEnvCloudDeck;   // radiance of a cloud deck seen from above
+uniform vec3 uEnvGroundNear;  // measured radiance of the ground close to the player (runway / apron / grass)
+uniform vec3 uEnvGroundFar;   // measured radiance of the terrain further out
+uniform vec4 uEnvGround;      // x: player height above ground (m), y: near/far split (m), z: 1 = measured values valid
 void main() {
   // inverse of three's equirectUv(): u = atan(z, x) / 2π + 0.5, v = asin(y) / π + 0.5
   float phi = (vUv.x - 0.5) * 6.28318530718, th = (vUv.y - 0.5) * 3.14159265359;
   vec3 dir = vec3(cos(th) * cos(phi), sin(th), cos(th) * sin(phi));
   vec3 c = atmSkyRadiance(dir);
+  if (uEnvGround.z > 0.5 && dir.y < 0.0) {
+    // the real ground under the aircraft: a flat plane at the player's height, near (runway) → far (terrain) colour,
+    // seen through the atmosphere; it meets the LUT's own horizon where the plane would be beyond the horizon
+    float h = uAtmView.w, r = 6360.0 + h, rmu = r * dir.y;
+    float disc = rmu * rmu - h * (2.0 * 6360.0 + h);
+    if (disc >= 0.0) {
+      float tSph = (-rmu - sqrt(disc)) * 1000.0;
+      float t = min(max(uEnvGround.x, 0.5) / max(-dir.y, 1e-4), max(tSph, 1.0));
+      vec3 g = mix(uEnvGroundNear, uEnvGroundFar, smoothstep(uEnvGround.y * 0.5, uEnvGround.y * 2.0, t));
+      vec4 ap = atmAerialAt(dir, t * 0.001);
+      c = ap.rgb + g * ap.a;
+    }
+  }
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
   // under an overcast the "sky" is a grey, fairly uniform cloud base
   float up = smoothstep(-0.05, 0.1, dir.y);
@@ -32,10 +48,12 @@ const LOD_MIN = 4, INTEGRATION_SIZE = 16, INTEGRATION_LEVELS = 3, GGX_SAMPLES = 
 
 export function createEnvironment(ctx, atmosphere, caps) {
   const { renderer, scene } = ctx;
-  const cubeSizeFor = () => ({ low: 32, medium: 64, high: 128, ultra: 128 }[ctx.quality.level] || 64);
+  // high / ultra: 256 px faces so clear-coated skins and canopies show a crisp horizon (PMREM ≈ 1.6 MB, time-sliced)
+  const cubeSizeFor = () => ({ low: 32, medium: 64, high: 256, ultra: 256 }[ctx.quality.level] || 64);
   let cubeSize = 0, eqRT = null, pmremRT = null;
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const uniforms = { uEnvWeather: { value: new THREE.Vector4(0, 0, 1, 0) }, uEnvCloudDeck: { value: new THREE.Vector3(0.5, 0.5, 0.5) } };
+  const uniforms = { uEnvWeather: { value: new THREE.Vector4(0, 0, 1, 0) }, uEnvCloudDeck: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
+    uEnvGroundNear: { value: new THREE.Vector3(0.05, 0.05, 0.05) }, uEnvGroundFar: { value: new THREE.Vector3(0.05, 0.05, 0.05) }, uEnvGround: { value: new THREE.Vector4(2, 60, 0, 0) } };
   const pass = new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, blending: THREE.NoBlending, toneMapped: false, fog: false,
     uniforms: { ...ctx.uniforms.frame, ...atmosphere.uniforms, ...uniforms },

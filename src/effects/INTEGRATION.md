@@ -11,9 +11,9 @@ Attaches to the player on `session:start`, detaches and clears all live particle
 | `fxglsl.js` | shared uniforms + GLSL header (frame uniforms, depth helpers, atmosphere API, cloud shadow, media lighting, `fxFinish`) |
 | `particles.js` | GPU particle system (instanced quads, analytic motion in the VS, ring buffer, one draw) |
 | `trails.js` | volumetric tube trails (contrails, wingtip vortices, display smoke): analytic gaussian-tube optical depth per segment |
-| `plume.js` | ray-marched afterburner plume / dry nozzle glow (body-fixed) |
+| `plume.js` | ray-marched afterburner plume (body-fixed). Dry thrust draws nothing (the aircraft's modelled nozzle interiors carry the dull EGT glow); AB = potential core + shock diamonds/Mach discs + blue lip sheath + turbulent mixing layer + faint wide outer plume, log-compressed in display units against `ctx.env.exposure` (restrained by day, blooms at dusk/night) |
 | `vapor.js` | ray-marched body-fixed condensation: over-wing sheet, LERX vortices, transonic vapour cone |
-| `lights.js` | nav / strobe / beacon / landing-lamp HDR sprites (one draw) + landing/taxi `SpotLight` + beam shaft |
+| `lights.js` | nav / strobe / beacon / landing-lamp HDR sprites (one draw): lens-sized (3–20 cm), energy-conserving (`cover = rp²/r²`, 0.9 px minimum), exposure-aware soft limit, halo + spikes only at night and not when the visual has its own `halos` object (f22, fa18) + landing/taxi `SpotLight` + beam shaft |
 | `weatherfx.js` | rain streaks around the camera, lightning bolts, canopy rain overlay (cockpit view) |
 | `emitters.js` | CPU spawn recipes (tyre smoke, dust, spray, sparks, explosion, wreck fire/smoke column, shock ring…) |
 | `anchor.js` | anchored float32 storage that survives `originShift` (rebases only every ~12 km) |
@@ -75,9 +75,13 @@ height, wingArea, noseZ, tailZ, cgHeight, pilotEye}`, `def.specs.{engineType, th
 * **Rain**: ≤ 9 000 streak quads × precipitation × quality. Canopy rain: 1 fullscreen triangle, ~40 ALU ops/pixel.
 * **Lights**: ≤ 12 sprites (1 draw); 1 SpotLight + 1 PointLight shared by the scene.
 
+## Feature switches
+`plume=classic` previous plume incl. the dry nozzle-exit glow; `acl=classic` previous aircraft-light sprites.
+`uFxExposure` (shared uniform) carries `ctx.env.exposure` to every effects shader.
+
 ## Debug URL params (headless testing only; harmless in production)
 `fx=ab,contrail,vapor,cone,crash,touchdown,rain,lights,lightning,spray,sparks,smoke,boom,all` forces effects;
 `fxtm=1` tone-maps in-shader (the stub pipeline draws POST after its tone map); `fxexp=<x>` preview exposure;
-`fxcam=side|front|rear|far|low|top|cockpit`, `fxdist=<m>` debug camera; `fxthr=<0..1>` force throttle;
+`fxcam=side|front|rear|far|low|top|cockpit`, `fxdist=<m>` debug camera; `fxthr=<0..1>` force throttle; `fxab=<0..1>` force the afterburner stage of the plume (visual only);
 `fxlevel=1` hold altitude (stub physics sinks); `fxwater=1&fxagl=<m>` teleport low over the nearest water (spray).
 Example: `node tools/shot.mjs --params "aircraft=f16&start=air&tod=23&fx=ab&fxtm=1&fxcam=side&fxdist=9"`.

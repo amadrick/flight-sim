@@ -10,9 +10,10 @@ post-processing. Nothing outside `src/render/**` was modified.
 | `atmosphere-glsl.js` | `ATMOSPHERE_GLSL` (the public GLSL API, LUT lookups only) + `ATM_MODEL_GLSL` (medium model + ray integration, LUT passes only) |
 | `atmosphere.js` | LUT generation passes (transmittance, multi-scattering, sky-view, aerial-perspective volume), weather coupling, CPU transmittance |
 | `sky-glsl.js` | sun disc (limb darkening), moon (phase-correct), stars, Milky Way |
-| `environment.js` | sky capture → PMREM (`scene.environment`), refreshed incrementally |
+| `environment.js` | sky capture → PMREM (`scene.environment`, 256 px faces at high/ultra), refreshed incrementally; lower hemisphere = flat ground at the player's height with the near (runway) / far (terrain) radiance measured from the frame, through the aerial perspective |
 | `shadows.js` | `KeyLight` (sun/moon), `FocusShadow` (2 cascades in one atlas), shadow sampling chunk, `sunShadow()` GLSL for raw shaders |
-| `post.js` | TAA, bloom pyramid, lens + AgX tone map, FXAA / CAS + dither |
+| `post.js` | TAA (motion-adaptive reconstruction filter / clip / history weight, motion in alpha), bloom pyramid, lens + AgX tone map, FXAA / CAS (motion-adaptive, bicubic upscale) + dither |
+| `ao.js` | half-res SAO from depth (12 taps, fixed 4x4 Bayer rotation) + 4x4 bilateral blur; composite applies it to the ambient share only (direct share from the shadow map x N.L) |
 
 ## Public API
 Contract (unchanged): `createPipeline(ctx) → { atmosphere: { uniforms, glsl }, setSize(w, h, dpr), render(dt), sceneTarget, depthTexture }`
@@ -80,7 +81,9 @@ Additions (all optional to use):
    against the depth *copy*. `tSceneDepth` is **not** attached to the bound framebuffer, so POST shaders may sample
    it freely (no feedback loop). POST objects are not fogged by the pipeline (`pipeline.postAerialPerspective` is
    unset): apply `atmAerialPerspective()` yourself. Blend premultiplied.
-7. TAA → bloom pyramid → 4×1 probe (metering, sky irradiance, sun visibility, cloud shadow at the player; async read-back)
+3b. SSAO (half res, after the main pass; see `ao.js`), applied in the composite before cloud shadows / aerial perspective.
+7. TAA → bloom pyramid → 6×1 probe (metering, sky irradiance, sun visibility, cloud shadow at the player, measured near / far
+   ground radiance for the reflection environment; async read-back)
    → lens + tone map (AgX) → final FXAA/CAS + dither to the canvas.
 
 ## Quality / capability handling
@@ -98,6 +101,8 @@ Emits nothing.
 `nofloat=1`, `notaa=1`, `nodrs=1`, `noflare=1`, `exposure=<v>`, `dbgshadow=<0..1>` (fake uniform cloud shadow),
 `dbgflash=<frame>` (fire a lightning event), `moonaz=<deg>&moonel=<deg>`, `lookyaw=<deg>&lookpitch=<deg>` (use with
 `notaa=1`), `rdebug=notonemap|scene|hdr`.
+Feature switches: `ao=0|1` (SSAO off / force on; default on except quality=low), `aoradius`, `aointensity`, `aostrength`;
+`envground=0` (generic ground in reflections instead of the measured one); `taa=classic` (previous TAA + sharpen).
 
 ## Requests for integrator-owned files (none are blocking)
 * `src/core/context.js` sets `renderer.shadowMap.type = PCFSoftShadowMap`; the pipeline overrides it with
