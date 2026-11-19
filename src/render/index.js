@@ -739,6 +739,33 @@ export async function createPipeline(ctx) {
     return out;
   }
 
+  // Debug self-test of the POST-layer contract: a POST object that SAMPLES tSceneDepth must draw into the HDR target
+  // (same size as uResolution) without a framebuffer feedback loop. Renders one extra frame.
+  function testPostLayer() {
+    const gl = renderer.getContext();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, depthTest: true, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, toneMapped: false,
+      uniforms: { tSceneDepth: F.tSceneDepth, uResolution: F.uResolution, uNearZ: { value: F.uDepthReversed.value > 0.5 ? 0.999 : -0.999 } },
+      vertexShader: 'uniform float uNearZ; void main() { gl_Position = vec4(position.xy, uNearZ, 1.0); }',   // just behind the near plane: passes the depth test everywhere
+      fragmentShader: 'precision highp float; uniform highp sampler2D tSceneDepth; uniform vec2 uResolution; out vec4 o;\n'
+        + 'void main() { float d = texture(tSceneDepth, gl_FragCoord.xy / uResolution).r; o = vec4(7.0 + d, 0.0, 0.0, 1.0); }',
+    });
+    const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.layers.set(LAYERS.POST); mesh.renderOrder = 1e6;
+    scene.add(mesh);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+    render(0);
+    const glError = gl.getError();
+    const buf = caps.float ? new Uint16Array(4) : new Uint8Array(4);
+    renderer.readRenderTargetPixels(hdrTarget, hdrTarget.width >> 1, 2, 1, 1, buf);
+    scene.remove(mesh); geo.dispose(); mat.dispose(); taaReset = true;
+    const red = caps.float ? THREE.DataUtils.fromHalfFloat(buf[0]) : buf[0] / 255;
+    return { glError, drawn: red > (caps.float ? 6.5 : 0.99), sameSize: hdrTarget.width === F.uResolution.value.x && hdrTarget.height === F.uResolution.value.y,
+      depthAttachmentIsSceneDepth: hdrTarget.depthTexture === F.tSceneDepth.value };
+  }
+
   const pipeline = {
     atmosphere: { uniforms: atmosphere.uniforms, glsl: ATMOSPHERE_GLSL },
     sceneTarget, depthTexture,
@@ -749,7 +776,7 @@ export async function createPipeline(ctx) {
     get exposure() { return exposure; },
     get internalSize() { return { width: size.w, height: size.h, scale: drs }; },
     resetHistory() { taaReset = true; snapFrames = Math.max(snapFrames, 2); },
-    debug: { atmosphere, env, caps, testGLSL, get state() { return { exposure, logLum, occl, kDirect, Fpl, keyIsMoon, keyFade, sunVis, drs, flash, probeValid, meterValid, csm }; } },
+    debug: { atmosphere, env, caps, testGLSL, testPostLayer, get state() { return { exposure, logLum, occl, kDirect, Fpl, keyIsMoon, keyFade, sunVis, drs, flash, probeValid, meterValid, csm }; } },
   };
   return pipeline;
 }

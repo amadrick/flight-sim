@@ -34,7 +34,9 @@ Additions (all optional to use):
 * `pipeline.keyLight` (same object as `ctx.env.sunLight`), `pipeline.hdrTarget`, `pipeline.exposure`,
   `pipeline.internalSize` (`{ width, height, scale }`), `pipeline.resetHistory()` (call after a camera cut the
   pipeline cannot see; `camera:mode`, `session:start`, `time:change` are already handled).
-* `pipeline.debug` — `{ atmosphere, env, caps, testGLSL(), state }`.
+* `pipeline.debug` — `{ atmosphere, env, caps, testGLSL(), testPostLayer(), state }`. `testPostLayer()` draws a
+  POST-layer object that samples `tSceneDepth` and returns `{ glError, drawn, sameSize, depthAttachmentIsSceneDepth }`
+  (expected `0, true, true, false`). Unit tests: `node --test src/render/render.test.js`.
 
 ## What other modules need to know
 1. **`ctx.env.sunLight` is the key light**: the sun by day, the moon at night (cross-faded through zero, so shadows never
