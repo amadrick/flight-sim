@@ -293,7 +293,7 @@ export function createVisual(ctx, opts = {}) {
   }
   // instrument panel + glareshield (kit): top of the coaming at ≈ 0.83 as on the real jet; the F-15C keeps its radar scope (VSD)
   // and an attitude indicator, the E multi-purpose displays
-  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.62, drop: 0.51, height: 0.42, width: 0.8, pages: isE ? ['mfdSA', 'mfdRadar'] : ['mfdRadar', 'standby'], uv: U.console }));
+  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.62, drop: 0.51, height: 0.42, width: 0.8, analogue: !isE, centreDisplay: isE ? 'mfdHsd' : undefined, pages: isE ? ['mfdSA', 'mfdRadar'] : ['mfdRadar', 'standby'], uv: U.console }));
   stat.add(K.box(0.22, 0.32, 0.45, U.console).translate(0, 0.16, -7.5));                   // centre pedestal
   for (const sx of [-1, 1]) stat.add(K.box(0.15, 0.1, 1.2, U.console).translate(sx * 0.38, 0.52, -6.95));   // side consoles
   stat.add(K.stick({ base: [0, 0.32, -7.42], height: 0.32, uv: U.black, uvGrip: U.dark }));
@@ -313,7 +313,7 @@ export function createVisual(ctx, opts = {}) {
   const pilotUV = { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove };
   const pilotMesh = K.pilot({ eye, recline: 14, stick: [0, -0.43, -0.3], throttle: [-0.34, -0.42, -0.08], uv: pilotUV });
   if (isE) {   // WSO cockpit
-    stat.add(K.instrumentPanel({ eye: eye2, kind: 'fighter', dist: 0.56, drop: 0.45, height: 0.36, width: 0.72, mfd: 0.15, pages: ['mfdStores', 'mfdSA'], uv: U.console }));
+    stat.add(K.instrumentPanel({ eye: eye2, kind: 'fighter', dist: 0.56, drop: 0.45, height: 0.36, width: 0.72, mfd: 0.15, centreDisplay: 'mfdTgp', pages: ['mfdStores', 'mfdSA'], uv: U.console }));
     for (const sx of [-1, 1]) stat.add(K.stick({ base: [sx * 0.33, 0.66, -6.35], height: 0.14, uv: U.black, uvGrip: U.dark }));
     stat.add(aces(eye2));
     stat.add(K.pilot({ eye: eye2, recline: 14, stick: [0.33, -0.42, -0.18], throttle: [-0.33, -0.42, -0.18], uv: pilotUV }));
