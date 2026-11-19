@@ -175,7 +175,7 @@ export function createNoise2D(seed = 1337) {
  *   A = random life-cycle phase (growing / mature / decaying)
  * Options: size (texels), period (m), dMin, dMax (m), slope, fill (area fraction covered by the nominal disks).
  */
-export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, fill = 0.55 } = {}) {
+export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, fill = 0.55, borderTaper = true } = {}) {
   const rnd = mulberry(seed * 31 + 7);
   const S = size, texel = period / S;
   // sizes: inverse CDF of D^-slope on [dMin, dMax], sorted descending, until the disk area reaches `fill`
@@ -210,7 +210,7 @@ export function createCellField({ seed = 1337, size = 512, period = 20480, dMin 
     }
   }
   // rasterise each cell out to two radii, keeping the smallest scaled distance per texel
-  const best = new Float32Array(S * S).fill(2), owner = new Int32Array(S * S).fill(-1);
+  const best = new Float32Array(S * S).fill(2), best2 = new Float32Array(S * S).fill(2), owner = new Int32Array(S * S).fill(-1);
   placed.forEach((c, k) => {
     const R = 2 * c.r / texel, cx = c.x / texel - 0.5, cz = c.z / texel - 0.5;
     const x0 = Math.floor(cx - R), x1 = Math.ceil(cx + R), z0 = Math.floor(cz - R), z1 = Math.ceil(cz + R);
@@ -221,28 +221,40 @@ export function createCellField({ seed = 1337, size = 512, period = 20480, dMin 
         const dx = (i - cx) * inv, d = Math.sqrt(dx * dx + dz * dz);
         if (d >= 2) continue;
         const idx = row * S + (((i % S) + S) % S);
-        if (d < best[idx]) { best[idx] = d; owner[idx] = k; }
+        if (d < best[idx]) { best2[idx] = best[idx]; best[idx] = d; owner[idx] = k; }
+        else if (d < best2[idx]) best2[idx] = d;
       }
     }
   });
-  const data = new Uint8Array(S * S * 4);
+  // Half float on the GPU (round four): with 8 bits the distance to the centre came in steps of radius / 128 (8 m for
+  // a 2 km cell), which showed as vertical striations on the flanks of big clouds seen from a few hundred metres.
+  const data = new Float32Array(S * S * 4), half = new Uint16Array(S * S * 4);
   for (let i = 0; i < S * S; i++) {
     const c = placed[owner[i]];
-    data[i * 4] = Math.round(255 * Math.max(0, 0.5 + 0.5 * (1 - best[i])));
-    if (c) { data[i * 4 + 1] = Math.round(255 * c.g); data[i * 4 + 2] = Math.round(255 * c.id); data[i * 4 + 3] = Math.round(255 * c.ph); }
-    else { data[i * 4 + 2] = 255; }
+    // Round four: where a neighbour's territory begins, the owner (size, id, phase) switches within one 40 m texel.
+    // A vigorous cloud that filled its cell was cut there by a smooth vertical cliff far steeper than anything the
+    // detail erosion could move: the featureless walls of big cumulus seen from close by. The stored distance now
+    // rises toward the border (to 1.25 radii on it), so the cloud tapers into a clear slot and its flank stays a
+    // noise surface.
+    const dEff = borderTaper ? Math.max(best[i], 1.25 - 2 * (best2[i] - best[i])) : best[i];
+    data[i * 4] = Math.max(0, 0.5 + 0.5 * (1 - dEff));
+    if (c) { data[i * 4 + 1] = c.g; data[i * 4 + 2] = c.id; data[i * 4 + 3] = c.ph; }
+    else { data[i * 4 + 2] = 1; }
   }
+  for (let i = 0; i < data.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i]);
   // Bilinear wrapping CPU sampler (same as the GPU fetch at mip 0); u, v in tiles.
   function sample(u, v, out) {
     const x = u * S - 0.5, y = v * S - 0.5;
     const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
     const xa = ((x0 % S) + S) % S, xb = (xa + 1) % S, ya = ((y0 % S) + S) % S, yb = (ya + 1) % S;
     const i00 = (ya * S + xa) * 4, i10 = (ya * S + xb) * 4, i01 = (yb * S + xa) * 4, i11 = (yb * S + xb) * 4;
-    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy, k = 1 / 255;
+    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy, k = 1;
     for (let c = 0; c < 4; c++) out[c] = (data[i00 + c] * w00 + data[i10 + c] * w10 + data[i01 + c] * w01 + data[i11 + c] * w11) * k;
     return out;
   }
-  return { texture: dataTex(data, S, THREE.RGBAFormat), data, size: S, period, dMin, dMax, count: placed.length, sample };
+  const texture = dataTex(half, S, THREE.RGBAFormat);
+  texture.type = THREE.HalfFloatType;
+  return { texture, data, size: S, period, dMin, dMax, count: placed.length, sample };
 }
 
 // ------------------------------------------------------------------------------------------------ GPU 3D noise

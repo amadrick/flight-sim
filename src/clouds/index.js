@@ -17,9 +17,10 @@ import { saturate, smoothstep, lerp, damp } from '../core/math.js';
 import { createNoise2D, createNoise3D, createCellField, sampleLowRes } from './noise.js';
 import { WEATHER_FIELD_GLSL, makeWeatherFieldJS, deriveWeatherParams, densityFromField } from './weather-field.js';
 import {
-  CLOUD_SHADOW_GLSL, DEFAULT_SCATTER_GLSL, marchFragment, resolveFragment, OUTPUT_FRAG,
+  CLOUD_SHADOW_GLSL, DEFAULT_SCATTER_GLSL, marchFragment, resolveFragment, resolveFragmentR3, OUTPUT_FRAG,
   shadowBakeFragment, weatherBakeFragment, CIRRUS_BAKE_FRAG,
 } from './shaders.js';
+import { createCloudMultiScatter } from '../neural/cloud-ms.js';
 
 const FALLBACK_ATMOSPHERE_GLSL = /* glsl */`
 vec3 atmSunIlluminance(vec3 p) { return uSunColor; }
@@ -65,11 +66,13 @@ export async function createClouds(ctx) {
   // ------------------------------------------------------------------------------------------------ textures
   const noise2 = createNoise2D(ctx.params?.seed ?? 1337);
   const noise3 = createNoise3D(renderer);
-  const cells = createCellField({ seed: ctx.params?.seed ?? 1337 });
+  const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(ctx.params?.clBorder ?? 1) !== '0' });
   const weatherField = makeWeatherFieldJS(noise2);
 
   const atmGLSL = ctx.pipeline?.atmosphere?.glsl || FALLBACK_ATMOSPHERE_GLSL;
   const atmUniforms = ctx.pipeline?.atmosphere?.uniforms || {};
+  // round five: physical sun / moon light (needs the pipeline atmosphere's transmittance LUT and illuminance uniforms)
+  const physLight = /vec3\s+atmLightTransmittance\s*\(/.test(atmGLSL) && 'uAtmSunIllum' in atmUniforms && 'uAtmMoonIllum' in atmUniforms;
 
   const P = deriveWeatherParams(ctx.weather);              // current cloud-model parameters
   const bake = { sx: 1, sz: 0, streets: 0, convective: 0, time: 0 };   // parameters baked into the weather map
@@ -100,17 +103,29 @@ export async function createClouds(ctx) {
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
     tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture },
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
+    uClDet: v4(1, 1, 1, 1), uClLife: v4(0, 1, 0, 0), uClPhys: v4(2e-3, 1, 0.6, 1), uClMie: v4(0.9946, 0.594, 27.1, 0.498), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
     uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
-    uClLightDir: { value: new THREE.Vector3(0, 1, 0) }, uClLightSel: v4(1, 1, 1, 0), uClMoonE: { value: new THREE.Vector3() },
+    uClLightDir: { value: new THREE.Vector3(0, 1, 0) }, uClLightSel: v4(1, 1, 1, 0), uClMoonE: { value: new THREE.Vector3() }, uClLight2: v4(0, 1, 0, 0),
     uClFlash: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uClCirrus: v4(10000, 0, 0, 0), uClDebug: v4(), uClAmbUp: v4(), uClAmbDn: v4(),
     uClTemporal: v4(), uClTemporal2: v4(1, 0, 0, 0), uClWindVel: v4(), uClFlashColor: { value: new THREE.Vector3(18, 21, 26) }, uClN: { value: 2 },
     tClMarch: { value: null }, tClMarchAux: { value: null }, tClHist: { value: null }, tClHistAux: { value: null },
     uClBakeA: v4(1, 0, 0, 0), uClBakeB: v4(), uClBakeWx: v4(0, 0, WEATHER_MAP_SIZE_M, 0),
     uClBakeShadowA: v4(0, 0, SHADOW_MAP_SIZE_M, 0), uClBakeShadowB: v4(0, 0, 1, 0),
   };
-  const allUniforms = () => ({ ...ctx.uniforms.frame, ...atmUniforms, ...shadowUniforms, ...U, ...(scatterModel?.uniforms || {}) });
+  // Round five: learned multiple scattering (src/neural/cloud-ms.js, docs/clouds/NEURAL.md) is the default light model.
+  // ?clMs=0 falls back to the model main.js installs with setScatterModel (round-three nets), ?scatter=classic to the
+  // analytic one. reff from the droplet number of the starting weather (only the phase LUT depends on it).
+  let msModel = null;
+  if (raw.clMs !== '0' && raw.scatter !== 'classic') {
+    try {
+      const reff = Math.min(16, Math.max(6, 12 * Math.cbrt(150 / P.dropletN)));
+      msModel = createCloudMultiScatter({ reff });
+    } catch (e) { console.warn('[clouds] learned multiple scattering unavailable', e); msModel = null; }
+  }
+  U.uClMs = v4(dbg('clMsN', 4), dbg('clMsDetail', 0.5), 0, 0);
+  const allUniforms = () => ({ ...ctx.uniforms.frame, ...atmUniforms, ...shadowUniforms, ...U, ...(scatterModel?.uniforms || {}), ...(msModel?.uniforms || {}) });
   const mkPass = (frag, uniforms) => new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
     uniforms: uniforms || allUniforms(), vertexShader: FULLSCREEN_VERT, fragmentShader: frag,
@@ -120,6 +135,10 @@ export async function createClouds(ctx) {
   let scatterModel = null;
   let N = 2, steps = 80, lightSteps = 4, shadowSteps = 16, shadowStrips = 8, maxDistQ = 200000;
   let marchPass = null, resolvePass = null, shadowPass = null;
+  // round-four stages (each can be switched off for A/B): clTaa (resolve), clDet (detail cascade), clMicro (detailed
+  // light samples), clCav (crease occlusion strength), clRef (surface refinement)
+  const taaR4 = dbg('clTaa', 1) > 0;
+  let detailLevel = 2;                    // 0 = low (cascade only), 1 = medium, 2 = high / ultra
   const outputPass = mkPass(OUTPUT_FRAG);
   const weatherPass = mkPass(weatherBakeFragment(WEATHER_FIELD_GLSL));
   let jitterSeq = jitterSequence(2), jitterIdx = 0, frameCount = 0;
@@ -133,16 +152,17 @@ export async function createClouds(ctx) {
     shadowRes = lvl === 'low' ? 256 : lvl === 'medium' ? 512 : 1024;
     shadowSteps = lvl === 'low' ? 12 : lvl === 'medium' ? 16 : 24;
     shadowStrips = 8;
+    detailLevel = lvl === 'low' ? 0 : lvl === 'medium' ? 1 : 2;
     maxDistQ = dbg('cloudDist', lvl === 'low' ? 150000 : 200000);
   }
 
   function buildMaterials() {
     marchPass?.dispose(); resolvePass?.dispose(); shadowPass?.dispose();
     marchPass = mkPass(marchFragment({
-      frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, atmosphereGLSL: atmGLSL,
-      scatterGLSL: scatterModel?.glsl || DEFAULT_SCATTER_GLSL, steps, lightSteps, N,
+      frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, atmosphereGLSL: (physLight ? '#define CL_ATM_LT 1\n' : '') + atmGLSL,
+      scatterGLSL: scatterModel?.glsl || DEFAULT_SCATTER_GLSL, steps, lightSteps, N, msGLSL: msModel?.glsl || '',
     }));
-    resolvePass = mkPass(resolveFragment({ frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, N }));
+    resolvePass = mkPass((taaR4 ? resolveFragment : resolveFragmentR3)({ frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, N }));
     shadowPass = mkPass(shadowBakeFragment({ steps: shadowSteps }));
     jitterSeq = jitterSequence(N); jitterIdx = 0;
     U.uClN.value = N;
@@ -292,30 +312,127 @@ export async function createClouds(ctx) {
     // camera world position (works before the first render too)
     ctx.camera.getWorldPosition(camWorld); camWorld.x += ctx.world.origin.x; camWorld.z += ctx.world.origin.z;
 
+    // (the first session starts before this module listens: take the player of the first update as well)
+    if (spawnFirst && ctx.player?.state?.position) { spawnFirst = false; spawnPending = spawnPending || ctx.player; }
+    if (spawnPending) { computeLean(P); clearSpawn(spawnPending); spawnPending = null; }
+    computeLean(P);
     updateLightning(dt);
     const d = densityAt(camWorld);
     api.cameraInCloud = dt > 0 ? damp(api.cameraInCloud, saturate(d * 3), 6, dt) : api.cameraInCloud;
   }
 
+  // A session should not begin in the shadow of a cloud when the sky has gaps (fair / scattered / broken): the whole
+  // air mass is shifted by the smallest offset (<= ~8 km) that leaves the sun's path to the spawn point clear, with a
+  // margin around it. It is a phase shift of the entire field, so clouds and their shadows stay consistent.
+  // Round five ("the start must be sunlit"): the test uses the TARGET weather (the menu may have just switched the
+  // preset, whose coverage then eases in over seconds), the tower lean the GPU uses, the cells' life cycle, and looks
+  // 90 s ahead (the wind carries upwind clouds over the runway); it re-runs when the time of day or the weather is
+  // changed while the player still stands at the spawn point; and once the shadow map is baked the GPU's own
+  // shadow at the player is read back (one 4x4 read) and the field is shifted again with a wider margin if any
+  // cloud still touches the sun path.
+  let spawnPending = null, spawnFirst = true, spawnVerify = null, spawnInfo = null;
+  const spawnP = new THREE.Vector3(), spawnPos0 = new THREE.Vector3();
+  let spawnTime = -1e9;
+  const Pt = {};
+  function clearSpawn(player, marginK = 1) {
+    const pos = player?.state?.position;
+    if (!pos || dbg('clSpawn', 1) <= 0) return false;
+    deriveWeatherParams({ ...ctx.weather, ...(ctx.weather.target || {}) }, Pt);
+    if (Pt.coverage < 0.02 || Pt.coverage > 0.8) return false;
+    const L = shadowDir;
+    if (sunW <= 0 || ctx.env.sunDir.y < 0.02) return false;
+    computeLean(Pt);
+    bake.sx = streetDir.x; bake.sz = streetDir.y; bake.streets = Pt.streets * streetFade; bake.convective = Pt.convective; bake.time = ctx.time.now;
+    spawnPos0.copy(pos); spawnTime = ctx.time.now;
+    const ox0 = windOffset.x, oz0 = windOffset.y;
+    const look = dbg('clSpawnAhead', 90), r1 = 500 * marginK, r2 = 800 * marginK;
+    const shaded = (ox, oz) => {
+      // (the CPU density has no detail erosion and only approximates the turrets: fine vertical steps and two rings
+      //  of margin keep the eroded GPU cloud off the sun path too)
+      for (let ta = 0; ta <= look; ta += 30) {
+        const oxT = ox + wind.x * ta, ozT = oz + wind.z * ta, tm = ctx.time.now + ta;
+        for (let y = Pt.base + 30; y < Pt.top; y += 60) {
+          const t = (y - pos.y) / L.y, x = pos.x + L.x * t, z = pos.z + L.z * t;
+          for (let k = 0; k < 9; k++) {
+            const m = k === 0 ? 0 : k < 5 ? r1 : r2 * 0.7071;
+            const ux = k === 0 ? 0 : k < 5 ? (k === 1 ? 1 : k === 2 ? -1 : 0) : (k < 7 ? 1 : -1);
+            const uz = k === 0 ? 0 : k < 5 ? (k === 3 ? 1 : k === 4 ? -1 : 0) : (k % 2 ? 1 : -1);
+            spawnP.set(x + m * ux, y, z + m * uz);
+            if (densityAtP(spawnP, Pt, oxT, ozT, tm) > 0) return true;
+          }
+        }
+      }
+      return false;
+    };
+    for (let i = 0; i < 400; i++) {
+      // sunflower spiral: candidates in order of distance
+      const r = 450 * Math.sqrt(i), a = i * 2.39996;
+      const ox = ox0 + r * Math.cos(a), oz = oz0 + r * Math.sin(a);
+      if (!shaded(ox, oz)) {
+        windOffset.set(ox, oz);
+        wxDirty = true; shadowValid = false; historyValid = false;
+        spawnVerify = { player, marginK, tries: spawnVerify?.tries ?? 0 };
+        spawnInfo = { shift: r, candidates: i + 1, marginK };
+        return true;
+      }
+    }
+    spawnInfo = { failed: true, marginK };
+    return false;
+  }
+  // GPU check of the spawn: optical depth of the baked shadow map on the sun path at the player (4x4 texels)
+  let verifyBuf = null;
+  function verifySpawn(r) {
+    const v = spawnVerify; spawnVerify = null;
+    const pos = v.player?.state?.position;
+    if (!pos || !shadowFront) return;
+    const A = shadowFront.clParams.A, B = shadowFront.clParams.B, res = shadowRes;
+    const qx = pos.x - windOffset.x + B.x * (A.w - pos.y), qz = pos.z - windOffset.y + B.y * (A.w - pos.y);
+    const u = (qx - A.x) * A.z + 0.5, w = (qz - A.y) * A.z + 0.5;
+    const ix = Math.max(0, Math.min(res - 4, Math.round(u * res) - 2)), iy = Math.max(0, Math.min(res - 4, Math.round(w * res) - 2));
+    verifyBuf = verifyBuf || new Uint16Array(16 * 4);
+    try { r.readRenderTargetPixels(shadowFront, ix, iy, 4, 4, verifyBuf); } catch { return; }
+    let tau = 0;
+    for (let i = 0; i < 16; i++) tau = Math.max(tau, THREE.DataUtils.fromHalfFloat(verifyBuf[i * 4]));
+    if (spawnInfo) spawnInfo.gpuTau = tau;
+    if (tau > 0.03 && v.tries < 3) { spawnVerify = { tries: v.tries + 1 }; clearSpawn(v.player, v.marginK + 0.6); }
+  }
+  function spawnGuardActive() {
+    const pos = ctx.player?.state?.position;
+    return !!pos && ctx.time.now - spawnTime < 120 && pos.distanceTo(spawnPos0) < 150;
+  }
+
   const tmpN = [0, 0, 0, 0], tmpC = [0, 0, 0, 0];
-  function densityAt(worldPos) {
-    if (P.coverage < 0.01) return 0;
+  function densityAt(worldPos) { return densityAtP(worldPos, P, windOffset.x, windOffset.y, ctx.time.now); }
+  function densityAtP(worldPos, Pp, offX, offZ, time) {
+    if (Pp.coverage < 0.01) return 0;
     const y = worldPos.y;
-    if (y <= P.base || y >= P.top) return 0;
-    const ax = worldPos.x - windOffset.x, az = worldPos.z - windOffset.y;
+    if (y <= Pp.base || y >= Pp.top) return 0;
+    const ax = worldPos.x - offX, az = worldPos.z - offZ;
     weatherField(ax, az, bake, tmpWf);
     const s = 1 / BASE_NOISE_PERIOD, o = U.uClNoiseOfs.value;
     // same order as clShape: cell under the (leaned, warped) point, then the shape noise at the cell's frequency
-    const lean = U.uClCell.value, h = y - P.base;
-    const cx = ax - lean.y * h + 160 * Math.sin(az * 3.7e-3 + 1.3 * Math.sin(ax * 1.9e-3));
-    const cz = az - lean.z * h + 160 * Math.sin(ax * 3.3e-3 + 1.1 * Math.sin(az * 2.3e-3));
+    const h = y - Pp.base;
+    const cx = ax - leanXZ.x * h + 160 * Math.sin(az * 3.7e-3 + 1.3 * Math.sin(ax * 1.9e-3));
+    const cz = az - leanXZ.y * h + 160 * Math.sin(ax * 3.3e-3 + 1.1 * Math.sin(az * 2.3e-3));
     cells.sample(cx / cells.period, cz / cells.period, tmpC);
     const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, tmpC[1]);
-    const dev = smoothstep(P.devLo, P.devHi, tmpWf.dev), layerW = Math.max(P.stratus, P.anvil);
-    const kS = layerW > 0 ? 1 : lerp(Math.min(8, Math.max(0.8, 2400 / rad)), 1, P.sheet);
+    const dev = smoothstep(Pp.devLo, Pp.devHi, tmpWf.dev), layerW = Math.max(Pp.stratus, Pp.anvil);
+    const kS = layerW > 0 ? 1 : lerp(Math.min(8, Math.max(0.8, 2400 / rad)), 1, Pp.sheet);
     const nu = ax * s * kS + o.x, nv = y * s * kS * dbg('clD', BASE_NOISE_VSTRETCH) + o.y, nw = az * s * kS + o.z;
     for (let c = 0; c < 4; c++) tmpN[c] = sampleLowRes(noise3.lowRes, nu, nv, nw, c);
-    return densityFromField(P, tmpWf, tmpN, y, tmpC, cells) * 0.8;
+    return densityFromField(Pp, tmpWf, tmpN, y, tmpC, cells, lifeParams(time)) * 0.8;
+  }
+
+  // life cycle of the cumulus cells (shared by the GPU and the CPU mirror): t in nominal lifetimes
+  const lifeObj = { t: 0, on: 1 };
+  function lifeParams(time) { lifeObj.on = dbg('clLife', 1) > 0 ? 1 : 0; lifeObj.t = (time / dbg('clLifeT', 1400)) % 4096; return lifeObj; }
+  // towers lean downwind with the shear between the base and the top of the layer (shared by the GPU and the CPU mirror)
+  const leanXZ = new THREE.Vector2();
+  function computeLean(Pp) {
+    tmpW.set(0, Pp.base, 0); ctx.weather.windAt(tmpW, windLo);
+    tmpW.set(0, Pp.base + Math.min(Pp.thickness, 3000), 0); ctx.weather.windAt(tmpW, windHi);
+    const leanK = dbg('clLean', LEAN_TIME) / Math.min(Pp.thickness, 3000);
+    leanXZ.set((windHi.x - windLo.x) * leanK, (windHi.z - windLo.z) * leanK);
   }
 
   function setUniforms(frame) {
@@ -324,11 +441,8 @@ export async function createClouds(ctx) {
     U.uClShape.value.set(P.covBias, P.covAmp, P.topMin, P.stratus);
     U.uClShape2.value.set(P.devLo, P.devHi, P.anvil, P.baseRamp);
     U.uClShape3.value.set(dbg('clTaper', P.taperLo), P.taperHi, dbg('clPt', P.turret), dbg('clPl', P.lobes));
-    // towers lean downwind with the shear between the base and the top of the layer
-    tmpW.set(0, P.base, 0); ctx.weather.windAt(tmpW, windLo);
-    tmpW.set(0, P.base + Math.min(P.thickness, 3000), 0); ctx.weather.windAt(tmpW, windHi);
-    const leanK = dbg('clLean', LEAN_TIME) / Math.min(P.thickness, 3000);
-    U.uClCell.value.set(1 / cells.period, (windHi.x - windLo.x) * leanK, (windHi.z - windLo.z) * leanK, dbg('clSheet', P.sheet));
+    computeLean(P);
+    U.uClCell.value.set(1 / cells.period, leanXZ.x, leanXZ.y, dbg('clSheet', P.sheet));
     U.uClCell2.value.z = dbg('clAspLo', P.aspectLo); U.uClCell2.value.w = dbg('clAspHi', P.aspectHi);
     U.uClProf.value.fromArray(P.profShallow); U.uClProf2.value.fromArray(P.profDeep);
     U.uClNoise.value.set(1 / dbg('clBase', BASE_NOISE_PERIOD), 1 / dbg('clDetail', DETAIL_NOISE_PERIOD), dbg('clErosion', P.erosion), dbg('clSigma', P.sigma));
@@ -340,8 +454,10 @@ export async function createClouds(ctx) {
     U.uClDebug.value.set(dbg('clA', 1.0), dbg('clB', 0.6), dbg('clCount', 0), dbg('clD', BASE_NOISE_VSTRETCH));
     U.uClLightDir.value.copy(lightDir);
     U.uClLightSel.value.set(sunW, lerp(1, 0.35, P.coverage * P.coverage), 1, animTime);
-    const mE = 0.05 * moonW;                         // artistic moonlight (same units as uSunColor ≈ 4 at noon)
+    const mE = 0.05 * moonW;                         // round four: artistic moonlight (same units as uSunColor ≈ 4 at noon)
     U.uClMoonE.value.set(0.62 * mE, 0.78 * mE, 1.0 * mE);
+    // round five (clLight=0: round four): the pipeline's own moon illuminance; the moon only while it is the light
+    U.uClLight2.value.set(sunW > 0 ? 0 : moonW, physLight && dbg('clLight', 1) > 0 ? 1 : 0, 0, 0);
     // ambient for the clouds from the pipeline's raw (clear-sky) probe, without the player-shadow compensation
     const lt = ctx.pipeline?.lighting;
     if (lt?.ambientRaw && lt.sunIrradiance && dbg('clRawAmb', 1) > 0) {
@@ -349,7 +465,10 @@ export async function createClouds(ctx) {
       // the ground under a cloud field: sunlit where the clouds let the sun through, plus the sky ambient
       const lit = mu * (1 - 0.8 * Math.pow(P.coverage, 1.5)) * sunW;
       U.uClAmbUp.value.set(a.x, a.y, a.z, 1);
-      U.uClAmbDn.value.set((sE.x * lit + a.x) * 0.14, (sE.y * lit + a.y) * 0.15, (sE.z * lit + a.z) * 0.13, 1);
+      // (round four: the sky light reaching the ground is attenuated by a deck as well; with the full sky term the
+      //  ground bounce flooded the underside of an overcast and hid its thickness variations)
+      const skyT = 1 - 0.7 * Math.pow(P.coverage, 1.5) * dbg('clColTau', 1);
+      U.uClAmbDn.value.set((sE.x * lit + a.x * skyT) * 0.14, (sE.y * lit + a.y * skyT) * 0.15, (sE.z * lit + a.z * skyT) * 0.13, 1);
     } else U.uClAmbUp.value.w = 0;
     const cirrusAlt = Math.max(9800, P.top + 1500);
     U.uClCirrus.value.set(cirrusAlt, P.cirrus, o.x - cirrusOffset.x, o.z - cirrusOffset.y);
@@ -368,7 +487,25 @@ export async function createClouds(ctx) {
     const nn = jitterSeq.length, sub = jitterIdx % nn, cycle = Math.floor(jitterIdx / nn);
     U.uClJitter.value.set(j[0], j[1], (cycle * GOLDEN + sub / nn) % 1, volumetricOn() ? 1 : 0);
     U.uClWindVel.value.set(wind.x * (frame.dt || 0), 0, wind.z * (frame.dt || 0), focalPx);
-    U.uClTemporal2.value.x = dbg('clYoung', 1);
+    U.uClTemporal2.value.set(dbg('clYoung', 1), 0, dbg('clClamp', 1), dbg('clCR', detailLevel > 0 ? 1 : 0));
+    // detail cascade, detailed light samples (not at `low`), crease occlusion, surface refinement
+    U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 1.0), dbg('clRef', 1));
+    U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', dbg('clPhys', 1) > 0 ? 0.7 : 0), dbg('clWxL', 1), dbg('clAmbSide', 0.5));
+    U.uClDet5.value.set(dbg('clGrad', 1), dbg('clCal', 1), dbg('clSoft', 0.35), dbg('clCirK', 1));
+    U.uClDet4.value.set(dbg('clColTau', 1), dbg('clQuilt', 1), dbg('clPouch', 1), dbg('clCb', 1));
+    // round five: life cycle (clLife=0 freezes it; clLifeT = nominal lifetime in s) and microphysical extinction
+    // (clPhys=0: round four; clN = droplets per cm^3, clLwc = adiabatic liquid-water lapse in g m^-3 per km)
+    const life = lifeParams(ctx.time.now);
+    U.uClLife.value.set(life.t, life.on, 0, 0);
+    // droplet diameter at the cloud top from N (r_e ~ 12 um at 150 per cm^3, r_e ~ N^(-1/3)) -> Jendersie-d'Eon parameters
+    const dDrop = Math.min(50, Math.max(5, dbg('clDrop', 24 * Math.cbrt(150 / dbg('clN', P.dropletN)))));
+    U.uClMie.value.set(Math.exp(-0.0990567 / (dDrop - 1.67154)), Math.exp(-2.20679 / (dDrop + 3.91029) - 0.428934),
+      Math.exp(3.62489 - 8.29288 / (dDrop + 5.52825)), Math.exp(-0.599085 / (dDrop - 0.641583) - 0.665888));
+    U.uClPhys.value.set(dbg('clLwc', 2.0) * 1e-3, Math.cbrt(dbg('clN', P.dropletN) / 150), dbg('clLwcCap', 0.45), dbg('clPhys', 1));
+    // round five: amplitude ratio between detail octaves 0.5 -> 0.28 (~1 / frequency ratio): with 0.5 the 30-110 m octave
+    // displaced the surface by ~100 m and the 7-28 m one by ~50 m, more than their own size, which shredded every turret
+    // into fuzz (cotton wool); with amplitude ~ wavelength each octave adds round lobes on lobes (cauliflower)
+    U.uClDet2.value.set(dbg('clDetA', dbg('clPhys', 1) > 0 ? 0.28 : 0.5), dbg('clDetF', 4), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
   }
 
   const volumetricOn = () => P.coverage > 0.012;
@@ -407,6 +544,7 @@ export async function createClouds(ctx) {
       if (wxDirty || teleported || offCentre > 6000 || ctx.time.now - wxBakeTime > 1.0) bakeWeather();
       if (!shadowValid || teleported) { shadowCursor = 0; bakeShadow(shadowStrips); }
       else if ((frame?.dt ?? 1) > 0 || !ctx.params?.test) bakeShadow(1);
+      if (spawnVerify && shadowValid) verifySpawn(r);
     }
     setUniforms(frame);
 
@@ -416,7 +554,8 @@ export async function createClouds(ctx) {
     const write = histA, read = histB;
     U.tClMarch.value = marchRT.textures[0]; U.tClMarchAux.value = marchRT.textures[1];
     U.tClHist.value = read.textures[0]; U.tClHistAux.value = read.textures[1];
-    U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.06), dbg('clAlphaExact', 0.12), Math.min(moved, 600));
+    if (taaR4) { const sg = dbg('clSig', 0.5); U.uClTemporal.value.set(historyValid ? 1 : 0, 0.5 / (sg * sg), dbg('clWmax', 6), Math.min(moved, 600)); }
+    else U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.06), dbg('clAlphaExact', 0.12), Math.min(moved, 600));
     resolvePass.render(r, write);
     // 3. output
     U.tClHist.value = write.textures[0];
@@ -440,9 +579,13 @@ export async function createClouds(ctx) {
   }
 
   ctx.events.on('quality:change', () => { readQuality(); buildMaterials(); buildShadowTargets(); fullW = 0; });
-  ctx.events.on('weather:change', ({ instant }) => { wxDirty = true; if (instant) { shadowValid = false; historyValid = false; } });
+  ctx.events.on('weather:change', ({ instant }) => {
+    wxDirty = true; if (instant) { shadowValid = false; historyValid = false; }
+    if (spawnGuardActive()) spawnPending = ctx.player;       // (menu changes before take-off: keep the start sunlit)
+  });
+  ctx.events.on('time:change', () => { if (spawnGuardActive()) spawnPending = ctx.player; });
   ctx.events.on('camera:mode', () => { historyValid = false; });
-  ctx.events.on('session:start', () => { historyValid = false; wxDirty = true; });
+  ctx.events.on('session:start', (pl) => { historyValid = false; wxDirty = true; spawnPending = pl || ctx.player || null; });
 
   const api = {
     get texture() { return outRT.texture; },
@@ -473,9 +616,10 @@ export async function createClouds(ctx) {
     },
     // extras (not part of the pipeline contract)
     params: P,
+    get lightModel() { return msModel ? 'ms5' : scatterModel ? 'scatter-model' : 'classic'; },
     get windOffset() { return windOffset; },
     weatherAt(worldX, worldZ, out = {}) { return weatherField(worldX - windOffset.x, worldZ - windOffset.y, bake, out); },
-    debug: { spawnFlash, noise3, noise2, cells, get weatherRT() { return weatherRT; }, get cirrusRT() { return cirrusRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
+    debug: { spawnFlash, get spawnInfo() { return spawnInfo; }, noise3, noise2, cells, get weatherRT() { return weatherRT; }, get cirrusRT() { return cirrusRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
   };
   return api;
 }

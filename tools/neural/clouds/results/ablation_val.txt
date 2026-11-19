@@ -1,0 +1,24 @@
+shipped (round 3, calibrated)    VAL J 0.424 (bias 0.91) | Vsky 0.473 (0.81) | Vgnd 0.951 (1.17) | S 0.373 (0.91) within1.25 0.42
+shipped (round 3, raw nets)      VAL J 0.373 (bias 0.77) | Vsky 0.544 (0.96) | Vgnd 0.788 (1.00) | S 0.334 (0.84) within1.25 0.40
+classic analytic                 VAL J 0.859 (bias 1.56) | Vsky 0.714 (0.45) | Vgnd 0.706 (0.44) | S 0.728 (1.16) within1.25 0.27
+tuned analytic, true taus        VAL J 0.377 (bias 0.98) | Vsky 0.927 (1.24) | Vgnd 0.889 (1.28) | S 0.395 (1.08) within1.25 0.47
+S3       w16  nin  4 [  51s] VAL J 0.416 (bias 0.98) | Vsky 0.706 (0.99) | Vgnd 0.652 (1.01) | S 0.414 (0.99) within1.25 0.45
+S3       w32  nin  4 [  42s] VAL J 0.416 (bias 0.99) | Vsky 0.708 (0.99) | Vgnd 0.650 (1.01) | S 0.413 (0.99) within1.25 0.45
+S7       w16  nin  8 [  18s] VAL J 0.274 (bias 1.00) | Vsky 0.384 (1.00) | Vgnd 0.386 (1.01) | S 0.248 (1.00) within1.25 0.66
+S7       w32  nin  8 [  27s] VAL J 0.273 (bias 0.99) | Vsky 0.363 (1.00) | Vgnd 0.365 (1.01) | S 0.246 (1.00) within1.25 0.68
+S9       w16  nin 10 [  20s] VAL J 0.262 (bias 0.99) | Vsky 0.397 (0.99) | Vgnd 0.393 (1.00) | S 0.235 (0.99) within1.25 0.69
+S9       w32  nin 10 [  25s] VAL J 0.251 (bias 0.99) | Vsky 0.367 (1.00) | Vgnd 0.352 (1.01) | S 0.228 (1.00) within1.25 0.71
+ALL      w16  nin 45 [  28s] VAL J 0.242 (bias 1.01) | Vsky 0.355 (1.00) | Vgnd 0.376 (1.02) | S 0.220 (1.01) within1.25 0.72
+ALL      w32  nin 45 [  36s] VAL J 0.231 (bias 1.01) | Vsky 0.346 (1.00) | Vgnd 0.338 (1.01) | S 0.210 (1.01) within1.25 0.74
+T:e3:up,down,fwd w16  nin 14 [  18s] VAL J 0.291 (bias 1.01) | Vsky 0.410 (1.01) | Vgnd 0.420 (1.00) | S 0.265 (1.01) within1.25 0.63
+T:e3:up,down,fwd w32  nin 14 [  27s] VAL J 0.284 (bias 1.00) | Vsky 0.390 (1.01) | Vgnd 0.397 (1.00) | S 0.260 (1.00) within1.25 0.64
+T:e2:up,down,fwd,anti w16  nin 13 [  26s] VAL J 0.291 (bias 1.02) | Vsky 0.437 (1.02) | Vgnd 0.449 (0.99) | S 0.267 (1.02) within1.25 0.63
+T:e2:up,down,fwd,anti w32  nin 13 [  41s] VAL J 0.279 (bias 1.02) | Vsky 0.410 (1.02) | Vgnd 0.416 (0.99) | S 0.258 (1.01) within1.25 0.64
+T:e3:up,down,fwd,anti w16  nin 17 [  47s] VAL J 0.278 (bias 1.00) | Vsky 0.409 (1.01) | Vgnd 0.410 (1.00) | S 0.255 (1.00) within1.25 0.64
+T:e3:up,down,fwd,anti w32  nin 17 [  54s] VAL J 0.270 (bias 1.01) | Vsky 0.391 (1.01) | Vgnd 0.389 (1.00) | S 0.247 (1.01) within1.25 0.66
+T:e4:up,down,fwd w16  nin 17 [  17s] VAL J 0.281 (bias 1.00) | Vsky 0.390 (1.01) | Vgnd 0.410 (1.00) | S 0.257 (1.01) within1.25 0.65
+T:e4:up,down,fwd w32  nin 17 [  52s] VAL J 0.283 (bias 1.01) | Vsky 0.376 (1.01) | Vgnd 0.387 (1.00) | S 0.258 (1.01) within1.25 0.66
+T:e3:up,down,fwd:sum w16  nin  8 [  24s] VAL J 0.284 (bias 1.01) | Vsky 0.414 (1.01) | Vgnd 0.434 (1.00) | S 0.260 (1.01) within1.25 0.64
+T:e3:up,down,fwd:sum w32  nin  8 [  34s] VAL J 0.283 (bias 1.01) | Vsky 0.399 (1.01) | Vgnd 0.407 (1.00) | S 0.258 (1.01) within1.25 0.64
+T:e2:up,down,fwd w16  nin 11 [  23s] VAL J 0.292 (bias 1.01) | Vsky 0.429 (1.02) | Vgnd 0.450 (0.99) | S 0.268 (1.01) within1.25 0.62
+T:e2:up,down,fwd w32  nin 11 [  35s] VAL J 0.299 (bias 1.02) | Vsky 0.406 (1.03) | Vgnd 0.415 (0.98) | S 0.274 (1.02) within1.25 0.62
