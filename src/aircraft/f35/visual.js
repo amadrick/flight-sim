@@ -37,7 +37,7 @@ export function createVisual(ctx, opts = {}) {
   const seg = Math.max(32, Math.round(88 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
-  const atlas = K.createAtlas({ size: atlasSize, base: skinF });
+  const atlas = K.createAtlas({ size: atlasSize, base: skinF, skin: { weathering: Math.min(0.85, 0.25 + 0.4 * (SC.weather ?? 1)), framePitch: 0.35, waviness: 0.35 } });   // composite LO skin: little oil-canning
   const cFus = atlas.chart('fus', { type: 'unwrap', z: [-9.25, 5.05], girth: 7.4, vScale: 0.9, strips: 2 });
   const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [0.95, 5.4], z: [-2.1, 3.5], view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-5.4, -0.95], z: [-2.1, 3.5], view: 'top' }) };
   const cWB = { R: atlas.chart('wingBotR', { type: 'plan', x: [0.95, 5.4], z: [-2.1, 3.5], view: 'bottom', density: 0.7 }), L: atlas.chart('wingBotL', { type: 'plan', x: [-5.4, -0.95], z: [-2.1, 3.5], view: 'bottom', density: 0.7 }) };
@@ -150,7 +150,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- cockpit -----------------------------------------------------------------------------------------------------------------
   const eye = G.pilotEye, tubX = 0.42;
-  stat.add(K.tub({ x: tubX, y0: 0.17, y1: 0.64, z0: -6.35, z1: -3.6, uv: U.interior, taper: 0.8 }));
+  stat.add(K.tub({ x: tubX, y0: 0.17, y1: 0.64, z0: -6.35, z1: -3.6, uv: U.interior, taper: 0.8 }).occlude(0.45));
   {  // sill ledge between the skin cut-out and the tub
     const zs = []; for (let z = CZ0; z <= CZ1 + 1e-6; z += 0.2) zs.push(z); if (zs[zs.length - 1] < CZ1 - 1e-6) zs.push(CZ1);
     for (const sx of [1, -1]) {
@@ -222,6 +222,7 @@ export function createVisual(ctx, opts = {}) {
     const rowsC = COWL.map(([dz, g]) => ringI.map(b => cowlPt(b, dz, g)));
     const ch = sx > 0 ? cCowl.R : cCowl.L;
     const mD = grid(fix(rowsD), { uv: (i) => (i < 1 ? U.ductDeep : i < 3 ? U.ductMid : U.duct) });
+    mD.occlude((x, y, z, i) => Math.max(0, 0.85 - 0.16 * Math.floor(i / NI)));       // rows: deep (0.85) → lip (0.05)
     const mL = grid(fix(rowsL), { uv: () => U.tape });
     const mC = grid(fix(rowsC), { uv: (i, j, p) => ch.uv3(p[0], p[1], p[2]) });
     const capRow = fix(rowsD)[0], c0 = capRow.reduce((a, p) => [a[0] + p[0] / capRow.length, a[1] + p[1] / capRow.length, a[2] + p[2] / capRow.length], [0, 0, 0]);
@@ -277,7 +278,7 @@ export function createVisual(ctx, opts = {}) {
   const nozzleMesh = K.petalNozzle({ z0: NZ.z0, z1: NZ.z1, r0: 0.635, rClosed: 0.44, rOpen: 0.55, petals: NZ.petals, centre: NZ.c, uvOuter: U.heat, uvInner: U.petalIn, thickness: 0.03, gap: 0.04, chart: cNoz });
   serrate(nozzleMesh, NZ, 0.13);
   // augmentor liner (heat-tinted, corrugated), flameholder spokes + ring, tail cone, dark turbine face behind
-  stat.add(K.lathe([[0.6, 5.02], [0.555, 4.75], [0.54, 4.45], [0.53, 4.1], [0, 4.1]], { segments: 32, uv: U.liner }).translate(0, NZ.c[1], 0));
+  stat.add(K.lathe([[0.6, 5.02], [0.555, 4.75], [0.54, 4.45], [0.53, 4.1], [0, 4.1]], { segments: 32, uv: U.liner }).translate(0, NZ.c[1], 0).occlude((x, y, z) => Math.min(0.8, Math.max(0.15, (5.0 - z) * 0.8))));
   for (let i = 0; i < 24; i++) stat.add(K.box(0.012, 0.02, 0.6, U.liner2).translate(0, 0.525, 4.5).rotateZ((i + 0.5) * Math.PI / 12).translate(0, NZ.c[1], 0));
   for (let i = 0; i < 12; i++) stat.add(K.box(0.035, 0.36, 0.06, U.heat2).translate(0, 0.33, 0).rotateZ(i * Math.PI / 6).translate(0, NZ.c[1], 4.32));
   stat.add(K.lathe([[0.36, 4.28], [0.36, 4.36], [0.32, 4.36], [0.32, 4.28]], { segments: 24, uv: U.heat }).translate(0, NZ.c[1], 0));
@@ -366,16 +367,16 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps -------------------------------------------------------------------------------------------------------------------------
   const L = G.lights;
-  rig.lamp('nav', L.navLeft, { color: [0.15, 0.002, 0.001], size: 0.045, squash: [0.6, 0.6, 1.6] });
-  rig.lamp('nav', L.navRight, { color: [0.0015, 0.15, 0.035], size: 0.045, squash: [0.6, 0.6, 1.6] });
-  rig.lamp('nav', L.tail, { color: [0.4, 0.4, 0.38], size: 0.035 });
-  rig.lamp('nav', [-L.tail[0], L.tail[1], L.tail[2]], { color: [0.4, 0.4, 0.38], size: 0.035 });
+  rig.lamp('nav', L.navLeft, { color: [1, 0.025, 0.01], size: 0.045, squash: [0.6, 0.6, 1.6] });
+  rig.lamp('nav', L.navRight, { color: [0.01, 1, 0.22], size: 0.045, squash: [0.6, 0.6, 1.6] });
+  rig.lamp('nav', L.tail, { color: [1, 1, 0.95], size: 0.035 });
+  rig.lamp('nav', [-L.tail[0], L.tail[1], L.tail[2]], { color: [1, 1, 0.95], size: 0.035 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.065, squash: [1, 0.45, 1.5] });
   // formation strips: electroluminescent tapes on the forward fuselage and the boom sides
   for (const sx of [1, -1]) {
     const q = fus.at(-6.3, sx > 0 ? fus.tAtY(-6.3, 0.05) : 1 - fus.tAtY(-6.3, 0.05));
-    rig.lamp('formation', [q.p[0] + q.n[0] * 0.006, q.p[1] + q.n[1] * 0.006, -6.3], { color: [0.07, 0.15, 0.08], size: 0.018, squash: [0.35, 1, 13] });
-    rig.lamp('formation', [sx * (BX + 0.315), 0.15, 3.4], { color: [0.07, 0.15, 0.08], size: 0.018, squash: [0.35, 1, 13] });
+    rig.lamp('formation', [q.p[0] + q.n[0] * 0.006, q.p[1] + q.n[1] * 0.006, -6.3], { color: [0.5, 1, 0.55], size: 0.018, squash: [0.35, 1, 13] });
+    rig.lamp('formation', [sx * (BX + 0.315), 0.15, 3.4], { color: [0.5, 1, 0.55], size: 0.018, squash: [0.35, 1, 13] });
   }
   rig.lamp('beacon', L.beacon, { color: [1, 0.08, 0.02], size: 0.07, squash: [1, 0.45, 1.5] });
 
