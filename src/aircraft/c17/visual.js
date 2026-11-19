@@ -325,7 +325,7 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('beacon', [0, hump.topAt(0) + 0.03, 0], { color: [1, 0.05, 0.03], size: 0.18, squash: [1, 0.6, 1] });
   rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.18, squash: [1, 0.6, 1] });
   for (const sx of [-1, 1]) rig.lamp('landing', [sx * 0.75, L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.2, squash: [1.4, 0.8, 0.5] });
-  for (const sx of [-1, 1]) rig.lamp('landing', [sx * 4.3, -1.55, -8.0], { color: [1, 0.97, 0.9], size: 0.18, squash: [1.2, 0.9, 0.5] });   // sponson nose lights
+  for (const sx of [-1, 1]) rig.lamp('landing', [sx * 3.9, -1.6, -8.62], { color: [1, 0.97, 0.9], size: 0.18, squash: [1.2, 0.9, 0.5] });   // sponson nose lights
 
   // ---- animation --------------------------------------------------------------------------------------------------------------
   const fanAng = [0, 0, 0, 0];
