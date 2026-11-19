@@ -309,6 +309,8 @@ uniform vec4 uClLightSel;    // x = sun weight, y = ground-bounce scale, z = amb
 uniform vec3 uClMoonE;       // moon irradiance (zero while the sun is the light)
 uniform vec4 uClFlash[2];    // lightning: xyz = render-space position, w = intensity
 uniform vec4 uClCirrus;      // x = altitude (m), y = amount (0..1), zw = render-space -> cirrus air-mass offset
+uniform vec4 uClAmbUp;       // rgb = clear-sky ambient irradiance / pi for the clouds (NOT divided by the player's cloud shadow), w = 1: use it
+uniform vec4 uClAmbDn;       // rgb = ground-bounce radiance under the cloud field
 
 const float CL_R = 6371000.0;
 
@@ -433,8 +435,11 @@ void main() {
       float tB = min(t1, t0 + 60000.0);
       vec3 Ea = clLightE(uCameraPos + rd * t0), Eb = clLightE(uCameraPos + rd * tB);
       vec3 pm = uCameraPos + rd * min(t0 + 3000.0, t1);
-      vec3 ambUp = atmAmbient(pm, vec3(0.0, 1.0, 0.0)) * uClLightSel.z;
-      vec3 ambDn = atmAmbient(pm, vec3(0.0, -1.0, 0.0)) * uClLightSel.z * uClLightSel.y;
+      // uAmbientSky / uAmbientGround are divided by the cloud shadow AT THE PLAYER (the composite multiplies it back
+      // for the scene), which must not brighten the clouds when the player flies under one: use the uncompensated
+      // values from ctx.pipeline.lighting when the pipeline provides them (uClAmbUp.w = 1)
+      vec3 ambUp = (uClAmbUp.w > 0.5 ? uClAmbUp.rgb : atmAmbient(pm, vec3(0.0, 1.0, 0.0))) * uClLightSel.z;
+      vec3 ambDn = (uClAmbUp.w > 0.5 ? uClAmbDn.rgb : atmAmbient(pm, vec3(0.0, -1.0, 0.0)) * uClLightSel.y) * uClLightSel.z;
       float cosT = dot(rd, uClLightDir);
       float voxel = 1.0 / (uClNoise.x * 128.0), voxelD = 1.0 / (uClNoise.y * 32.0);
 
@@ -635,7 +640,7 @@ void main() {
   // Young history (first frames after a cut, a disocclusion or boot): the running mean of a handful of jittered
   // samples still shows the per-pixel step jitter as dots in thin cloud. Widen the spatial reconstruction to a
   // depth-aware Gaussian over 4x4 low-res samples until ~6 samples have accumulated.
-  float young = ok ? clSat(1.0 - ha.z / 6.0) : 1.0;
+  float young = ok ? clamp(1.0 - ha.z / 6.0, 0.0, 1.0) : 1.0;
   if (young > 0.0) {
     vec4 wS = vec4(0.0); float wW = 0.0;
     for (int k = 0; k < 16; k++) {
@@ -747,10 +752,10 @@ void main() {
   vec4 w1 = texture(tClNoise2D, p + vec2(0.11, 0.37)), w2 = texture(tClNoise2D, p * 2.0 + vec2(0.53, 0.19));
   // flow: a smooth bend of the streak direction (fibres stay roughly along +x, the jet direction)
   vec2 warp = (vec2(w1.r, w1.g) - 0.5) * 0.3 + (vec2(w2.g, w2.r) - 0.5) * 0.08;
-  vec2 f = p + vec2(0.0, warp.x * 0.35 + warp.y * 0.1);
-  float b1 = texture(tClNoise2D, vec2(f.x * 1.0, f.y * 12.0) + vec2(warp.y, 0.0)).a;
-  float b2 = texture(tClNoise2D, vec2(f.x * 2.0, f.y * 41.0) + vec2(warp.y * 2.0, 0.31)).r;
-  float b3 = texture(tClNoise2D, vec2(f.x * 4.0, f.y * 113.0) + vec2(warp.y * 3.0, 0.67)).g;
+  vec2 f = p + vec2(0.0, warp.x * 0.05 + warp.y * 0.012);   // gentle bends: fibres are long and only slightly curved
+  float b1 = texture(tClNoise2D, vec2(f.x * 1.0, f.y * 12.0) + vec2(warp.y, 0.0)).r;
+  float b2 = texture(tClNoise2D, vec2(f.x * 1.0, f.y * 41.0) + vec2(warp.y * 2.0, 0.31)).g;
+  float b3 = texture(tClNoise2D, vec2(f.x * 2.0, f.y * 113.0) + vec2(warp.y * 3.0, 0.67)).r;
   float r1 = pow(ridge(b1), 2.0), r2 = pow(ridge(b2), 4.0), r3 = pow(ridge(b3), 6.0);
   // bundles: fine fibres only inside the coarse ones
   float fib = r1 * (0.45 + 0.55 * r2) * (0.6 + 0.4 * r3) * 1.3 + 0.35 * r2 * r3 * smoothstep(0.3, 0.7, b1);

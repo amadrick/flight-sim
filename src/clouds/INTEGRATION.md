@@ -19,6 +19,43 @@ Owner: clouds agent. Files: `src/clouds/**` only. Nothing outside this directory
 Events: listens to `quality:change`, `weather:change`, `camera:mode`, `session:start`; emits `lightning` with
 `{ worldPos: Vector3, intensity: 0..1 }` at the first stroke of each flash (audio can delay thunder by distance / 343 m/s).
 
+## Round three (cloud shapes)
+
+The density model now draws cumulus as **individual clouds** instead of thresholded 3-D noise; the decks and the
+storm keep the noise model. Fitted to a small cumulus LES (`tools/neural/les_cumulus.py`, `les_stats.py`, `les_fit.py`).
+
+- **Cell field** (`noise.js createCellField`, CPU, ~40 ms at boot, 512^2 RGBA8, 20.48 km tile): disks with a power-law
+  size distribution n(D) ~ D^-2.5, 240 m .. 4.2 km, placed with clear air between them. One extra 2-D fetch
+  (`tClCells`) per density evaluation.
+- **Per cell** (`clShape`): flat base at the condensation level; depth = diameter x aspect (1.0 undeveloped .. 2.0
+  developed, 3.0 in convective weather); width profile g(h) fitted to the LES (`uClProf`, `uClProf2`, mixed by the
+  local development; results in `tools/neural/results/profile_fit.json`); turrets from the base volume sampled at
+  a frequency that follows the cell size (self-similar: 300 m humilis get 100 m bulges, congestus 1-2 km towers
+  with sub-turrets), Worley cones turned into spherical caps (round bubbles, sharp creases); the detail volume
+  is scaled with the cell as well; towers lean downwind (`LEAN_TIME` x the shear between base and top).
+- **Life cycle**: each cell has a random phase; decaying cells (and weak cells at low coverage) get a wider density
+  ramp, more and wispier erosion and less water (soft frayed fragments); growing cells stay crisp.
+- **Coverage** switches cells on by their random id and grows them past their rim when it is high (they merge).
+- **Broken** skies add a ~600 m stratocumulus sheet at the base from the shape noise (`uClCell.w`); **overcast** and
+  **storm** use the round-two layer model (stratus deck with ragged base; Cb towers + anvil).
+- **Light march**: the shadow-map lookup beyond the 4 near samples uses the cubic B-spline fetch (4 taps, was 1
+  jittered tap): removes the horizontal striations on cloud faces at low sun and the jitter noise they caused.
+  The 4 light samples reuse the sample's weather fetch (the field varies over kilometres), which pays for their
+  cell fetch. Debug A/B: `clLS=0`.
+- **Resolve**: while a pixel's history holds fewer than ~6 samples (boot, cut, disocclusion) the current frame is
+  reconstructed from a depth-aware 4x4 Gaussian of the low-res samples instead of the nearest 4: no dots in thin
+  cloud in a 6-frame capture. Converged pixels are unchanged.
+- **Ambient**: the march uses `ctx.pipeline.lighting.ambientRaw` (clear-sky probe) and builds its own ground bounce
+  (sun x cloud-field transmittance + sky, x ground albedo) instead of `uAmbientSky / uAmbientGround`, which the
+  pipeline divides by the player's cloud shadow. Falls back to the uniforms without `lighting`. `clRawAmb=0` = old.
+- **Cirrus**: the baked texture is ridged anisotropic noise (thin fibres in bundles, uncinus heads) and the layer
+  adds a finer second octave of it (1 extra 2-D fetch per pixel); little haze between fibres.
+
+Cost vs round two: per loop iteration +1 2-D fetch where the column is not empty (cell field); per lit sample +3
+(B-spline shadow-map fetch); light march unchanged (cell fetch replaces the weather fetch); same step counts.
+New debug parameters: `clLean` (s), `clSheet`, `clAspLo`, `clAspHi`, `clPt` (turret), `clPl` (lobes), `clLS`, `clRawAmb`.
+Harness: `view=cirrus` shows the cirrus texture.
+
 ## Round two (neural clouds 2) changes
 
 - `setScatterModel`: a model whose GLSL also defines `vec2 cloudAmbientVis(float tauUp, float tauDown)` replaces the

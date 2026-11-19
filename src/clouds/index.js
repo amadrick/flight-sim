@@ -104,7 +104,7 @@ export async function createClouds(ctx) {
     uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
     uClLightDir: { value: new THREE.Vector3(0, 1, 0) }, uClLightSel: v4(1, 1, 1, 0), uClMoonE: { value: new THREE.Vector3() },
-    uClFlash: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uClCirrus: v4(10000, 0, 0, 0), uClDebug: v4(),
+    uClFlash: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uClCirrus: v4(10000, 0, 0, 0), uClDebug: v4(), uClAmbUp: v4(), uClAmbDn: v4(),
     uClTemporal: v4(), uClWindVel: v4(), uClFlashColor: { value: new THREE.Vector3(18, 21, 26) }, uClN: { value: 2 },
     tClMarch: { value: null }, tClMarchAux: { value: null }, tClHist: { value: null }, tClHistAux: { value: null },
     uClBakeA: v4(1, 0, 0, 0), uClBakeB: v4(), uClBakeWx: v4(0, 0, WEATHER_MAP_SIZE_M, 0),
@@ -342,6 +342,15 @@ export async function createClouds(ctx) {
     U.uClLightSel.value.set(sunW, lerp(1, 0.35, P.coverage * P.coverage), 1, animTime);
     const mE = 0.05 * moonW;                         // artistic moonlight (same units as uSunColor ≈ 4 at noon)
     U.uClMoonE.value.set(0.62 * mE, 0.78 * mE, 1.0 * mE);
+    // ambient for the clouds from the pipeline's raw (clear-sky) probe, without the player-shadow compensation
+    const lt = ctx.pipeline?.lighting;
+    if (lt?.ambientRaw && lt.sunIrradiance && dbg('clRawAmb', 1) > 0) {
+      const a = lt.ambientRaw, sE = lt.sunIrradiance, mu = Math.max(ctx.env.sunDir.y, 0) / Math.PI;
+      // the ground under a cloud field: sunlit where the clouds let the sun through, plus the sky ambient
+      const lit = mu * (1 - 0.8 * Math.pow(P.coverage, 1.5)) * sunW;
+      U.uClAmbUp.value.set(a.x, a.y, a.z, 1);
+      U.uClAmbDn.value.set((sE.x * lit + a.x) * 0.14, (sE.y * lit + a.y) * 0.15, (sE.z * lit + a.z) * 0.13, 1);
+    } else U.uClAmbUp.value.w = 0;
     const cirrusAlt = Math.max(9800, P.top + 1500);
     U.uClCirrus.value.set(cirrusAlt, P.cirrus, o.x - cirrusOffset.x, o.z - cirrusOffset.y);
     shadowUniforms.uCloudShadowC.value.set(windOffset.x, windOffset.y, volumetricOn() && shadowValid ? 1 : 0, 0);
@@ -465,7 +474,7 @@ export async function createClouds(ctx) {
     params: P,
     get windOffset() { return windOffset; },
     weatherAt(worldX, worldZ, out = {}) { return weatherField(worldX - windOffset.x, worldZ - windOffset.y, bake, out); },
-    debug: { spawnFlash, noise3, noise2, cells, get weatherRT() { return weatherRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
+    debug: { spawnFlash, noise3, noise2, cells, get weatherRT() { return weatherRT; }, get cirrusRT() { return cirrusRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },
   };
   return api;
 }

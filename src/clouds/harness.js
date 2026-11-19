@@ -120,9 +120,9 @@ async function boot() {
     comp.material.uniforms.tClouds.value = ctx.clouds.texture; comp.render(ctx.renderer, null);
     if (viewPass) {
       const d = ctx.clouds.debug;
-      const t = view === 'weather' ? d.weatherRT.texture : view === 'shadow' ? d.shadowRT.texture : view === 'march' ? d.marchRT.textures[0] : ctx.clouds.texture;
+      const t = view === 'cirrus' ? d.cirrusRT.texture : view === 'weather' ? d.weatherRT.texture : view === 'shadow' ? d.shadowRT.texture : view === 'march' ? d.marchRT.textures[0] : ctx.clouds.texture;
       viewPass.material.uniforms.tex.value = t;
-      viewPass.material.uniforms.uMode.value = view === 'weather' ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail') ? 3 : 2;
+      viewPass.material.uniforms.uMode.value = (view === 'weather' || view === 'cirrus') ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail') ? 3 : 2;
       viewPass.material.uniforms.tex3.value = view === 'detail' ? d.noise3.detail : d.noise3.base;
       viewPass.render(ctx.renderer, null);
     }
