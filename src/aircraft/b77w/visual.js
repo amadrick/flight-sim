@@ -841,7 +841,7 @@ function paintSurfaces(B, o) {
       Q.stroke((g) => { g.moveTo(a[0], a[1]); g.lineTo(d[0], d[1]); }, 0.05, F.matte('#2a2c2e'));
       for (const x of [5.0, 14.5, 21.0, 26.0]) { const p = at(x, 0.36); Q.decal(p[0], p[1], (g) => { g.strokeStyle = '#7d8388'; g.lineWidth = 0.015; g.beginPath(); g.arc(0, 0, 0.09, 0, Math.PI * 2); g.stroke(); }); }   // fuel caps
     } else {
-      for (let i = 0; i < 16; i++) { const x = 4 + i * 1.6, a = at(x, 0.62); Q.streak(a[0], a[1], a[0], a[1] + 1.6, 0.06, { alpha: 0.1 }); }
+      for (let i = 0; i < 16; i++) { const x = 4 + i * 1.6, a = at(x, 0.62); Q.streak(a[0], a[1], a[0], a[1] + 1.6, 0.06, { alpha: 0.05 }); }
       for (const x of [14, 18, 22, 26]) { const p = at(x, 0.4); Q.panel(p[0] - 0.3, p[1] - 0.22, p[0] + 0.3, p[1] + 0.22, { r: 0.05 }); }
     }
     Q.noise({ alpha: 0.045, scale: 2.5, stretch: [1, 2.5], rough: 0.04 });
