@@ -72,7 +72,7 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
         vec4 n1 = textureLod(tTerrNoise, terrUV(TERR_TILE1, uTerrTile[1], rxz), 0.0);
         vec4 n2 = textureLod(tTerrNoise, terrUV(TERR_TILE2, uTerrTile[2], rxz), 0.0);
         vec4 n3 = textureLod(tTerrNoise, terrUV(TERR_TILE3, uTerrTile[3], rxz), 0.0);
-        float arid = Gh.z, water = clamp(Gh.w, 0.0, 1.0), playa = clamp(-Gh.w, 0.0, 1.0);
+        float arid = min(Gh.z, 1.0), dune = clamp(Gh.z - 1.0, 0.0, 1.0), water = clamp(Gh.w, 0.0, 1.0), playa = clamp(-Gh.w, 0.0, 1.0);
         TerrCover C = terrCover(rxz, h, n, (D.z - 0.5) / 1.25, arid, water, n0, n1, n2, n3);
         float slope = 1.0 - n.y;
         float desertAmt = ss(0.42, 0.85, arid + 0.25 * (n1.r - 0.5) + 0.1 * (n3.r - 0.5));
@@ -82,7 +82,8 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
         // solitary trees and bushes in open country (more along creeks and on rough ground), shrubs in the drylands
         float pSolo = open * (1.0 - desertAmt) * belowTL * (0.0012 + 0.010 * ss(0.55, 0.8, n2.g) + 0.10 * C.forest) * (1.0 - C.crop) * (1.0 + 2.5 * C.tropic);   // scattered palms all over tropical lowlands
         float pBush = open * (1.0 - desertAmt) * belowTL * (0.002 + 0.012 * ss(0.6, 0.85, n3.g) + 0.15 * C.forest) * (1.0 - C.crop) + open * ss(0.2, 0.45, arid) * (1.0 - desertAmt) * 0.08;
-        float pShrub = open * desertAmt * (0.06 + 0.30 * ss(0.3, 0.7, n2.g) + 6.0 * max((D.z - 0.5) / 1.25, 0.0));
+        // drylands: creosote / sage in loose drifts, denser along the runnels, almost none on moving dune sand
+        float pShrub = open * desertAmt * (0.025 + 0.24 * ss(0.42, 0.78, n2.g * 0.6 + n1.r * 0.4) + 6.0 * max((D.z - 0.5) / 1.25, 0.0)) * (1.0 - 0.96 * dune);
         float u = hs.x, sp = -1.0, size = 0.0;
         vec2 hr = vec2(0.0);
         float u2 = fract(hs.x * 61.0 + hs.y * 17.0), u3 = h2.x, u4 = h2.y;

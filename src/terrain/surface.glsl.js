@@ -569,10 +569,14 @@ TerrSurf terrSurface(vec3 rp) {
   float canopy = 0.0;
   if (forest > 0.004) {
     vec4 cn = terrMatTex(TERR_TILE3, uTerrTile[3], rp.xz, 0.035 * (n2.rg - 0.5), M_CANOPY, dxz, dyz);
-    float fine = ss(7.0, 1.6, pxt);                    // crowns (7 m) resolve below a few metres per pixel
+    // crowns (8 m) resolve below ~3 m per pixel. (They used to start at 7 m per pixel: under-sampled, the crown
+    // lattice chopped hedgerows and the roads beside them into regular dashes - the "white staircase" seen from
+    // a few kilometres up.)
+    float fine = ss(3.4, 1.3, pxt);
     crown = mix(0.5, cn.b, fine);
     crownG = terrUnrot(TERR_TILE3, cn.rg - 0.5) * fine;
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
+    canopy = max(canopy, C.hedge * 0.8);               // a hedgerow is a continuous strip, not a row of dots
     // sunlit crown tops over the dark gaps between the trees; every crown its own shade of green
     fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine) * mix(1.0, 0.86, conifer);
     canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine);
@@ -639,7 +643,9 @@ TerrSurf terrSurface(vec3 rp) {
   float steepPix = ss(0.50, 0.66, slope + 0.16 * (n3.a - 0.5) + 0.08 * (n4.a - 0.5) + 0.12 * rillS);
   float rockAmt = max(terrPatch(eRock, bk3 + 0.5 * rillS, 0.11, eps), steepPix);
   // outcrops poke through thin soils on steeper ground
-  rockAmt = max(rockAmt, ss(0.80, 0.90, bk3 + 0.9 * slope + 0.35 * (1.0 - eSoil) - 0.25) * (1.0 - cropPot));
+  // (needs real slope, and an edge as soft as the pixel: on the flat coastal plain this term used to scatter
+  // hard-edged pale rock patches over the grass - the jagged white patches reported at the Haven coast)
+  rockAmt = max(rockAmt, clamp((bk3 + 0.9 * slope + 0.35 * (1.0 - eSoil) - 1.10) / (0.05 + 2.0 * eps) + 0.5, 0.0, 1.0) * ss(0.012, 0.05, slope) * (1.0 - cropPot));
   rockAmt *= 1.0 - pad * 0.9;
   vec3 granite = mix(vec3(0.120, 0.118, 0.116), vec3(0.235, 0.226, 0.212), ss(0.2, 0.8, n2.r * 0.6 + n3.g * 0.4));
   granite *= 0.86 + 0.28 * beds.r + 0.16 * (beds2.r - 0.5);                             // bedding, filtered
@@ -666,6 +672,7 @@ TerrSurf terrSurface(vec3 rp) {
   // ---- snow and glacier ice -------------------------------------------------------------------------------------
   // late-lying snow from the simulation (shaded faces, loaded gullies, avalanche cones); it cannot hold on the
   // steepest pixels, and drifts sit in the small hollows first
+  eSnow *= ss(treeline - 1000.0, treeline - 650.0, h);      // no late snow in the warm lowlands, whatever the network extrapolates
   float snowF = clamp(eSnow * 1.25 + 0.9 * clamp(conc, -0.06, 0.12) * ss(0.02, 0.3, eSnow), 0.0, 1.0);
   // above the climatic firn line (not simulated: the simulation ends at the late-summer melt-out) snow is permanent
   // wherever the ground is not too steep to hold it
@@ -733,7 +740,7 @@ TerrSurf terrSurface(vec3 rp) {
     // where the buildings are real geometry (buildings.js) only their footprint is painted
     float b3d = uSetOn.w > 0.0 ? 1.0 - ss(0.8 * uSetOn.w, uSetOn.w, slant) : 0.0;
     if (T.on > 0.5) {
-      float tk = ss(0.02, 0.22, T.dens);
+      float tk = ss(0.02, 0.22, T.dens) * ss(0.6, 1.8, h);
       float occ = step(0.001, T.bh.x);
       float farm = step(T.kind, 0.5);
       float shedB = step(0.5, T.btype) * step(T.btype, 1.5), green = step(1.5, T.btype);
@@ -802,17 +809,20 @@ TerrSurf terrSurface(vec3 rp) {
       // street lamps: pools of light on the ground; lamps merge into lit streets and then into the town's glow with
       // distance (each stage keeps the area mean of the one before, so the town does not change brightness)
       if (uSetOn.z > 0.002) {
-        float dens = T.dens * (farm > 0.5 ? 0.35 : 1.0) * (1.0 + 1.2 * T.core);
+        float dens = T.dens * (farm > 0.5 ? 0.35 : 1.0) * (1.0 + 0.7 * T.core) * (1.0 - 0.85 * green);
         float al = (fract(T.along / 34.0) - 0.5) * 34.0;
-        float sg2 = 2.0 * 7.5 * 7.5;
+        float sg2 = 2.0 * 6.0 * 6.0;
         float e1 = exp(-(al * al + T.ds * T.ds) / sg2);
-        float e2 = 0.553 * exp(-T.ds * T.ds / sg2);
-        float e3 = 0.553 * 18.8 * 0.0285;
-        float e = mix(mix(e1, e2, ss(3.0, 10.0, px)), e3, ss(14.0, 45.0, px));
-        vec3 lamp = mix(vec3(1.0, 0.56, 0.22), vec3(0.92, 0.90, 0.80), step(0.62, fract(T.ax.x * 7.31 + T.ax.y * 3.17)));
+        float e2 = 0.442 * exp(-T.ds * T.ds / sg2);                 // mean along the street: sqrt(2 pi) sigma / spacing
+        float e3 = 0.442 * 15.04 * 0.0300;                           // mean over the blocks: x sqrt(2 pi) sigma (1 / bw + 1 / bd)
+        float e = mix(mix(e1, e2, ss(5.0, 16.0, px)), e3, ss(24.0, 80.0, px));
+        vec3 lamp = mix(vec3(1.0, 0.56, 0.22), vec3(0.92, 0.90, 0.80), step(0.62, T.lamp));
         // lit windows and yard lights spill a little warm light around every other house
         float spill = occ * step(T.h2.y, 0.6) * exp(-max(-inside, 0.0) * 0.35) * step(inside, 0.0) * 0.5;
         spill = mix(spill, 0.05, ss(6.0, 30.0, px));
+        // arterial streets carry taller, brighter, whiter lamps: the grid a city shows from the air
+        lamp = mix(lamp, vec3(0.95, 0.86, 0.66), T.art * 0.7);
+        e *= 1.0 + 1.6 * T.art * (1.0 - ss(24.0, 80.0, px)) + 0.4 * ss(24.0, 80.0, px) * step(1.5, T.kind);
         emis = (lamp * e * dens + vec3(1.0, 0.70, 0.40) * spill * dens) * tk * uSetOn.z;
       }
     }
@@ -1022,7 +1032,7 @@ TerrSurf terrSurface(vec3 rp) {
 #ifdef TERR_SETTLE
   S.shadow *= (1.0 - 0.92 * bShade);
   S.ao *= 1.0 - 0.25 * bShade;
-  S.emis = emis * (0.25 * col + 0.012) * 1.0;
+  S.emis = emis * (0.17 * col + 0.007);
 #endif
   return S;
 }

@@ -235,8 +235,11 @@ export async function createTerrain(ctx) {
     uniforms.uTerrWet.value = ctx.params.test ? rain : wet + (rain - wet) * Math.min(1, dtw / (rain > wet ? 60 : 400));
     if (settle) {
       const night = ctx.env?.nightFactor ?? 0, nk = Math.min(1, Math.max(0, (night - 0.15) / 0.55));
-      if (buildings) buildings.update(wx, cy, wz, org, nk * nk * (3 - 2 * nk));
-      settle.update(org, nk * nk * (3 - 2 * nk), buildings ? buildings.fadeRadius : 0);
+      // emissive levels are tuned for the pipeline's night exposure (about 40); follow the auto-exposure so lamps and
+      // windows keep their on-screen brightness through dusk
+      const lit = nk * nk * (3 - 2 * nk) * Math.min(4, Math.max(0.25, 40 / Math.max(ctx.env?.exposure || 40, 1e-3)));
+      if (buildings) buildings.update(wx, cy, wz, org, lit);
+      settle.update(org, lit, buildings ? buildings.fadeRadius : 0);
     }
     if (trees) trees.update(wx, wz, org, Hd, minLevel);
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;

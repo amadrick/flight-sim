@@ -137,7 +137,7 @@ TerrSurf terrSurface(vec3 rp) {
   vec3 ng = n;                                        // geometric normal (before detail)
   float curv = (D.z - 0.5) / 1.25;                    // > 0 concave (gully), < 0 convex (spur), per texel of this level
   float conc = (D.w - 0.5) / 1.5;                     // > 0 hollow at ~4 texel scale
-  float arid = G.z, spec = G.w;
+  float arid = min(G.z, 1.0), spec = G.w;
   float water = clamp(spec, 0.0, 1.0), playa = clamp(-spec, 0.0, 1.0);
   // broader concavity from two levels up (valley-scale ambient occlusion)
   float lc = min(lf + 2.0, uTerrLod.z);

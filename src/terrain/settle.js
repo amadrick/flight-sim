@@ -185,13 +185,22 @@ function townParams(t) {
   // the street grid is not ruled with a straightedge: a gentle sinusoidal warp of the settlement's frame
   t.wA = Math.min(0.03 * t.r, 42); t.wF = 6.2831853 / Math.max(0.8 * t.r, 260);
   t.wP1 = h[0] * 6.2831853; t.wP2 = h[1] * 6.2831853;
+  // outline: not a disc. Three hashed directions give the built-up area lobes and bays (see townShape)
+  const a1 = h[0] * 6.2831853, a2 = h[1] * 6.2831853 + 1.3, a3 = (h[0] + h[1]) * 9.42;
+  t.s1x = Math.cos(a1); t.s1z = Math.sin(a1); t.s2x = Math.cos(a2); t.s2z = Math.sin(a2); t.s3x = Math.cos(a3); t.s3z = Math.sin(a3);
   return t;
+}
+/** Fraction of the nominal radius the settlement reaches in direction (x, z) of its frame: 0.6 .. 1. Mirrors the GLSL. */
+function townShape(T, x, z) {
+  const l = Math.hypot(x, z) + 1e-3, ux = x / l, uz = z / l;
+  const q = 0.5 + 0.9 * (T.s1x * ux + T.s1z * uz) * (T.s2x * ux + T.s2z * uz) + 0.35 * (T.s3x * ux + T.s3z * uz);
+  return 0.6 + 0.4 * Math.min(1, Math.max(0, q));
 }
 const _lot = { cx: 0, cz: 0, hx: 0, hz: 0, h: 0, roofK: 0, h1x: 0, h1y: 0, h2x: 0, h2y: 0, nl: 0 };
 /** Lots per row of block (bx, bz) and its type (0 houses, 1 sheds / industry, 2 green). Mirrors the GLSL. */
 function blockAt(T, bx, bz, L) {
   const h = hash2(bx + T.sLo * 4096 + 91, bz + T.sHi * 512 + 57);
-  const rb = Math.hypot((bx + 0.5) * T.bw, (bz + 0.5) * T.bd) / T.r;
+  const rb = Math.hypot((bx + 0.5) * T.bw, (bz + 0.5) * T.bd) / (T.r * townShape(T, (bx + 0.5) * T.bw, (bz + 0.5) * T.bd));
   L.bh0 = h[0]; L.bh1 = h[1];
   L.type = T.kind >= 1.5 && rb > 0.45 && h[0] < 0.11 ? 1 : T.kind >= 0.5 && h[0] > 0.93 ? 2 : 0;
   L.nl = L.type === 1 ? 2 : Math.floor(T.bw / 18);
@@ -204,7 +213,7 @@ function lotAt(T, bx, bz, li, row, L) {
   let h = hash2(a, b); const h1x = h[0], h1y = h[1];
   h = hash2(a + 7777, b + 3333); const h2x = h[0], h2y = h[1];
   const lcx = bx * T.bw + (li + 0.5) * lw, lcz = bz * T.bd + (row + 0.5) * T.bd * 0.5;
-  const rr = Math.hypot(lcx, lcz) / T.r + 0.14 * (L.bh1 - 0.5);
+  const rr = Math.hypot(lcx, lcz) / (T.r * townShape(T, lcx, lcz)) + 0.14 * (L.bh1 - 0.5);
   if (L.type === 2) return false;
   const pOcc = (T.kind < 0.5 ? 0.6 : 0.94) * (1 - ssf(0.74, 1.0, rr));
   if (h1x >= pOcc) return false;
@@ -299,6 +308,8 @@ struct TerrTown {
   vec2 ax;         // world direction of the street x axis
   float btype;     // block: 0 houses, 1 sheds, 2 green
   float dens;      // how built-up the place is, 1 .. 0 at the edge
+  float lamp;      // per-settlement random (street lamp type)
+  float art;       // 1 on arterial streets (every fourth)
   float front;     // +1 / -1: which way the lot faces (street side along local z)
 };
 
@@ -336,10 +347,16 @@ float terrRoadClear(vec2 rxz) {
   TerrRoad R = terrRoadIn(c, rel);
   return R.d - R.hw;
 }
+float terrTownShape(vec2 q, vec2 hs) {
+  vec2 u = q / (length(q) + 1.0e-3);
+  float a1 = hs.x * 6.2831853, a2 = hs.y * 6.2831853 + 1.3, a3 = (hs.x + hs.y) * 9.42;
+  float k = 0.5 + 0.9 * dot(vec2(cos(a1), sin(a1)), u) * dot(vec2(cos(a2), sin(a2)), u) + 0.35 * dot(vec2(cos(a3), sin(a3)), u);
+  return 0.6 + 0.4 * clamp(k, 0.0, 1.0);
+}
 TerrTown terrTownIn(uvec4 cell, vec2 rxz) {
   TerrTown T;
   T.on = 0.0; T.kind = 0.0; T.rr = 2.0; T.ds = 1.0e3; T.hwS = 0.0; T.along = 0.0; T.lotEdge = 0.0; T.bq = vec2(0.0); T.bh = vec2(0.0);
-  T.bH = 0.0; T.roofK = 0.0; T.core = 0.0; T.h1 = vec2(0.0); T.h2 = vec2(0.0); T.ax = vec2(1.0, 0.0); T.front = 1.0; T.btype = 0.0; T.dens = 0.0;
+  T.bH = 0.0; T.roofK = 0.0; T.core = 0.0; T.h1 = vec2(0.0); T.h2 = vec2(0.0); T.ax = vec2(1.0, 0.0); T.front = 1.0; T.btype = 0.0; T.dens = 0.0; T.lamp = 0.0; T.art = 0.0;
   if (cell.w == 0u || uSetOn.y < 0.5) return T;
   int ti = (int(cell.w) - 1) * 2;
   vec4 A = texelFetch(tSetTown, ivec2(ti, 0), 0), B = texelFetch(tSetTown, ivec2(ti + 1, 0), 0);
@@ -362,15 +379,17 @@ TerrTown terrTownIn(uvec4 cell, vec2 rxz) {
   // street axis in the world, turned by the warp
   float wa = -atan(wc.y); float cw = cos(A.w + wa), sw = sin(A.w + wa);
   T.ax = vec2(cw, sw);
-  T.hwS = hwS;
+  T.hwS = hwS; T.lamp = fract(hs.x * 13.0 + hs.y * 7.0);
   vec2 bs = vec2(bw, bd);
   vec2 bi = floor(p / bs), f = p - bi * bs;
   vec2 de = min(f, bs - f);
   T.ds = min(de.x, de.y);
   T.along = de.x < de.y ? p.y : p.x;
+  float sIdx = de.x < de.y ? (f.x < bw * 0.5 ? bi.x : bi.x + 1.0) : (f.y < bd * 0.5 ? bi.y : bi.y + 1.0);
+  T.art = step(mod(sIdx, 4.0), 0.5) * step(1.5, kind);
   // the block: houses, sheds (industry, big stores) or green
   vec2 hbk = terrHash2(vec2(bi.x + sLo * 4096.0 + 91.0, bi.y + sHi * 512.0 + 57.0));
-  float rb = length((bi + 0.5) * bs) / R;
+  float rb = length((bi + 0.5) * bs) / (R * terrTownShape((bi + 0.5) * bs, hs));
   float btype = (kind >= 1.5 && rb > 0.45 && hbk.x < 0.11) ? 1.0 : (kind >= 0.5 && hbk.x > 0.93) ? 2.0 : 0.0;
   T.btype = btype;
   float nl = btype > 0.5 && btype < 1.5 ? 2.0 : floor(bw / 18.0), lw = bw / nl;
@@ -382,7 +401,7 @@ TerrTown terrTownIn(uvec4 cell, vec2 rxz) {
   vec2 h1 = terrHash2(ab), h2 = terrHash2(ab + vec2(7777.0, 3333.0));
   T.h1 = h1; T.h2 = h2;
   vec2 lc = vec2(bi.x * bw + (li + 0.5) * lw, bi.y * bd + (row + 0.5) * bd * 0.5);
-  float rr = length(lc) / R + 0.14 * (hbk.y - 0.5);
+  float rr = length(lc) / (R * terrTownShape(lc, hs)) + 0.14 * (hbk.y - 0.5);
   T.core = step(rr, coreF) * step(btype, 0.5);
   T.dens = 1.0 - ss(0.74, 1.0, rr);
   if (btype > 1.5) return T;

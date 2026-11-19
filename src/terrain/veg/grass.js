@@ -58,7 +58,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         vec4 n2 = textureLod(tTerrNoise, terrUV(TERR_TILE2, uTerrTile[2], rxz), 0.0);
         vec4 n3 = textureLod(tTerrNoise, terrUV(TERR_TILE3, uTerrTile[3], rxz), 0.0);
         vec4 n4 = textureLod(tTerrNoise, terrUV(TERR_TILE4, uTerrTile[4], rxz), 0.0);
-        float arid = Gh.z, water = clamp(Gh.w, 0.0, 1.0), playa = clamp(-Gh.w, 0.0, 1.0);
+        float arid = min(Gh.z, 1.0), water = clamp(Gh.w, 0.0, 1.0), playa = clamp(-Gh.w, 0.0, 1.0);
         TerrCover C = terrCover(rxz, h, n, (D.z - 0.5) / 1.25, arid, water, n0, n1, n2, n3);
         float slope = 1.0 - n.y;
         float desertAmt = ss(0.42, 0.85, arid + 0.25 * (n1.r - 0.5) + 0.1 * (n3.r - 0.5));

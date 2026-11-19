@@ -358,10 +358,13 @@ function terrain(x, z) {
         let dwv = noised(x * 0.0011 + 3.7, z * 0.0011 + 9.2);
         let du = x * 0.0038 + 1.6 * dwv, dv = z * 0.0013 + 0.8 * gDx;
         let d1 = noised(du, dv);
-        let r1 = 1.0 - 1.25 * sqrt(d1 * d1 + 0.004);
+        // crest lines where the noise changes sign: a long convex back on one side, a slip face at the angle of
+        // repose on the other, flat interdune floor beyond it
+        let da1 = clamp(-d1 / 0.6, 0.0, 1.0), db1 = clamp(d1 / 0.2, 0.0, 1.0);
+        let r1 = d1 < 0.0 ? 1.0 - da1 * sqrt(da1) : (1.0 - db1) * (1.0 - db1);
         let d2 = noised(du * 3.1 + 5.0, dv * 3.1 - 2.0);
         let r2 = 1.0 - 1.25 * sqrt(d2 * d2 + 0.004);
-        h += dm * (13.0 * mix(0.55, r1, bl(260.0)) + 2.6 * mix(0.55, r2, bl(85.0)) * (0.5 + 0.5 * r1));
+        h += dm * (21.0 * mix(0.31, r1, bl(260.0)) + 2.0 * mix(0.55, r2, bl(85.0)) * (0.4 + 0.6 * r1));
         gArid = 1.0 + dm;
       }
     }

@@ -135,7 +135,7 @@ export function createBuildings(ctx, { settle, heightAt }) {
         }
         diffuseColor.rgb = bcol;`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = brough;')
-      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += bemis * 1.6;');
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += bemis * 0.055;');
   };
   mat.customProgramCacheKey = () => 'skyward-buildings';
   const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
@@ -199,7 +199,7 @@ export function createBuildings(ctx, { settle, heightAt }) {
         if (d < radius + 0.75 * SETTLE_CELL) cells.push([d, i, j]);
       }
       cells.sort((a, b) => a[0] - b[0]);
-      let budget = ctx.params.test ? 1e9 : 5, n = 0;
+      let budget = ctx.params.test ? 1e9 : 2, n = 0;
       ax = settle.X0 + ci * SETTLE_CELL; az = settle.Z0 + cj * SETTLE_CELL;
       for (const [, i, j] of cells) {
         const k = j * settle.NX + i;
