@@ -10,9 +10,11 @@
 //   Intakes: caret, lip apex (upper inboard corner) at z -4.3, x 0.96 … 1.74, y -0.80 … -0.06, lips swept 29° in side
 //            view and 32° in plan; 16° side-wall lean; boundary-layer bleed slot between the inner lip and the body.
 //   Wing: LE 42°, TE swept forward 17°, LE root x 1.75 z -2.77, tip x 6.78 LE z 1.76 chord 1.8 (root chord 8.4 at the
-//         body side), 2.5° anhedral, NACA 6-series 5 % → 4 %, -2° tip twist. LEF 12–95 % span, flaperons 1.9–3.65 m,
-//         ailerons 3.7–6.1 m.
-//   Stabilators: all-moving, root x 1.86 LE z 4.3 chord 3.7, tip x 4.42 chord 0.9, LE 42°, pivot z 6.0.
+//         body side), 2.5° anhedral, NACA 6-series 5 % → 4 %, -2° tip twist. Inboard of x 2.58 the trailing edge turns
+//         forward parallel to the stabilator LE (the notch the stab nests in). LEF 12–95 % span, flaperons 2.66–4.0 m,
+//         ailerons 4.05–6.1 m.
+//   Stabilators: all-moving, root x 1.86 LE z 4.3 chord 3.7, tip x 4.42 chord 0.61, LE 42° ∥ wing LE, TE swept forward
+//         17° ∥ wing TE, pivot z 6.0.
 //   Fins: canted 27° outboard, root x 1.22 y 0.45 LE z 2.5 chord 4.6, slant height 3.3, tip chord 1.7, LE 28°, rudders.
 //   Nozzles: 2D C-D, centres x ±1.15 y 0.10, hinge z 7.02 → sawtooth flap tips z 8.0, 1.1 m wide, 0.82 m high at the
 //            hinge. Pitch vectoring ±20° (nozzlePitch), area opening with S.eng[i].nozzle.
@@ -27,10 +29,10 @@ export const LIVERIES = ['langley', 'elmendorf', 'hickam', 'lowvis'];
 
 // Real unit markings, invented serials. band: fin-tip band colour, bandText, stripes: thin accent stripes in the band.
 const SCHEMES = {
-  langley: { name: '1st FW Langley (FF)', base: '#757a80', camo: '#696e74', under: '#7f848a', mark: '#53575d', code: 'FF', serial: 'AF 12-4219', unit: '1 FW', band: '#4b4f55', bandText: 'LANGLEY', stripes: ['#5e6a7a'], seed: 777, sheenColor: '#9a978f' },
-  elmendorf: { name: '3rd Wing Elmendorf (AK)', base: '#71767c', camo: '#63686e', under: '#7a7f85', mark: '#4c5056', code: 'AK', serial: 'AF 11-4207', unit: '3 WG', band: '#3c4757', bandText: 'ALASKA', stars: '#8f8a6c', seed: 4211, sheenColor: '#959aa3' },
-  hickam: { name: '15th Wing / 199th FS Hickam (HH)', base: '#73787e', camo: '#666b71', under: '#7c8187', mark: '#4f5359', code: 'HH', serial: 'AF 13-4236', unit: '15 WG', band: '#34373b', bandText: 'HAWAII', stripes: ['#7a3a32', '#8c7a3c'], seed: 9001, sheenColor: '#a0988a' },
-  lowvis: { name: 'Sanitised test aircraft', base: '#7b7f84', camo: '#72767b', under: '#83878c', mark: '#696d72', code: '', serial: 'AF 14-4240', unit: '', band: null, seed: 1234, irid: 0.2, sheenColor: '#97989a' },
+  langley: { name: '1st FW Langley (FF)', base: '#6f747a', camo: '#63686e', under: '#7a7f85', mark: '#53575d', code: 'FF', serial: 'AF 12-4219', unit: '1 FW', band: '#4b4f55', bandText: 'LANGLEY', stripes: ['#5e6a7a'], seed: 777, sheenColor: '#9a978f' },
+  elmendorf: { name: '3rd Wing Elmendorf (AK)', base: '#6b7076', camo: '#5e6369', under: '#757a80', mark: '#4c5056', code: 'AK', serial: 'AF 11-4207', unit: '3 WG', band: '#3c4757', bandText: 'ALASKA', stars: '#8f8a6c', seed: 4211, sheenColor: '#959aa3' },
+  hickam: { name: '15th Wing / 199th FS Hickam (HH)', base: '#6d7278', camo: '#61666c', under: '#777c82', mark: '#4f5359', code: 'HH', serial: 'AF 13-4236', unit: '15 WG', band: '#34373b', bandText: 'HAWAII', stripes: ['#7a3a32', '#8c7a3c'], seed: 9001, sheenColor: '#a0988a' },
+  lowvis: { name: 'Sanitised test aircraft', base: '#74787d', camo: '#6b6f74', under: '#7e8287', mark: '#696d72', code: '', serial: 'AF 14-4240', unit: '', band: null, seed: 1234, irid: 0.2, sheenColor: '#97989a' },
 };
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -138,7 +140,7 @@ export function createVisual(ctx, opts = {}) {
     dark: atlas.swatch('dark', F.darkGrey), black: atlas.swatch('black', F.black),
     exhaust: atlas.swatch('exhaust', F.exhaust), flap: atlas.swatch('flap', { color: '#666a6f', rough: 0.5, metal: 0.4 }), flapIn: atlas.swatch('flapIn', { color: '#857360', rough: 0.42, metal: 0.9 }),
     side: atlas.swatch('nozSide', coat('#6c7176', 0.9)), heat: atlas.swatch('heat', { color: '#6d6058', rough: 0.48, metal: 0.9 }),
-    well: atlas.swatch('well', F.gearWhite), interior: atlas.swatch('interior', F.interior), console: atlas.swatch('console', { color: '#1d1f21', rough: 0.6, metal: 0 }),
+    well: atlas.swatch('well', F.gearWhite), interior: atlas.swatch('interior', F.interior), console: atlas.swatch('console', { color: '#2a2d30', rough: 0.62, metal: 0 }),
     seat: atlas.swatch('seat', { color: '#25282a', rough: 0.7, metal: 0 }), cushion: atlas.swatch('cushion', F.fabric), accent: atlas.swatch('accent', { color: '#d6b21e', rough: 0.5, metal: 0 }),
     suit: atlas.swatch('suit', { color: '#4d5540', rough: 0.9, metal: 0 }), helmet: atlas.swatch('helmet', { color: '#5c6166', rough: 0.4, metal: 0 }), visor: atlas.swatch('visor', { color: '#0a0b0d', rough: 0.05, metal: 0.4 }),
     glove: atlas.swatch('glove', { color: '#3a3d33', rough: 0.9, metal: 0 }), frame: atlas.swatch('frame', coat('#4e5257', 0.6)), steel: atlas.swatch('steel', F.steel),
@@ -270,8 +272,8 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.tub({ x: 0.42, y0: 0.02, y1: 0.66, z0: -6.95, z1: -3.8, uv: U.interior, taper: 0.8 }));
   {
     // glareshield coaming: rounded lip over the panel, tapering into the windshield; anti-glare dark grey
-    const gs = K.prism([[-6.98, 0.5], [-6.98, 0.64], [-6.74, 0.775], [-6.54, 0.83], [-6.45, 0.828], [-6.41, 0.8], [-6.41, 0.5]], -0.4, 0.4, U.console);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.5 + 0.5 * Math.min(1, (gs.p[i + 2] + 6.98) / 0.5);
+    const gs = K.prism([[-6.98, 0.5], [-6.98, 0.64], [-6.86, 0.715], [-6.74, 0.77], [-6.63, 0.805], [-6.54, 0.824], [-6.47, 0.828], [-6.43, 0.818], [-6.41, 0.8], [-6.41, 0.5]], -0.4, 0.4, U.console);
+    for (let i = 0; i < gs.p.length; i += 3) { const f = Math.min(1, (gs.p[i + 2] + 6.98) / 0.5); gs.p[i] *= 0.5 + 0.5 * f; gs.p[i + 1] -= 0.035 * (gs.p[i] / 0.4) ** 2 * (gs.p[i + 1] > 0.6 ? 1 : 0); }
     stat.add(gs);
     // instrument panel: one flat panel carrying the six colour displays (chart), slightly reclined, with a bezel lip
     const z = -6.42, i0 = stat.vertexCount, q = [[-0.43, 0.38], [0.43, 0.38], [0.43, 0.79], [-0.43, 0.79]];
@@ -304,7 +306,6 @@ export function createVisual(ctx, opts = {}) {
   { const y = eye[1] - 0.05, zH = eye[2] - 0.6, w = 0.27, h = 0.2, fr = new K.Mesh();
     for (const sx of [-1, 1]) fr.add(K.box(0.01, h * 1.02, 0.012, U.black).rotateX(-0.42).translate(sx * (w / 2 + 0.005), y, zH));
     fr.add(K.box(w * 1.08, 0.045, 0.15, U.console).translate(0, y - h / 2 - 0.025, zH - 0.03));
-    fr.add(K.box(w * 0.6, 0.012, 0.03, U.black).translate(0, y + h * 0.47, zH + 0.04));
     hudParts.frame = fr; }
   stat.add(hudParts.frame);
   const pilotMesh = K.pilot({ eye, recline: 20, stick: [0.33, -0.42, -0.04], throttle: [-0.33, -0.42, -0.04], uv: { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove } });
@@ -375,9 +376,10 @@ export function createVisual(ctx, opts = {}) {
     // stabilator boom (pivot housing) outboard of the nacelle
     stat.add(K.loft({
       stations: [
-        { z: 4.6, x: sx * 1.72, y: -0.03, w: 0.04, top: 0.04, bot: 0.04, kTop: 0.6, kBot: 0.6 },
-        { z: 5.4, x: sx * 1.74, y: -0.03, w: 0.14, top: 0.1, bot: 0.1, kTop: 0.62, kBot: 0.62, aTop: 30, aBot: 30 },
-        { z: 7.0, x: sx * 1.76, y: -0.03, w: 0.15, top: 0.1, bot: 0.1, kTop: 0.62, kBot: 0.62, aTop: 30, aBot: 30 },
+        { z: 3.75, x: sx * 1.68, y: -0.06, w: 0.03, top: 0.02, bot: 0.03, kTop: 0.6, kBot: 0.6 },
+        { z: 4.3, x: sx * 1.71, y: -0.04, w: 0.15, top: 0.06, bot: 0.09, kTop: 0.62, kBot: 0.62, aTop: 30, aBot: 30 },
+        { z: 5.4, x: sx * 1.74, y: -0.03, w: 0.16, top: 0.1, bot: 0.1, kTop: 0.62, kBot: 0.62, aTop: 30, aBot: 30 },
+        { z: 7.0, x: sx * 1.76, y: -0.03, w: 0.16, top: 0.1, bot: 0.1, kTop: 0.62, kBot: 0.62, aTop: 30, aBot: 30 },
         { z: 7.85, x: sx * 1.76, y: -0.03, w: 0.1, top: 0.06, bot: 0.06, kTop: 0.62, kBot: 0.62, aTop: 30, aBot: 30 },
         { z: 8.08, x: sx * 1.76, y: -0.03, w: 0.015, top: 0.015, bot: 0.015 },
       ], segments: 16, step: 0.3, uv: U.base,
