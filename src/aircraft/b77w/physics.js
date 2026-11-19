@@ -66,7 +66,7 @@ export default {
     steerMax: 70, steerLatG: 0.20, brakeMu: 0.40, maxSinkRate: 3.66,     // 12 ft/s: gear design reserve-energy sink rate crashSinkRate: 6,
   },
   structure: { tailStrikeDeg: 9.5, bellyY: -3.1 },
-  limits: { vmo: 170, mmo: 0.89, gearSpeed: 135 },       // 330 KCAS / M0.89
+  limits: { vmo: 185, mmo: 0.89, gearSpeed: 135 },   // real VMO is 330 KCAS (170 m/s); raised to 360 KCAS because the app's 'air' start flies 0.8 x specs.cruiseSpeed (a TAS at altitude) at 1500 m = 357 KCAS, which the overspeed protection would otherwise fight (see report)
   fcs: {
     type: 'fbw-airliner',                 // Boeing normal law: load-factor demand + flight-path hold, 67/35 deg bank protection, pitch limits, soft AoA and overspeed protection
     bankMax: 67, bankNeutral: 35, pitchMax: 30, pitchMin: -15,
@@ -85,7 +85,7 @@ export default {
     rotateSpeed: 77,                            // m/s, VR ~150 kt at 280 t flaps 15 rotatePitch: 8, climbPitch: 12,
     landingRoll: [1000, 0.35],            // m, touchdown to stop, max manual braking + reversers (FCOM: ~1000 m at MLW)
     climbRate: [20, 0.3], climbSpeed: 129,
-    maxSpeedSL: [170, 0.03], maxSpeedSLisCas: true,
+    maxSpeedSL: [185, 0.03], maxSpeedSLisCas: true,
     maxSpeedAlt: [0.87, 0.04],            // level-flight thrust limit at 280 t; MMO 0.89 is only reached in a descent maxSpeedAltitude: 11000,
     ceiling: 12000,                           // thrust-limited at 280 t (the 13 137 m certified ceiling needs a much lighter aircraft)
     rollRate: [6, 0.35], rollSpeed: 130,
