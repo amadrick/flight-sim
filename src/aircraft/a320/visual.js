@@ -79,8 +79,8 @@ export function createVisual(ctx, opts = {}) {
   A.pack();
   const UA = {
     body: A.swatch('body', F.gloss(SC.body)), fair: A.swatch('fair', F.gloss(SC.style === 'sweep' ? SC.belly : SC.belly)), dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black),
-    well: A.swatch('well', { color: '#7a7f78', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#8a9096', rough: 0.85, metal: 0 }), post: A.swatch('post', { color: '#5e656c', rough: 0.75, metal: 0 }), fcu: A.swatch('fcu', { color: '#3c4147', rough: 0.6, metal: 0 }),
-    floor: A.swatch('floor', { color: '#3a3d42', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2a2d31', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#5f666d', rough: 0.75, metal: 0 }),
+    well: A.swatch('well', { color: '#7a7f78', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#8c949b', rough: 0.85, metal: 0 }), post: A.swatch('post', { color: '#5f6870', rough: 0.75, metal: 0 }), fcu: A.swatch('fcu', { color: '#3c4147', rough: 0.6, metal: 0 }),
+    floor: A.swatch('floor', { color: '#34383d', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2c3137', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#566069', rough: 0.75, metal: 0 }),
     seat: A.swatch('seat', { color: '#4c5157', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#3b4a63', rough: 1, metal: 0 }), stick: A.swatch('stick', { color: '#17181a', rough: 0.5, metal: 0 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9eaea')), lens: A.swatch('lens', F.lens),
     frame: A.swatch('frame', { color: '#2a2d31', rough: 0.55, metal: 0.2 }),
@@ -448,7 +448,7 @@ export function createVisual(ctx, opts = {}) {
   rig.addStatic(stA, 'paint'); rig.addStatic(stB, 'wing');
 
   // ---- landing gear -----------------------------------------------------------------------------------------------------------
-  const gp = G.gear, gearUV = { strut: A.swatch('gear.strut', F.gearWhite), hub: A.swatch('gear.hub', { color: '#c9cbc8', rough: 0.4, metal: 0.3 }) };
+  const gp = G.gear, gearUV = { strut: A.swatch('gear.strut', F.gearWhite), hub: A.swatch('gear.hub', { color: '#aeb2b4', rough: 0.38, metal: 0.55 }) };
   const doorOf = (patch, edge) => ({ mesh: K.thicken(patch, 0.025, UA.well), hinge: { a: edge[0], b: edge[1] }, ref: K.centroid(patch) });
   // light bar on the nose strut: taxi and take-off lights in the middle, runway turn-off lights either side
   const noseExtra = new K.Mesh();
@@ -466,6 +466,17 @@ export function createVisual(ctx, opts = {}) {
     lamps: [{ kind: 'taxi', pos: [0, -1.86, -11.69], size: 0.055, color: [1, 0.96, 0.9] }, { kind: 'landing', pos: [0, -1.74, -11.69], size: 0.05, color: [1, 0.97, 0.92] },
       { kind: 'taxi', pos: [-0.13, -1.8, -11.67], size: 0.04, color: [1, 0.97, 0.92] }, { kind: 'taxi', pos: [0.13, -1.8, -11.67], size: 0.04, color: [1, 0.97, 0.92] }],
   });
+  // leg-mounted main gear door: a slightly curved panel outboard of the strut (belly colour outside, well grey inside)
+  const legDoor = (P, Cx, sx) => {
+    const f = (k, dx, dz) => [P[0] + (Cx[0] - P[0]) * k + sx * dx, P[1] + (Cx[1] - P[1]) * k, P[2] + (Cx[2] - P[2]) * k + dz];
+    const m = new K.Mesh();
+    for (const [dx, uv] of [[0.19, UA.fair], [0.165, UA.well]]) {
+      const rows = [[0.05, -0.52, 0.44], [0.33, -0.48, 0.4], [0.6, -0.4, 0.34]];
+      const quadRow = (r0, r1) => { const [k0, a0, b0] = r0, [k1, a1, b1] = r1; return [f(k0, dx, a0), f(k0, dx + 0.04, (a0 + b0) / 2), f(k0, dx, b0), f(k1, dx, a1), f(k1, dx + 0.04, (a1 + b1) / 2), f(k1, dx, b1)]; };
+      for (let r = 0; r < 2; r++) { const q = quadRow(rows[r], rows[r + 1]); m.add(K.plate(q[0], q[1], q[4], q[3], 0.012, uv)).add(K.plate(q[1], q[2], q[5], q[4], 0.012, uv)); }
+    }
+    return m;
+  };
   const mains = [];
   for (const [i, sx, key] of [[1, -1, 'L'], [2, 1, 'R']]) {
     const c = gp[i].pos, P = [sx * 3.5, -0.62, c[2]], to = [sx * 1.45, -1.55, c[2]];
@@ -473,7 +484,7 @@ export function createVisual(ctx, opts = {}) {
     mains.push({ sw, g: K.buildGear(rig, A, {
       name: 'main' + key, index: i, contact: c, wheels: [-0.46, 0.46], wheelRadius: gp[i].wheelRadius, wheelWidth: 0.36, pivot: P, stroke: 0.4, staticFrac: 0.4,
       strutR: 0.11, links: 'rear', retract: { to }, window: [0.18, 0.92], brace: [sx * 2.45, -0.75, c[2] + 0.1], uv: gearUV, wheelSegments: 28,
-      doors: [{ name: 'mainDoor' + key, onLeg: true, mesh: K.box(0.04, 1.35, 0.7, UA.fair).translate(sx * 3.86, -1.25, c[2]) }],
+      doors: [{ name: 'mainDoor' + key, onLeg: true, mesh: legDoor(P, [c[0], c[1] + gp[i].wheelRadius, c[2]], sx) }],
     }) });
   }
   // the A320 has no main-wheel doors: keep the stowed legs (and their wheels) visible in the open belly wells
@@ -750,7 +761,15 @@ function paintSurfaces(B, o) {
       Q.stroke((g) => { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); }, 0.04, F.matte('#2a2c2e'));
       Q.stroke((g) => { g.moveTo(a[0], a[1]); g.lineTo(d[0], d[1]); }, 0.04, F.matte('#2a2c2e'));
       for (const x of [3.3, 9.5, 13.0]) { const p = at(x, 0.35); Q.decal(p[0], p[1], (g) => { g.fillStyle = '#3c4044'; g.beginPath(); g.arc(0, 0, 0.09, 0, Math.PI * 2); g.fill(); }); }   // fuel caps
+      // no-step border along the spoiler / flap hinge line (stencil text would read mirrored on the shared chart)
+      Q.stroke((g) => { const xs = [6.1, 13.9]; xs.forEach((x, i) => { const p = at(x, L('spoil', x) - 0.025); if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); }); }, 0.025, F.semigloss('#8a3a32'), { alpha: 0.8 });
+      Q.wear((g) => { const p0 = at(2.4, 0.01), p1 = at(16.5, 0.01); g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]); }, 0.05, { color: '#d6d9db', rough: 0.25, metal: 0.9 }, { alpha: 0.35 });
+      for (let i = 0; i < 9; i++) { const x = 3 + i * 1.5, a = at(x, L('flap', x) + 0.02); Q.streak(a[0], a[1], a[0], a[1] + 0.9, 0.08, { alpha: 0.06 }); }
     } else {
+      // core exhaust soot on the flap undersides behind each engine, fuel vent, drain stains
+      { const a = at(4.6, L('flap', 4.6)), b = at(6.9, L('flap', 6.9)), c = at(6.9, 1), d = at(4.6, 1); Q.fill([a, b, c, d], { color: '#3a3532', rough: 0.7, metal: 0 }, { alpha: 0.22, feather: 14 }); }
+      { const p = at(15.2, 0.45); Q.decal(p[0], p[1], (g) => { g.fillStyle = '#1e2022'; g.beginPath(); g.moveTo(-0.05, -0.2); g.lineTo(0.05, -0.2); g.lineTo(0.1, 0.2); g.lineTo(-0.1, 0.2); g.closePath(); g.fill(); }); }
+      for (const x of [4.0, 8.0, 12.5]) { const p = at(x, 0.5); Q.streak(p[0], p[1], p[0], p[1] + 1.5, 0.04, { alpha: 0.12 }); }
       for (let i = 0; i < 12; i++) { const x = 3 + i * 1.1, a = at(x, 0.62); Q.streak(a[0], a[1], a[0], a[1] + 1.2, 0.05, { alpha: 0.1 }); }
       for (const x of [7.5, 10.5, 13.5]) { const p = at(x, 0.4); Q.panel(p[0] - 0.25, p[1] - 0.2, p[0] + 0.25, p[1] + 0.2, { r: 0.05 }); }
     }
