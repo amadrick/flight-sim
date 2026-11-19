@@ -107,7 +107,7 @@ export function createVisual(ctx, opts = {}) {
     grey: B.swatch('grey', skin), duct: B.swatch('duct', { color: '#232527', rough: 0.6, metal: 0.25 }),
     acoustic: B.swatch('acoustic', { color: '#5d6063', rough: 0.65, metal: 0.45 }), core: B.swatch('core', { color: '#5f6366', rough: 0.55, metal: 0.45 }), plug: B.swatch('plug', { color: '#5a5048', rough: 0.5, metal: 0.8 }),
     blade: B.swatch('blade', { color: '#6c7075', rough: 0.36, metal: 0.9 }), spinner: B.swatch('spinner', { color: '#26282b', rough: 0.35, metal: 0.4 }), swirl: B.swatch('swirl', { color: '#e8e8e4', rough: 0.4, metal: 0 }),
-    inner: B.swatch('inner', F.primer), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }), wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', skin),
+    inner: B.swatch('inner', { color: '#5d6264', rough: 0.75, metal: 0.15 }), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }), wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', skin),
     hot: B.swatch('hot', { color: '#6b6158', rough: 0.45, metal: 0.85 }), soot: B.swatch('soot', { color: '#3c3d3d', rough: 0.8, metal: 0.1 }), slime: B.swatch('slime', { color: '#b9c7a6', rough: 0.4, metal: 0 }),
   };
 
@@ -498,7 +498,7 @@ function paintFuselage(A, o) {
     P.fill([[z, tt], [z + w, tt], [z + w, tt + h], [z, tt + h]], F.matte(rnd() < 0.5 ? '#767b7e' : '#62676a'), { alpha: (0.25 + rnd() * 0.35) * wx });
   }
   // radome (slightly darker, smoother composite) and its joint
-  P.band(Z0, D(2.45), -Infinity, Infinity, { color: SC.radome, rough: 0.58, metal: 0 }, { step: 0.1 });
+  P.band(Z0, D(2.45), -Infinity, Infinity, { color: SC.radome, rough: 0.64, metal: 0 }, { step: 0.1 });
   P.ring(D(2.45), 0, 1, { px: 1.6, depth: 0.5, dark: 0.3 });
   P.ring(D(0.9), 0, 1, { px: 0.8, depth: 0.2, dark: 0.08 });
   // flight-deck windows: dark painted glass, black sealant edge, thin grey frames between the panes
@@ -565,7 +565,7 @@ function paintFuselage(A, o) {
     P.textOn(SC.serial.slice(-4), D(6.0), -2.15, 'both', 0.2, { color: mark, weight: 700 });                 // last four on the nose-gear doors' side
   } else {
     title('ROYAL AIR FORCE', -13.8, 2.0, 0.55);
-    P.decalOn(8.6, 0.9, 'both', (g) => roundel(g, 0.75));
+    P.decalOn(-9.6, 0.9, 'both', (g) => roundel(g, 0.85));
     P.textOn(SC.serial, 15.5, 0.2, 'both', 0.42, { color: mark, font: K.FONT.sans, weight: 700 });
     P.textOn(SC.serial, D(6.0), -2.15, 'both', 0.18, { color: mark, weight: 700 });
   }
@@ -677,14 +677,14 @@ function paintSurfaces(B, o) {
       const w0 = at(3.4, 0.2), w1 = at(3.4, 0.5), w2 = at(17.2, 0.5), w3 = at(17.2, 0.2);
       Q.fill([w0, w3, w2, w1], { color: SC.body, rough: 0.92, metal: 0 }, { alpha: 0.6 });
       Q.stroke((g) => { g.moveTo(w0[0], w0[1]); g.lineTo(w3[0], w3[1]); g.moveTo(w1[0], w1[1]); g.lineTo(w2[0], w2[1]); }, 0.05, walk);
-      for (const x of [6, 12, 20]) { const p = at(x, 0.62); Q.text('NO STEP', p[0], p[1], 0.13, { color: mark, font: K.FONT.sans }); }
-      for (const x of [5, 11, 15.5]) { const p = at(x, 0.35); Q.text('WALKWAY', p[0], p[1], 0.09, { color: mark, font: K.FONT.sans }); }
+      // (the wing charts are mirrored, so no lettering here: NO STEP bars only, which read the same on both wings)
+      for (const x of [6, 12, 20]) { const p = at(x, 0.62); Q.fill((g) => { g.rect(p[0] - 0.4, p[1] - 0.04, 0.8, 0.025); g.rect(p[0] - 0.4, p[1] + 0.015, 0.8, 0.025); }, F.matte(mark), { alpha: 0.8 }); }
       // fuel filler caps / tank access on top, overwing gravity filler
       for (const x of [6.2, 13.8, 19.5]) { const p = at(x, 0.4); Q.fill((g) => { g.arc(p[0], p[1], 0.07, 0, TAU); }, { color: '#585d60', rough: 0.5, metal: 0.4 }); Q.groove((g) => g.arc(p[0], p[1], 0.075, 0, TAU), { px: 1, depth: 0.4, dark: 0.2 }); }
       // externally blown flaps: soot and heat discolouration on the flap tops behind each engine, worst at the slots
       for (const x of ENG) {
         const a = at(x, 0.7), b = at(x, 1);
-        Q.fill((g) => { g.ellipse((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 0.25, 1.5, 1.6, 0, 0, TAU); }, { color: '#3d3a36', rough: 0.85, metal: 0 }, { alpha: 0.22 * (0.5 + wx), feather: 30 });
+        for (let i = 0; i < 6; i++) { const dx = (rnd() - 0.5) * 2.2, p = at(x + dx, 0.72); Q.streak(p[0], p[1], p[0] + 0.1, p[1] + 2.0, 0.5 + rnd() * 0.4, { color: '44,41,37', alpha: 0.12 * (0.5 + wx), rough: 0.08 }); }
         for (let i = 0; i < 9; i++) { const dx = (rnd() - 0.5) * 2.4, f0 = 0.7 + rnd() * 0.1; const p = at(x + dx, f0); Q.streak(p[0], p[1], p[0] + 0.15, p[1] + 1.4 + rnd(), 0.12 + rnd() * 0.15, { color: '30,28,25', alpha: 0.18 * (0.5 + wx) }); }
         const s0 = at(x, 0.86); Q.stroke((g) => { g.moveTo(s0[0] - 1.2, s0[1] - 0.56); g.lineTo(s0[0] + 1.2, s0[1] + 0.56); }, 0.12, { color: '#2e2c2a', rough: 0.85, metal: 0 }, { alpha: 0.35 * (0.5 + wx) });
       }
@@ -696,7 +696,7 @@ function paintSurfaces(B, o) {
       for (let i = 0; i < 18; i++) { const x = 4 + i * 1.1, a = at(x, 0.62); Q.streak(a[0], a[1], a[0] + 0.05, a[1] + 1.8, 0.07, { alpha: (0.07 + rnd() * 0.06) * (0.5 + wx) }); }
       for (const x of ENG) {
         const a = at(x, 0.66);
-        Q.fill((g) => { g.ellipse(a[0], a[1] + 1.6, 1.7, 2.1, 0, 0, TAU); }, { color: '#33312e', rough: 0.88, metal: 0 }, { alpha: 0.3 * (0.5 + wx), feather: 34 });
+        for (let i = 0; i < 7; i++) { const dx = (rnd() - 0.5) * 2.6; Q.streak(a[0] + dx, a[1] - 0.5, a[0] + dx + 0.15, a[1] + 3.0, 0.6 + rnd() * 0.5, { color: '38,36,33', alpha: 0.16 * (0.5 + wx), rough: 0.08 }); }
         for (let i = 0; i < 12; i++) { const dx = (rnd() - 0.5) * 2.6; Q.streak(a[0] + dx, a[1] - 0.3, a[0] + dx + 0.1, a[1] + 3.2, 0.1 + rnd() * 0.2, { color: '26,24,22', alpha: 0.2 * (0.5 + wx) }); }
       }
     }
