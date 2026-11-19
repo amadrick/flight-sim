@@ -227,9 +227,21 @@ the `.json` files next to them and are summarised in section 6.
 
 ## 6. Render comparison (192x108, 12 spp, reference noise removed)
 
-See `tools/neural/clouds/results/renders/`. The numbers are filled from the `.json` files:
+Relative RMSE of the cloud pixels (radiance-weighted, the reference's own Monte Carlo noise removed; noise level in
+the second column) and brightness ratio vs the path-traced reference. Lighting: sun, mean sky and ground radiances of
+a clear day at that sun elevation.
 
-RENDER_TABLE
+| shot | ref noise | new | shipped (calibrated) | classic |
+|---|---|---|---|---|
+| cumulus at noon (held-out heap, 65 deg) | 0.045 | 0.156 (x1.07) | 0.165 (x0.86) | 0.383 (x0.79) |
+| backlit silver lining (sun 14 deg behind) | 0.048 | 0.117 (x1.00) | 0.172 (x0.93) | 0.456 (x0.62) |
+| low sun (game field near1, 6 deg) | 0.042 | 0.204 (x0.99) | 0.284 (x0.99) | 0.406 (x0.71) |
+| thick storm cloud base (held-out Cb, from below) | 0.027 | 0.140 (x1.01) | 0.257 (x0.77) | 0.681 (x0.30) |
+| thin wisp (held-out, 55 deg) | 0.025 | 0.083 (x1.04) | 0.117 (x1.06) | 0.702 (x1.82) |
+
+The noon cumulus is the one shot where the new model is barely ahead (it is 7 % bright there; the shipped nets are 14 %
+dark). The flat vertical faces in the low-sun shot are the edges of the exported game field's box, present in all
+columns.
 
 ## 7. Reproduce
 

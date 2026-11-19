@@ -1,0 +1,35 @@
+{
+ "shot": "storm_base",
+ "columns": [
+  "reference",
+  "new",
+  "shipped",
+  "classic"
+ ],
+ "stats": {
+  "_ref_noise_rel": 0.02715856984882977,
+  "new": {
+   "rmse_rel": 0.1426775223756855,
+   "rmse_rel_denoised": 0.14006886690135847,
+   "brightness_ratio": 1.0140108914373165
+  },
+  "shipped": {
+   "rmse_rel": 0.2583282262871277,
+   "rmse_rel_denoised": 0.25689664182394384,
+   "brightness_ratio": 0.7700157836858148
+  },
+  "classic": {
+   "rmse_rel": 0.6819870161949408,
+   "rmse_rel_denoised": 0.6814460377331757,
+   "brightness_ratio": 0.30402516595588036
+  },
+  "_ref_mc_seconds": 442.5408456325531
+ },
+ "res": [
+  192,
+  108
+ ],
+ "spp": 12,
+ "nA": 48,
+ "nB": 16
+}

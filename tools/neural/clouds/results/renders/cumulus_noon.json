@@ -1,0 +1,35 @@
+{
+ "shot": "cumulus_noon",
+ "columns": [
+  "reference",
+  "new",
+  "shipped",
+  "classic"
+ ],
+ "stats": {
+  "_ref_noise_rel": 0.04508794241668505,
+  "new": {
+   "rmse_rel": 0.1627522780052737,
+   "rmse_rel_denoised": 0.15638216472646613,
+   "brightness_ratio": 1.0690708685712509
+  },
+  "shipped": {
+   "rmse_rel": 0.17079498265627938,
+   "rmse_rel_denoised": 0.1647361634529239,
+   "brightness_ratio": 0.8561824325553615
+  },
+  "classic": {
+   "rmse_rel": 0.3860279303290716,
+   "rmse_rel_denoised": 0.3833857593113968,
+   "brightness_ratio": 0.7910215523180948
+  },
+  "_ref_mc_seconds": 59.259395599365234
+ },
+ "res": [
+  192,
+  108
+ ],
+ "spp": 12,
+ "nA": 48,
+ "nB": 16
+}

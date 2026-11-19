@@ -1,0 +1,35 @@
+{
+ "shot": "thin_wisp",
+ "columns": [
+  "reference",
+  "new",
+  "shipped",
+  "classic"
+ ],
+ "stats": {
+  "_ref_noise_rel": 0.02460697577262106,
+  "new": {
+   "rmse_rel": 0.08646511818079962,
+   "rmse_rel_denoised": 0.08288976659000365,
+   "brightness_ratio": 1.038710698408068
+  },
+  "shipped": {
+   "rmse_rel": 0.11976049294410068,
+   "rmse_rel_denoised": 0.11720525761901482,
+   "brightness_ratio": 1.0596009657358267
+  },
+  "classic": {
+   "rmse_rel": 0.7021804884481337,
+   "rmse_rel_denoised": 0.7017491967224369,
+   "brightness_ratio": 1.8182809711501642
+  },
+  "_ref_mc_seconds": 9.153140544891357
+ },
+ "res": [
+  192,
+  108
+ ],
+ "spp": 12,
+ "nA": 48,
+ "nB": 16
+}
