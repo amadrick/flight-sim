@@ -23,7 +23,7 @@ export default {
       cla:   [1.00,   1.04,   1.10,   1.15,   1.22,   1.30,   1.32,   1.30,   1.22,   1.12,   0.98,   0.86,   0.77,   0.70,   0.64,   0.59],
       clMax: [1.00,   1.00,   0.95,   0.90,   0.84,   0.78,   0.76,   0.75,   0.76,   0.76,   0.74,   0.70,   0.66,   0.62,   0.58,   0.55],
       cd0:   [0.0215, 0.0215, 0.0217, 0.0222, 0.0240, 0.0291, 0.0420, 0.0607, 0.0764, 0.0836, 0.0848, 0.0804, 0.0759, 0.0737, 0.0715, 0.0693],
-      k:     [0.085,  0.085,  0.086,  0.088,  0.091,  0.096,  0.100,  0.105,  0.095,  0.105,  0.125,  0.145,  0.165,  0.185,  0.205,  0.225],
+      k:     [0.085,  0.085,  0.086,  0.088,  0.091,  0.096,  0.100,  0.105,  0.108,  0.112,  0.128,  0.145,  0.165,  0.185,  0.205,  0.225],
       xac:   [0,      0,      0,      0,      0,      0.02,   0.05,   0.08,   0.11,   0.12,   0.13,   0.13,   0.13,   0.13,   0.13,   0.13],
       ctrl:  [1,      1,      1,      0.99,   0.97,   0.93,   0.90,   0.86,   0.82,   0.78,   0.72,   0.66,   0.60,   0.55,   0.51,   0.48],
     },
@@ -31,13 +31,13 @@ export default {
     sweep: {
       time: 7,
       auto: [[0, 0], [0.7, 0], [0.8, 0.2], [0.9, 0.5], [1.0, 0.75], [1.2, 0.92], [1.4, 1], [3, 1]],
-      effects: { cla: 0.62, clMax: 0.75, cd0: 0.002, wave: 0.45, k: 1.9, xac: 0.06, damp: 0.65, span: 0.596 },
+      effects: { cla: 0.62, clMax: 0.75, cd0: 0.002, wave: 0.45, k: 1.9, xac: 0.06, damp: 0.85, span: 0.596 },
     },
     drag: { clMinDrag: 0.03, gear: 0.025, speedbrake: 0.05, spoiler: 0.10, beta: 1.2, elevator: 0.08 },
     pitch: { cm0: 0.0, staticMargin: 0.09, cmq: -12.0, cmde: 1.6, clde: 0.40, cmPostStall: -1.4, cmGear: -0.006, cmSpoiler: 0.01 },
     side: { cyb: -1.0, cydr: 0.18 },
-    roll: { clb: -0.08, clbCl: -0.08, clp: -0.40, clr: 0.04, clrCl: 0.18, clda: 0.0, cldt: 0.050, cldr: 0.010, clSpoiler: 0.060 },
-    yaw: { cnb: 0.16, cnp: -0.015, cnpCl: -0.06, cnr: -0.30, cnda: 0.004, cndaCl: 0.008, cndr: 0.075, cnSpoiler: 0.006,
+    roll: { clb: -0.08, clbCl: -0.08, clp: -0.40, clr: 0.04, clrCl: 0.18, clda: 0.0, cldt: 0.050, cldr: 0.010, clSpoiler: 0.070 },
+    yaw: { cnb: 0.16, cnp: -0.015, cnpCl: -0.06, cnr: -0.30, cnda: 0.004, cndaCl: 0.008, cndr: 0.075, cnSpoiler: 0.010,
       alphaDir: [20, 34], cnbPostStall: -0.06 },
     stall: { wingDrop: 0.014, clpPost: 0.03, buffetMargin: 8, warnMargin: 3 },
     flaps: {
@@ -55,9 +55,9 @@ export default {
   controls: {
     elevator: { max: 33, rate: 40, tau: 0.06 },          // stabilators (real travel 33° TE up / 11.5° TE down; symmetric in the engine)
     aileron: { max: 20, rate: 50, tau: 0.06 },           // "aileron" channel = roll command to diff. stabs + spoilers
-    rudder: { max: 30, rate: 60, tau: 0.06 },
+    rudder: { max: 30, rate: 60, tau: 0.06, qBlowdown: 15000 },
     diffTail: { max: 10 },                                // differential stabilator ±10°
-    spoilers: { flightMax: 0.0, rollGain: 1.25, rollDeadband: 0.2, rollMax: 1.0, time: 0.4, autoGround: true },
+    spoilers: { flightMax: 0.0, rollGain: 1.43, rollDeadband: 0.3, rollMax: 0.8, time: 0.4, autoGround: true },
     trim: { max: 10, rate: 0.06, authority: 0.7 },
     speedbrake: { time: 2 },
   },
@@ -77,7 +77,7 @@ export default {
   fcs: {
     type: 'conventional',
     feelQ: 4800, feelMin: 0.06, rollFeelQ: 20000, trimFollowUp: 0,
-    yawDamper: 1, sasAuthority: 0.6, betaGain: 2, ari: 0.5, stickShape: 0.8,
+    yawDamper: 1, sasAuthority: 0.7, betaGain: 2, ari: 0.6, stickShape: 0.8,
   },
   autopilot: { bankMax: 25, accelMax: 0.15 },
   targets: {
