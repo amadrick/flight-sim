@@ -34,7 +34,7 @@ const SCHEMES = {
   operational: {
     name: 'Operational (509th BW)', skin: '#353a41', under: '#2e333b', le: '#4c5259', seam: '#40454d', patch: '#2d3137', tile: '#6f6b64', soot: '#2a2622',
     rough: 0.56, metal: 0.07, weather: 0.42, patch: 1, tape: 1, noise: 0.03, chalk: 0, walk: '#272a2f',
-    code: 'WM', serial: 'AF 91-0347', acName: 'SPIRIT OF CASCADIA', unit: '509 BW', mark: '#1a1c20',
+    code: 'WM', serial: 'AF 91-0347', acName: 'SPIRIT OF CASCADIA', unit: '509 BW', mark: '#0f1012',
   },
   weathered: {
     name: 'Weathered (field-repaired coating)', skin: '#41464d', under: '#373c44', le: '#5d636a', seam: '#4f555d', patch: '#33373d', tile: '#67635c', soot: '#221e1b',
@@ -375,8 +375,8 @@ export function createVisual(ctx, opts = {}) {
   // wing charts are sheared along the leading edge (paint b = z - x·tan33) and split at the notch: the inner chart holds
   // the centre body, the outer one the constant-chord outer wing and tip — far less wasted atlas than a plain plan view
   const wchart = (name, a, b, flip, density) => atlas.chart(name, { type: 'proj', origin: [0, 0, 0], u: [1, 0, 0], v: [-T33, 0, 1], a, b, flip, mirror: true, density });
-  const cTop = [wchart('topIn', [0, XN + 0.05], [-9.5, 11.6], false, 1), wchart('topMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], false, 1.1), wchart('topOut', [XS - 0.05, 26.3], [-9.5, -3.0], false, 1.1)];
-  const cBot = [wchart('botIn', [0, XN + 0.05], [-9.5, 11.6], true, 0.8), wchart('botMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], true, 0.85), wchart('botOut', [XS - 0.05, 26.3], [-9.5, -3.0], true, 0.85)];
+  const cTop = [wchart('topIn', [0, XN + 0.05], [-9.5, 11.6], false, 1.12), wchart('topMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], false, 1.2), wchart('topOut', [XS - 0.05, 26.3], [-9.5, -3.0], false, 1.2)];
+  const cBot = [wchart('botIn', [0, XN + 0.05], [-9.5, 11.6], true, 0.86), wchart('botMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], true, 0.9), wchart('botOut', [XS - 0.05, 26.3], [-9.5, -3.0], true, 0.9)];
   const cND = { R: atlas.chart('ndoorR', { type: 'rect', w: 3.4, h: 0.5, density: 2.2 }), L: atlas.chart('ndoorL', { type: 'rect', w: 3.4, h: 0.5, density: 2.2 }) };
   const cMD = { R: atlas.chart('mdoorR', { type: 'rect', w: 4.6, h: 1.05, density: 1.4 }), L: atlas.chart('mdoorL', { type: 'rect', w: 4.6, h: 1.05, density: 1.4 }) };
   const cPanel = atlas.chart('panel', { type: 'rect', w: 2.3, h: 0.45, density: 2.4 });
@@ -386,7 +386,7 @@ export function createVisual(ctx, opts = {}) {
     duct: sw('duct', { color: '#040405', rough: 0.95, metal: 0 }), slot: sw('slot', { color: '#0c0b0b', rough: 0.7, metal: 0.4 }), cove: sw('cove', { color: '#2b2e33', rough: 0.6, metal: 0.1 }),
     le: sw('le', coat(SC.le)), skin: sw('skin', coat(SC.skin)), under: sw('under', coat(SC.under)),
     well: sw('well', { color: '#d4d6d2', rough: 0.5, metal: 0 }), doorIn: sw('doorIn', { color: '#cfd1cc', rough: 0.5, metal: 0 }),
-    interior: sw('interior', { color: '#5a5f63', rough: 0.75, metal: 0 }), console: sw('console', { color: '#2a2d30', rough: 0.6, metal: 0 }), black: sw('black', F.black),
+    interior: sw('interior', { color: '#767b80', rough: 0.75, metal: 0, emissive: '#2a2d30' }), console: sw('console', { color: '#2a2d30', rough: 0.6, metal: 0 }), black: sw('black', F.black),
     ductWall: sw('ductWall', { color: '#1f2226', rough: 0.8, metal: 0.05 }), vane: sw('vane', { color: '#4a4440', rough: 0.55, metal: 0.7 }),
     lip: sw('lip', { color: SC.tile, rough: 0.5, metal: 0.62 }), sootLip: sw('sootLip', { color: '#3b3632', rough: 0.6, metal: 0.55 }),
     slip: sw('slip', { color: '#16171a', rough: 0.55, metal: 0.1 }), slipLine: sw('slipLine', { color: '#b9bcbf', rough: 0.5, metal: 0 }),
@@ -543,7 +543,7 @@ export function createVisual(ctx, opts = {}) {
   lap('geometry');
   paint(atlas, { SC, cTop, cBot, cND, cMD, cPanel, WIN, MB, mbF, mbA, NB, AUX, AAR, coat });
   lap('paint');
-  const mat = atlas.material(ctx, { envMapIntensity: 0.8 });
+  const mat = atlas.material(ctx, { envMapIntensity: 0.72, emissiveIntensity: 0.8 });
   // the AHSS coating's signature: a broad, soft, slightly cool sheen that rises towards grazing angles (no sparkle)
   if (mat.isMeshPhysicalMaterial) { mat.sheen = SC.fresh ? 0.18 : 0.15; mat.sheenRoughness = 0.6; mat.sheenColor = new THREE.Color('#6c7480'); }
   lap('textures');
