@@ -442,7 +442,7 @@ export function createVisual(ctx, opts = {}) {
     const c = gp[i].pos, off = 0.2, edge = fus.edges['mlg' + key];
     K.buildGear(rig, atlas, {
       name: 'main' + key, index: i, contact: [c[0] - sx * off, c[1], c[2]], wheels: [sx * off], wheelRadius: gp[i].wheelRadius, wheelWidth: 0.27,
-      pivot: [sx * 1.56, -0.5, 0.88], stroke: 0.3, staticFrac: 0.35, strutR: 0.07, fork: 'half', links: 'rear',
+      pivot: [sx * 1.56, -0.5, 0.88], stroke: 0.3, staticFrac: 0.35, strutR: 0.085, fork: 'half', links: 'rear',
       retract: { to: [sx * 1.2, -0.6, -0.2], twist: sx * 90 }, window: [0.22, 0.9], brace: [sx * 1.0, -0.55, 0.7],
       doors: [{ name: 'mainDoor' + key, ...doorOf(P['mlg' + key], sx > 0 ? edge.tHi : edge.tLo), open: 95, toward: [0, -1, 0] }],
     });
@@ -459,10 +459,10 @@ export function createVisual(ctx, opts = {}) {
   const strip = (p, d, len, n) => { const m = K.box(0.012, 0.03, len, [0, 0]); if (d) m.rotateZ(d); return m.translate(p[0] + n[0] * 0.006, p[1] + n[1] * 0.006, p[2]); };
   for (const sx of [1, -1]) {
     const z = -6.6, hw = probe.halfWidthAt(z), cp = probe.at(z, sx > 0 ? tAtX(z, hw - 0.002) : 1 - tAtX(z, hw - 0.002)).p;
-    rig.lamp('formation', null, { mesh: strip([cp[0] - sx * 0.01, cp[1] + 0.035, z], 0, 0.55, [sx, 0, 0]), color: [0.55, 1, 0.42] });
+    rig.lamp('formation', null, { mesh: strip([cp[0] - sx * 0.01, cp[1] + 0.035, z], 0, 0.55, [sx, 0, 0]), color: [0.1, 0.28, 0.09] });
     const fp = fin[sx > 0 ? 'R' : 'L'].at(2.55, 0.42, 'lower'), cn = [sx * Math.cos(FIN.cant), Math.sin(FIN.cant)];
-    rig.lamp('formation', null, { mesh: strip(fp, -sx * FIN.cant, 0.55, cn), color: [0.55, 1, 0.42] });
-    rig.lamp('formation', null, { mesh: strip([sx * 1.905, -0.03, 6.3], 0, 0.5, [sx, 0, 0]), color: [0.55, 1, 0.42] });
+    rig.lamp('formation', null, { mesh: strip(fp, -sx * FIN.cant, 0.55, cn), color: [0.1, 0.28, 0.09] });
+    rig.lamp('formation', null, { mesh: strip([sx * 1.905, -0.03, 6.3], 0, 0.5, [sx, 0, 0]), color: [0.1, 0.28, 0.09] });
   }
 
   // ---- animation ----------------------------------------------------------------------------------------------------------------
@@ -549,7 +549,7 @@ function paint(atlas, o) {
     for (const s of side === 'both' ? [1, -1] : [side]) {
       const front = saw([s * x0, z0], [s * x1, z0], n, dz, [0, 1]), back = saw([s * x1, z1], [s * x0, z1], n, dz, [0, -1]);
       const poly = front.concat(back).map(p => upT(p[0], p[1]));
-      P.stroke(densOpen(poly.concat([poly[0]]), 1), 0, ram, { px: 2.2, alpha: 0.55 });
+      P.stroke(poly.concat([poly[0]]), 0, ram, { px: 2.2, alpha: 0.35 });
       P.line(poly.concat([poly[0]]), panelL);
     }
   };
@@ -603,7 +603,7 @@ function paint(atlas, o) {
       for (const [x0, x1, f0, f1] of [[2.3, 3.2, 0.3, 0.5], [4.0, 4.9, 0.4, 0.58], [2.2, 2.9, 0.6, 0.74]]) {
         const A = at(x0, f0), B = at(x1, f0), C = at(x1, f1), D = at(x0, f1);
         const pts = saw(A, B, 2, 0.1, [0, 1]).concat(saw(C, D, 2, 0.1, [0, -1]));
-        Q.stroke(pts.concat([pts[0]]).reduce((acc, p, i) => (acc.push(p), acc), []), 0, ram, { px: 2, alpha: 0.5 });
+        Q.stroke(pts.concat([pts[0]]), 0, ram, { px: 2, alpha: 0.3 });
         Q.line(pts.concat([pts[0]]), panelL);
       }
       // leading / trailing edge treatment bands
