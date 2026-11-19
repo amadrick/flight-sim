@@ -594,6 +594,26 @@ export function createVisual(ctx, opts = {}) {
     rig.lamp('formation', null, { mesh: strip([sx * 1.905, -0.03, 6.3], 0, 0.5, [sx, 0, 0]), color: [0.16, 0.45, 0.14] });
   }
 
+  // ---- night halos: the lamp lenses are a few pixels wide at chase distance, so each external light also gets a soft
+  //      additive glow sprite (one Points draw call), driven by the same switches / flash timing as the rig lamps --------
+  const HALO = [
+    { p: [L.navLeft[0] - 0.09, L.navLeft[1], L.navLeft[2]], c: [1, 0.05, 0.03], k: 'nav', s: 1.6 }, { p: [L.navRight[0] + 0.09, L.navRight[1], L.navRight[2]], c: [0.05, 1, 0.3], k: 'nav', s: 1.6 },
+    { p: [L.tail[0], L.tail[1], L.tail[2] + 0.08], c: [1, 1, 1], k: 'nav', s: 1.2 },
+    { p: [L.strobe[0], L.strobe[1] + 0.06, L.strobe[2]], c: [1, 1, 1], k: 'strobe', s: 2.6 }, { p: [L.beacon[0], L.beacon[1] - 0.07, L.beacon[2]], c: [1, 0.1, 0.05], k: 'beacon', s: 2.0 },
+    { p: [-0.08, -1.12, -5.74], c: [1, 0.95, 0.85], k: 'landing', s: 2.2 }, { p: [0.08, -1.12, -5.74], c: [1, 0.95, 0.85], k: 'taxi', s: 1.6 },
+  ];
+  const haloGeo = new THREE.BufferGeometry();
+  haloGeo.setAttribute('position', new THREE.Float32BufferAttribute(HALO.flatMap(h => h.p), 3));
+  haloGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Array(HALO.length * 3).fill(0), 3));
+  haloGeo.setAttribute('size', new THREE.Float32BufferAttribute(HALO.map(h => h.s), 1));
+  const haloMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, fog: false,
+    vertexShader: 'attribute float size; varying vec3 vC; void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(size * 0.5 * projectionMatrix[1][1] * 360.0 / max(0.5, -mv.z), 2.0, 96.0); }',
+    fragmentShader: 'varying vec3 vC; void main(){ vec2 q = gl_PointCoord * 2.0 - 1.0; float r2 = dot(q, q); if (r2 > 1.0) discard; float a = exp(-r2 * 5.0) + 0.25 * exp(-r2 * 1.4) * (1.0 - r2); gl_FragColor = vec4(vC * a, 1.0); }',
+  });
+  const halo = new THREE.Points(haloGeo, haloMat); halo.name = 'halos'; halo.frustumCulled = false; halo.renderOrder = 6;
+  const haloCol = haloGeo.attributes.color;
+
   // ---- animation ----------------------------------------------------------------------------------------------------------------
   rig.onUpdate((S) => {
     const sf = S.sf, sb = sf.speedbrake;
@@ -613,8 +633,21 @@ export function createVisual(ctx, opts = {}) {
     setCanopy(sf.canopy * 38 * DEG);
     setHook(sf.hook * 42 * DEG);
     pilotNode.visible = !rig.cameraInCockpit;
+    // halos (night only; landing / taxi only with the gear down and locked)
+    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0;
+    HALO.forEach((h, i) => {
+      let on = 0;
+      if (h.k === 'nav') on = lt.nav ? 1 : 0;
+      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
+      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else on = lt[h.k] && sf.gear > 0.98 ? 1 : 0;
+      const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
+    });
+    haloCol.needsUpdate = true; halo.visible = nf > 0.01;
   });
   const visual = rig.build();
+  visual.object3D.add(halo);
+  rig.disposables.push(haloGeo, haloMat);
   lap('rig'); visual.stats.phases = lap.out;
   visual.livery = livery; visual.liveries = LIVERIES;
   return visual;
