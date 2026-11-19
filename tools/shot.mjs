@@ -83,7 +83,7 @@ try {
     const waitMs = Number(flag('wait-ms', 0)); if (waitMs) await page.waitForTimeout(waitMs);
     console.log(`stepped ${frames} frames in ${((Date.now() - t0) / 1000).toFixed(1)} s (software GL)`);
     mkdirSync(dirname(out), { recursive: true });
-    await page.screenshot({ path: out });
+    await page.screenshot({ path: out, timeout: 180000 });
     console.log('screenshot', out);
     const expr = flag('eval');
     if (expr) {
