@@ -30,6 +30,7 @@ export function createVisual(ctx, opts = {}) {
   const cSB = atlas.chart('stabBot', { type: 'plan', x: [0.9, 2.85], z: [3.9, 6.45], view: 'bottom', mirror: true, density: 0.7 });
   const cFin = { L: atlas.chart('finL', { type: 'side', z: [2.1, 6.12], y: [0.75, 3.4], view: 'left' }), R: atlas.chart('finR', { type: 'side', z: [2.1, 6.12], y: [0.75, 3.4], view: 'right' }) };
   const cPanel = atlas.chart('panel', { type: 'rect', w: 0.8, h: 0.6, density: 2.5 });
+  const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.5, h: 0.9, density: 0.8 });
   atlas.pack();
   const U = {
     under: atlas.swatch('under', paintF(SC.under)), mid: atlas.swatch('mid', paintF(SC.mid)), top: atlas.swatch('top', paintF(SC.top)),
@@ -200,7 +201,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- nozzle, afterburner interior, speedbrakes ----------------------------------------------------------------------------
   const NZ = { c: [0, 0.133, 0], z0: 5.6, z1: 6.48 };
-  const nozzleMesh = K.petalNozzle({ z0: NZ.z0, z1: NZ.z1, r0: 0.588, rClosed: 0.395, rOpen: 0.555, petals: 15, centre: NZ.c, uvOuter: U.heat, uvInner: U.heat2, thickness: 0.03 });
+  const nozzleMesh = K.petalNozzle({ z0: NZ.z0, z1: NZ.z1, r0: 0.588, rClosed: 0.395, rOpen: 0.555, petals: 15, centre: NZ.c, uvOuter: U.heat, uvInner: U.heat2, thickness: 0.03, chart: cNoz });
   stat.add(K.lathe([[0.56, 5.62], [0.5, 5.0], [0.5, 4.6], [0, 4.6]], { segments: 24, uv: U.exhaust }).translate(0, NZ.c[1], 0));      // jet pipe + turbine face
   for (let i = 0; i < 12; i++) stat.add(K.box(0.025, 0.5, 0.05, U.heat2).translate(0, 0.25, 0).rotateZ(i * Math.PI / 6).translate(0, NZ.c[1], 4.75));   // flame-holder spokes
   stat.add(K.lathe([[0.2, 4.7], [0.2, 4.78], [0.17, 4.78], [0.17, 4.7]], { segments: 20, uv: U.heat2 }).translate(0, NZ.c[1], 0));
@@ -226,7 +227,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- materials ---------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, livery, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cPanel, paintF });
+  paint(atlas, { SC, livery, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cPanel, cNoz, paintF });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
@@ -317,7 +318,7 @@ export function createVisual(ctx, opts = {}) {
 
 // ---- paint -------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cPanel, paintF } = o, F = K.FINISH;
+  const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cPanel, cNoz, paintF } = o, F = K.FINISH;
   const top = paintF(SC.top), mid = paintF(SC.mid), under = paintF(SC.under);
   const mark = SC.mark, lowVis = SC.demo ? false : mark;
   const slime = { color: '#c9cf8f', rough: 0.35, metal: 0 };
@@ -362,7 +363,7 @@ function paint(atlas, o) {
     P.textOn('RESCUE', -5.35, 0.45, 'both', 0.04, { color: mark });
     P.decalOn(-5.6, 0.45, 'both', (g) => { g.strokeStyle = mark; g.lineWidth = 0.012; g.beginPath(); g.moveTo(-0.1, 0); g.lineTo(0.07, 0); g.moveTo(0.02, -0.04); g.lineTo(0.08, 0); g.lineTo(0.02, 0.04); g.stroke(); });
   } else {
-    P.textOn('SKYWARD', -3.0, 0.5, 'both', 0.3, { color: '#f1f1ee', italic: true, font: K.FONT.wide });
+    P.textOn('SKYWARD', -0.9, 0.5, 'both', 0.27, { color: '#f1f1ee', italic: true, font: K.FONT.wide });
     P.textOn('DEMO TEAM', 3.2, 0.48, 'both', 0.13, { color: '#16254a', italic: true, font: K.FONT.wide });
   }
   for (const [z, txt] of [[-1.2, 'NO STEP'], [1.0, 'NO STEP']]) for (const s of [0.29, 0.71]) P.decalT(z, s, { rot: s < 0.5 ? 180 : 0 }, (g) => K.drawText(g, txt, 0.04, { color: SC.top === '#f1f1ee' ? '#16254a' : '#2b2e31' }));
@@ -433,6 +434,20 @@ function paint(atlas, o) {
     if (SC.demo) { Q.fill([at(0.8, 0), at(1.15, 0), at(1.15, 1), at(0.8, 1)], F.gloss('#c81e2c')); }
     const fl = at(2.92, 0.5); Q.fill((g) => g.rect(fl[0] - 0.25, fl[1] - 0.03, 0.5, 0.06), slime);
     Q.noise({ alpha: 0.09, scale: 1.2, stretch: [1, 1.5], rough: 0.05 });
+  }
+  // ================= nozzle petals (a = around, b = hinge → exit) =================
+  {
+    const Q = atlas.pen(cNoz), n = 15, w = 3.5 / n;
+    Q.fill('all', { color: '#8a8078', rough: 0.5, metal: 0.8 });
+    for (let i = 0; i < n; i++) {
+      if (i % 2) Q.fill((g) => g.rect(i * w, 0, w, 0.9), { color: '#7d746d', rough: 0.55, metal: 0.8 });
+      Q.fill((g) => g.rect(i * w + w * 0.3, 0.05, w * 0.4, 0.8), { color: '#958b82', rough: 0.45, metal: 0.8 }, { alpha: 0.6 });
+      Q.line([[i * w, 0], [i * w, 0.9]], { px: 2, depth: 0.9, dark: 0.6 });
+    }
+    Q.fill((g) => g.rect(0, 0.6, 3.5, 0.3), { color: '#4a3f3a', rough: 0.6, metal: 0.8 }, { alpha: 0.45, feather: 6 });     // heat-stained exit
+    Q.fill((g) => g.rect(0, 0, 3.5, 0.07), { color: '#5f5a55', rough: 0.5, metal: 0.8 });
+    Q.line([[0, 0.07], [3.5, 0.07]], { px: 1.5, depth: 0.7, dark: 0.5 });
+    Q.noise({ alpha: 0.12, scale: 0.8, stretch: [1, 2] });
   }
   // ================= instrument panel =================
   {

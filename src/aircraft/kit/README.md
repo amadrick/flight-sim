@@ -275,6 +275,7 @@ return rig.build();
 * Fowler flaps / slats: hinge about a line **below** the surface (`a − up × d`, see `drop()` in the 737) so the
   panel translates as it rotates; parent the aft flap segment to the main flap node.
 * `K.seq(g, a, b)` (eased sub-range) and `K.keys([[x, y], …], x)` help with sequencing.
+* `const lap = K.stopwatch(); … lap('geometry'); … lap('paint');` then `visual.stats.phases = lap.out` shows where build time goes.
 * `rig.build()` adds `stats = { triangles, drawCalls, buildMs }`; `dispose()` frees geometries, materials and
   everything in `rig.disposables`.
 

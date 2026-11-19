@@ -21,7 +21,7 @@ const SURF_DEFAULTS = { aileronL: 0, aileronR: 0, elevatorL: 0, elevatorR: 0, ru
 const LIGHT_DEFAULTS = { nav: true, strobe: true, beacon: true, landing: false, taxi: false };
 
 // lamp radiance (linear, HDR) by kind: [day, night]
-const LAMP_LEVEL = { nav: [45, 9], strobe: [900, 150], beacon: [420, 70], landing: [700, 110], taxi: [320, 50], formation: [6, 2.5] };
+const LAMP_LEVEL = { nav: [22, 7], strobe: [900, 150], beacon: [420, 70], landing: [700, 110], taxi: [320, 50], formation: [6, 2.5] };
 
 /**
  * createRig(ctx, { geometry, name }) → rig
