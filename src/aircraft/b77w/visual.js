@@ -507,7 +507,7 @@ function paintFuselage(A, o) {
   // --- livery ---
   if (SC.style === 'cheat') {            // light grey belly, vermilion + charcoal cheat line under the windows tapering to the nose
     P.band(Z0, Z1, -Infinity, (z) => -1.35 + Math.max(0, z - 18) * 0.11, belly, { step: 0.4, feather: 2 });
-    const up = (z) => Math.max(0, z - 19) * 0.085;
+    const up = (z) => Math.max(0, z - 29.6) * 0.16 + Math.max(0, z - 22) * 0.02;
     P.band(-27.6, Z1, (z) => -0.3 + up(z), (z) => -0.05 + up(z), accent, { step: 0.3 });
     P.band(-27.6, Z1, (z) => -0.46 + up(z), (z) => -0.38 + up(z), F.gloss('#2a2e33'), { step: 0.3 });
     const k = (z) => Math.pow(Math.max(0, (z + 33.2) / 5.6), 1.3);
