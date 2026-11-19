@@ -40,10 +40,10 @@ const D = (d) => d + NZ;
 // ---- fuselage station tables ------------------------------------------------------------------------------------------------
 //  d (from the nose)  y of the crown  y of the keel  half-width  y of the widest point
 const NOSE = [
-  [0.00, -1.00, -1.00, 0.00, -1.00], [0.15, -0.60, -1.40, 0.42, -1.00], [0.45, -0.20, -1.78, 0.78, -0.99], [1.00, 0.28, -2.22, 1.20, -0.97],
-  [1.80, 0.85, -2.72, 1.70, -0.94], [2.70, 1.38, -3.15, 2.18, -0.89], [3.60, 1.85, -3.48, 2.58, -0.82], [4.40, 2.30, -3.72, 2.88, -0.74],
-  [5.20, 2.80, -3.88, 3.10, -0.65], [6.20, 3.28, -4.00, 3.28, -0.55], [7.40, 3.68, -4.08, 3.42, -0.45], [9.00, 3.99, -4.14, 3.52, -0.35],
-  [11.0, 4.18, -4.18, 3.56, -0.27], [13.5, 4.28, -4.20, 3.57, -0.22], [15.5, 4.30, -4.20, 3.57, -0.20],
+  [0.00, -1.00, -1.00, 0.00, -1.00], [0.06, -0.62, -1.38, 0.38, -1.00], [0.22, -0.30, -1.72, 0.72, -1.00], [0.55, 0.06, -2.08, 1.06, -0.99], [1.00, 0.38, -2.40, 1.40, -0.97],
+  [1.80, 0.90, -2.82, 1.86, -0.94], [2.70, 1.40, -3.20, 2.28, -0.89], [3.60, 1.85, -3.50, 2.62, -0.82], [4.40, 2.30, -3.72, 2.88, -0.74],
+  [5.20, 2.84, -3.88, 3.10, -0.65], [6.20, 3.42, -4.00, 3.28, -0.55], [7.40, 3.86, -4.08, 3.42, -0.45], [9.00, 4.12, -4.14, 3.52, -0.35],
+  [11.0, 4.24, -4.18, 3.56, -0.27], [13.5, 4.28, -4.20, 3.57, -0.22], [15.5, 4.30, -4.20, 3.57, -0.20],
 ];
 //  z      crown   keel   half-width  widest
 const TAIL = [
@@ -63,7 +63,7 @@ const SLATS = [13.6, 17.9, 22.2, 26.6, 30.9, 35.1, 39.3];
 const CANOES = [7.6, 17.0, 21.1, 29.0];
 
 // engine inlet-plane centres (geometry.js engines[].intake, order = state.engines order: inboard L, outboard L, inboard R, outboard R)
-const NAC = { len: 4.7, rHi: 1.6, rMax: 1.78, rThroat: 1.5, rFan: 1.475, zFan: 0.95, rExit: 1.5, sleeve: 0.55, core: { r0: 1.05, r1: 0.62, length: 2.2 }, plug: { r: 0.42, length: 1.15 } };
+const NAC = { len: 4.7, rHi: 1.68, rMax: 1.9, rThroat: 1.52, rFan: 1.49, zFan: 1.0, rExit: 1.58, sleeve: 0.55, core: { r0: 1.1, r1: 0.64, length: 2.2 }, plug: { r: 0.44, length: 1.15 } };
 
 /** Write a morph target into `m` (enableMorph first): its vertices rotated by `ang` about the line a→b, in the sense that moves `ref` toward `toward`. */
 function rotateMorph(m, a, b, ref, toward, ang) {
@@ -183,7 +183,7 @@ export function createVisual(ctx, opts = {}) {
       const i0 = stA.vertexCount; for (const [a, b] of [[0, 0], [0.4, 0], [0.4, 0.9], [0, 0.9]]) { const uv = cPed.uv(a, b); stA.vert(a - 0.2, fy + 0.45 + (0.9 - b) * 0.12, zP + 0.1 + b * 1.0, 0, 1, 0.1, uv[0], uv[1]); } stA.quad(i0, i0 + 3, i0 + 2, i0 + 1);
       for (const sx of [-1, 1]) stA.add(K.box(0.035, 0.12, 0.05, UA.stick).rotateX(-0.35).translate(sx * 0.06, fy + 0.62, zP + 0.35));
     }
-    { const i0 = stA.vertexCount, y = eye[1] + 0.32; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.4, y + b * 0.18, zP + 0.45 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    { const i0 = stA.vertexCount, y = eye[1] + 0.45; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.4, y + b * 0.16, zP + 1.0 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
       stA.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.cushion } }));
