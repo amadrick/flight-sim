@@ -162,3 +162,50 @@ None required for the default model. Optional:
   above the `J` line) when the scatter model provides it.
 - `package.json`'s `"test": "node --test tests/ src/"` does not find tests under Node 22 (directories are not
   expanded); `node --test "src/**/*.test.js"` or plain `node --test` does.
+
+---
+
+# Neural lens flare (`flare.js`)
+
+Already wired: `src/render/post.js` builds it in `createPostPasses` (`post.flare`), the tone-map pass calls
+`lens()` which dispatches to `flareNeural()` (default) or the old analytic `lensClassic()`; `src/render/index.js`
+calls `post.flare.update(sunFrameX, sunFrameY, tan(fov/2), ghostGain)` once per frame next to `uLensSun`.
+URL switch: `flare=classic` (old hand-tuned flare), `flare=off` (none; `noflare=1` still works).
+
+## What is simulated, what is learned, what is set by hand
+
+Reference (tools/neural/flare, numpy): the 50 mm f/2 double-Gauss of Tronnier (US 2,673,491; Smith, *Modern Lens
+Design* p. 312, the pbrt `dgauss.50mm` table), stopped to f/4, Cauchy dispersion per glass, single-layer MgF2
+quarter-wave coatings (thin-film reflectance, s+p averaged) on the 8 air-glass surfaces, uncoated cemented
+surfaces, element rims as apertures, 6 straight iris blades.
+- Ghosts: all 45 two-reflection paths traced (sequential exact ray tracing, 8 wavelength bands, ~40k rays per band
+  per sun position); the 12 most visible kept (flux per area). Per ghost and sun radius: centre, scale, flux,
+  RGB image on a 32x16 grid in ghost coordinates, blurred by the sun's disc.
+- Starburst + veil: FFT (4096^2) of the hexagonal iris with 73 dust specks (0.2 % of the area) and 3 hairline
+  scratches, 31 wavelengths 400-700 nm (pattern scaled with lambda), convolved with the limb-darkened sun disc;
+  beyond 0.139 frame units (FFT trust radius at 400 nm) power-law extrapolation (slope clamped to <= -2, checked
+  against the exact polygon transform); plus Harvey-Shack micro-roughness scatter (2 nm rms) of all 10 surfaces.
+
+Learned (three MLPs, ISRU, 27.4k parameters total, weights in `flare-weights.js`):
+- `meta`: r -> per ghost (centre, |scale| along/across, scale signs, log flux) — 3.5k params.
+- `ghost` x12: (r, q_al, q_ac) -> RGB ghost image (sqrt-normalised) — 1.5k params each.
+- `star`: (r, angle from the nearest spike) -> log10 RGB density of starburst + veil — 2.8k params.
+
+Baked directly (not learned): the iris polygon outline is applied analytically to the ghosts (the networks see the
+circular-iris images; ghost flux is rescaled by circle/hexagon area 1.209), the sun colour/brightness
+(`uLensColor`, real HDR irradiance) and visibility (`uLensSun.z`, the existing occlusion probe), the conversion to
+radiance `L = E * density / tan^2(fov/2)`, and two taste gains `FLARE_GAINS = { ghost: 5, star: 0.5 }` relative
+to the simulated lens (ghost gain x0.35 more in interior cameras).
+
+## Cost
+
+Boot: ~0.3-0.5 s of JS to bake (ghost texture 32x16x204 RGBA16F = 0.8 MB, starburst 128x32 RGBA16F) — the
+dominant item is 104k ghost-network evaluations. Per pixel in the existing tone-map pass: one 2-D fetch
+(starburst) + for each of the 12 ghosts a bounds test and, inside its footprint only, one `atan` and one 3-D fetch.
+No extra passes. Per frame CPU: 12 LUT interpolations.
+
+## Verification
+
+`node --test src/neural/flare.test.js` (JS == Python on exported vectors to 1e-14; bake finite/fast; physics
+sanity). Reproduce: `tools/neural/flare/{ghosts.py survey|data|merge, diffraction.py, train.py meta|ghost|star,
+export.py, validate.py}`; numbers in `tools/neural/flare/results/`.
