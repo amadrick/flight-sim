@@ -83,7 +83,7 @@ def subset(D, m):
 
 def cv(D, fitter, names, target, **kw):
     """train on one field, test on the other (both directions); mean over cases of weighted lnRMSE / |bias-1|"""
-    field = np.array([c.split('_')[0] for c in D['case']])
+    field = np.array([c.split('_')[0].split('@')[0].rstrip('B') for c in D['case']])
     out = []
     for f in np.unique(field):
         tr = field != f

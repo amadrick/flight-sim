@@ -8,7 +8,7 @@ export const CLOUD_LIGHT_MODEL = {
    16,
    1
   ],
-  "b64": "tWLxPmSI77/bXS8/FgV/vr2uE77uHnc+IkE+PwTaWz+T/yk/G1eLvigJtz4R7pY8fUHqPatSKL63tSW/2uDwPpct7z+V1Bg+mJVJP/IArr8LXiY/Rp3EvWhl1b0P+3w/+JEGPlUz4j4QB4S/UZVvv79deD7AO3s/ZXqrv4ldM75erFg/yefhvIRmbb+S8ds+O2v1v2TEFb9OzfS9HJvovvZKLj+WWY++e4zev1Teg75tMZE/V0q7vvO5mT619T0/AttGvhIO2bwkGZw91CUpPhIUET6QTui+RFvSvmdtSL/bZjY/HlsBPoan5D600kk+OZdTPV5gnT4XrNI+9j0rvo6EQj/B64++P04rP2Ncur69ZOo9lKCpvpc8AD8KVxI+GXWavgeipz73FO69ac35vjr1UT+M9Pu+WxpCOqjag76cjKk+zO/0vnpqEj++INm+s5H0PfrpCr6qGoo+9fWnvhvGHz+yNhs+Bz72PrSvYDymkdY+LJiFvSXdfD2TONE9Ig9bP81FCT59ZiA/sSHbvswzBj26BYq+IDFaPp8vej7Ilkq/PmCcve05pTxa7AU9K5kSPyjOPL+F0bu9D1+7vng5lb7tO/Q+lncHvzsTCL6PIYe+zolGPhJL573Cckq9YDOjvcFNVj6W5LQ++UNxPrbACL/Qqio/wXSrviKOur5tOhW/BLYUPu5KuL+FwZ+9j+1AP+voQ7+ykAm/hTBQPgJ2sz6SQAK+ZHyGvf1i+74UMkc/D+5BPoNYDT7ku30+Kz35vUQURb+0BdY8JbcJvuCS5j5EbA8+bt2TPt8gUr4DexO96EcZvm52Sj6Bvya/mdnYPrsLNb63BEC89pFSuyC3GD9oQpO+gLcLPx66Jb4S908+UCbjvhfJ47yjWfa+SQwVP4fNHr9N1AK/hOLtPtb5F79U2Pe+JAE7v+i1Kb+8fna+x0CKve+oYj/uci++VsUKPoURGz9HJHw+OFU8vvaKN74aBcU98CP+PY6u575gFh4/aEifvtbiyT7HCtk9gkQNPksRRj2V8dW9OecsPL0QhD6OEHI+A5Y/vqNeHT5LCPU9+S02vUO9hD3e5b49huIvO1x9vrxd1Fg+er6cvaDkgz8O6uS+yjuSPniJW78Pc0k+ANoVP4FFNj/egkw/zyoWv2AzPr89oGa/QNyuPlx8R76odp6//3Zcv8sdo778X0u/fazqPNJBNr29V7K+P6xxPrlJq74+KcQ94+BLPnXTLj1eFPS+1RRPvhNhU7818wE/GwN9viCEpT0vSAK/fiSqv5nyDb96Czc/4zfdPr/LBr0oMes+WjpFvxLLgb6WhFY/6GmuPvN+cj/al3C/kOgOPxcGXj/+bjU+IeYBPhtdjL/+5Dq+BW7PvB5gfb4Ri6u93fKXP76LWr4orA4/1TiAvq0Qz73tQOy+A4ohv8mBZT5Nq6S+VT2svyJJRj6ZISs/w31oPpf0DD60v/m9kcQvv009tz85cqM/POTIPxOX0b/poNi+bWt9v8bm3L1RE5y+puvyvxcXD7+eb4g+ZNk2P90q0T4pyZY+JAsePhyLNb9hhBI9WlCYvojrnT+6Tbq/uOYkvYlhfL6Z+8i+JTnKPiUgAT8+BAe/YT7QPtvb4z22f1s+bQMIP3ynur54QBw+V6mzPSKDgb7H2YG9B5yKvsy6hb7blWg+hKYAv6F0GD+U40m+9HeCvQrRe78T+4y+RQ/nvX3O2b4Fs4A+ec47vtVgxL6ai74+48LivVPyL73Xt+y+kKb/vvIUj74WY6i9nTLXvqETl7vIarW+DFZHP1aUmD6tx5Q+PMrnvlBt5z5d3bU+bm0Av+EJvT7BXwa7880ZvygRFz/+ogU/MaIPv6AjGL+U4Ve/FJ0PP3qEUcA="
+  "b64": "yk0RP6k9ob/ECgQ/yshTvuIlE7/uBKY+M80jP70/jT+xHxA/zYmXvsH4wz8AaS6+j5x9Pn41or3P6ia/DWPePreG9D8hIY8+EXmhP6xdnr+3hyY/5dqXvoyWNb0CmIg/1/57vXvGaz/P44y/q9Fbv5YjHT5zgjg/bkGZv1X/Wr4Lu0A/i9cnvo3IeL9Mvc4+u3MCwBy8Cb/en7u+OROMPj9DIz8ar4i+djXXvyauVb5vzIk/PsvzvrDYAD/NZFk/QKdmvgvBQj6fdgE+ca+Lvawvhj4DgQq/rUxFv9hMPb+9Kk8/CPrPPQhQ3j502Rw+oG3YPUtCQT60y9M+NgaAvjbg1T5fgrC+/4kmPoVkfj07FoM+AWNWvqPAXz7GnFu+T2AKvenacz4Lvzi+yfkhv3mlhz+cCDY+T7eIvXrQ4r6GV10/8aervk+NAT8vrcW++ZKSPZr+kb7our4+DUVbvqKlsz4tkAE+9Iz8Pu3IAj7Zkwg/QriFPr1Coz0KAM89F2m6Px5R3T1mdxc/n1mKv6v8hrxuCre+8nicPulsjT5iTZS/4P6uvQnVijpzEqo9kKUyP9OjOb8Ouri9Apq+vjQSzb4sswQ/nQauvpSXxb49Raa+otVePsktI74UuEA9fMa0vb9plT6gWuE+q3yXPs0JLL+6wuk+2P55vgD5er5UL8q/cH4JP9a1gr3oo2I/u50qPFWrnT5m0QPAQ8WAvA7JDD/wVk0/fAQ7P2hXK76P64s9VzRiPp9oYD8uKn8/84wpPhNCRr+RAM29RwuzPQYd5j7lhhi+NfmnPmMlNr7Gwiy+NyRhvh0qAj69QTG/ZnpBP8XUtj24pbO94lGNvengGD8kl1s7AI4UP4AbTL8AeL4+xS3Tvc7sgb5FNC2/gEs8P1jzK7/WxRq/hGnVPhTPXr//27a+s8tWv69zYL8qPxc/lsEfPY02hD887oi+MmuUPZWF/T7Oz/U++us9vlwwc75clRM+ruIRPkYcm772kDs/6q50vih/0j6Nay4++ZxoPbU2ej176cC8TZabvBWn8D2ofbQ9gGCovb56sz0vNo48+r54vf0giLrORl49h71vvM+vEjx0/dI9em6IvdzvXz7EpFW/n4C9PjCclT482qk+79SgPyzDpT7NG60+/RpVvhG8/r5fiFC/J+WKvt88yb1zmZ4+CWtVvzw4y75hYFW+QfdIPRyXFz5/ItE9ljMpPi2fzr5ZfkA+0+NAPjN4Cr3bl9++mYZ9vkAJSb8sEh0/SMaWPV38ejywV/O+PP+Zv+t+Er/BbUQ/C4xSP67XB75ZhDM/X91+v0hYjL22shI/Q/WePnZdUj8o9nG/97fOPpKkoj4Wgre8hJMAPqXNBr8lQkY+AZ7VO0iWmb3zQ/K+JDs1OzhfJ77q2oQ/9IoYvyaMoz40ams9giyBvLm84j6TLEK/Jq9Pv4t+Jz/h5Lo/CTarvVNkYj6yyqS9KXgnvylsxj+kve8/eLuuP7c/xL8xyMy+RJyAvwzgE76oIdS+3eYyvxrOF79Ltok+VrslP0fBeD6wZtI+t8smvui8Qb9nJCY9dFZcvuoTlD8P3tu/bwA0vJQHi756VMy+FjdPPuDR4z0/oAq/mJjSPlheWz8fULU+gTRIP9cOgr6FyIA9ZKJhvs1SH74xLrS9dALGvu8uGr7we78+92SXvqtgRT+/51I+k1S6PZCaab9ONY2+2SS/vfEtBb+VfaA++c8ZP4Cu4L4I+Go+ghLVvEG0Fb38eM++BO30vrV4pL4wbhA+74HbvsPNvLz6hxC+dOxLP8twcz7Zl/Q+Dmb3voCC4z4RPsg+9PYQv8bdxT7wNlS6abcWv8yuFz8e8wg/71XRvokSGb/yLhm//Q4dPzm7S8A="
  },
  "v": {
   "sizes": [
@@ -17,7 +17,7 @@ export const CLOUD_LIGHT_MODEL = {
    12,
    2
   ],
-  "b64": "n3yFvV0nGcDWs4e+PW1PvrHcQj/k7b2/L4IWOeAgDb/9uDO+Mcb4vn/YCz4HFHu+6qGAP83WRD4H6hQ/7pAjP5yr3b2ZJqm9liKIv+sDHj8KRwS/eKT6viVF3j626y4+2a4zv1VWtT0+cHY+tKihvfOZd7zU2xE+77Aivl78Lr7psgw9gozHPdACKz7fZY2+Iu87Pk+eIrxDPAg/kQJRvYKsYj6UU5O+mqFEPj13Ar/Ev4o9D45AvO0MqT14/ck9xbCMvlvTA77USHk++I/lvr0Cgr6eg3U9hdecPZIRYj5t4Sg+o1/wPuH/QL7CAPA9Lh24vhfuiD6DyRU6W2cFP2cg/z6BGkM+0nQtvjaIJL6AJ8O6OU+avBY6x765joC+sRYNv80hIz/t5AK/g7DhvaLXkb2A7pk+hmdMv4+9WL5Wfly9Bvr/PmgaoT7W6kO/OgYsPRl+gb5IWyM+7zTfPSfedb4pOzy+o82FvDnqvrynTmi91AqjPr4Ibb4WKiQ9S2xFPoc98T71cZg+8F0Bu8kPkz4HAA0/hsPSvLlNH73IMrS90fqJPsPgvD7uRIO+h+avvi2Gfz4JIPi+BQkBP7+suT5LGb+89rBkPKCYbL2d7nm+9cUhv6jmPD6jjo+9avgkvh0tSj3MPe288lG0Phe4BD+lLMY+vKc6PaASHb7IVhC9Gv63PmzoG7wtW8w8ZKd3Pb3MFj723ZQ+USlpPoxPJT0i0DC9Ao0cPp93dz6FWI+9SxmmvHBkqb17kbI+CMJ/PgdgBbzAxqc+UI8gv0KLp7601li+bi7bvt+liz7v+oG+omekPX4jVr6RO8W9ItWbPdsXIL5HyWC/1lptvvuGhr4BGqq+E5dpvRa4Gz9WXXq+YF7GPgpw0r5lNss+Tk2lPscdnT7jn/e9w3PxPQk9qL6mMk0+2HCSu0e+oT75nc49nJgTPgUV7L7Rn9a+zo04vedvnr2i4+W9GkhHPv+Y3zwHGtU91qDxOyIPRz0SQxS+rvhkvYoMUb7pE5w9aAenPhHpoj5JgKA+Vd62Prmbkb5lKxq/uvr7PiW63z29Xtg8pMHCvv6zhz4Djt6+rpyFPjd4jzyEZhg9V/tlvh/O9z0rXgg9+tctvsVFTr1aIsY9CMivPj51h77XXqK95tQ4vxVGO78="
+  "b64": "uqybvUl5F8Cnh6K+DntTvnWnLj89oMm/tzaZvVtmFL9bzl2+E68Dv2tvrLvgGi6+zHVnP4r4vz5iugc/o/sdP1HwM7gL+xc7yf+Gv+mGEj+GLBq/u/vhvl5SHD8P3O499tMxv2uWAj7koIo+4xDfvX5JZrxiHB0+HuievUcI9L1CGVM4b00cPvQsTz7g3om+/oVuPjFK5bz7/A8/KpuHPBz9Kz78tjm+8+iGPkM4yL5/8OC7KsRmvbu3Nj3jrrs9jfLrvihQ3L3bG4Y+CDYKv2VNq74PnMM9Cz9pPQF5fD5RMBA9p3f1PnTMK77mjTo9W+65vgBDhj76lKc81jEJPzEB/D5R7Xo+3YRRvuIFT75rxSW7P/hivQUnj77rX2++fATmvsKyBD+ArxS/GF39vaMAqL2b2J4+7fE8vy8rLr5zpiS920IGP8nQjz57qzq/RyujPRbeZ74M4DY+Za3fPQnkbL6cyD2+MfiqPR9H9zsPp8y8iQCdPlp9b75hABo99RtNPm4hCT83x5I+RqmrO3kJlT7hjgQ/UACtvPwlpL0WFBe9GXOePrQN4j4fnai+NMW1vqq7kD67puS+yyUAP4xotj61Nzg95MLEvdU+yL0IgKm9gM4nv+goXz4+urO9v/Ppvdjx67y2jc07gROFPiJIoz5RDn4+3JIfPUZUvL0A8ae5nKhpPo/zVL1CwLY9EepcvYbYwT2Dngo+Qe7MPenQ9bxyRkc8yNiPPXRT8D2grCe6q5q8PbpTMz1DZbo9fU98Pnm1DL0xyKc+6+YXv/Dis75yeF6+NTl/voB0pj651wO+2IDIPZlOc75LQL29Hm6fPUQcdb7OVHK/AM6EvsYgjL4LmKC+DAyIva0SEj8LIyq9Bye6PiWY376qadE+dHm1PgA1UT6xwOO9HL6EPaUYsL5a8gc+o+uWPR2trz7E5hE90SEYPv3k+L73Or++X0C6vVWNkLxBMe69V49UPsFWrTxZIhM+n7OuOfwnBLyb82m9lHSGvdhIT77/r6M9bmuUPg+apz4tDV8+PcG8Ps3tIb4tsQ6/d3sBP934XTvhRyU8P0Cbvm6Fcz70OYS+ZfODPrzuzzu08mq9QCpFvgQlOT1RdL09ZqUKvtX1+7vKW4g83/krPhg7iL72u/487BUxvxCPUL8="
  },
  "enc": {
   "tauMax": 128.0,
@@ -32,8 +32,18 @@ export const CLOUD_LIGHT_MODEL = {
   "dropletDiameterUm": 10.0
  },
  "meta": {
-  "points": 160000,
+  "points": 244000,
   "cases": [
+   "brokenB_g_12_-120_3000_0",
+   "brokenB_g_20_135_5200_-22",
+   "brokenB_g_35_90_2500_0",
+   "brokenB_g_50_60_500_25",
+   "brokenB_g_5_160_2000_4",
+   "brokenB_low_away",
+   "brokenB_low_toward",
+   "brokenB_noon_above",
+   "brokenB_noon_below",
+   "brokenB_sunset_base",
    "broken_g_12_-120_3000_0",
    "broken_g_12_30_800_14",
    "broken_g_20_-45_5200_-22",
@@ -49,6 +59,16 @@ export const CLOUD_LIGHT_MODEL = {
    "broken_noon_above",
    "broken_noon_below",
    "broken_sunset_base",
+   "scatteredB_g_12_-120_3000_0",
+   "scatteredB_g_20_135_5200_-22",
+   "scatteredB_g_35_90_2500_0",
+   "scatteredB_g_50_60_500_25",
+   "scatteredB_g_5_160_2000_4",
+   "scatteredB_low_away",
+   "scatteredB_low_toward",
+   "scatteredB_noon_above",
+   "scatteredB_noon_below",
+   "scatteredB_sunset_base",
    "scattered_g_12_-120_3000_0",
    "scattered_g_12_30_800_14",
    "scattered_g_20_-45_5200_-22",
@@ -66,8 +86,8 @@ export const CLOUD_LIGHT_MODEL = {
    "scattered_sunset_base"
   ],
   "crossFieldLnRMSE": {
-   "cvJ": 0.7,
-   "cvV": 0.303
+   "cvJ": 0.7313679091767973,
+   "cvV": 0.30826375965889347
   },
   "trainedOn": "path-traced points at the lit samples of the march on clouds exported from the game (tools/neural/gt_*.py)",
   "pmax": 20.0

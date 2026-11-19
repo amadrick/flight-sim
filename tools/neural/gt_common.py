@@ -34,9 +34,11 @@ class Field:
     """Density grid exported from the game.  Arrays are indexed [a (x), b (z), c (altitude)]."""
 
     def __init__(self, name):
-        p = os.path.join(DATA, name + '.npz')
+        # 'scattered@1.6' = the 'scattered' export with its extinction scaled by 1.6 (density-model experiments)
+        base_name, _, scale = name.partition('@')
+        p = os.path.join(DATA, base_name + '.npz')
         if not os.path.exists(p):
-            convert_export(name)
+            convert_export(base_name)
         z = np.load(p, allow_pickle=False)
         self.name = name
         self.full = z['full'].astype(np.float32) / 255.0          # with detail erosion (what the march sees)
@@ -48,7 +50,7 @@ class Field:
         self.nx, self.ny, self.nz = meta['nx'], meta['ny'], meta['nz']
         self.dx, self.dz = meta['dx'], meta['dz']
         self.base_alt, self.top_alt = meta['base'], meta['top']
-        self.sigma = meta['sigma']                               # extinction at density 1 (1/m)
+        self.sigma = meta['sigma'] * (float(scale) if scale else 1.0)   # extinction at density 1 (1/m)
         # local frame: box centred on x = z = 0
         self.x0 = -0.5 * self.nx * self.dx
         self.z0 = -0.5 * self.ny * self.dx

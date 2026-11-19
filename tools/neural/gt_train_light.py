@@ -118,7 +118,7 @@ def main():
     ap.add_argument('--export', action='store_true')
     a = ap.parse_args()
     D = load_all()
-    field = np.array([c.split('_')[0] for c in D['case']])
+    field = np.array([c.split('_')[0].split('@')[0].rstrip('B') for c in D['case']])
     print('points', len(field), 'cases', len(np.unique(D['case'])))
     # cross-field validation
     cvj, cvv = [], []
