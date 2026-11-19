@@ -4,7 +4,7 @@ import { lin } from './builder.js';
 const DEG = Math.PI / 180;
 const C = {
   white: lin(0xe8e8e4), offwhite: lin(0xd6d3cb), grey: lin(0xa9adb1), dgrey: lin(0x4b4f54), black: lin(0x161616),
-  steel: lin(0x8d949b), civil: lin(0xc9d1d8), blue: lin(0x7f97ad), mil: lin(0xa39a7d), milDark: lin(0x6f6a55), tan: lin(0xc9b48a),
+  steel: lin(0x8f9192), civil: lin(0xc9d1d8), blue: lin(0x7f97ad), mil: lin(0xa39a7d), milDark: lin(0x6f6a55), tan: lin(0xc9b48a),
   red: lin(0xb0201c), orange: lin(0xe0561b), terracotta: lin(0xa5553a), concrete: lin(0xc8c3b8), shelter: lin(0x9a9584),
   yellow: lin(0xd9a21b), glassTint: lin(0xffffff), green: lin(0x3d6b2a), trunk: lin(0x6b5a45), leaf: lin(0x3f6a2a),
 };
