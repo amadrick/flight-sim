@@ -65,7 +65,7 @@ export async function createEffects(ctx) {
     if (!player) return;
     const def = player.def, g = def.geometry || {};
     const isAB = /afterburn/i.test(def.specs?.engineType || '') || (def.specs?.thrustMax > (def.specs?.thrustDry || Infinity) * 1.05) || !!def.sound?.afterburner;
-    const lowBypass = isAB || ['fighter', 'attack', 'recon'].includes(def.category);
+    const lowBypass = isAB || (['fighter', 'attack', 'recon'].includes(def.category) && !/high-?bypass/i.test(def.specs?.engineType || ''));
     const group = new THREE.Group(); group.name = 'fx-body';
     player.visual.object3D.add(group);
     const engines = (g.engines || []).map((en0, i) => {
