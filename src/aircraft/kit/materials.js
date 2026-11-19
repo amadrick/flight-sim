@@ -13,7 +13,7 @@ import { noiseVolume } from './skin.js';
  *   - a thin, uneven film of dust scatters the light that falls on it, so sunlit glass shows a faint haze and reads as a
  *     surface instead of a hole (`dust`, 0 = factory clean).
  * opts: { tint = '#1c2a33', opacity = 0.16, edgeOpacity = 0.72, metalness = 0 (raise for gold / mirrored coatings),
- *         roughness = 0.03, reflect = 1, dust = 0.05 }
+ *         roughness = 0.03, reflect = 1, dust = 0.035 }
  * Presets: GLASS.clear, GLASS.smoke, GLASS.gold, GLASS.airliner
  */
 export function glassMaterial(ctx, opts = {}) {
@@ -32,7 +32,7 @@ export function glassMaterial(ctx, opts = {}) {
     uGlassSunDir: { value: env.sunDir || new THREE.Vector3(0.3, 0.8, 0.5).normalize() },
     uGlassSunColor: { value: env.sunColor || new THREE.Color(4, 4, 4) },
     uGlassReflect: { value: opts.reflect ?? 1 },
-    uGlassDust: { value: opts.dust ?? 0.05 },
+    uGlassDust: { value: opts.dust ?? 0.035 },
     tKitNoise: { value: noiseVolume() },
   };
   m.userData.glassUniforms = u;

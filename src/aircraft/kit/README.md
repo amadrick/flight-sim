@@ -398,7 +398,7 @@ Other optional additions:
   bake onto fuselage charts (`chart.body` must be set — it is whenever you use `decalOn`); `chart(name, { …, ao: false })`
   skips one chart; `rig.part(name, mesh, { ao: false })` keeps a part out of the occluders (parts that are not in their
   built pose most of the time).
-* **Glass**: `dust` (default 0.05) is the haze of a used canopy in sunlight; `0` for museum glass.
+* **Glass**: `dust` (default 0.035) is the haze of a used canopy in sunlight; `0` for museum glass.
 * **Lamps** are always drawn (an unlit lamp is a dark lens), are hot in the middle, and never shrink below a pixel.
   Levels by day are modest on purpose: a position light is no brighter than sunlit paint.
 * **Afterburner**: `K.afterburnerGlow` + `K.glowMaterial()` draw a flame holder (rings, radial gutters, dark tail
