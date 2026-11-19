@@ -69,7 +69,7 @@ export function createVisual(ctx, opts = {}) {
   const UA = {
     body: A.swatch('body', F.gloss(SC.body)), fair: A.swatch('fair', F.gloss(SC.fair)), dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black),
     well: A.swatch('well', { color: '#8a8f86', rough: 0.68, metal: 0.05 }), wellDirty: A.swatch('wellDirty', { color: '#5d6058', rough: 0.75, metal: 0.05 }),
-    liner: A.swatch('liner', { color: '#8d9196', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#5a5e63', rough: 0.7, metal: 0 }),
+    liner: A.swatch('liner', { color: '#5d6166', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#3a3d41', rough: 0.7, metal: 0 }),
     floor: A.swatch('floor', { color: '#2e3034', rough: 0.95, metal: 0 }), shield: A.swatch('shield', { color: '#1c1d1f', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#50555b', rough: 0.75, metal: 0 }),
     seat: A.swatch('seat', { color: '#3e4146', rough: 0.85, metal: 0 }), sheep: A.swatch('sheep', { color: '#a59f8f', rough: 1, metal: 0 }), yoke: A.swatch('yoke', { color: '#141517', rough: 0.45, metal: 0 }),
     knob: A.swatch('knob', { color: '#d8d8d2', rough: 0.4, metal: 0 }), lever: A.swatch('lever', { color: '#9aa0a5', rough: 0.3, metal: 0.8 }),
@@ -207,7 +207,7 @@ export function createVisual(ctx, opts = {}) {
       cab.add(K.box(0.04, 0.12, 0.04, UA.yoke).translate(sx * 1.1, FLOOR + 0.62, e[2] - 0.2));                         // tiller
     }
   }
-  stA.add(cab.occlude(0.22));
+  stA.add(cab.occlude(0.35));
   // windshield wipers parked along the lower frame of each front pane
   for (const sx of [1, -1]) {
     const m = (p) => [p[0], sx > 0 ? p[1] : 1 - p[1]];
