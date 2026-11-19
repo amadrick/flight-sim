@@ -14,6 +14,7 @@ import { createTerrain } from '../terrain/index.js';
 import { createClouds } from './index.js';
 import { FULLSCREEN_VERT, FullscreenPass, FRAME_UNIFORMS_GLSL, DEPTH_GLSL } from '../core/glsl.js';
 import { CLOUD_DENSITY_GLSL } from './shaders.js';
+import { createNeuralCloudScatter, createNeuralCloudScatter4 } from '../neural/cloud-scatter.js';
 
 const sim = (window.__sim = { ready: false, error: null, ctx: null, step: null });
 
@@ -28,6 +29,12 @@ async function boot() {
   const t0 = performance.now();
   ctx.clouds = await createClouds(ctx);
   sim.cloudBootMs = performance.now() - t0;
+  // cloud lighting as in main.js: the neural model unless scatter=classic
+  if (raw.scatter !== 'classic') {
+    const s3 = createNeuralCloudScatter({ phaseMax: 20 });
+    const s4 = raw.scatter === 'neural3' ? null : createNeuralCloudScatter4({ phaseMax: 20 });
+    ctx.clouds.setScatterModel(s4 ? { glsl: s3.glsl + '\n' + s4.glsl, uniforms: { ...s3.uniforms, ...s4.uniforms } } : { glsl: s3.glsl, uniforms: s3.uniforms });
+  }
   ctx.session = createSession(ctx);
   ctx.input = { update() {} };
 
@@ -129,7 +136,50 @@ async function boot() {
   }
   sim.exportDensity = (opts) => exportDensity(ctx, opts);
   if (useAircraft) ctx.session.start({});
-  sim.step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(dt); return ctx.time.frame; };
+  // Tour: several views in one run, tiled into one screenshot (software GL + a shared render queue make single
+  // shots expensive):  tour=weather:scattered,tod:12,cy:2000,yaw:0|tod:17.5,clCav:0|...  tiles=3x2  tourFrames=20
+  // Keys: cx cy cz yaw pitch fov weather tod exp, anything else is set as a (per-frame) debug parameter for that view.
+  const tour = raw.tour ? raw.tour.split('|').map((v) => Object.fromEntries(v.split(',').filter(Boolean).map((kv) => kv.split(':')))) : null;
+  let tourK = 0, tile2d = null, tw = 0, th = 0, cols = 1, rows = 1;
+  const tourFrames = num('tourFrames', 20), raw0 = { ...raw };
+  function tourStep(dt) {
+    const vi = Math.floor(tourK / tourFrames);
+    if (vi >= tour.length) return;
+    if (tourK === 0) {
+      [cols, rows] = (raw.tiles || `${Math.ceil(Math.sqrt(tour.length))}x${Math.ceil(tour.length / Math.ceil(Math.sqrt(tour.length)))}`).split('x').map(Number);
+      tw = Math.floor(window.innerWidth / cols); th = Math.floor(window.innerHeight / rows);
+      window.removeEventListener('resize', resize);
+      ctx.camera.aspect = tw / th; ctx.camera.updateProjectionMatrix(); ctx.pipeline.setSize(tw, th, 1);
+      const c = document.createElement('canvas'); c.width = window.innerWidth; c.height = window.innerHeight;
+      c.style.cssText = 'position:fixed;left:0;top:0;z-index:99999'; document.body.appendChild(c); tile2d = c.getContext('2d');
+      tile2d.fillStyle = '#000'; tile2d.fillRect(0, 0, c.width, c.height);
+    }
+    if (tourK % tourFrames === 0) {
+      const v = tour[vi];
+      for (const k in raw) if (!(k in raw0)) delete raw[k];
+      Object.assign(raw, raw0);
+      for (const k in v) {
+        const x = +v[k];
+        if (k === 'cx') camPos.x = x; else if (k === 'cy') camPos.y = x; else if (k === 'cz') camPos.z = x;
+        else if (k === 'yaw') yaw = x; else if (k === 'pitch') pitch = x;
+        else if (k === 'fov') { ctx.camera.fov = x; ctx.camera.updateProjectionMatrix(); }
+        else if (k === 'weather') ctx.weather.setPreset(v[k], true);
+        else if (k === 'tod') ctx.time.setTimeOfDay(x);
+        else if (k === 'exp') comp.material.uniforms.uExposure.value = x;
+        else raw[k] = v[k];
+      }
+      ctx.events.emit('weather:change', { preset: ctx.weather.preset, instant: true });
+    }
+    frame(dt);
+    if (tourK % tourFrames === tourFrames - 1) {
+      const x = (vi % cols) * tw, y = Math.floor(vi / cols) * th;
+      tile2d.drawImage(ctx.renderer.domElement, 0, 0, tw, th, x, y, tw, th);
+      tile2d.font = '11px monospace'; tile2d.fillStyle = '#000'; tile2d.fillText(raw.tour.split('|')[vi].slice(0, Math.floor(tw / 7)), x + 5, y + 13);
+      tile2d.fillStyle = '#ff0'; tile2d.fillText(raw.tour.split('|')[vi].slice(0, Math.floor(tw / 7)), x + 4, y + 12);
+    }
+    tourK++;
+  }
+  sim.step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { if (tour) tourStep(dt); else frame(dt); } return ctx.time.frame; };
   frame(0);
   document.getElementById('boot')?.remove();
   sim.ready = true;
@@ -148,7 +198,7 @@ boot().catch((err) => { console.error(err); sim.error = String(err?.stack || err
 // Returns JSON { nx, ny, nz, dx, dz, x0, z0, base, top, sigma, full, base8, top2d } in air-mass metres; `full` = uint8
 // density with detail erosion (lod 0, march edge width at ~1-3 km), `base8` = cheap base density at lod 1 (what the
 // light march sees, before its 0.8 factor), both already multiplied by info.w; `ex8` = shape excess (clShape, before erosion) as (ex + 0.5) * 127.5; `top2d` = info.y per column (uint16 m).
-function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0.03 } = {}) {
+function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0.03, fp } = {}) {
   const r = ctx.renderer, U = ctx.clouds.debug.U, P = ctx.clouds.params;
   const L = U.uClLayer.value, base = L.x, top = L.y, th = L.w;
   const nz = Math.ceil(th / (size / nxy));
@@ -156,7 +206,7 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
     in vec2 vUv; layout(location = 0) out vec4 o;
     ${CLOUD_DENSITY_GLSL}
     uniform vec4 uEx;   // xy = corner (air-mass m), z = extent (m), w = altitude (m) or < -1e5 for column mode
-    uniform float uEdge;
+    uniform float uEdge, uFp;
     void main() {
       vec2 xz = uEx.xy + vUv * uEx.z;
       if (uEx.w < -1e5) {           // column optical depth (base density) for picking a window
@@ -169,12 +219,12 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
       }
       vec3 pa = vec3(xz.x, uEx.w, xz.y); vec4 wx = clWeather(pa.xz, 0.0), info, info1;
       float ex = clShape(pa, wx, 0.0, info);
-      float d = ex + CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, 0.0, 0.0, uEdge) * info.w : 0.0;
+      float d = ex + CL_EROSION_LO * CL_EROSION_MAXK * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, uFp, uEdge) * info.w : 0.0;
       float db = clDensityBase(pa, wx, 1.0, info1) * info1.w;
       o = vec4(d, db, info.y, ex);
     }`;
   const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
-    uniforms: { ...U, uEx: { value: new THREE.Vector4() }, uEdge: { value: edge } }, vertexShader: FULLSCREEN_VERT, fragmentShader: frag });
+    uniforms: { ...U, uEx: { value: new THREE.Vector4() }, uEdge: { value: edge }, uFp: { value: fp ?? size / nxy } }, vertexShader: FULLSCREEN_VERT, fragmentShader: frag });
   const pass = new FullscreenPass(mat);
   const read = (n, ex) => {
     const rt = new THREE.WebGLRenderTarget(n, n, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });

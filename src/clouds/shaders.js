@@ -81,6 +81,9 @@ uniform sampler2D tClCells;   // tiling field of individual convective cells (no
 uniform vec4 uClCell;      // x = 1 / cell-field period (1/m), yz = tower lean (horizontal offset per metre of height), w = stratocumulus sheet amount
 uniform vec4 uClCell2;     // x = smallest cell diameter (m), y = log2(largest / smallest), z = aspect (depth / diameter) of undeveloped cells, w = of developed cells
 uniform vec4 uClProf;      // cumulus width profile g(h) of shallow cells (LES fit, tools/neural/les_fit.py): x = width at the base, y = height of the widest point, z = rise exponent, w = dome exponent
+uniform vec4 uClDet;       // round four: x = detail cascade (0 = single round-three octave), y = detailed light samples near the camera, z = crease occlusion strength, w = surface refinement
+uniform vec4 uClDet3;      // x = debug shading (0 = off; 1 = direct sun only, 2 = crease pattern, 3 = depth below the surface, 4 = surface / sun cosine), y = strength of the surface-orientation term
+uniform vec4 uClDet2;      // x = amplitude ratio between detail octaves, y = frequency ratio, z = sharpest density ramp (shape units), w = wisp warp
 uniform vec4 uClProf2;     // the same for developed cells (congestus); uClShape3.z = turret amplitude (x radius)
 
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
@@ -88,6 +91,9 @@ float clSat(float x) { return clamp(x, 0.0, 1.0); }
 float clDecay = 0.0;       // 0 = growing / mature cell (crisp edges) .. 1 = decaying fragment (soft, frayed)
 float clRadius = 1000.0;   // radius of the cell at this sample (m): erosion scales with the cloud (self-similar turrets)
 float clDetailK = 1.0;     // frequency factor of the detail noise for this cell
+float clCav = 0.2;         // side output of clDensityFull: 0 = tip of a lobe .. 1 = bottom of a crease (0.2 = mean / unresolved)
+float clMu0 = 2.0;         // side output of clTauLight: cos between the local surface normal and the sun, estimated from the detail field (2 = not available)
+float clSurf = 0.0;        // side output of clDensityFull: depth of the sample below the eroded surface (shape units, ~km)
 
 vec4 clWeather(vec2 airXZ, float lod) {
   return textureLod(tClWeather, (airXZ - uClWx.xy) * uClWx.z + 0.5, lod);
@@ -204,29 +210,62 @@ float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
 // Full density: displace the cloud surface with high-frequency Worley fbm, distorted by curl noise near the base
 // ([Schneider15] sec. "detail"): wispy at the bottom, billowy on top. edge = width of the density ramp in
 // shape units (tied to the march step: crisp close to the camera, softer far away).
+//
+// Round four: the detail is a CASCADE of the same 32^3 volume at three scales (lobes of ~450-110 m, ~56-14 m and
+// ~9-2 m at the default periods), each with an amplitude proportional to its wavelength (cauliflower: lobes on
+// lobes). fp = footprint of the sample (m): every octave is fetched at the mip that matches it and is skipped
+// once it is below the footprint, so nothing aliases and distant clouds cost one fetch as before. The finer
+// octaves are warped by the coarser one (ragged, stringy fringes where the cloud evaporates).
+// Side output clCav: where in the lobe / crease pattern the sample sits (for the lighting).
 #define CL_EROSION_BIAS 0.3
 #define CL_EROSION_MAXK 1.25        // largest size / decay factor of the erosion (keeps the march's hit test conservative)
-float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, float edge) {
-  vec3 q = pa * (uClNoise.y * clDetailK);
+#define CL_EROSION_LO 0.42          // most negative erosion value (cascade included), in units of uClNoise.z * size factor
+float clCap(float w) { return sqrt(clSat(2.0 * w - w * w)); }     // inverted Worley cone -> spherical cap (round lobes, sharp creases)
+float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
+  float kD = uClNoise.y * clDetailK;
+  vec3 q = pa * kD;
   vec2 curl = textureLod(tClCurl, pa.xz * 1.9e-4, 0.0).xy * 2.0 - 1.0;
   q.xz += curl * ((1.0 - info.x) * 0.07 + clDecay * 0.12);
   q.y -= uClNoiseOfs.w; q.x += uClNoiseOfs.w * 0.4;
-  vec4 dn = textureLod(tClDetail, q, lodD + log2(clDetailK));
-  // all three octaves of the detail volume from the one fetch (R: 3-6-12 cell Worley fbm, G: 6-12, B: 12): the
-  // finer octaves cut the small sub-turrets / ragged bits into the edge that the single R channel left smooth
+  float l1 = log2(max(fp, 1e-3) * kD * 32.0);                 // footprint in voxels of the first octave
+  vec4 dn = textureLod(tClDetail, q, clamp(l1, 0.0, 4.0));
+  // all three channels of the detail volume from the one fetch (R: 3-6-12 cell Worley fbm, G: 6-12, B: 12)
   float hf = dn.r * 0.62 + dn.g * 0.23 + dn.b * 0.15;
-  if (nearK > 0.0) {                         // extra octave close to the camera (flying through cloud)
-    float fine = textureLod(tClDetail, q * 3.7 + 0.37, 0.0).g;
-    hf = mix(hf, hf * 0.7 + fine * 0.3, nearK);
-  }
   // growing / mature cells: billowy (inverted Worley = round bulges) above the base; decaying fragments: wispy
-  float hb = sqrt(clSat(2.0 * hf - hf * hf));                // round sub-turrets (see clShape)
-  float m = mix(hf, 1.0 - hb, clSat(info.x * 5.0) * (1.0 - clDecay));
+  float bil = clSat(info.x * 5.0) * (1.0 - clDecay);
+  float m = mix(hf, 1.0 - clCap(hf), bil);
+  float cav = m, cavW = 1.0;
+  if (uClDet.x > 0.5) {
+    float F = uClDet2.y, a = uClDet2.x, lF = log2(F);
+    float l2 = l1 - lF;
+    if (l2 < 3.5) {
+      // second octave: rotated (hides the lattice of the first) and warped by the first (turbulent fringes)
+      vec3 q2 = vec3(0.80 * q.x - 0.60 * q.z, q.y, 0.60 * q.x + 0.80 * q.z) * F + (dn.gba - 0.5) * (uClDet2.w * mix(1.0, 0.35, bil)) + 0.37;
+      vec4 d2 = textureLod(tClDetail, q2, clamp(l2, 0.0, 4.0));
+      float h2 = d2.r * 0.62 + d2.g * 0.23 + d2.b * 0.15;
+      float e2 = mix(h2, 1.0 - clCap(h2), bil), w2 = clSat(3.5 - l2);
+      m += a * w2 * (e2 - 0.3); cav += 0.6 * w2 * e2; cavW += 0.6 * w2;
+      float l3 = l2 - lF;
+      if (l3 < 3.5) {
+        vec3 q3 = vec3(0.80 * q2.x + 0.60 * q2.y, -0.60 * q2.x + 0.80 * q2.y, q2.z) * F + (d2.gba - 0.5) * (0.6 * uClDet2.w) + 0.71;
+        vec4 d3 = textureLod(tClDetail, q3, clamp(l3, 0.0, 4.0));
+        float h3 = d3.r * 0.62 + d3.g * 0.23 + d3.b * 0.15;
+        float e3 = mix(h3, 1.0 - clCap(h3), bil), w3 = clSat(3.5 - l3);
+        m += a * a * w3 * (e3 - 0.3); cav += 0.35 * w3 * e3; cavW += 0.35 * w3;
+      }
+    }
+  } else if (fp < 20.0) {                    // round three: one extra octave close to the camera
+    float fine = textureLod(tClDetail, q * 3.7 + 0.37, 0.0).g;
+    hf = mix(hf, hf * 0.7 + fine * 0.3, clSat(1.0 - fp / 20.0));
+    m = mix(hf, 1.0 - clCap(hf), bil);
+  }
+  clCav = mix(0.2, cav / cavW, bil);
   // keep the condensation level flat: little erosion in the lowest ~8 % of the cell (cumulus bases are flat and
   // sharp; the wisps belong to the flanks). The erosion depth follows the size of the cloud (a 300 m humilis keeps
   // its shape, a 3 km congestus gets proportionally large sub-turrets) and grows on decaying fragments.
   float sizeK = clamp(clRadius / 700.0, 0.6, 1.0) * mix(1.0, 1.25, clDecay);
   m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z * sizeK * mix(0.35, 1.0, clSat(info.x * 12.0));
+  clSurf = excess - m;
   // hard sunlit edges on growing towers, soft frayed edges on decaying fragments
   return clSat((excess - m) / (edge * mix(1.0, 3.5, clDecay)));
 }
@@ -334,13 +373,31 @@ vec3 clLightE(vec3 renderPos) { return atmSunIlluminance(renderPos) * uClLightSe
 
 // Optical depth toward the light: a few exponentially spaced samples of the cheap density (cone/light march of
 // [Schneider15], shortened), then the baked shadow map for everything farther away (other clouds, upper layers).
-float clTauLight(vec3 pa, vec4 wx, float lod, float jit) {
+float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, float edge) {
   float tau = 0.0, d0 = 0.0;
   vec4 info;
+  // round four: close to the camera the first segment (0 .. 62 m at 4 steps) is sampled twice WITH the detail
+  // erosion: the shadow one lobe casts on the next, i.e. the dark creases of a cauliflower surface under side light
+  bool micro = uClDet.y > 0.5 && fp < 14.0;
   for (int j = 0; j < CL_LIGHT_STEPS; j++) {
     float u = (float(j) + 1.0) / float(CL_LIGHT_STEPS);
     float d1 = 1000.0 * u * u;                                     // segment ends: 62, 250, 562, 1000 m (4 steps)
     float dl = d1 - d0;
+    if (j == 0 && micro) {
+      float s2 = dl * (0.36 + 0.44 * jit), s1 = dl * (0.07 + 0.2 * jit);
+      vec3 p2 = pa + uClLightDir * s2;
+      float surf0 = clSurf, ex2 = clShape(p2, wx, lod, info);
+      float dA = clDensityFull(p2, ex2, info, max(2.0 * fp, 6.0), max(edge, 0.008)) * info.w, surf2 = clSurf;
+      // the shape excess between the sample and p2 is interpolated: only the detail is fetched again
+      float dB = clDensityFull(pa + uClLightDir * s1, mix(ex0, ex2, s1 / s2), info, max(fp, 3.0), max(edge, 0.006)) * info.w;
+      // How the surface faces the sun: (excess - erosion) is a rough signed depth below the surface (1 unit ~ 1 km),
+      // so its decrease along the light direction is ~cos(normal, sun) x |gradient|; the gradient length is not
+      // known (that would take three more samples), hence the soft normalisation with a typical 1.5 / km.
+      float g = 500.0 * ((surf0 - clSurf) / s1 + (surf0 - surf2) / s2);
+      clMu0 = g / sqrt(g * g + 2.25);
+      tau += (0.3 * dB + 0.7 * dA) * dl * 1.25;                    // 1.25: these are eroded densities (see the 0.8 below)
+      d0 = d1; continue;
+    }
     vec3 pl = pa + uClLightDir * (d0 + dl * (0.25 + 0.5 * jit));    // half-cell jitter: hides the sample planes at half the variance
     // (the weather map varies over kilometres: the sample's own fetch serves the whole 1 km light path, which pays
     //  for the cell-field fetch each light sample now makes)
@@ -518,16 +575,19 @@ void main() {
 
         float lod = clamp(log2(ds / (voxel * 2.0)), 0.0, 2.5);
         vec4 info;
-        float ex = clShape(pa, wx, lod, info) + CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z;   // conservative: erosion can also add
+        float exLo = (uClDet.x > 0.5 ? CL_EROSION_LO : CL_EROSION_BIAS) * CL_EROSION_MAXK * uClNoise.z;
+        float ex = clShape(pa, wx, lod, info) + exLo;                 // conservative: erosion can also add
         if (!fine && !farField) {
           if (ex > 0.0) { fine = true; zeros = 0; continue; }     // hit: re-march this interval with fine steps
           t += ds; continue;
         }
-        float d = 0.0;
+        float d = 0.0, pix = ts * uClFullRes.z, fp = ds, edge = 0.05;
         if (ex > 0.0) {
-          float lodD = clamp(log2(ds / voxelD), 0.0, 4.0);
-          float edge = clamp(ds * 0.0005, 0.009, 0.05);              // density ramp: crisp near, soft far
-          d = clDensityFull(pa, ex - CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
+          // footprint of the sample: the (low-res) pixel across the ray, half a step along it (the temporal filter
+          // integrates the step jitter); the detail octaves and the density ramp follow it: crisp near, soft far
+          if (uClDet.x > 0.5) { fp = max(pix, 0.75 * ds); edge = clamp(fp * 0.001, uClDet2.z, 0.05); }
+          else { fp = ds; edge = clamp(ds * 0.0005, 0.009, 0.05); }
+          d = clDensityFull(pa, ex - exLo, info, fp, edge) * info.w * fadeFar;
         }
         if (d > 0.0) {
           float sig = d * uClNoise.w;
@@ -537,8 +597,23 @@ void main() {
           if (cap > 1e8 && sig * ds > 1.6 && ds > 1.5 * uClStep.y) {
             cap = max(1.0 / sig, uClStep.y); t = max(t, ts - 0.5 * cap); fine = true; zeros = 0; continue;
           }
+          // Round four, close to the camera: the surface itself must be found to a few pixels, or the 20-100 m lobes
+          // of the detail cascade dissolve in the step jitter. The interval of the first dense sample is re-marched
+          // with steps of ~2.5 pixels (>= 4 m); the cap relaxes as above (about 4 extra lit samples per surface).
+          float dsSurf = clamp(2.5 * pix, 4.0, uClStep.y);
+          if (uClDet.w > 0.5 && cap > 1e8 && ds > 1.5 * dsSurf && left > 12.0) {
+            cap = dsSurf; fine = true; zeros = 0; continue;
+          }
           zeros = 0; nDense += 1.0;
-          float tauSun = clTauLight(pa, wx, lod, fract(blue2 + nDense * 0.618));
+          // (clTauLight overwrites the detail side outputs) the pattern only means something within a few tens of
+          // metres of the surface: deeper samples take the mean
+          float cav = mix(0.2, clCav, clSat(1.3 - clSurf / 0.04));
+          float surfK = clSat(1.3 - clSurf / 0.04);
+          clMu0 = 2.0;
+          float tauSun = clTauLight(pa, wx, lod, fract(blue2 + nDense * 0.618), fp, ex - exLo, edge);
+          // Lobes read as lit spheres (round four): an optically thick surface returns light in proportion to the sun
+          // flux through it, i.e. ~cos(incidence), which the scatter model cannot know from its optical depths.
+          float lam = clMu0 > 1.5 ? 1.0 : mix(1.0, 0.5 + 0.8 * max(clMu0, 0.0) + 0.15 * min(clMu0, 0.0), uClDet3.y * surfK * clSat(2.0 - fp / 7.0));
           // optical depth to the cloud top: mostly a smooth height-based estimate (using only the local density
           // would print the density field onto the ambient term: an "x-ray" look in diffuse light)
           float tauUp = uClNoise.w * (0.3 + 0.2 * d) * max(info.y - h, 0.0);
@@ -551,16 +626,21 @@ void main() {
           float J = cloudSunScatter(tauSun, tauUp, cosT);
           #endif
           vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
+          // Crease occlusion (round four): in the lobe / crease pattern of the detail cascade the tips of the lobes see
+          // the whole sky and their multiply scattered light leaves freely; the creases between them are enclosed.
+          // cav = where the sample sits in that pattern (0.2 = mean of the billow profile); x: sun term, y: ambient.
+          vec2 occ = clamp(1.0 - uClDet.z * vec2(0.55, 1.0) * (cav - 0.2) * 1.25, 0.25, 1.3);
           // ambient: sky light diffusing down from the cloud top, ground bounce coming up through the base
           #ifdef CL_AMBIENT_VIS
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
           vec2 vis = cloudAmbientVis(tauUp, tauDn);
-          vec3 S = E * J + ambUp * vis.x + ambDn * vis.y;
+          vec3 S = E * J * (occ.x * lam) + (ambUp * vis.x + ambDn * vis.y) * occ.y;
           #else
           float visUp = 0.35 * exp(-0.6 * tauUp) + 0.65 / (1.0 + 0.2 * tauUp);
           float visDn = 0.35 * exp(-0.6 * tauDn) + 0.65 / (1.0 + 0.2 * tauDn);
-          vec3 S = E * J + 0.5 * (ambUp * visUp + ambDn * visDn);
+          vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
           #endif
+          if (uClDet3.x > 0.5) S = uClDet3.x < 1.5 ? vec3(0.02 + 0.5 * exp(-tauSun)) : uClDet3.x < 2.5 ? vec3(cav) : uClDet3.x < 3.5 ? vec3(surfK, d, 0.2) * 0.6 : vec3(lam * 0.5);
           // energy-conserving integration over the step [Hillaire16]
           float Ts = exp(-sig * ds), w = T * (1.0 - Ts);
           L += w * S;
@@ -597,12 +677,12 @@ void main() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Temporal reconstruction at full resolution (temporal upsampling in the spirit of [Schneider15]'s 4x4 reprojection,
+// Round-three temporal reconstruction (kept as clTaa=0) at full resolution (temporal upsampling in the spirit of [Schneider15]'s 4x4 reprojection,
 // with depth-aware (joint bilateral) spatial weights so scene silhouettes stay crisp):
 //   current = bilateral blend of the 4 nearest low-res samples (which sit at this frame's jittered sub-pixel offset)
 //   history = previous output, reprojected through the mean cloud distance with uPrevViewProj
 //   output  = mix(history, current, alpha), alpha is high where this pixel was actually marched this frame.
-export function resolveFragment({ frameGLSL, depthGLSL, N }) {
+export function resolveFragmentR3({ frameGLSL, depthGLSL, N }) {
   return /* glsl */`
 precision highp float; precision highp int;
 #define CL_N ${N | 0}
@@ -681,6 +761,121 @@ void main() {
   }
   oColor = max(cur, vec4(0.0));
   oAux = vec4(dFull, cloudKm, count, 1.0);
+}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round-four temporal reconstruction (temporal upsampling with accumulated sample weights).
+// The round-three resolve blended the BILINEAR upsample of every low-res frame into the history with a nearly
+// constant weight: the result converges to the image convolved with a tent of +-N pixels (soft for good), and the
+// bilinear history fetch blurred it a little more every frame the clouds drifted. Here
+//   - each low-res sample counts where it was actually taken: weight = Gaussian (sigma ~0.5 px) of the distance
+//     between this pixel and the sample, summed into a per-pixel history weight W; alpha = w / (W + w). A pixel that
+//     has had its own sample keeps it; the bilinear fill of the neighbours only matters while W is ~0;
+//   - W is capped (lower while the pixel moves on screen) so the image keeps following the clouds;
+//   - the history is fetched with a 5-tap Catmull-Rom filter (no cumulative blur under sub-pixel drift) and, while
+//     moving, clamped to the range of the current low-res neighbourhood (no trails);
+//   - young pixels (W < 1: boot, cut, disocclusion) shrink towards a depth-aware 4x4 Gaussian of the low-res frame,
+//     so a short capture is neither dotted nor blurred for long.
+export function resolveFragment({ frameGLSL, depthGLSL, N }) {
+  return /* glsl */`
+precision highp float; precision highp int;
+#define CL_N ${N | 0}
+in vec2 vUv;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oAux;
+${frameGLSL}
+${depthGLSL}
+uniform sampler2D tClMarch, tClMarchAux, tClHist, tClHistAux;
+uniform vec4 uClJitter;      // xy = this frame's sub-pixel offset (full-res px)
+uniform vec4 uClTemporal;    // x = history valid, y = 1 / (2 sigma^2) of the sample kernel (px^-2), z = largest history weight, w = camera translation this frame (m)
+uniform vec4 uClWindVel;     // xyz = cloud drift this frame (m, render space), w = focal length in pixels
+uniform vec4 uClTemporal2;   // x = strength of the young-history spatial filter (0 = off), y = unused, z = history clamp (0 = off), w = Catmull-Rom history (0 = bilinear)
+vec4 clHistory(vec2 uv) {
+  if (uClTemporal2.w < 0.5) return texture(tClHist, uv);
+  vec2 size = vec2(textureSize(tClHist, 0));
+  vec2 sp = uv * size, tc1 = floor(sp - 0.5) + 0.5, f = sp - tc1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2, t0 = (tc1 - 1.0) / size, t3 = (tc1 + 2.0) / size, t12 = (tc1 + w2 / w12) / size;
+  vec4 r = texture(tClHist, vec2(t12.x, t0.y)) * (w12.x * w0.y) + texture(tClHist, vec2(t0.x, t12.y)) * (w0.x * w12.y)
+         + texture(tClHist, vec2(t12.x, t12.y)) * (w12.x * w12.y) + texture(tClHist, vec2(t3.x, t12.y)) * (w3.x * w12.y)
+         + texture(tClHist, vec2(t12.x, t3.y)) * (w12.x * w3.y);
+  r /= w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+  return vec4(max(r.rgb, vec3(0.0)), clamp(r.a, 0.0, 1.0));
+}
+void main() {
+  ivec2 P = ivec2(gl_FragCoord.xy);
+  ivec2 lowSize = textureSize(tClMarch, 0);
+  float dFull = min(sceneDistance(vUv) * 1e-3, 1000.0);
+  vec2 g = (vec2(P) - uClJitter.xy) / float(CL_N);
+  ivec2 i0 = ivec2(floor(g)); vec2 f = g - vec2(i0);
+  vec4 cSum = vec4(0.0); float dSum = 0.0, wSum = 0.0, bestDz = 1e9, conf = 0.0; vec4 bestC = vec4(0.0, 0.0, 0.0, 1.0); float bestD = 40.0;
+  vec4 mn = vec4(1e9), mx = vec4(-1e9);
+  for (int k = 0; k < 4; k++) {
+    ivec2 o = ivec2(k & 1, k >> 1);
+    ivec2 ip = clamp(i0 + o, ivec2(0), lowSize - 1);
+    vec4 cc = texelFetch(tClMarch, ip, 0); vec4 a = texelFetch(tClMarchAux, ip, 0);
+    float bw = (o.x == 0 ? 1.0 - f.x : f.x) * (o.y == 0 ? 1.0 - f.y : f.y);
+    float dz = abs(log2(max(a.y, 1e-4) / max(dFull, 1e-4)));
+    float dw = exp2(-min(dz * 24.0, 60.0));
+    float w = (bw + 0.002) * dw;
+    cSum += cc * w; dSum += a.x * w; wSum += w;
+    vec2 dd = (vec2(o) - f) * float(CL_N);                      // this pixel -> the sample (full-res px)
+    conf += exp(-dot(dd, dd) * uClTemporal.y) * dw;
+    if (dw > 0.05) { mn = min(mn, cc); mx = max(mx, cc); }
+    if (dz < bestDz) { bestDz = dz; bestC = cc; bestD = a.x; }
+  }
+  vec4 cur; float cloudKm;
+  if (wSum > 1e-12) { cur = cSum / wSum; cloudKm = dSum / wSum; } else { cur = bestC; cloudKm = bestD; mn = bestC; mx = bestC; }
+
+  // reproject: where was this piece of cloud on screen last frame?
+  vec3 wp = uCameraPos + viewRay(vUv) * (cloudKm * 1000.0) - uClWindVel.xyz;
+  vec4 pc = uPrevViewProj * vec4(wp, 1.0);
+  vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
+  bool ok = uClTemporal.x > 0.5 && pc.w > 0.0 && all(greaterThan(puv, vec2(0.0))) && all(lessThan(puv, vec2(1.0)));
+  vec4 h = vec4(0.0), ha = vec4(0.0);
+  float W = 0.0, par = 0.0;
+  if (ok) {
+    h = clHistory(puv); ha = texture(tClHistAux, puv);
+    // disocclusion: the scene surface in front of / behind the cloud changed (aircraft edges, terrain silhouettes)
+    // (only depth changes that can cut into the cloud matter: beyond ~3x the cloud distance the surface is irrelevant)
+    float capKm = cloudKm * 3.0 + 2.0;
+    float dz = abs(log2(max(min(ha.x, capKm), 1e-4) / max(min(dFull, capKm), 1e-4)));
+    float vel = length((puv - vUv) * vec2(textureSize(tClHist, 0)));        // screen motion of this piece of cloud (px / frame)
+    // parallax the single-depth reprojection cannot represent (flying fast past / through near cloud)
+    par = clamp(uClTemporal.w / max(cloudKm * 1000.0, 1.0) * uClWindVel.w * 0.04 - 0.1, 0.0, 0.35);
+    W = min(ha.z, mix(uClTemporal.z, 2.0, clamp(vel * 0.7, 0.0, 1.0))) * (1.0 - smoothstep(0.15, 0.5, dz)) * (1.0 - 2.0 * par);
+    if (uClTemporal2.z > 0.0 && mx.a >= mn.a) {
+      // while it moves, the history may not leave the range of the current neighbourhood by much (trails, ghosts)
+      vec4 pad = (mx - mn) * mix(4.0, 0.25, clamp(vel * 0.5 + par * 3.0, 0.0, 1.0)) / uClTemporal2.z + 0.01 * (mx + 0.05);
+      h = clamp(h, mn - pad, mx + pad);
+    }
+  }
+  // Young history: shrink towards a depth-aware Gaussian over 4x4 low-res samples (variance for a little blur) until
+  // about one own sample has accumulated; the pixel's own sample keeps the larger share
+  float young = clamp(1.0 - W / 3.0, 0.0, 1.0) * uClTemporal2.x;
+  if (young > 0.0) {
+    vec4 wS = vec4(0.0); float wW = 0.0;
+    for (int k = 0; k < 16; k++) {
+      ivec2 o = ivec2(k & 3, k >> 2) - 1;
+      ivec2 ip = clamp(i0 + o, ivec2(0), lowSize - 1);
+      vec2 dd = vec2(o) - f;
+      float dz = abs(log2(max(texelFetch(tClMarchAux, ip, 0).y, 1e-4) / max(dFull, 1e-4)));
+      float w = exp(-0.6 * dot(dd, dd)) * exp2(-min(dz * 24.0, 60.0));
+      wS += texelFetch(tClMarch, ip, 0) * w; wW += w;
+    }
+    if (wW > 1e-12) {
+      // the pixel's own sample keeps the larger share, unless its opacity disagrees with the neighbourhood (a hole
+      // or a dot of one jittered sample in a thin or distant cloud)
+      vec4 wide = wS / wW;
+      cur = mix(cur, wide, young * mix(0.8, mix(0.35, 0.8, clamp(abs(cur.a - wide.a) * 4.0, 0.0, 1.0)), clamp(conf, 0.0, 1.0)));
+    }
+  }
+  float wc = conf + 0.004;
+  cur = mix(h, cur, ok ? max(wc / (W + wc), par) : 1.0);
+  oColor = max(cur, vec4(0.0));
+  oAux = vec4(dFull, cloudKm, min(W + wc, 64.0), 1.0);
 }`;
 }
 

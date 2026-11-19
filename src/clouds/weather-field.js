@@ -113,7 +113,9 @@ export function deriveWeatherParams(w, out = {}) {
   out.devHi = lerp(0.98, 0.72, convective);
   out.anvil = convective;
   out.baseRamp = lerp(90, 420, stratus);                 // metres over which the base fades in (flat cumulus bases, ragged stratus)
-  out.sigma = lerp(0.028, 0.016, stratus) * (1 + 0.5 * convective);   // extinction (1/m) at density 1
+  // extinction (1/m) at density 1. Round four: cumulus 0.028 -> 0.075 (mean free path 36 m -> 13 m; measured in
+  // real cumulus: 0.05-0.13). With 36 m the 20-60 m lobes of the detail cascade were translucent: cotton wool.
+  out.sigma = lerp(0.075, 0.03, stratus) * (1 + 0.2 * convective);
   out.erosion = lerp(0.28, 0.14, stratus);       // surface displacement by the detail noise, in shape units
   // cumulus cells (see clShape): depth / diameter of undeveloped and developed cells (humilis ~0.5, congestus ~1.5+),
   // stratocumulus sheet at the base in broken skies, width profile fitted to the LES (tools/neural/les_stats.py)

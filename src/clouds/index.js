@@ -17,7 +17,7 @@ import { saturate, smoothstep, lerp, damp } from '../core/math.js';
 import { createNoise2D, createNoise3D, createCellField, sampleLowRes } from './noise.js';
 import { WEATHER_FIELD_GLSL, makeWeatherFieldJS, deriveWeatherParams, densityFromField } from './weather-field.js';
 import {
-  CLOUD_SHADOW_GLSL, DEFAULT_SCATTER_GLSL, marchFragment, resolveFragment, OUTPUT_FRAG,
+  CLOUD_SHADOW_GLSL, DEFAULT_SCATTER_GLSL, marchFragment, resolveFragment, resolveFragmentR3, OUTPUT_FRAG,
   shadowBakeFragment, weatherBakeFragment, CIRRUS_BAKE_FRAG,
 } from './shaders.js';
 
@@ -100,6 +100,7 @@ export async function createClouds(ctx) {
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
     tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture },
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
+    uClDet: v4(1, 1, 0.6, 1), uClDet2: v4(0.3, 8, 0.004, 0.3), uClDet3: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
     uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
@@ -120,6 +121,10 @@ export async function createClouds(ctx) {
   let scatterModel = null;
   let N = 2, steps = 80, lightSteps = 4, shadowSteps = 16, shadowStrips = 8, maxDistQ = 200000;
   let marchPass = null, resolvePass = null, shadowPass = null;
+  // round-four stages (each can be switched off for A/B): clTaa (resolve), clDet (detail cascade), clMicro (detailed
+  // light samples), clCav (crease occlusion strength), clRef (surface refinement)
+  const taaR4 = dbg('clTaa', 1) > 0;
+  let detailLevel = 2;                    // 0 = low (cascade only), 1 = medium, 2 = high / ultra
   const outputPass = mkPass(OUTPUT_FRAG);
   const weatherPass = mkPass(weatherBakeFragment(WEATHER_FIELD_GLSL));
   let jitterSeq = jitterSequence(2), jitterIdx = 0, frameCount = 0;
@@ -133,6 +138,7 @@ export async function createClouds(ctx) {
     shadowRes = lvl === 'low' ? 256 : lvl === 'medium' ? 512 : 1024;
     shadowSteps = lvl === 'low' ? 12 : lvl === 'medium' ? 16 : 24;
     shadowStrips = 8;
+    detailLevel = lvl === 'low' ? 0 : lvl === 'medium' ? 1 : 2;
     maxDistQ = dbg('cloudDist', lvl === 'low' ? 150000 : 200000);
   }
 
@@ -142,7 +148,7 @@ export async function createClouds(ctx) {
       frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, atmosphereGLSL: atmGLSL,
       scatterGLSL: scatterModel?.glsl || DEFAULT_SCATTER_GLSL, steps, lightSteps, N,
     }));
-    resolvePass = mkPass(resolveFragment({ frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, N }));
+    resolvePass = mkPass((taaR4 ? resolveFragment : resolveFragmentR3)({ frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, N }));
     shadowPass = mkPass(shadowBakeFragment({ steps: shadowSteps }));
     jitterSeq = jitterSequence(N); jitterIdx = 0;
     U.uClN.value = N;
@@ -368,7 +374,11 @@ export async function createClouds(ctx) {
     const nn = jitterSeq.length, sub = jitterIdx % nn, cycle = Math.floor(jitterIdx / nn);
     U.uClJitter.value.set(j[0], j[1], (cycle * GOLDEN + sub / nn) % 1, volumetricOn() ? 1 : 0);
     U.uClWindVel.value.set(wind.x * (frame.dt || 0), 0, wind.z * (frame.dt || 0), focalPx);
-    U.uClTemporal2.value.x = dbg('clYoung', 1);
+    U.uClTemporal2.value.set(dbg('clYoung', 1), 0, dbg('clClamp', 1), dbg('clCR', detailLevel > 0 ? 1 : 0));
+    // detail cascade, detailed light samples (not at `low`), crease occlusion, surface refinement
+    U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 0.6), dbg('clRef', 1));
+    U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', 1), 0, 0);
+    U.uClDet2.value.set(dbg('clDetA', 0.3), dbg('clDetF', 8), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
   }
 
   const volumetricOn = () => P.coverage > 0.012;
@@ -416,7 +426,8 @@ export async function createClouds(ctx) {
     const write = histA, read = histB;
     U.tClMarch.value = marchRT.textures[0]; U.tClMarchAux.value = marchRT.textures[1];
     U.tClHist.value = read.textures[0]; U.tClHistAux.value = read.textures[1];
-    U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.06), dbg('clAlphaExact', 0.12), Math.min(moved, 600));
+    if (taaR4) { const sg = dbg('clSig', 0.5); U.uClTemporal.value.set(historyValid ? 1 : 0, 0.5 / (sg * sg), dbg('clWmax', 6), Math.min(moved, 600)); }
+    else U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.06), dbg('clAlphaExact', 0.12), Math.min(moved, 600));
     resolvePass.render(r, write);
     // 3. output
     U.tClHist.value = write.textures[0];
