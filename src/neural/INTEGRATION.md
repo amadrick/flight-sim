@@ -25,8 +25,8 @@ vec2  cloudAmbientVis(float tauUp, float tauDown);                  // x: per un
 and the clouds module, when it sees `cloudAmbientVis`, lights a sample with `S = E J + ambUp V.x + ambDown V.y`
 (`#define CL_AMBIENT_VIS`). Both networks are trained at the samples the march actually lights (weighted by their
 contribution to the image), with the features the march actually computes (light-march tauSun, the height-based
-tauUp / tauDown): 160k-235k path-traced points on cumulus exported from the game, 15 sun / view configurations per
-field. J net 3-16-16-1 (353 parameters, 32^3 R16F LUT), V net 2-12-12-2 (218 parameters, 32^2 RG16F LUT); both
+tauUp / tauDown): 244k path-traced points on cumulus exported from the game (4 fields, 10-15 sun / view configurations
+each). Held-out-field error and the full before / after tables: `tools/neural/results/gt_compare.md`. J net 3-16-16-1 (353 parameters, 32^3 R16F LUT), V net 2-12-12-2 (218 parameters, 32^2 RG16F LUT); both
 baked at boot (tens of ms). Test vectors: `test-vectors-light.json`, tests: `cloud-light.test.js`.
 Per lit sample: 2 texture fetches (J LUT + ambient LUT), the same as the round-one default (4-feature model: 2
 fetches), one more than `scatter=neural3` in round one.
