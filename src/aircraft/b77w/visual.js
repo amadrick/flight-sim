@@ -99,9 +99,9 @@ export function createVisual(ctx, opts = {}) {
     ...NOSE.map(([d, top, bot, w, yc]) => st(G.noseZ + d, top, bot, w, yc, {})),
     ...TAIL.map(([z, top, bot, w, yc]) => st(z, top, bot, w, yc, z > 33 ? { kTop: 0.6, kBot: 0.62 } : z > 28 ? { kBot: 0.58 } : {})),
   ];
-  const fseg = Math.max(40, Math.round(104 * detail / 4) * 4);
+  const fseg = Math.max(40, Math.round(96 * detail / 4) * 4);
   const fus = K.loft({
-    stations: FS, segments: fseg, step: 1.1 / detail, chart: cFus, capEnd: 'flat', capUV: SC.style === 'sweep' ? UA.fair : UA.body,
+    stations: FS, segments: fseg, step: 1.3 / detail, chart: cFus, capEnd: 'flat', capUV: SC.style === 'sweep' ? UA.fair : UA.body,
     cutouts: [{ name: 'ngf', z: [-31.1, -29.35], t: [0, 0.034], mirror: true }, { name: 'nga', z: [-29.3, -27.7], t: [0, 0.034], mirror: true }],
   });
   cFus.body = fus;
