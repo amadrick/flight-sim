@@ -448,7 +448,7 @@ TerrSurf terrSurface(vec3 rp) {
   // Noise stretched 22:1 along three fixed directions 60 degrees apart, blended by how well each lines up with the
   // slope (a pattern in a frame that turns with the slope would shear; fixed frames cannot). rill: 0 = channel
   // floor .. 1 = rib between channels, mean 0.5. Only on slopes steeper than ~12 degrees, while resolved.
-  float rill = 0.5, rillK = ss(0.022, 0.085, slope) * ss(70.0, 14.0, px) * (1.0 - water) * (1.0 - C.pad);
+  float rill = 0.5, rillK = ss(0.022, 0.085, slope) * ss(110.0, 25.0, px) * (1.0 - water) * (1.0 - C.pad);
   if (rillK > 0.0) {
     vec2 sd = normalize(ng.xz + vec2(1.0e-5, 0.0));
     float acc = 0.0, wsum = 1.0e-4;
@@ -457,8 +457,10 @@ TerrSurf terrSurface(vec3 rp) {
       float al = dot(sd, dI), wg = al * al; wg *= wg; wg *= wg;
       if (wg > 0.004) {
         vec2 pI = vec2(-dI.y, dI.x);
-        vec2 uv = vec2(dot(w, pI) / 37.0, dot(w, dI) / 820.0) + float(i) * 0.371;
-        vec4 rt = textureGrad(tTerrNoise, uv, vec2(dot(dxz, pI) / 37.0, dot(dxz, dI) / 820.0), vec2(dot(dyz, pI) / 37.0, dot(dyz, dI) / 820.0));
+        // (the tile is 150 m across the fall line: at 37 m its repeat showed as a comb of identical snow streaks;
+        // the larger noise scales bend the streaks so they are not ruled lines)
+        vec2 uv = vec2(dot(w, pI) / 150.0 + 0.22 * (n1.r - 0.5) + 0.05 * (n2.g - 0.5), dot(w, dI) / 3300.0) + float(i) * 0.371;
+        vec4 rt = textureGrad(tTerrNoise, uv, vec2(dot(dxz, pI) / 150.0, dot(dxz, dI) / 3300.0), vec2(dot(dyz, pI) / 150.0, dot(dyz, dI) / 3300.0));
         acc += wg * (0.6 * rt.g + 0.4 * rt.a); wsum += wg;
       }
     }
@@ -685,7 +687,7 @@ TerrSurf terrSurface(vec3 rp) {
   float firn = ss(treeline + 650.0, treeline + 1350.0, h + 260.0 * (C.mac.x - 0.5)) * (1.0 - 0.8 * desertAmt);
   snowF = max(snowF, 0.92 * firn);
   // drifts linger in the hollows and gullies first; a little broad noise so the edges are not contour lines
-  float bkS = 0.5 - 0.85 * rillS * ss(0.06, 0.2, slope) + 1.0 * clamp(conc, -0.10, 0.10) + 0.8 * clamp(curv, -0.06, 0.06) + 0.55 * (n2.r - 0.5) + 0.30 * (n3.g - 0.5) + 0.6 * farN * (C.mac.x - 0.5);
+  float bkS = 0.5 - 0.6 * rillS * ss(0.06, 0.2, slope) + 1.0 * clamp(conc, -0.10, 0.10) + 0.8 * clamp(curv, -0.06, 0.06) + 0.55 * (n2.r - 0.5) + 0.30 * (n3.g - 0.5) + 0.6 * farN * (C.mac.x - 0.5);
   float snow = terrPatch(snowF, bkS, 0.12, eps + 0.03) * max(ss(0.04, 0.14, eSnow), firn) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
   snow *= 1.0 - 0.8 * paint * ss(0.9, 0.5, eSnow);
   vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.95 + 0.07 * n3.r);
