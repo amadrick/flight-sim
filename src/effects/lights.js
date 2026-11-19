@@ -73,7 +73,7 @@ export function createAircraftLights(ctx, shared, header) {
         cover = max(cover, mix(2e-4, 3e-3, uFxNight));
         float L = I * cover;                           // scene radiance of the sprite core
         // soft limit in display units: strobes / landing lamps may go further into the bloom than nav lights
-        float cap = (l2.w > 1.5 ? 18.0 : 7.0) * mix(1.0, 2.2, uFxNight);
+        float cap = (l2.w > 1.5 ? 12.0 : 6.0) * mix(1.0, 1.6, uFxNight);
         float Vx = L * uFxExposure;
         Vx = cap * (1.0 - exp(-Vx / cap));
         float outL = Vx / uFxExposure;

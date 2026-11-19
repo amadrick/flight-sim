@@ -137,7 +137,7 @@ export function createAO(ctx, shadowUniforms) {
     minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, colorSpace: THREE.LinearSRGBColorSpace,
   });
   const rtA = mkRT(), rtB = mkRT();
-  const params = new THREE.Vector4(+(raw.aoradius || 1), +(raw.aointensity || 1.4), 450, 1.777);
+  const params = new THREE.Vector4(+(raw.aoradius || 1), +(raw.aointensity || 1.8), 450, 1.777);
   const key = new THREE.Vector4(0, 1, 0, 0.5);
   const fullTexel = new THREE.Vector2(1, 1);
   const mk = (uniforms, frag) => new FullscreenPass(new THREE.ShaderMaterial({
