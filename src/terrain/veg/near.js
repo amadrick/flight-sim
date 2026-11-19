@@ -2,7 +2,7 @@
 // shadow-map depth pass (the trees cast and receive the sim's sun shadows near the aircraft).
 import * as THREE from 'three';
 import { VERTEX_PULL_GLSL, VMAX } from './treegen.js';
-import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL } from './common.js';
+import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL, vegDebug, VEG_DBG_GLSL, VEG_SM_COVER_GLSL } from './common.js';
 import { TREE_CELL } from './species.js';
 
 export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
@@ -60,9 +60,14 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
     }
   `;
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0, side: THREE.DoubleSide });
-  mat.defines = { VEG_SPEC_DIRECT: '0.5', VEG_SPEC_SKY: '0.2' };
+  const SU = ctx.pipeline?.shadow?.uniforms;
+  const smOK = !!(SU && SU.uSunShadowMatrix && SU.uSunShadowRect && SU.uSunShadowParams);
+  mat.defines = { VEG_SPEC_DIRECT: '0.3', VEG_SPEC_SKY: '0.1' };
+  if (smOK) mat.defines.VEG_SM_COVER = 1;
+  if (vegDebug.mode) mat.defines.VEG_DBG = vegDebug.mode;
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, NU);
+    if (smOK) Object.assign(sh.uniforms, { uSunShadowMatrix: SU.uSunShadowMatrix, uSunShadowRect: SU.uSunShadowRect, uSunShadowParams: SU.uSunShadowParams });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         ${VDECL}
@@ -87,19 +92,23 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
         vVegWorld = vegPos;`)
       .replace('#include <begin_vertex>', 'vec3 transformed = vegPos;');
     sh.fragmentShader = sh.fragmentShader
+      .replace('#include <dithering_fragment>', VEG_DBG_GLSL)
       .replace('#include <common>', `#include <common>
         ${FRAG_DECL_GLSL}
         ${neuralGLSL}
+        ${smOK ? VEG_SM_COVER_GLSL : ''}
+        ${transGLSL()}
         uniform sampler2D tVegFoliage; uniform vec4 uVegRange;
         varying vec2 vVegUv; varying float vVegKind; varying vec2 vVegFade; varying vec3 vVegAlb;
         ${ALPHA}`)
       .replace('#include <map_fragment>', `
         vec4 vFo;
         if (vegAlpha(vFo) < 0.5) discard;
-        diffuseColor.rgb = vVegKind < 0.5 ? vVegAlb * (0.55 + 0.9 * vFo.r) : vVegAlb * (0.45 + 1.1 * vFo.r) * mix(vec3(1.0), vec3(1.5, 1.1, 0.55), vFo.g * 0.6) * (0.7 + 0.3 * vFo.b);`)
-      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vVegKind < 0.5 ? 0.9 : mix(0.55, 0.8, vVegMisc.z);')
+        diffuseColor.rgb = vVegKind < 0.5 ? vVegAlb * (0.55 + 0.9 * vFo.r) : vVegAlb * (0.45 + 1.1 * vFo.r) * mix(vec3(1.0), vec3(1.5, 1.1, 0.55), vFo.g * 0.6) * (0.7 + 0.3 * vFo.b);
+        vec3 vegTransCol = diffuseColor.rgb * vegTransRatio(vVegMisc.z);`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vVegKind < 0.5 ? 0.9 : mix(0.6, 0.8, vVegMisc.z);')
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);')      // crown normals: no back-face flip
-      .replace('#include <aomap_fragment>', VEG_LIGHT_GLSL);
+      .replace('#include <aomap_fragment>', VEG_LIGHT_GLSL.replace(/vVegTrans/g, 'vegTransCol'));
   };
   mat.customProgramCacheKey = () => 'skyward-veg-near';
 

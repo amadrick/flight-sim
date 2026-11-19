@@ -3,13 +3,14 @@
 // the tree's bounding sphere. Two atlases, one draw call each for ALL species and frames (instanced by frame):
 //   atlas A (RGBA8): rgb = sqrt(linear albedo), a = coverage
 //   atlas B (RGBA8): rg = octahedral tree-local shading normal, b = crown-relative height h_rel, a = crown depth d_rel
+//   (both cleared to 0, i.e. premultiplied by coverage: divide by A.a after filtering)
 // At runtime the impostor fragment shader intersects the pixel's view ray with the planes of the 4 nearest frames
 // (proper per-frame parallax, no swimming near the zenith) and blends them.
 import * as THREE from 'three';
 import { SPECIES, NSPECIES } from './species.js';
 import { VMAX, VERTEX_PULL_GLSL } from './treegen.js';
 
-export const IMP_N = 6;                  // views per side
+export const IMP_N = 7;                  // views per side
 export const IMP_COLS = 4;               // species blocks per atlas row
 
 export const OCT_GLSL = /* glsl */`
@@ -47,7 +48,7 @@ vec3 vegNrmDec(vec2 e) {
  * Bake the atlases. meshes = buildTreeMeshes() result, foliage = foliage atlas texture.
  * Returns { atlasA, atlasB, F, W, H, bytes, ms, dispose }.
  */
-export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 84 } = {}) {
+export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72 } = {}) {
   const t0 = performance.now();
   const N = IMP_N, rows = Math.ceil(NSPECIES / IMP_COLS);
   const W = IMP_COLS * N * F, H = rows * N * F;
@@ -141,9 +142,10 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 84
   const prev = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
   const prevCC = new THREE.Color(); renderer.getClearColor(prevCC); const prevCA = renderer.getClearAlpha();
   renderer.autoClear = true;
-  renderer.setClearColor(new THREE.Color(0.22, 0.28, 0.17), 0);    // sqrt of a mean foliage albedo, alpha 0
+  // cleared to 0: both atlases are effectively premultiplied by coverage (A.a), so their mips average only covered
+  // texels once divided by A.a at runtime (no dark / mid-crown h, d fringe at a distance)
+  renderer.setClearColor(new THREE.Color(0, 0, 0), 0);
   mat.uniforms.uPass.value = 0; renderer.setRenderTarget(rtA); renderer.render(scene, cam);
-  renderer.setClearColor(new THREE.Color(0.5, 0.5, 0.5), 0);       // normal "up", h = d = 0.5
   mat.uniforms.uPass.value = 1; renderer.setRenderTarget(rtB); renderer.render(scene, cam);
   renderer.setRenderTarget(prev); renderer.autoClear = prevAuto; renderer.setClearColor(prevCC, prevCA);
   geo.dispose(); mat.dispose();

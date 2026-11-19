@@ -19,10 +19,10 @@ import numpy as np
 # leaf reflectance / transmittance (one side), linear RGB.  Broadleaf: PROSPECT-like visible bands; needles are
 # darker and nearly opaque.  Forest floor: litter + understory.
 LEAF = {
-    'broad':   {'rho': np.array([0.080, 0.135, 0.050]), 'tau': np.array([0.055, 0.105, 0.030])},
-    'conifer': {'rho': np.array([0.058, 0.088, 0.040]), 'tau': np.array([0.024, 0.044, 0.018])},
+    'broad':   {'rho': np.array([0.085, 0.160, 0.052]), 'tau': np.array([0.070, 0.135, 0.035])},
+    'conifer': {'rho': np.array([0.066, 0.118, 0.046]), 'tau': np.array([0.036, 0.074, 0.026])},
 }
-FLOOR = np.array([0.070, 0.072, 0.045])
+FLOOR = np.array([0.072, 0.088, 0.048])
 
 SPECIES = {
     #            group       shape    base  rad   peak  lad  shell  height range (m)

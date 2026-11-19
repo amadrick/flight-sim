@@ -185,20 +185,23 @@ function buildPalm(b, sp, r) {
   const crown = tp[6];
   const shade = (p) => { const n = p.clone().sub(crown); n.y = Math.max(n.y, 0) + 0.6; return n.normalize(); };
   const leafWind = (p) => 0.9 + 0.6 * p.clone().sub(crown).length();
-  const nf = 14;
+  // two tiers of arching fronds with clear gaps between them: the star silhouette that makes a palm read as a palm
+  const nf = 15;
   for (let i = 0; i < nf; i++) {
-    const a = (i / nf) * Math.PI * 2 + r() * 0.3;
-    const up0 = 0.9 - 1.5 * (i % 3) / 3 + (r() - 0.5) * 0.3;     // some fronds rise, some droop
-    const L = sp.rad * (0.95 + 0.25 * r());
+    const tier = i % 3;                                            // 0: young, rising; 1-2: mature, arching out and down
+    const a = (i / nf) * Math.PI * 2 + (r() - 0.5) * 0.25;
+    const up0 = tier === 0 ? 1.1 + (r() - 0.5) * 0.3 : 0.35 + (r() - 0.5) * 0.3;
+    const L = sp.rad * (tier === 0 ? 0.75 : 1.0 + 0.2 * r());
     let p = crown.clone();
     const dir = v3(Math.cos(a), up0, Math.sin(a)).normalize();
     for (let s = 0; s < 4; s++) {
       const seg = dir.clone().multiplyScalar(L / 4);
       const q = p.clone().add(seg);
-      dir.y -= 0.35; dir.normalize();
+      dir.y -= tier === 0 ? 0.3 : 0.5; dir.normalize();
       const sub = [s / 4, 0.05, (s + 1) / 4, 0.95];
-      b.strip(p, q, L * 0.42 * (1 - 0.15 * s), 0.35, sp.tile, sub, shade, leafWind);
-      b.strip(p, q, L * 0.42 * (1 - 0.15 * s), -0.35, sp.tile, sub, shade, leafWind);
+      const w = L * 0.36 * (1 - 0.2 * s);
+      b.strip(p, q, w, 0.4, sp.tile, sub, shade, leafWind);
+      b.strip(p, q, w, -0.4, sp.tile, sub, shade, leafWind);
       p = q;
     }
   }

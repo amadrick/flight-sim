@@ -17,7 +17,7 @@ import { createFoliageAtlas } from './veg/foliage.js';
 import { buildTreeMeshes } from './veg/treegen.js';
 import { bakeImpostors } from './veg/impostor.js';
 import { createPlacement } from './veg/placement.js';
-import { createCommonUniforms } from './veg/common.js';
+import { createCommonUniforms, vegDebug } from './veg/common.js';
 import { createNearTrees } from './veg/near.js';
 import { createFarTrees } from './veg/far.js';
 import { createGrass } from './veg/grass.js';
@@ -28,9 +28,9 @@ import { createVegNeural } from '../neural/veg.js';
 // frame = impostor frame size (px), blend = 4-view impostor blending
 const TIERS = {
   low:    { G: 176, near: 0,   grass: 0,   frame: 64, blend: false },
-  medium: { G: 320, near: 70,  grass: 96,  frame: 84, blend: true },
-  high:   { G: 416, near: 90, grass: 128, frame: 84, blend: true },
-  ultra:  { G: 512, near: 130, grass: 160, frame: 84, blend: true },
+  medium: { G: 320, near: 70,  grass: 96,  frame: 72, blend: true },
+  high:   { G: 384, near: 80,  grass: 112, frame: 72, blend: true },
+  ultra:  { G: 512, near: 130, grass: 160, frame: 72, blend: true },
 };
 
 let shared = null;      // meshes / atlases survive quality changes (rebuilding them is the expensive part of boot)
@@ -42,6 +42,7 @@ export function createTrees(ctx, { L, uniforms }) {
   if (raw.vegG) tier.G = Math.max(16, Math.min(640, +raw.vegG | 0));
   if (raw.vegNear !== undefined) tier.near = Math.max(0, +raw.vegNear);
   const neuralOn = raw.veg !== 'classic';
+  vegDebug.mode = raw.vegDbg ? +raw.vegDbg | 0 : 0;
   if (!shared || shared.renderer !== ctx.renderer || shared.frame !== tier.frame || shared.neural !== neuralOn) {
     shared?.dispose();
     const foliage = createFoliageAtlas();

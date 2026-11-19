@@ -79,7 +79,7 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
         float open = (1.0 - C.pad) * (1.0 - water) * (1.0 - playa) * ss(1.5, 4.0, h) * (1.0 - ss(0.3, 0.55, slope));
         float belowTL = ss(C.treeline + 60.0, C.treeline - 260.0, h);
         // solitary trees and bushes in open country (more along creeks and on rough ground), shrubs in the drylands
-        float pSolo = open * (1.0 - desertAmt) * belowTL * (0.0012 + 0.010 * ss(0.55, 0.8, n2.g) + 0.10 * C.forest) * (1.0 - 0.85 * C.crop);
+        float pSolo = open * (1.0 - desertAmt) * belowTL * (0.0012 + 0.010 * ss(0.55, 0.8, n2.g) + 0.10 * C.forest) * (1.0 - 0.85 * C.crop) * (1.0 + 2.5 * C.tropic);   // scattered palms all over tropical lowlands
         float pBush = open * (1.0 - desertAmt) * belowTL * (0.002 + 0.012 * ss(0.6, 0.85, n3.g) + 0.15 * C.forest) * (1.0 - 0.9 * C.crop) + open * ss(0.2, 0.45, arid) * (1.0 - desertAmt) * 0.08;
         float pShrub = open * desertAmt * (0.06 + 0.30 * ss(0.3, 0.7, n2.g) + 6.0 * max((D.z - 0.5) / 1.25, 0.0));
         float u = hs.x, sp = -1.0, size = 0.0;
@@ -87,7 +87,7 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
         float u2 = fract(hs.x * 61.0 + hs.y * 17.0), u3 = h2.x, u4 = h2.y;
         if (u < pForest) {
           if (C.tropic > 0.5) {
-            sp = u3 < 0.25 + 0.5 * ss(25.0, 4.0, h) ? ${S.palm}.0 : ${S.tropic}.0;
+            sp = u3 < 0.3 + 0.45 * ss(40.0, 5.0, h) + 0.25 * (1.0 - ss(0.3, 0.9, C.forest)) ? ${S.palm}.0 : ${S.tropic}.0;   // palms: coasts, edges, open stands
           } else if (u2 < C.conifer) {
             float pineW = 0.22 + 0.5 * ss(0.12, 0.4, arid);
             sp = pick(u3, vec4((1.0 - pineW) * 0.62, (1.0 - pineW) * 0.38, pineW, 0.0)) ;   // spruce, fir, pine

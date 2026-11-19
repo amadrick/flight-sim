@@ -63,10 +63,17 @@ vec3 vegWind(vec3 wp, float bend, float flutter, float size, float phase) {
 export const VEG_LIGHT_GLSL = /* glsl */`
   {
     vec2 vTr = vegCrownTransfer(vVegHD.x, vVegHD.y, vVegHD.z, vVegMisc.y, vVegMisc.z);
+    vegDbgHD = vec3(vVegHD.xy, vTr.x);
+    #ifdef VEG_SM_COVER
+      // where the sun shadow map covers this point it already shadows the leaves (the trees cast into it): the crown
+      // network's sun term would count the same occluders a second time
+      vTr.x = mix(vTr.x, 1.0, vegShadowMapCover(vVegWorld));
+    #endif
     // + light diffused through the foliage (leaf single-scattering albedo ~0.3: a floor of a tenth of the open value)
     vTr += (1.0 - vTr) * vec2(0.10, 0.25);
     float sunV = mix(1.0, vTr.x, vVegMisc.w * 0.9 + 0.1) * vVegMisc.x;
     float skyV = mix(1.0, vTr.y, vVegMisc.w * 0.85 + 0.15);
+    vegDbgOut = vec4(sunV, skyV, dot(inverseTransformDirection(normal, viewMatrix), uSunDir), 0.0);
     reflectedLight.directDiffuse *= sunV;
     reflectedLight.directSpecular *= sunV * VEG_SPEC_DIRECT;
     reflectedLight.indirectDiffuse *= skyV;
@@ -77,6 +84,33 @@ export const VEG_LIGHT_GLSL = /* glsl */`
     float back = max(-dot(nW, uSunDir), 0.0) * 0.55 + 0.75 * pow(max(dot(-vW, uSunDir), 0.0), 5.0);
     reflectedLight.directDiffuse += vVegTrans * uSunColor * (back * vTr.x * vVegMisc.x * vVegMisc.w / PI);
   }
+`;
+
+/** Debug (tools only, URL vegDbg=1): interleaved columns show albedo x 4 | sun factor | N.L (use notaa=1). */
+export const vegDebug = { mode: 0 };
+export const VEG_DBG_GLSL = /* glsl */`
+  #include <dithering_fragment>
+  #ifdef VEG_DBG
+  { int c = int(gl_FragCoord.x) % 3;
+    #if VEG_DBG == 2
+    gl_FragColor.rgb = vec3(c == 0 ? vegDbgHD.x : c == 1 ? vegDbgHD.y : vegDbgHD.z);
+    #else
+    gl_FragColor.rgb = c == 0 ? diffuseColor.rgb * 4.0 : c == 1 ? vec3(vegDbgOut.x) : vec3(max(vegDbgOut.z, 0.0));
+    #endif
+  }
+  #endif
+`;
+
+/** Coverage (0..1) of the engine's wide sun-shadow cascade at a render-space point (render/shadows.js layout). */
+export const VEG_SM_COVER_GLSL = /* glsl */`
+uniform mat4 uSunShadowMatrix[2]; uniform vec4 uSunShadowRect[2]; uniform vec4 uSunShadowParams;
+float vegShadowMapCover(vec3 p) {
+  vec4 r = uSunShadowRect[1];
+  vec3 c = (uSunShadowMatrix[1] * vec4(p, 1.0)).xyz;
+  vec2 e = min(c.xy - r.xy, r.zw - c.xy);
+  float inside = min(e.x, e.y) / max(r.w - r.y, 1e-6);
+  return (inside > 0.0 && c.z > 0.0 && c.z < 1.0) ? smoothstep(0.0, 0.1, inside) * step(0.5, uSunShadowParams.w) : 0.0;
+}
 `;
 
 export function createCommonUniforms(ctx, uniforms, placement, meshes, neural) {
@@ -103,6 +137,7 @@ export const TRANS_RATIO = {
 };
 export const FRAG_DECL_GLSL = /* glsl */`
 uniform vec3 uSunDir; uniform vec3 uSunColor;
+vec4 vegDbgOut; vec3 vegDbgHD;
 varying vec3 vVegHD; varying vec4 vVegMisc; varying vec3 vVegTrans; varying vec3 vVegWorld;
 `;
 export function transGLSL() {

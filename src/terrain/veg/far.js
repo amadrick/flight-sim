@@ -4,7 +4,7 @@
 // transfer, translucency). Alpha-tested with depth write; a dithered hand-over from the near meshes and a dithered
 // fade at the map edge (resolved by TAA) avoid popping.
 import * as THREE from 'three';
-import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL } from './common.js';
+import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL, vegDebug, VEG_DBG_GLSL } from './common.js';
 import { OCT_GLSL, IMP_COLS } from './impostor.js';
 import { NSPECIES } from './species.js';
 
@@ -19,7 +19,8 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
     uVegImp: { value: new THREE.Vector4(imp.N, imp.F, imp.W, imp.H) },
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0 });
-  mat.defines = { VEG_IMP_BLEND: blend ? 1 : 0, VEG_SPEC_DIRECT: '0.25', VEG_SPEC_SKY: '0.08' };
+  mat.defines = { VEG_IMP_BLEND: blend ? 1 : 0, VEG_SPEC_DIRECT: '0.3', VEG_SPEC_SKY: '0.1' };
+  if (vegDebug.mode) mat.defines.VEG_DBG = vegDebug.mode;
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, IU);
     sh.vertexShader = sh.vertexShader
@@ -83,6 +84,7 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         vegPos.y -= uTerrCurv * curvatureDrop(vDist);`)
       .replace('#include <begin_vertex>', 'vec3 transformed = vegPos;');
     sh.fragmentShader = sh.fragmentShader
+      .replace('#include <dithering_fragment>', VEG_DBG_GLSL)
       .replace('#include <common>', `#include <common>
         ${FRAG_DECL_GLSL}
         ${neuralGLSL}
@@ -102,6 +104,7 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
           vec2 px = (vec2(float(bx) * uVegImp.x + f.x, float(by) * uVegImp.x + f.y) + 0.5 + 0.5 * l * (1.0 - 1.0 / uVegImp.y)) * uVegImp.y;
           vec2 uv = px / uVegImp.zw;
           a = textureLod(tVegImpA, uv, lod); b = textureLod(tVegImpB, uv, lod);
+          float ia = 1.0 / max(a.a, 1e-3); a.rgb *= ia; b *= ia;      // un-premultiply (atlases are cleared to 0)
         }`)
       .replace('#include <map_fragment>', /* glsl */`
         int vS = vVegS;
@@ -145,9 +148,15 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         float cr = cos(vVegRot.x), sr = sin(vVegRot.x);
         vec3 nWo = normalize(vec3(cr * nL.x - sr * nL.z, nL.y, sr * nL.x + cr * nL.z));
         float vegH = B.z, vegD = B.w;
-        vec2 sunH = normalize(uSunDir.xz + 1e-4), nH = nWo.xz;
-        float nHl = length(nH);
-        vec3 vegHD = vec3(vegH, vegD, nHl > 1e-3 ? dot(nH / nHl, sunH) : 0.0);
+        // azimuth of the visible point around the trunk (the crown network's input, as on the meshes): the view ray's
+        // first hit on a sphere of 0.85 R about the crown centre (closest approach at the rim)
+        vec3 oc = P - cc;
+        float bq = dot(oc, v), disc = bq * bq - dot(oc, oc) + 0.72 * R * R;
+        vec3 X = oc - v * (disc > 0.0 ? bq - sqrt(disc) : bq);
+        vec2 Xw = vec2(cr * X.x - sr * X.z, sr * X.x + cr * X.z);
+        vec2 sunH = normalize(uSunDir.xz + 1e-4);
+        float xl = length(Xw);
+        vec3 vegHD = vec3(vegH, vegD, xl > 1e-3 ? dot(Xw / xl, sunH) : 0.0);
         vec3 vegTransCol = diffuseColor.rgb * vVegTrans;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(mat3(viewMatrix) * nWo);')
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.6, 0.8, vVegMisc.z);')
