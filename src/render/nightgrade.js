@@ -40,7 +40,7 @@ vec3 ng_grade(vec3 refl, vec3 total) {
   float y = dot(total, vec3(0.2126, 0.7152, 0.0722));
   // mesopic: anything the moon and the night sky can light (up to a little above white paint) is seen by the rods;
   // surfaces lit far brighter (lamp pools, the landing-light patch) are seen by the cones and keep their colour
-  float w = uNightK.x * (1.0 - smoothstep(2.0, 12.0, y * uNightK.y));
+  float w = uNightK.x * (1.0 - smoothstep(4.0, 30.0, y * uNightK.y));
   // blue-grey moonlight look (luminance of the tint = 1) on the rod luminance
   vec3 rod = ng_scotopic(refl) * vec3(0.80, 1.00, 1.36);
   return mix(refl, rod, 0.8 * w);

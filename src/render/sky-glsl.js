@@ -43,7 +43,7 @@ vec3 sky_starLayer(vec3 d, float N, float density, float seed, float airmass, fl
   if (uSkyStarMode > 0.5) {
     // pin-sharp points (~1 px, TAA resolves them), same energy as the previous 1.3 px footprint
     flux *= 1.9;
-    vis = smoothstep(0.7, 2.8, flux * uSkyParams.y / max(skyLum, 1e-7));
+    vis = smoothstep(1.5, 6.0, flux * uSkyParams.y / max(skyLum, 1e-7));
     if (vis <= 0.0) return vec3(0.0);
   }
   // footprint whatever the resolution (brighter stars slightly larger), never wider than the cell margin

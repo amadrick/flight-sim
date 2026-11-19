@@ -192,7 +192,7 @@ export function createAircraftLights(ctx, shared, header) {
           float d2 = max(dot(rel, rel), 0.5);
           vec3 ld = rel * inversesqrt(d2);
           float cone = smoothstep(uBeamCos.x, uBeamCos.y, dot(ld, uBeamDir));
-          float ph = 0.45 * fxHG(dot(ld, -rd), 0.6) + 0.55 / (4.0 * FX_PI);
+          float ph = 0.85 * fxHG(dot(ld, -rd), 0.7) + 0.15 / (4.0 * FX_PI);   // aerosol: forward peaked
           acc += cone * ph / d2;
         }
         vec3 e = uBeamI * (uBeamSigma * acc * dt);
@@ -295,14 +295,15 @@ export function createAircraftLights(ctx, shared, header) {
         if (lampVirtual) {
           // The spot has no shadow map, so a lamp behind the nose (wing roots, main-gear doors) would light the
           // cockpit and the inside of the forward fuselage through the skin. Move the source to just ahead of the nose
-          // and re-aim it at the same ground point with the same footprint and centre irradiance there.
+          // and re-aim it at the ground point the real beam centre hits (at least 12 m ahead), with the footprint and
+          // irradiance the real lamp gives there.
           const nose = (g.noseZ ?? -6) - 0.3, t = lz - nose;
           if (t > 0) {
             const h = Math.max(0.4, (g.cgHeight ?? 2) + lampPos[1]);
-            const D = h / down, Dv = Math.max(D - t, 12);
+            const D = h / down, Dv = Math.max(D - t, 12), Dr = Dv + t;
             down = h / Dv;
-            half = Math.min(Math.atan(Math.tan(half) * D / Dv), 40 * Math.PI / 180);
-            I *= (Dv * Dv) / (D * D);
+            half = Math.min(Math.atan(Math.tan(half) * Dr / Dv), 36 * Math.PI / 180);
+            I *= (Dv * Dv) / (Dr * Dr);
             lz = nose;
           }
         }

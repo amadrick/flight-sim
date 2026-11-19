@@ -395,11 +395,11 @@ export async function createEffects(ctx) {
         E.bodyToWorld(P.player.state, P.abLightPt, tmp);
         ctx.world.toRender(tmp, fxLight.position);
         fxLight.color.setRGB(1, 0.55, 0.25); fxLight.intensity = 60 * abSum * (0.9 + 0.2 * Math.random()); fxLight.distance = 80;
-      } else if (beaconLight && lights.beacon.beacon > 0.02) {
+      } else if (beaconLight && lights.beacon.beacon * night > 0.02) {
         // red flash on the skin around the beacon and on the ground under the belly one (~150 cd effective against a
         // compressed moon: a clear red wash at night, nothing by day)
         fxLight.position.copy(lights.beacon.beaconPos);
-        fxLight.color.setRGB(1, 0.05, 0.02); fxLight.intensity = 1.2 * lights.beacon.beacon; fxLight.distance = 45;
+        fxLight.color.setRGB(1, 0.05, 0.02); fxLight.intensity = 0.8 * lights.beacon.beacon * Math.min(1, night * 1.5); fxLight.distance = 45;
       } else fxLight.intensity = 0;
       shared.uFxLightPos.value.copy(fxLight.position);
       shared.uFxLightColor.value.copy(fxLight.color).multiplyScalar(fxLight.intensity * 0.5);
