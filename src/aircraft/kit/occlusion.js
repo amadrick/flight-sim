@@ -21,14 +21,14 @@ export function bakeContactAO(meshes, atlases, o = {}) {
   if (nx * ny * nz > 6e6) return 0;
   const ox = mn[0] - h, oy = mn[1] - h, oz = mn[2] - h, grid = new Uint8Array(nx * ny * nz), nxy = nx * ny;
   const mark = (x, y, z) => { grid[((x - ox) * inv | 0) + ((y - oy) * inv | 0) * nx + ((z - oz) * inv | 0) * nxy] = 1; };
-  const step = h * 1.05;
+  const step = h * 1.05, step2 = step * step;
   for (const m of meshes) {
     const p = m.p, ix = m.idx;
     for (let t = 0; t < ix.length; t += 3) {
       const a = ix[t] * 3, b = ix[t + 1] * 3, c = ix[t + 2] * 3;
       const ax = p[a], ay = p[a + 1], az = p[a + 2], ux = p[b] - ax, uy = p[b + 1] - ay, uz = p[b + 2] - az, vx = p[c] - ax, vy = p[c + 1] - ay, vz = p[c + 2] - az;
-      const L = Math.max(Math.hypot(ux, uy, uz), Math.hypot(vx, vy, vz), Math.hypot(ux - vx, uy - vy, uz - vz));
-      const n = Math.min(48, Math.max(1, Math.ceil(L / step)));
+      const wx = ux - vx, wy = uy - vy, wz = uz - vz, L2 = Math.max(ux * ux + uy * uy + uz * uz, vx * vx + vy * vy + vz * vz, wx * wx + wy * wy + wz * wz);
+      const n = L2 <= step2 ? 1 : Math.min(48, Math.ceil(Math.sqrt(L2) / step));
       if (n === 1) { mark(ax + (ux + vx) / 3, ay + (uy + vy) / 3, az + (uz + vz) / 3); continue; }
       for (let i = 0; i <= n; i++) for (let j = 0; j <= n - i; j++) { const s = i / n, r = j / n; mark(ax + ux * s + vx * r, ay + uy * s + vy * r, az + uz * s + vz * r); }
     }
@@ -61,10 +61,25 @@ export function bakeContactAO(meshes, atlases, o = {}) {
       const z0 = Math.max(s.a0, Math.min(zr[0], zr[1])), z1 = Math.min(s.a1, Math.max(zr[0], zr[1]));
       if (!(z1 > z0)) continue;
       const W = Math.max(4, Math.min(96, Math.round((z1 - z0) / (h * 1.5)))), girth = c.spec.girth ?? 3, H = Math.max(8, Math.min(40, Math.round(girth / (h * 1.5))));
-      const val = new Float32Array(W * H);
+      const val = new Float32Array(W * H), zs = [], K = body.K, fast = typeof body.ring === 'function' && K > 2, P = [0, 0, 0], N = [0, 0, 0];
+      for (let i = 0; i < W; i++) zs.push(z0 + (z1 - z0) * (i + 0.5) / W);
+      let rings = null;
+      if (fast) { try { rings = zs.map(z => body.ring(z)); } catch { rings = null; } }
       for (let i = 0; i < W; i++) {
-        const z = z0 + (z1 - z0) * (i + 0.5) / W;
-        for (let j = 0; j < H; j++) { let q; try { q = body.at(z, (j + 0.5) / H); } catch { q = null; } points++; val[i + j * W] = q && isFinite(q.p[0]) && isFinite(q.n[0]) ? occAt(q.p, q.n) : 0; }
+        const z = zs[i];
+        if (rings) {                                                    // one ring per column; the slope along z comes from the neighbouring columns
+          const r = rings[i], ia = Math.max(0, i - 1), ib = Math.min(W - 1, i + 1), r1 = rings[ia], r2 = rings[ib], zz = zs[ib] - zs[ia] || 1;
+          for (let j = 0; j < H; j++) {
+            const f = (j + 0.5) / H * K, j0 = Math.floor(f), g = f - j0, a = (j0 % K) * 3, b = ((j0 + 1) % K) * 3;
+            P[0] = r[a] + (r[b] - r[a]) * g; P[1] = r[a + 1] + (r[b + 1] - r[a + 1]) * g; P[2] = z;
+            const sx = (r2[a] + (r2[b] - r2[a]) * g) - (r1[a] + (r1[b] - r1[a]) * g), sy = (r2[a + 1] + (r2[b + 1] - r2[a + 1]) * g) - (r1[a + 1] + (r1[b + 1] - r1[a + 1]) * g);
+            const tx = r[b] - r[a], ty = r[b + 1] - r[a + 1];
+            let nx = ty * zz, ny = -tx * zz, nz = tx * sy - ty * sx; const l = Math.hypot(nx, ny, nz);
+            points++;
+            if (!(l > 1e-9) || !isFinite(P[0])) continue;
+            N[0] = nx / l; N[1] = ny / l; N[2] = nz / l; val[i + j * W] = occAt(P, N);
+          }
+        } else for (let j = 0; j < H; j++) { let q; try { q = body.at(z, (j + 0.5) / H); } catch { q = null; } points++; val[i + j * W] = q && isFinite(q.p[0]) && isFinite(q.n[0]) ? occAt(q.p, q.n) : 0; }
       }
       // 3 × 3 smoothing (wraps around the ring), then to a canvas that is stretched over the strip
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;

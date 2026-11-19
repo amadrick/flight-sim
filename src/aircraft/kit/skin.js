@@ -223,7 +223,9 @@ vec3 kitCCN = normal;
   #endif
   // specular anti-aliasing for the normal map (three only accounts for the geometric normal)
   vec3 kDn = max( abs( dFdx( normal ) ), abs( dFdy( normal ) ) );
-  kR = min( 1.0, kR + 0.5 * max( kDn.x, max( kDn.y, kDn.z ) ) );
+  float kVar = max( kDn.x, max( kDn.y, kDn.z ) );
+  kR = min( 1.0, kR + 0.5 * kVar );
+  kitCCR = min( 1.0, kitCCR + 0.9 * kVar );                            // the coat is the sharp lobe: it sparkles first on groove edges
   diffuseColor.rgb = kC; roughnessFactor = kR;
 }`;
 

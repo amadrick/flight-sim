@@ -144,7 +144,9 @@ export function createRig(ctx, o = {}) {
         rig.cameraBody.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_inv);
         rig.cameraInCockpit = rig.cameraBody.distanceTo(eye) < (o.cockpitRadius ?? 0.75);
       };
-      // contact occlusion (wing roots, tail, pylons, nacelles → fuselage charts), then pack the atlas layers into GPU textures
+      // contact occlusion (wing roots, tail, pylons, nacelles → fuselage charts) is baked into the atlas occlusion layer here;
+      // the layers are packed into their GPU textures (uploads + one draw per atlas) on the first update(), i.e. together with
+      // the other texture uploads of the first frame — call atlas.bake() yourself to force it earlier.
       const isSkin = (key) => !!mats.get(key)?.mat?.userData?.kitSkin, tA = performance.now();
       if (o.contactAO !== false && (ctx?.quality?.level || 'high') !== 'low') {
         try {
@@ -155,14 +157,15 @@ export function createRig(ctx, o = {}) {
       }
       occluders.length = 0;
       const tB = performance.now();
-      for (const d of rig.disposables) d?.bake?.();
-      const tC = performance.now();
+      let packed = false;
+      const pack = () => { packed = true; const t = performance.now(); for (const d of rig.disposables) d?.bake?.(); stats.packMs = Math.round(performance.now() - t); };
       let draws = 0; root.traverse(n => { if (n.isMesh) draws++; });
-      const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0, occlusionMs: Math.round(tB - tA), packMs: Math.round(tC - tB) };
+      const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0, occlusionMs: Math.round(tB - tA), packMs: 0 };
       const visual = {
         object3D: root, parts, stats, rig,
         update(state, dt) {
           dt = num(dt, 0);
+          if (!packed) pack();
           readState(S, state, dt, ctx);
           for (let i = 0; i < updaters.length; i++) updaters[i](S, dt);
           // lamps

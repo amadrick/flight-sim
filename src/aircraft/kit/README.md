@@ -259,7 +259,7 @@ P.noise({ alpha: 0.08, scale: 2.2, rough: 0.06 });  P.streak(z0, t0, z1, t1, 0.0
   `dark ≤ 0.05`. Anything heavier looks like a tiled floor at normal viewing distances. Look at `atlas=color`.
 * Liveries: keep a `SCHEMES` table (colours, finish, markings) and branch inside the paint function; export `LIVERIES`.
 * Finally `const mat = atlas.material(ctx); rig.material('paint', mat, { shared: true }); rig.disposables.push(atlas);`
-  (`rig.disposables.push(atlas)` matters: `rig.build()` bakes contact occlusion into the atlas and packs its textures.)
+  (`rig.disposables.push(atlas)` matters: the rig bakes contact occlusion into the atlas and packs its textures.)
 
 #### What the skin material adds by itself (section 6 has the options)
 You paint colour, roughness, metalness and grooves; `atlas.material()` turns that into a surface that is not plastic.
@@ -406,9 +406,10 @@ Other optional additions:
 
 ## 7. Pitfalls we already hit
 
-* The atlas textures are **packed in `rig.build()`** (`atlas.bake()`): swatches, strips and pen strokes made after
-  `atlas.material()` still land in the textures as long as they happen before `rig.build()`. After it, only the colour
-  layer can still change.
+* The atlas textures are **packed on the visual's first `update()`** (`atlas.bake()`; `rig.build()` bakes the contact
+  occlusion first): swatches, strips and pen strokes made after `atlas.material()` still land in the textures as long
+  as they happen before `rig.build()` returns. After the pack only the colour layer can still change, and the height /
+  roughness / occlusion canvases are freed (append `&atlas=…` in the harness to keep them for inspection).
 * `noise()` is deferred: it lands on top of everything painted on that chart, including markings painted after it.
 
 * `rig.addStatic(mesh, key)` **copies** the mesh at call time. Finish adding to your static `Mesh` first.
