@@ -47,6 +47,7 @@ export default {
   },
   hook: true,
   engines: {
+    thrustLineOffset: 0.3,               // nozzles moved up 0.3 m with the visual airframe (geometry.js); keeps the old thrust line
     type: 'turbofan-ab', inlet: 'pitot', throttleRatio: 0.95, milLapse: 2.3, abLapse: 1.69, pressureLimit: 1.9,
     n1Idle: 0.32, n2Idle: 0.68, spoolUp: 3.5, spoolDown: 2.6, idleThrust: 0.025, idleFuelFlow: 0.17,
     tsfc: [0.90, 0.25], tsfcAb: [1.85, 0.25], egt: [400, 880, 960], abLightTime: 1.2, startTime: 16,

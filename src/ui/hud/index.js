@@ -32,6 +32,29 @@ export async function createHud(ctx) {
   const ext = createExternalOverlay(tok);
   const notices = createNotices(ctx);
 
+  // Glass plate under the external flight-data strip: it must sit BELOW the HUD canvas (a backdrop-filter above the
+  // canvas would blur the numbers), so it is inserted between the 3D view and the HUD canvas.
+  let plate = null, plateKey = '';
+  try {
+    if (cv.parentNode && ctx.params.raw?.glass !== 'off') {
+      plate = document.createElement('div'); plate.className = 'hud-plate glass'; plate.hidden = true; plate.setAttribute('aria-hidden', 'true');
+      cv.parentNode.insertBefore(plate, cv);
+      ext.setGlass(true);
+    }
+  } catch { plate = null; }
+  function syncPlate(on) {
+    if (!plate) return;
+    if (!on) { if (!plate.hidden) plate.hidden = true; return; }
+    const r = ext.rect; if (!r) return;
+    const k = r.x + ',' + r.y + ',' + r.w + ',' + r.h;
+    if (k !== plateKey) {
+      plateKey = k;
+      plate.style.transform = `translate(${r.x}px, ${r.y}px)`; plate.style.width = r.w + 'px'; plate.style.height = r.h + 'px';
+      plate.style.setProperty('--r', r.r + 'px');
+    }
+    if (plate.hidden) plate.hidden = false;
+  }
+
   // fonts may arrive late (Google Fonts) → rebuild cached layers
   try { document.fonts?.addEventListener?.('loadingdone', () => { deck.invalidate(); ext.invalidate(); }); } catch {}
   ctx.events.on('resize', fit);
@@ -107,7 +130,7 @@ export async function createHud(ctx) {
       const show = userVisible && ctx.params.hud !== false && !menuOpen && mode !== 'showcase';
       notices.update(realDt, show, p);
       if (dirty) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); dirty = false; }
-      if (!show || !p || !p.state) return;
+      if (!show || !p || !p.state) { syncPlate(false); return; }
       const s = p.state;
       updateNav(p);
       const interior = rig?.isInterior ?? (mode === 'cockpit');
@@ -124,12 +147,15 @@ export async function createHud(ctx) {
         ctx.camera.updateMatrixWorld?.();
         proj.set(ctx.camera, W, H);
         fighter.draw(g, E);
+        syncPlate(false);
       } else if (interior) {
         setFilter('none');
         deck.draw(g, E);
+        syncPlate(false);
       } else {
         setFilter('ext');
         ext.draw(g, E);
+        syncPlate(true);
       }
     },
   };

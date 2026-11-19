@@ -7,7 +7,7 @@ const C = { fg: '#e9eef3', dim: 'rgba(196,208,220,0.62)', faint: 'rgba(196,208,2
   sky: '#2f78c4', ground: '#7a5530' };
 
 export function createExternalOverlay(tok) {
-  let layer = null, key = -1, L = null;
+  let layer = null, key = -1, L = null, glass = false;
   const mono = tok.mono, disp = tok.display;
   C.amber = tok.accent; C.red = tok.warn; C.cyan = tok.ok;
 
@@ -47,7 +47,7 @@ export function createExternalOverlay(tok) {
       let x = px + pad;
       for (const c of r) { c.x = Math.round(x); c.y = Math.round(py + pad * 0.25 + ri * (rowH + fsV * 0.25)); c.w2 = c.w + extra; c.h = rowH; x += c.w + extra + gap; }
     });
-    return { fsV, fsL, fsS, rowH, cells, px, py, pw, ph, cw, gap,
+    return { fsV, fsL, fsS, rowH, cells, px, py, pw, ph, cw, gap, radius: Math.round(Math.min(fsV * 0.9, ph / 2)),
       fontV: `500 ${fsV}px ${mono}`, fontS: `500 ${fsS}px ${mono}`, fontL: `600 ${fsL}px ${disp}`, fontXS: `500 ${Math.round(fsS * 0.92)}px ${mono}`,
       byId: Object.fromEntries(cells.map(c => [c.id, c])) };
   }
@@ -58,10 +58,10 @@ export function createExternalOverlay(tok) {
     layer.width = lw; layer.height = lh;
     const g = layer.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, (-L.px + 1) * dpr, (-L.py + 1) * dpr);
-    // panel: dark translucent glass, hairline border
-    g.beginPath(); rrect(g, L.px, L.py, L.pw, L.ph, Math.round(L.fsV * 0.35));
-    g.fillStyle = 'rgba(6,10,15,0.58)'; g.fill();
-    g.strokeStyle = 'rgba(200,215,230,0.16)'; g.lineWidth = 1; g.stroke();
+    // panel: with a DOM glass plate underneath (index.js) only a light scrim for the numbers; otherwise a dark panel
+    g.beginPath(); rrect(g, L.px, L.py, L.pw, L.ph, L.radius);
+    if (glass) { g.fillStyle = 'rgba(6,10,15,0.16)'; g.fill(); }
+    else { g.fillStyle = 'rgba(6,10,15,0.62)'; g.fill(); g.strokeStyle = 'rgba(200,215,230,0.16)'; g.lineWidth = 1; g.stroke(); }
     g.textBaseline = 'alphabetic';
     for (const c of L.cells) {
       if (c.label) {
@@ -237,7 +237,14 @@ export function createExternalOverlay(tok) {
     g.textBaseline = 'alphabetic';
   }
 
-  return { draw, invalidate() { key = -1; } };
+  return {
+    draw,
+    invalidate() { key = -1; },
+    /** true: a glass plate is drawn under the strip by the DOM, so the canvas panel only adds a light scrim. */
+    setGlass(on) { if (glass !== !!on) { glass = !!on; key = -1; } },
+    /** Panel rectangle in CSS px (valid after the first draw). */
+    get rect() { return L ? { x: L.px, y: L.py, w: L.pw, h: L.ph, r: L.radius } : null; },
+  };
 }
 
 const DET = [0, 1, 2, 5, 10, 15, 25, 30, 40];

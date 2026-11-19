@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseKeys, specRows, metar, fmtClock, prettyKey, bindingSegments, DEFAULT_BINDINGS, clearanceLine } from './data.js';
+import { phaseOf, AC_FILTERS, parseKeys, specRows, metar, fmtClock, prettyKey, bindingSegments, DEFAULT_BINDINGS, clearanceLine } from './data.js';
 import f16 from '../../aircraft/f16/index.js';
 import b738 from '../../aircraft/b738/index.js';
 import { AIRPORTS } from '../../data/airports.js';
@@ -37,4 +37,19 @@ test('metar + clock', () => {
   assert.match(m, /^KHVN 211400Z 23014KT 9999 SCT046 \d\d\/\d\d Q\d{4}$/);
   assert.match(metar(AIRPORTS[0], WEATHER_PRESETS.storm, 3), /\+TSRA OVC016CB/);
   assert.match(clearanceLine(AIRPORTS[0], '09L', 'runway', f16), /RWY 09L/);
+});
+test('day phases and picker filters', () => {
+  assert.equal(phaseOf(12), 'Midday');
+  assert.equal(phaseOf(23), 'Night');
+  assert.equal(phaseOf(-1), 'Night');
+  assert.equal(phaseOf(18.3), 'Golden hour');
+  assert.deepEqual(AC_FILTERS.map(f => f.id), ['all', 'military', 'commercial']);
+});
+import { rimAngle, sceneOf } from './glass.js';
+test('glass: rim light direction and scene tint', () => {
+  assert.equal(rimAngle(0, 1), 180);     // light from above: gradient runs downward, bright edge on top
+  assert.equal(rimAngle(1, 0), 270);     // light from the right: bright edge on the right
+  assert.equal(rimAngle(-1, 0), 90);
+  assert.equal(rimAngle(0, -1), 0);
+  assert.equal(sceneOf(0), 'day'); assert.equal(sceneOf(0.4), 'dusk'); assert.equal(sceneOf(0.9), 'night');
 });
