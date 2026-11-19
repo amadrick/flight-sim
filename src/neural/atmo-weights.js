@@ -124,7 +124,7 @@ export const ATMO_MODEL = {
   "nightFrom": -7.0,
   "dayFrom": 20.0,
   "dayTo": 45.0,
-  "day": 1.0
+  "day": 0.0
  },
  "limb": [
   0.6055,

@@ -22,7 +22,7 @@ OUT = os.path.normpath(os.path.join(HERE, '..', '..', '..', 'src', 'neural'))
 # Where the sky correction applies (degrees of sun elevation). Full strength from the start of astronomical night
 # fading in (nightTo -> nightFrom) up to dayFrom, then eased to `day` at dayTo and above.
 SKY_BLEND = dict(nightTo=-11.0, nightFrom=-7.0, dayFrom=float(os.environ.get('DAY_FROM', 20)),
-                 dayTo=float(os.environ.get('DAY_TO', 45)), day=float(os.environ.get('DAY_W', 1.0)))
+                 dayTo=float(os.environ.get('DAY_TO', 45)), day=float(os.environ.get('DAY_W', 0.0)))
 
 
 def load_net(path):
