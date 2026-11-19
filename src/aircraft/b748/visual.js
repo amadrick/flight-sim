@@ -37,8 +37,8 @@ const zTE = (x) => (x <= 11.2 ? 4.0 + 0.1887 * (x - 3.25) : x <= 30.4 ? 5.5 + 0.
 const wy = (x) => -2.35 + Math.tan(7 * DEG) * (x - 3.25);
 
 // engine centres (inlet highlight plane) — must match geometry.js engines[].intake
-const ENG = [[-23.5, -1.45, 0.8], [-11.5, -2.85, -8.0], [11.5, -2.85, -8.0], [23.5, -1.45, 0.8]];
-const NAC = { length: 4.7, rHi: 1.36, rMax: 1.6, rThroat: 1.27, rFan: 1.33, zFan: 0.78, rExit: 1.17, sleeve: 0.5, core: { r0: 0.82, r1: 0.52, length: 1.9 }, plug: { r: 0.3, length: 1.05 } };
+const ENG = [[-23.5, -1.6, 0.8], [-11.5, -3.0, -8.0], [11.5, -3.0, -8.0], [23.5, -1.6, 0.8]];
+const NAC = { length: 4.7, rHi: 1.33, rMax: 1.55, rThroat: 1.25, rFan: 1.3, zFan: 0.78, rExit: 1.17, sleeve: 0.5, core: { r0: 0.82, r1: 0.52, length: 1.9 }, plug: { r: 0.3, length: 1.05 } };
 
 /** Sawtooth chevron ring at a nozzle exit (kit has none): n triangular teeth from radius r at z, tips `len` aft and `inward` closer to the axis. */
 function chevrons(c, z, r, n, len, inward, uv) {
@@ -60,6 +60,19 @@ function chevrons(c, z, r, n, len, inward, uv) {
   return m;
 }
 
+/** Write a morph target into `m` (enableMorph first): its vertices rotated by `ang` about the line a→b, in the sense that moves `ref` toward `toward`. */
+function rotateMorph(m, a, b, ref, toward, ang) {
+  let ax = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; const l = Math.hypot(...ax); ax = ax.map(v => v / l);
+  const r = [ref[0] - a[0], ref[1] - a[1], ref[2] - a[2]], cr = [ax[1] * r[2] - ax[2] * r[1], ax[2] * r[0] - ax[0] * r[2], ax[0] * r[1] - ax[1] * r[0]];
+  const th = (cr[0] * toward[0] + cr[1] * toward[1] + cr[2] * toward[2] < 0 ? -1 : 1) * ang, c = Math.cos(th), s = Math.sin(th);
+  for (let i = 0; i < m.p.length; i += 3) {
+    const v = [m.p[i] - a[0], m.p[i + 1] - a[1], m.p[i + 2] - a[2]], d = v[0] * ax[0] + v[1] * ax[1] + v[2] * ax[2];
+    const x = [ax[1] * v[2] - ax[2] * v[1], ax[2] * v[0] - ax[0] * v[2], ax[0] * v[1] - ax[1] * v[0]];
+    for (let k = 0; k < 3; k++) m.p2[i + k] = a[k] + v[k] * c + x[k] * s + ax[k] * d * (1 - c);
+  }
+  return m;
+}
+
 export function createVisual(ctx, opts = {}) {
   const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'solvane', SC = SCHEMES[livery];
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
@@ -75,7 +88,7 @@ export function createVisual(ctx, opts = {}) {
   A.pack();
   const UA = {
     body: A.swatch('body', F.gloss(SC.body)), belly: A.swatch('belly', F.gloss(SC.style === 'aurora' ? SC.belly : '#c9ced3')), fair: A.swatch('fair', F.gloss(SC.style === 'aurora' ? SC.belly : '#c9ced3')),
-    dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black), well: A.swatch('well', { color: '#8b9094', rough: 0.7, metal: 0.1 }), liner: A.swatch('liner', { color: '#8f8c86', rough: 0.8, metal: 0 }),
+    dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black), well: A.swatch('well', { color: '#8b9094', rough: 0.7, metal: 0.1 }), liner: A.swatch('liner', { color: '#b3afa6', rough: 0.8, metal: 0 }),
     post: A.swatch('post', { color: '#4b4a48', rough: 0.7, metal: 0 }), floor: A.swatch('floor', { color: '#34363a', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#1b1c1e', rough: 0.85, metal: 0 }),
     seat: A.swatch('seat', { color: '#5b5e63', rough: 0.9, metal: 0 }), sheep: A.swatch('sheep', { color: '#a59f8f', rough: 1, metal: 0 }), yoke: A.swatch('yoke', { color: '#17181a', rough: 0.5, metal: 0 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9e9e6')),
@@ -97,15 +110,15 @@ export function createVisual(ctx, opts = {}) {
   // ---- main fuselage --------------------------------------------------------------------------------------------------------
   //          d      yc      w     top    bot
   const FS = [
-    [0.00, -0.95, 0.00, 0.00, 0.00], [0.08, -0.95, 0.30, 0.28, 0.27], [0.40, -0.90, 0.70, 0.66, 0.62], [1.20, -0.76, 1.27, 1.14, 1.06], [2.20, -0.56, 1.84, 1.60, 1.54],
-    [3.40, -0.36, 2.38, 2.05, 2.04], [4.80, -0.18, 2.80, 2.52, 2.55], [6.50, -0.06, 3.08, 2.93, 2.92], [8.50, -0.01, 3.22, 3.19, 3.19], [11.0, 0, 3.25, 3.25, 3.25],
+    [0.00, -0.80, 0.00, 0.00, 0.00], [0.08, -0.80, 0.32, 0.30, 0.28], [0.40, -0.74, 0.74, 0.72, 0.64], [1.20, -0.60, 1.33, 1.28, 1.10], [2.20, -0.42, 1.90, 1.78, 1.60],
+    [3.40, -0.26, 2.42, 2.25, 2.12], [4.80, -0.12, 2.82, 2.70, 2.62], [6.50, -0.04, 3.08, 3.02, 3.00], [8.50, -0.01, 3.22, 3.21, 3.20], [11.0, 0, 3.25, 3.25, 3.25],
     [50.0, 0, 3.25, 3.25, 3.25], [54.0, 0.0, 3.23, 3.23, 3.22], [58.0, 0.03, 3.13, 3.17, 3.13], [64.0, 0.16, 2.70, 2.69, 2.68], [70.0, 0.34, 1.80, 1.92, 1.93],
     [73.5, 0.85, 0.96, 0.96, 0.90], [75.9, 1.10, 0.40, 0.36, 0.34], [76.3, 1.13, 0.31, 0.27, 0.26],
   ].map(r => ({ z: D(r[0]), y: r[1], w: r[2], top: r[3], bot: r[4] }));
   const fseg = Math.max(40, Math.round(96 * detail / 4) * 4);
   const fus = K.loft({
     stations: FS, segments: fseg, step: 1.3 / detail, chart: cFus, capEnd: 'flat', capUV: UA.exhaust,
-    cutouts: [{ name: 'ngd', z: [-30.7, -26.6], t: [0, 0.034], mirror: true }],
+    cutouts: [{ name: 'ngd', z: [-30.7, -26.6], t: [0, 0.034], mirror: true }, { name: 'deck', z: [D(5.4), D(9.5)], t: [0.39, 0.61] }],   // 'deck': crown hidden inside the hump (keeps it out of the flight deck)
   });
   cFus.body = fus;
   const stA = new K.Mesh(), stB = new K.Mesh();
@@ -124,8 +137,8 @@ export function createVisual(ctx, opts = {}) {
   stA.add(hump.mesh);
 
   // wing-to-body fairing (belly) with the four main-gear bays cut into its flat bottom
-  const fairStations = [[-16.0, 2.2, 0.55, 0.55], [-13.5, 3.25, 0.9, 0.95], [-10.5, 3.95, 1.05, 1.1], [-6.0, 4.3, 1.1, 1.15], [3.0, 4.35, 1.1, 1.15], [6.6, 4.05, 1.0, 1.12], [9.0, 3.3, 0.8, 0.9], [11.4, 2.2, 0.5, 0.55]]
-    .map(r => ({ z: r[0], y: -2.3, w: r[1], top: r[2], bot: r[3], kTop: 0.62, kBot: [0.9, 0.62] }));
+  const fairStations = [[-18.0, 1.6, 0.5, 0.5], [-15.0, 2.1, 0.75, 0.7], [-12.0, 2.6, 0.85, 0.8], [-9.5, 3.4, 0.9, 0.85], [-6.5, 4.25, 0.9, 0.85], [2.5, 4.3, 0.9, 0.85], [5.0, 3.9, 0.9, 0.85], [7.0, 3.55, 0.85, 0.85], [9.2, 2.8, 0.7, 0.75], [11.6, 1.9, 0.45, 0.5]]
+    .map(r => ({ z: r[0], y: -2.6, w: r[1], top: r[2], bot: r[3], kTop: 0.62, kBot: [0.9, 0.62] }));
   const fairOpts = { stations: fairStations, segments: Math.max(28, Math.round(48 * detail / 4) * 4), step: 0.9, uv: UA.fair };
   let fair = K.loft(fairOpts);
   const tAtX = (z, x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(z, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
@@ -135,35 +148,39 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- flight deck (painted windows on the hump; the lining leaves them open for the pilot's view) ---------------------------
   const ZB = D(8.6);
-  const WIN = [   // right-hand window polygons (z, t) on the hump skin: windshield, No. 2, No. 3 (sliding)
-    [[D(5.30), 0.492], [D(5.50), 0.40], [D(5.95), 0.425], [D(6.08), 0.492]],
-    [[D(5.58), 0.392], [D(6.45), 0.352], [D(6.45), 0.40], [D(6.02), 0.418]],
-    [[D(6.55), 0.35], [D(7.25), 0.343], [D(7.15), 0.383], [D(6.55), 0.398]],
+  // window corners as distances from the nose (d) and hump ring parameters (t): windshield W1, No. 2 window W2, sliding window W3
+  const w1 = { fi: 5.18, fo: 5.40, bo: 6.10, bi: 6.24, ti: 0.492, to: 0.40, tb: 0.432 };
+  const w2 = { fl: 5.48, bl: 6.55, fu: 6.17, tfl: 0.393, tbl: 0.352, tbu: 0.405, tfu: 0.426 };
+  const w3 = { f: 6.65, bl: 7.40, bu: 7.30, tfl: 0.35, tbl: 0.343, tbu: 0.385, tfu: 0.40 };
+  const WIN = [   // right-hand window polygons (z, t) on the hump skin
+    [[D(w1.fi), w1.ti], [D(w1.fo), w1.to], [D(w1.bo), w1.tb], [D(w1.bi), w1.ti]],
+    [[D(w2.fl), w2.tfl], [D(w2.bl), w2.tbl], [D(w2.bl), w2.tbu], [D(w2.fu), w2.tfu]],
+    [[D(w3.f), w3.tfl], [D(w3.bl), w3.tbl], [D(w3.bu), w3.tbu], [D(w3.f), w3.tfu]],
   ];
-  const eye = G.pilotEye, FY = 2.0;
+  const eye = G.pilotEye, FY = 2.0, DF = w1.fi - 0.03;
   {
     const L = (c, uv, nu = 3, nv = 3) => stA.add(K.liner(hump, c.map(([d, t]) => [D(d), t]), { uv, nu, nv, mirror: true, inset: 0.05 }));
-    const lo = 0.245, hi = 0.425, zb = 8.6;
-    L([[5.26, 0.5], [5.26, 0.492], [6.08, 0.492], [6.08, 0.5]], UA.post, 1, 4);                    // centre post
-    L([[6.08, 0.5], [5.95, hi], [zb, hi], [zb, 0.5]], UA.liner, 5, 5);                             // roof
-    L([[5.95, hi], [6.02, 0.418], [6.45, 0.40], [6.45, hi]], UA.liner);                            // above the side windows
-    L([[6.45, hi], [6.45, 0.40], [6.55, 0.398], [6.55, hi]], UA.liner, 1, 2);
-    L([[6.55, hi], [6.55, 0.398], [7.15, 0.383], [7.15, hi]], UA.liner);
-    L([[7.15, hi], [7.15, 0.383], [7.25, 0.343], [zb, hi]], UA.liner);
-    L([[5.50, 0.40], [5.58, 0.392], [6.02, 0.418], [5.95, hi]], UA.post, 1, 4);                    // posts
-    L([[6.45, 0.352], [6.55, 0.35], [6.55, 0.398], [6.45, 0.40]], UA.post, 1, 3);
-    L([[5.26, lo], [5.50, lo], [5.50, 0.40], [5.30, 0.492]], UA.liner, 3, 6);                      // sills and side walls
-    L([[5.50, lo], [5.58, lo], [5.58, 0.392], [5.50, 0.40]], UA.liner, 1, 4);
-    L([[5.58, lo], [6.45, lo], [6.45, 0.352], [5.58, 0.392]], UA.liner, 4, 4);
-    L([[6.45, lo], [6.55, lo], [6.55, 0.35], [6.45, 0.352]], UA.liner, 1, 4);
-    L([[6.55, lo], [7.25, lo], [7.25, 0.343], [6.55, 0.35]], UA.liner, 3, 4);
-    L([[7.25, lo], [zb, lo], [zb, hi], [7.25, 0.343]], UA.liner, 3, 4);
-    stA.add(K.deck(hump, D(5.26), ZB, FY, { uv: UA.floor, n: 8, inset: 0.15 }));                   // floor
+    const lo = 0.245, hi = w1.tb, zb = 8.6;
+    L([[DF, 0.5], [DF, w1.ti], [w1.bi, w1.ti], [w1.bi, 0.5]], UA.post, 1, 4);                                  // centre post
+    L([[w1.bi, 0.5], [w1.bo, hi], [zb, hi], [zb, 0.5]], UA.liner, 5, 5);                                       // roof
+    L([[w1.bo, hi], [w2.fu, w2.tfu], [w2.bl, w2.tbu], [w2.bl, hi]], UA.liner);                                // above the side windows
+    L([[w2.bl, hi], [w2.bl, w2.tbu], [w3.f, w3.tfu], [w3.f, hi]], UA.liner, 1, 2);
+    L([[w3.f, hi], [w3.f, w3.tfu], [w3.bu, w3.tbu], [w3.bu, hi]], UA.liner);
+    L([[w3.bu, hi], [w3.bu, w3.tbu], [w3.bl, w3.tbl], [zb, hi]], UA.liner);
+    L([[w1.fo, w1.to], [w2.fl, w2.tfl], [w2.fu, w2.tfu], [w1.bo, hi]], UA.post, 1, 4);                         // posts
+    L([[w2.bl, w2.tbl], [w3.f, w3.tfl], [w3.f, w3.tfu], [w2.bl, w2.tbu]], UA.post, 1, 3);
+    L([[DF, lo], [w1.fo, lo], [w1.fo, w1.to], [w1.fi, w1.ti]], UA.liner, 3, 6);                               // sills and side walls
+    L([[w1.fo, lo], [w2.fl, lo], [w2.fl, w2.tfl], [w1.fo, w1.to]], UA.liner, 1, 4);
+    L([[w2.fl, lo], [w2.bl, lo], [w2.bl, w2.tbl], [w2.fl, w2.tfl]], UA.liner, 4, 4);
+    L([[w2.bl, lo], [w3.f, lo], [w3.f, w3.tfl], [w2.bl, w2.tbl]], UA.liner, 1, 4);
+    L([[w3.f, lo], [w3.bl, lo], [w3.bl, w3.tbl], [w3.f, w3.tfl]], UA.liner, 3, 4);
+    L([[w3.bl, lo], [zb, lo], [zb, hi], [w3.bl, w3.tbl]], UA.liner, 3, 4);
+    stA.add(K.deck(hump, D(DF), ZB, FY, { uv: UA.floor, n: 8, inset: 0.15 }));                   // floor
     stA.add(K.bulkhead(hump, ZB, { uv: UA.liner, facing: -1 }));                                   // flight-deck door wall
-    stA.add(K.bulkhead(hump, D(5.27), { uv: UA.shield, facing: 1 }));                               // forward wall under the windshield
+    stA.add(K.bulkhead(hump, D(DF + 0.01), { uv: UA.shield, facing: 1 }));                               // forward wall under the windshield
     const zp = eye[2] - 0.82;                                                                       // main instrument panel plane
-    { const gs = K.prism([[zp - 0.32, 3.0], [zp + 0.2, 3.06], [zp + 0.23, 3.03], [zp + 0.2, 2.98], [zp - 0.32, 2.93]], -1.25, 1.25, UA.shield); stA.add(gs); }   // glareshield
-    { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.4, 0.6], [2.4, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.2, 2.38 + (0.6 - b), zp + (0.6 - b) * 0.1, 0, 0.1, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    { const gs = K.prism([[zp - 0.22, 2.92], [zp + 0.17, 2.96], [zp + 0.2, 2.93], [zp + 0.17, 2.89], [zp - 0.22, 2.86]], -1.15, 1.15, UA.shield); stA.add(gs); }   // glareshield
+    { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.4, 0.6], [2.4, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.2, 2.3 + (0.6 - b), zp + (0.6 - b) * 0.1, 0, 0.1, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     stA.add(K.box(0.5, 0.5, 1.05, UA.shield).translate(0, FY + 0.32, zp + 0.55));                  // pedestal
     { const i0 = stA.vertexCount, y = 3.72; for (const [a, b] of [[0, 0], [0.7, 0], [0.7, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.35, y + b * 0.2, zp + 0.25 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     for (const sx of [-1, 1]) {
@@ -245,10 +262,11 @@ export function createVisual(ctx, opts = {}) {
     sl.enableMorph(); for (let i = 2; i < sl.p2.length; i += 3) sl.p2[i] += n.sleeveTravel;            // reverser: sleeve slides aft (morph target)
     sleeveAll.add(sl); sleeveTravel = n.sleeveTravel;
     // pylon: from the top of the fan cowl back into the wing leading edge and under the wing to the aft fairing
-    stB.add(K.pylon([{ y: c[1] + 1.2, z0: c[2] + 1.55, z1: c[2] + 7.4, x: c[0], tc: 0.1 }, { y: c[1] + 1.82, z0: c[2] + 3.35, z1: c[2] + 10.6, x: c[0], tc: 0.075 }], { uv: UB.pylon }));
-    { const z0 = c[2] + 6.6, len = 4.6, yb = c[1] + 1.05;                                              // aft pylon fairing under the wing
-      const st = [[0, 0.02, 0.02], [0.15, 0.3, 0.32], [0.5, 0.36, 0.42], [0.85, 0.22, 0.3], [1, 0.02, 0.05]].map(r => ({ z: z0 + r[0] * len, x: c[0], y: yb + r[0] * 0.65, w: r[1], top: 0.5, bot: r[2] }));
-      stB.add(K.loft({ stations: st, segments: 14, step: 0.5, uv: UB.pylon, capStart: 'none' }).mesh); }
+    { const x = Math.abs(c[0]), yw = wy(x), zl = zLE(x);
+      stB.add(K.pylon([{ y: c[1] + 1.2, z0: c[2] + 1.1, z1: c[2] + 7.3, x: c[0], tc: 0.11 }, { y: yw + 0.1, z0: zl - 1.6, z1: zl + 5.2, x: c[0], tc: 0.08 }], { uv: UB.pylon }));
+      const z0 = c[2] + 6.4, len = 5.2, yb = yw - 0.62;                                                 // aft pylon fairing under the wing
+      const st = [[0, 0.02, 0.02], [0.15, 0.3, 0.3], [0.5, 0.36, 0.4], [0.85, 0.22, 0.28], [1, 0.02, 0.04]].map(r => ({ z: z0 + r[0] * len, x: c[0], y: yb + r[0] * 0.3, w: r[1], top: 0.55, bot: r[2] }));
+      stB.add(K.loft({ stations: st, segments: 14, step: 0.5, uv: UB.pylon }).mesh); }
     eng.push({ c, n, fanMesh: K.fan({ radius: NAC.rFan - 0.01, hub: 0.42, blades: 18, chord: 0.5, staggerRoot: 30, staggerTip: 64, sweep: 0.22, uvBlade: UB.blade, uvSpinner: UB.spinner }) });
   }
 
@@ -281,9 +299,13 @@ export function createVisual(ctx, opts = {}) {
     for (const [nm, xs] of [['In', [6.4, 9.7]], ['Out', [15.4, 19.4, 23.3]]]) {
       const main = C['flap' + nm], aft = C['aft' + nm], mesh = main.mesh.clone();
       for (const x of xs) { const cn = canoeAt(x, nm === 'In' ? 6.2 : 5.6 - (x - 15) * 0.12, sx); stB.add(cn.front); mesh.add(cn.rear); }
+      // the aft segment rides on the main flap and folds a further 22° down as a morph target (saves a draw call per segment)
+      const aftM = aft.mesh.clone().enableMorph(), al = drop(aft, 0.3);
+      rotateMorph(aftM, al.a, al.b, aft.ref, DOWN, 22 * DEG);
+      mesh.add(aftM);
       const line = drop(main, nm === 'In' ? 2.3 : 1.9, 0.1), node = rig.part(`flap${nm}${key}`, mesh, { key: 'wing', pivot: line.a });
       a['flap' + nm] = rig.hinge(node, line.a, line.b, { ref: main.ref, toward: DOWN });
-      a['aft' + nm] = hingeOn(`aftFlap${nm}${key}`, aft.mesh, drop(aft, 0.3), aft.ref, DOWN, node);
+      a['aft' + nm] = (ang) => { node.morphTargetInfluences[0] = ang; };
     }
     a.ailIn = rig.hingePart('aileronIn' + key, C.ailIn, { key: 'wing' }).set;
     a.ailOut = rig.hingePart('aileronOut' + key, C.ailOut, { key: 'wing' }).set;
@@ -305,7 +327,7 @@ export function createVisual(ctx, opts = {}) {
   K.buildGear(rig, A, {
     name: 'nose', index: 0, contact: gp[0].pos, wheels: [-0.36, 0.36], wheelRadius: gp[0].wheelRadius, wheelWidth: 0.4, pivot: [0, -2.0, -27.05], stroke: 0.42, staticFrac: 0.4,
     strutR: 0.13, steer: true, links: 'front', retract: { to: [0, -2.3, -30.2] }, window: [0.2, 0.86], brace: [0, -2.1, -25.6], uv: gearUV, wheelSegments: 24,
-    doors: [{ name: 'noseDoorR', ...doorOf(fus.patches.ngdR, fus.edges.ngdR.tHi), open: 86 }, { name: 'noseDoorL', ...doorOf(fus.patches.ngdL, fus.edges.ngdL.tLo), open: 86 }],
+    doors: [{ name: 'noseDoorR', ...doorOf(fus.patches.ngdR, fus.edges.ngdR.tHi), open: 86, closes: true }, { name: 'noseDoorL', ...doorOf(fus.patches.ngdL, fus.edges.ngdL.tLo), open: 86, closes: true }],
     lamps: [{ kind: 'taxi', pos: [0, -3.55, -27.35], size: 0.1, color: [1, 0.96, 0.9] }],
   });
   const legDoor = (P, bottom, sx, w) => K.plate([P[0] + sx * 0.24, P[1] - 0.2, P[2] - w], [P[0] + sx * 0.24, P[1] - 0.2, P[2] + w], [bottom[0] + sx * 0.24, bottom[1], bottom[2] + w], [bottom[0] + sx * 0.24, bottom[1], bottom[2] - w], 0.03, UA.fair);
@@ -345,7 +367,7 @@ export function createVisual(ctx, opts = {}) {
     const sf = S.sf, f = sf.flaps, sl = Math.max(sf.slats, 0);
     for (const a of wingAnim) {
       const R = a.key === 'R', ail = R ? sf.aileronR : sf.aileronL, sp = R ? sf.spoilerR : sf.spoilerL, el = R ? sf.elevatorR : sf.elevatorL;
-      a.flapIn(f * 32 * DEG); a.flapOut(f * 30 * DEG); a.aftIn(f * 22 * DEG); a.aftOut(f * 22 * DEG);
+      a.flapIn(f * 32 * DEG); a.flapOut(f * 30 * DEG); a.aftIn(f); a.aftOut(f);
       a.ailIn(ail * 18 * DEG - f * 8 * DEG); a.ailOut((S.onGround || f > 0.05 ? 1 : 0.35) * ail * 22 * DEG);
       a.kruIn(sl * 115 * DEG); a.kruOut(sl * 105 * DEG);
       a.spOut(Math.max(sp, sf.speedbrake * (S.onGround ? 1 : 0.6)) * 45 * DEG);
@@ -460,7 +482,7 @@ function paintSurfaces(B, o) {
     const Q = B.pen(chart); Q.fill('all', top ? grey : white);
     if (top) Q.fill([at(1.6, Ln('kru', 1.6) + 0.05), at(30, Ln('kru', 30) + 0.05), at(30, Ln('spoil', 30) - 0.03), at(1.6, Ln('spoil', 1.6) - 0.03)], dgrey);
     Q.fill([at(1.4, 0), at(30.4, 0), at(30.4, 0.035), at(1.4, 0.035)], metal);
-    Q.fill([at(30.35, -0.02), at(34.3, -0.02), at(34.3, 1.02), at(30.35, 1.02)], tipFill);                    // painted raked tips
+    Q.fill([[30.35, zLE(30.35) - 0.15], [34.45, zLE(34.45) - 0.4], [34.45, zTE(34.45) + 0.3], [30.35, zTE(30.35) + 0.15]], tipFill);                    // painted raked tips
     const seg = (name, xs, op) => Q.line(xs.map(x => at(x, Ln(name, x))), op);
     if (top) {
       for (const [a, b] of [[4.1, 7.15], [7.25, 10.3], [14.2, 16.55], [16.65, 19.0], [19.1, 21.4], [21.5, 23.75]]) { Q.line([at(a, Ln('flap', a)), at(a, Ln('spoil', a)), at(b, Ln('spoil', b)), at(b, Ln('flap', b))], gap); }
