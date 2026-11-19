@@ -72,7 +72,7 @@ export function createVisual(ctx, opts = {}) {
   const seg = Math.max(32, Math.round(72 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
-  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.light), skin: { weathering: 0.45 + 0.35 * SC.weather, framePitch: 0.36 } });
+  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.light), swatchRows: 6, skin: { weathering: 0.45 + 0.35 * SC.weather, framePitch: 0.36 } });
   const cFus = atlas.chart('fus', { type: 'unwrap', z: [-11.95, 6.6], girth: 6.6, vScale: 0.85, strips: 2, density: 1.2 });
   const cNac = {
     R: atlas.chart('nacR', { type: 'unwrap', z: [-5.9, 2 * NSPLIT + 5.9], girth: 4.7, vScale: 0.8, strips: 2, density: 1.05 }),
