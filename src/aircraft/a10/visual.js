@@ -37,7 +37,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.top) });
-  const cFus = atlas.chart('fus', { type: 'unwrap', z: [-7.0, 8.95], girth: 5.5, vScale: 0.85, strips: 2, density: 1.1 });
+  const cFus = atlas.chart('fus', { type: 'unwrap', z: [-7.0, 8.95], girth: 5.5, vScale: 0.85, strips: 3, density: 1.1 });
   const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [0.5, 8.85], z: [-1.12, 2.12], view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-8.85, -0.5], z: [-1.12, 2.12], view: 'top' }) };
   const cWB = atlas.chart('wingBot', { type: 'plan', x: [0.5, 8.85], z: [-1.12, 2.12], view: 'bottom', mirror: true, density: 0.75 });
   const cST = atlas.chart('stabTop', { type: 'plan', x: [0, 2.85], z: [6.35, 8.3], view: 'top', mirror: true, density: 0.9 });
@@ -468,7 +468,7 @@ function paint(atlas, o) {
   const P = atlas.pen(cFus);
   P.fill('all', top);
   if (!SC.camo) P.band(-7.0, 8.95, -Infinity, (z) => (z < -5.5 ? 0.0 : 0.38), under, { feather: 5 });
-  camo(P, -7.0, 8.95, 0, 1, 1.6, 0.25);
+  camo(P, -7.0, 8.95, 0, 1, 2.6, 0.22);
   // false canopy under the nose (dark gloss grey, the A-10's best-known paint trick)
   if (SC.falseCanopy) {
     const shape = (z) => { const f = (z + 6.15) / 1.45; return f <= 0 || f >= 1 ? 0 : 0.42 * Math.sin(Math.PI * Math.pow(f, 0.7)); };
@@ -545,7 +545,7 @@ function paint(atlas, o) {
     for (const [chart, fin2, isTop] of [[cWT[key], top, true], ...(key === 'R' ? [[cWB, under, false]] : [])]) {
       const Q = atlas.pen(chart);
       Q.fill('all', SC.camo ? top : fin2);
-      if (isTop) camo(Q, s > 0 ? 0.5 : -8.85, s > 0 ? 8.85 : -0.5, -1.12, 2.12, 1.8);
+      if (isTop) camo(Q, s > 0 ? 0.5 : -8.85, s > 0 ? 8.85 : -0.5, -1.12, 2.12, 2.8);
       const ln = (pts, op) => Q.line(pts.map(p => [p[0] * s, p[1]]), op);
       for (const f of [0.15, 0.32, 0.55, 0.72]) ln([at(0.6, f), at(2.95, f), at(8.25, f)], line);
       for (const x of [1.2, 2.2, 2.95, 3.6, 4.7, 5.6, 6.5, 7.4, 8.25]) ln([at(x, 0.01), at(x, 0.99)], line);
@@ -579,7 +579,7 @@ function paint(atlas, o) {
   // ================= fins (L chart = faces seen from the left) =================
   for (const key of ['L', 'R']) {
     const Q = atlas.pen(cFin[key]); Q.fill('all', top);
-    camo(Q, 6.6, 9.0, 0, 2.92, 1.1);
+    camo(Q, 6.6, 9.0, 0, 2.92, 1.6);
     const fin = fins.R;
     const at = (y, f) => { const p = fin.at(y, f); return [p[2], p[1]]; };
     const hz = (y) => fin.lines.rh.at(fin.spanToU(y));
