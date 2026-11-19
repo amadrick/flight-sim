@@ -77,6 +77,7 @@ export default {
   engines: {
     // F118-GE-100: low-bypass (0.87) non-afterburning turbofan; the sheet / specs call it "high bypass", which is wrong.
     type: 'turbofan-lb', thrustMil: 77000, thrustMax: 77000,
+    thrustLineOffset: -0.165,            // visual model moved the nozzles 0.165 m down (average); keeps the tuned thrust line
     // Mixed-flow lapse; machLapse 0.2 = installed loss with speed (buried engines, serpentine S-ducts, trough exhausts):
     // 96 % of SLS at M 0.44 / sea level. altLapse 0.9 keeps ~29 % of SLS at FL390 / M 0.85 so that the published cruise
     // (M 0.85 at 12 km, ~88 % lever at 140 t) and the M 0.95 maximum at altitude are reachable.
