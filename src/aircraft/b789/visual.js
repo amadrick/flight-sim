@@ -25,11 +25,35 @@ import * as K from '../kit/index.js';
 const DEG = Math.PI / 180, TAU = Math.PI * 2;
 export const LIVERIES = ['halcyra', 'tidewind', 'house'];
 
+// Emblems are drawn in metres around (0, 0), y down, `k` = scale (1 ≈ the 5 m fin version).
+function kingfisher(g, k, col) {            // Halcyra: two swept wing arcs over a dot (a stylised diving kingfisher)
+  g.save(); g.scale(k, k); g.fillStyle = col;
+  for (const [r0, r1, a0, a1] of [[1.2, 2.6, -2.4, -0.25], [1.6, 2.2, 0.35, 1.2]]) { g.beginPath(); g.arc(0, 0, r1, a0, a1); g.arc(-0.3, 0.25, r0, a1, a0, true); g.closePath(); g.fill(); }
+  g.beginPath(); g.arc(0.55, -0.35, 0.38, 0, TAU); g.fill(); g.restore();
+}
+function waveCrest(g, k, col, foam) {        // Tidewind: a breaking wave ribbon with a foam line
+  g.save(); g.scale(k, k); g.lineCap = 'round';
+  const rib = (dy, w, c) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(-2.6, 1.8 + dy); g.bezierCurveTo(-1.2, 2.8 + dy, 0.3, 1.6 + dy, 0.6, 0.2 + dy); g.bezierCurveTo(0.9, -1.0 + dy, 1.8, -1.5 + dy, 2.7, -1.2 + dy); g.stroke(); };
+  rib(0, 0.62, col); rib(0.8, 0.22, foam); g.restore();
+}
+function skyMark(g, k, col, acc) {           // Skyward: an upswept chevron over a horizon line
+  g.save(); g.scale(k, k); g.fillStyle = col;
+  g.beginPath(); g.moveTo(-2.2, 1.0); g.lineTo(0, -1.6); g.lineTo(2.2, 1.0); g.lineTo(1.3, 1.0); g.lineTo(0, -0.4); g.lineTo(-1.3, 1.0); g.closePath(); g.fill();
+  g.fillStyle = acc; g.fillRect(-2.4, 1.35, 4.8, 0.32); g.restore();
+}
+
 const SCHEMES = {
-  halcyra: { name: 'Halcyra', title: 'HALCYRA', reg: 'ZZ-HCA', body: '#f5f6f7', belly: '#1b2a4a', cheat: '#d8a942', tail: '#1b2a4a', engine: '#1b2a4a', spinner: '#d8a942', tip: '#1b2a4a', titleColor: '#1b2a4a', font: 'serif', style: 'wave' },
-  tidewind: { name: 'Tidewind', title: 'tidewind', reg: 'ZZ-TDW', body: '#f6f7f6', belly: '#c9cdd1', cheat: '#f06a4f', tail: '#0f7f86', engine: '#f6f7f6', spinner: '#0f7f86', tip: '#f06a4f', titleColor: '#0f7f86', font: 'round', style: 'ribbon' },
-  house: { name: 'Skyward demonstrator', title: 'SKYWARD', reg: 'ZZ-SK9', body: '#eef0f1', belly: '#3b4148', cheat: '#19b3a6', tail: '#3b4148', engine: '#eef0f1', spinner: '#3b4148', tip: '#19b3a6', titleColor: '#3b4148', font: 'wide', style: 'bands' },
+  halcyra: { name: 'Halcyra', title: 'HALCYRA', reg: 'ZZ-HCA', body: '#f5f6f7', belly: '#1b2a4a', cheat: '#d8a942', tail: '#1b2a4a', engine: '#1b2a4a', spinner: '#d8a942', swirl: '#1b2a4a', tip: '#1b2a4a', titleColor: '#1b2a4a', font: 'serif', style: 'wave',
+    emblem: (g, k) => kingfisher(g, k, '#d8a942'),
+    nacMotif: (Q, sF, sMax) => { Q.fill((g) => g.rect(sMax - 0.42, -1, 0.07, 3), F0.gloss('#d8a942')); for (const t of [0.25, 0.75]) Q.decalT(sF + 1.0, t, { girth: 10.2 }, (g) => kingfisher(g, 0.17, '#d8a942')); } },
+  tidewind: { name: 'Tidewind', title: 'tidewind', reg: 'ZZ-TDW', body: '#f6f7f6', belly: '#c9cdd1', cheat: '#f06a4f', tail: '#0f7f86', engine: '#f6f7f6', spinner: '#0f7f86', swirl: '#f6f7f6', tip: '#f06a4f', titleColor: '#0f7f86', font: 'round', style: 'ribbon', engineMark: '#5c6166',
+    emblem: (g, k) => waveCrest(g, k, '#f06a4f', '#ffffff'),
+    nacMotif: (Q, sF, sMax) => { for (const t of [0.25, 0.75]) Q.decalT(sF + 0.9, t, { girth: 10.2 }, (g) => { waveCrest(g, 0.3, '#0f7f86', '#f06a4f'); }); Q.fill((g) => g.rect(sMax - 0.5, -1, 0.5, 3), F0.gloss('#0f7f86')); } },
+  house: { name: 'Skyward demonstrator', title: 'SKYWARD', reg: 'ZZ-SK9', body: '#eef0f1', belly: '#3b4148', cheat: '#19b3a6', tail: '#3b4148', engine: '#eef0f1', spinner: '#3b4148', swirl: '#19b3a6', tip: '#19b3a6', titleColor: '#3b4148', font: 'wide', style: 'bands', engineMark: '#5c6166',
+    emblem: (g, k) => skyMark(g, k, '#ffffff', '#19b3a6'),
+    nacMotif: (Q, sF, sMax) => { Q.fill((g) => g.rect(sF + 0.05, -1, 0.18, 3), F0.gloss('#19b3a6')); for (const t of [0.25, 0.75]) Q.decalT(sF + 1.1, t, { girth: 10.2 }, (g) => K.drawText(g, '787-9', 0.22, { color: '#3b4148', font: K.FONT.wide, weight: 700 })); } },
 };
+const F0 = K.FINISH;
 
 const NZ = -29.9;                      // nose tip z
 const D = (d) => d + NZ;               // distance from the nose → body z
@@ -249,7 +273,7 @@ export function createVisual(ctx, opts = {}) {
       stA.add(K.box(0.03, 0.14, 0.03, UA.yoke).rotateX(0.4).translate(0.19, top + 0.06, pz0 + 0.45)); stA.add(K.box(0.03, 0.14, 0.03, UA.yoke).rotateX(0.4).translate(-0.2, top + 0.06, pz0 + 0.5)); }
     // overhead panel following the roof line
     { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0], [0.7, 0], [0.7, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b), z = D(4.45) + b * 1.15; stA.vert(a - 0.35, fus.topAt(z) - 0.13, z, 0, -1, -0.25, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-      stA.add(K.box(0.82, 0.06, 1.2, UA.post).translate(0, fus.topAt(D(5.0)) - 0.1, D(5.0))); }
+ }
     const hudG = new K.Mesh();
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
@@ -259,7 +283,7 @@ export function createVisual(ctx, opts = {}) {
       stA.add(K.box(0.24, 0.05, 0.3, UA.post).translate(sx * 1.2, FY + 0.52, e[2] - 0.45));
       for (const dz of [-0.06, 0.06]) stA.add(K.box(0.07, 0.05, 0.22, UA.yoke).rotateX(-0.6).translate(e[0] + dz * 2, FY + 0.18, zp + 0.05));   // rudder pedals
       // head-up display: combiner glass on a hinged arm hanging from the overhead projector
-      const hz = e[2] - 0.43, hy = e[1] + 0.01, top = fus.topAt(hz + 0.3) - 0.12;
+      const hz = e[2] - 0.43, hy = e[1] + 0.01, top = fus.topAt(hz + 0.31) - 0.24;
       hudG.add(K.box(0.2, 0.16, 0.006, [0, 0]).rotateX(-0.3).translate(e[0], hy, hz));
       stA.add(K.box(0.22, 0.018, 0.03, UA.yoke).translate(e[0], hy + 0.085, hz + 0.02));
       for (const s2 of [-1, 1]) stA.add(K.box(0.014, 0.17, 0.016, UA.yoke).rotateX(-0.3).translate(e[0] + s2 * 0.107, hy, hz));
@@ -633,8 +657,18 @@ function paintFuselage(A, o) {
     P.textOn('787-9', 4.5, 1.6, 'both', 0.55, { color: SC.cheat, font: K.FONT.wide, weight: 700, spacing: 0.08 });
   }
   P.textOn(SC.reg, 20.5, 1.3, 'both', 0.42, { color: SC.style === 'ribbon' ? '#ffffff' : SC.titleColor, font: K.FONT.sans, weight: 700 });
+  if (SC.style !== 'bands') P.decalOn(D(9.6), 1.5, 'both', (g) => SC.emblem(g, 0.24));                                          // emblem behind door 1
+  else P.decalOn(D(9.6), 1.5, 'both', (g) => skyMark(g, 0.22, SC.tail, SC.cheat));
+  P.textOn('787-9', D(2.0) + 1.6, -1.55, 'both', 0.12, { color: '#6a6e72', font: K.FONT.sans, weight: 700 });
+  // service panels: avionics bay, ground power, potable water and lavatory service, E/E bay hatch, APU access
+  const panelOn = (z0, z1, y0, y1, side = 'both') => P.doorOn(z0, z1, y0, y1, { px: 0.8, depth: 0.28, dark: 0.08, side, r: 0.04 });
+  for (const [d0, d1, y0, y1, sd] of [[4.9, 5.6, -2.2, -1.75, 'both'], [6.0, 6.5, -2.35, -2.05, 'R'], [11.3, 11.7, -2.2, -1.95, 'L'], [49.3, 49.7, -1.4, -1.15, 'L'], [51.0, 51.4, -1.15, -0.9, 'R'], [58.0, 59.6, -0.3, 0.6, 'both']]) panelOn(D(d0), D(d1), y0, y1, sd);
+  P.decalT(D(9.0), 0.0, { layers: ['color', 'height'] }, (g, layer) => { g.strokeStyle = layer === 'height' ? 'rgba(0,0,0,0.45)' : 'rgba(40,42,46,0.4)'; g.lineWidth = 0.02; g.strokeRect(-0.45, -0.35, 0.9, 0.7); });
+  // APU exhaust soot on the tail cone, grime trails aft of the belly drain masts
+  P.band(D(61.2), Z1, -Infinity, Infinity, { color: '#34302c', rough: 0.6, metal: 0 }, { step: 0.1, alpha: 0.35, feather: 18 });
+  for (const z of [-11.5, 7.5]) for (const dt of [-0.004, 0, 0.004]) P.streak(z + 0.2, dt < 0 ? 1 + dt : dt, z + 4.5, dt < 0 ? 1 + dt * 2 : dt * 2, 0.01, { alpha: 0.08 });
   // radome joint (the composite barrels have no lap joints or rivet rows)
-  P.ring(D(2.1), 0, 1, { px: 1.2, depth: 0.4, dark: 0.1 });
+  P.ring(D(2.1), 0, 1, { px: 0.8, depth: 0.25, dark: 0.04 });
   // --- flight-deck windows: painted glass inside a black mask ---
   for (const s of [1, -1]) {
     const m = (p) => [p[0], s > 0 ? p[1] : 1 - p[1]];
@@ -772,21 +806,12 @@ function paintSurfaces(B, o) {
     const Q = B.pen(cFin[key]); Q.fill('all', F.gloss(SC.tail));
     const fa = (y, f) => { const p = fin.at(y, f); return [p[2], p[1]]; };
     const c = fa(7.6, 0.45);
-    if (SC.style === 'wave') {           // stylised kingfisher: gold wing arcs and a dot
-      Q.decal(c[0], c[1], (g) => {
-        g.fillStyle = SC.cheat;
-        for (const [r0, r1, a0, a1] of [[1.2, 2.6, -2.4, -0.25], [1.6, 2.2, 0.35, 1.2]]) { g.beginPath(); g.arc(0, 0, r1, a0, a1); g.arc(-0.3, 0.25, r0, a1, a0, true); g.closePath(); g.fill(); }
-        g.beginPath(); g.arc(0.55, -0.35, 0.38, 0, TAU); g.fill();
-      });
-    } else if (SC.style === 'ribbon') {  // coral wave crest with a white foam line
-      Q.decal(c[0], c[1], (g) => {
-        const rib = (dy, w, col) => { g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(-2.6, 1.8 + dy); g.bezierCurveTo(-1.2, 2.8 + dy, 0.3, 1.6 + dy, 0.6, 0.2 + dy); g.bezierCurveTo(0.9, -1.0 + dy, 1.8, -1.5 + dy, 2.7, -1.2 + dy); g.stroke(); };
-        rib(0, 0.62, SC.cheat); rib(0.8, 0.22, '#ffffff');
-      });
-    } else {
+    if (SC.style === 'wave') Q.decal(c[0], c[1], (g) => kingfisher(g, 1, SC.cheat));          // stylised kingfisher: gold wing arcs and a dot
+    else if (SC.style === 'ribbon') Q.decal(c[0], c[1], (g) => waveCrest(g, 1, SC.cheat, '#ffffff'));   // coral wave crest with a white foam line
+    else {                               // demonstrator: teal root bands, white chevron mark, type number
       for (const [y0, y1] of [[3.0, 3.6], [3.9, 4.2]]) Q.fill([fa(y0, 0), fa(y1, 0), fa(y1, 1), fa(y0, 1)], F.gloss(SC.cheat));
-      Q.text('787', c[0], c[1] + 0.6, 1.9, { color: '#ffffff', font: K.FONT.wide, weight: 700 });
-      Q.text('-9', c[0] + 1.0, c[1] - 1.1, 1.1, { color: SC.cheat, font: K.FONT.wide, weight: 700 });
+      Q.decal(c[0], c[1] + 0.9, (g) => skyMark(g, 0.9, '#ffffff', SC.cheat));
+      const c2 = fa(5.3, 0.42); Q.text('787-9', c2[0], c2[1], 0.75, { color: '#ffffff', font: K.FONT.wide, weight: 700 });
     }
     Q.fill([fa(2.6, 0), fa(12.6, 0), fa(12.6, 0.03), fa(2.6, 0.03)], metal);
     const fg = { px: 1.6, depth: 0.5, dark: 0.3 };
