@@ -423,6 +423,7 @@ ${msGLSL ? `
 // ---- round five: learned multiple scattering (docs/clouds/NEURAL.md). Taps = physical extinction of the cheap base
 // density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
 #define CL_MS5 1
+${/float\s+cloudMsForwardPeak\s*\(\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float/.test(msGLSL) ? '#define CL_MS_AUREOLE 1' : ''}
 vec4 clMsWx = vec4(0.0); float clMsLod = 1.0;
 float clMsSigma(vec3 p) { vec4 info; return clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; }
 #define CLOUD_MS_SIGMA(p) clMsSigma(p)
@@ -819,8 +820,13 @@ void main() {
             vec3 tF = cloudMsTapSegments(pa, rd);
             msLast = cloudMsLight(tauSun, -log(max(T, 1e-30)), uClLightDir.y, cosT, tU, tD, tF);
           }
+          #ifdef CL_MS_AUREOLE
+          float msFwd = cloudMsForwardPeak(tauSun, msPhase.g, cosT);   // (v2: with the aureole near the sun)
+          #else
+          float msFwd = cloudMsForwardPeak(tauSun, msPhase.g);
+          #endif
           vec3 occM = vec3(mix(1.0, occ.x * lam, uClMs.y), mix(1.0, occ.y, uClMs.y), 0.0);
-          vec3 S = E * (msPhase * exp(-tauSun) + cloudMsForwardPeak(tauSun, msPhase.g) + msLast.x) * occM.x
+          vec3 S = E * (msPhase * exp(-tauSun) +  msFwd + msLast.x) * occM.x
                  + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;
           #elif defined(CL_AMBIENT_VIS)
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
