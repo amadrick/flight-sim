@@ -32,6 +32,7 @@ const WEATHER_MAP_SIZE_M = 409600;       // weather map covers ±204.8 km around
 const SHADOW_MAP_SIZE_M = 81920;         // shadow map covers ±41 km
 const BASE_NOISE_PERIOD = 9800;          // metres per tile of the 128^3 base volume (≈ 77 m voxels)
 const DETAIL_NOISE_PERIOD = 1900;        // metres per tile of the 32^3 detail volume (≈ 59 m voxels)
+const BASE_NOISE_VSTRETCH = 0.55;      // vertical frequency of the base noise relative to horizontal (taller billows)
 const GOLDEN = 0.61803398875;
 
 function mulberry(seed) {
@@ -300,7 +301,7 @@ export async function createClouds(ctx) {
     const ax = worldPos.x - windOffset.x, az = worldPos.z - windOffset.y;
     weatherField(ax, az, bake, tmpWf);
     const s = 1 / BASE_NOISE_PERIOD, o = U.uClNoiseOfs.value;
-    const shape = sampleLowRes(noise3.lowRes, ax * s + o.x, y * s + o.y, az * s + o.z, 0);
+    const shape = sampleLowRes(noise3.lowRes, ax * s + o.x, y * s * dbg('clD', BASE_NOISE_VSTRETCH) + o.y, az * s + o.z, 0);
     return densityFromField(P, tmpWf, shape, y) * 0.8;
   }
 
@@ -316,7 +317,7 @@ export async function createClouds(ctx) {
     const rainOn = P.precip > 0.02 && P.coverage > 0.3;
     U.uClRain.value.set(rainOn ? P.precip * 0.0011 : 0, lerp(0.75, 0.2, P.precip), lerp(1.0, 0.6, P.precip), P.precip);
     U.uClOriginAir.value.set(o.x - windOffset.x, 0, o.z - windOffset.y);
-    U.uClDebug.value.set(dbg('clA', 1.0), dbg('clB', 0.6), dbg('clCount', 0), dbg('clD', 0.55));
+    U.uClDebug.value.set(dbg('clA', 1.0), dbg('clB', 0.6), dbg('clCount', 0), dbg('clD', BASE_NOISE_VSTRETCH));
     U.uClLightDir.value.copy(lightDir);
     U.uClLightSel.value.set(sunW, lerp(1, 0.35, P.coverage * P.coverage), 1, animTime);
     const mE = 0.05 * moonW;                         // artistic moonlight (same units as uSunColor ≈ 4 at noon)
