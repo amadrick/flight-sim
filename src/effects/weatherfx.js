@@ -135,10 +135,10 @@ export function createLightning(ctx, shared, header) {
         vec4 vc = viewMatrix * vec4(c, 1.0);
         float pxPerM = projectionMatrix[1][1] * 0.5 * uResolution.y / max(-vc.z, 1.0);
         float core = max(sa.w, 1.2 / pxPerM);
-        float halo = core * 4.0 + 6.0 / pxPerM;
+        float halo = core * 3.0 + 4.0 / pxPerM;
         vec3 dir = b - a; vec3 toCam = normalize(uCameraPos - c);
         vec3 side = normalize(cross(dir, toCam) + vec3(1e-6));
-        vec3 p = c + side * position.x * halo + normalize(dir) * position.y * halo * 0.5;
+        vec3 p = c + side * position.x * halo + normalize(dir) * position.y * core * 0.5;
         vC = position.xy; vCoreFrac = core / halo;
         vI = I * clamp(sa.w / core, 0.05, 1.0) * 1.0;
         vW = p;
@@ -202,7 +202,7 @@ export function createLightning(ctx, shared, header) {
         ? new THREE.Vector3((Math.random() * 2 - 1) * 3000, wp.y + (Math.random() * 2 - 1) * 300, (Math.random() * 2 - 1) * 3000)
         : new THREE.Vector3(gx - wp.x, gh, gz - wp.z);
       nseg = 0;
-      const main = jag(top, bottom, 8, 0.12);
+      const main = jag(top, bottom, 8, 0.2);
       for (let i = 1; i < main.length; i++) seg(main[i - 1], main[i], 2.2, 0);
       // forks
       const nb = 6 + Math.floor(Math.random() * 6);
@@ -233,8 +233,8 @@ export function createLightning(ctx, shared, header) {
       // stepped leader (branches) then return strokes + afterglow
       const strokes = (t < 0.05 ? 1 : t < 0.09 ? 0.15 : t < 0.14 ? 0.85 : t < 0.18 ? 0.1 : t < 0.23 ? 0.6 : 0.6 * Math.exp(-(t - 0.23) * 9));
       const flick = 0.85 + 0.3 * Math.random();
-      u.uI.value = 260 * intensity * strokes * flick;
-      u.uBranchI.value = 140 * intensity * (t < 0.12 ? 1 : Math.exp(-(t - 0.12) * 25)) * flick;
+      u.uI.value = 150 * intensity * strokes * flick;
+      u.uBranchI.value = 90 * intensity * (t < 0.12 ? 1 : Math.exp(-(t - 0.12) * 25)) * flick;
       u.uOffset.value.set(origin.x - ctx.world.origin.x, 0, origin.z - ctx.world.origin.z);
       mesh.visible = true;
       return strokes * intensity;
