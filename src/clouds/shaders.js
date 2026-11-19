@@ -87,6 +87,9 @@ uniform vec4 uClDet5;      // x = gradient-normalised erosion of cumulus turrets
 uniform vec4 uClDet4;      // x = decks: sky visibility from the column optical depth of the shadow map, y = quilted deck tops, z = pouches under the deck base, w = stepped cumulonimbus towers
 uniform vec4 uClDet2;      // x = amplitude ratio between detail octaves, y = frequency ratio, z = sharpest density ramp (shape units), w = wisp warp
 uniform vec4 uClProf2;     // the same for developed cells (congestus); uClShape3.z = turret amplitude (x radius)
+uniform vec4 uClLife;      // round five: x = life-cycle time (s / nominal cell lifetime), y = life cycle on (0 = frozen round-four phases)
+uniform vec4 uClPhys;      // round five: x = adiabatic liquid-water lapse (g m^-3 per m), y = (droplet number / 150 cm^-3)^(1/3),
+                           //   z = liquid-water cap of layer clouds (g m^-3), w = 1: extinction from the microphysics (0 = round four)
 
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
 // side outputs of clShape for the detail pass (globals: GLSL ES 3 functions may write them)
@@ -132,6 +135,14 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   vec2 pc = pa.xz - uClCell.yz * h + 160.0 * vec2(sin(pa.z * 3.7e-3 + 1.3 * sin(pa.x * 1.9e-3)), sin(pa.x * 3.3e-3 + 1.1 * sin(pa.z * 2.3e-3)));
   vec4 cl = textureLod(tClCells, pc * uClCell.x, lod + 1.0);
   float rad = 0.5 * uClCell2.x * exp2(cl.g * uClCell2.y);
+  // Round five, life cycle: every cell is born small, its tower rises (~1-5 m/s), it matures, then dissolves (the
+  // radius shrinks, the edges fray, the liquid water evaporates) and a new cloud is born in its place. Lifetime ~20 min
+  // (bigger cells live longer), each cell with its own phase and rate; at the wrap the cloud has no water left, so
+  // nothing pops.
+  float age = fract(cl.a + uClLife.x * mix(0.75, 1.3, fract(cl.b * 7.31)) * inversesqrt(clamp(rad / 600.0, 0.3, 4.0)));
+  float lgH = mix(1.0, mix(0.25, 1.0, smoothstep(0.0, 0.35, age)), uClLife.y);
+  float lgR = mix(1.0, mix(0.6, 1.0, smoothstep(0.0, 0.25, age)) * mix(1.0, 0.75, smoothstep(0.7, 1.0, age)), uClLife.y);
+  float lgW = mix(1.0, smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(0.6, 0.98, age)), uClLife.y);
   // Self-similar turrets: inside a cumulus cell the shape noise is sampled at a frequency that follows the cell size
   // (a 300 m humilis gets 100-300 m bulges, a 4 km congestus 1-2 km towers with sub-turrets), same single fetch.
   float kS = layerW > 0.0 ? 1.0 : mix(clamp(2400.0 / rad, 0.8, 8.0), 1.0, uClCell.w);
@@ -169,12 +180,12 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // (aspect ratio, larger for developed cells: humilis .. congestus) and turrets from the base volume's Worley fbm
   // whose amplitude scales with the cell (billows on billows). Towers lean downwind with the shear.
   // coverage switches cells on by their random id (and grows them past their nominal rim when it is high)
-  float sel = cov * 1.45;
+  float sel = cov * 1.45 * (1.0 + 0.25 * uClLife.y);       // (with the life cycle some cells are always young or dying)
   float vig = clSat((sel - cl.b) * 8.0);
   float grow = mix(0.55, 1.0, vig) + 1.4 * max(cov - 0.62, 0.0);
   float H = min(2.0 * rad * mix(uClCell2.z, uClCell2.w, dev) * mix(0.75, 1.25, cl.a) * (0.6 + 0.4 * vig), 0.8 * lid * uClLayer.w);   // (room under the lid for the turrets)
   // stratocumulus weather (round four): the cells are low humps embedded in the sheet, only developed ones tower
-  H *= mix(1.0, 0.4, uClCell.w * (1.0 - dev) * uClDet4.y);
+  H *= mix(1.0, 0.4, uClCell.w * (1.0 - dev) * uClDet4.y) * lgH;
   float hc = h / max(H, 1.0);
   vec4 pf = mix(uClProf, uClProf2, dev);
   float g = (pf.x + (1.0 - pf.x) * (1.0 - pow(1.0 - min(hc / pf.y, 1.0), pf.z)))
@@ -183,8 +194,8 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // (inverted Worley is a cone around each feature point; sqrt(2w - w^2) turns the cones into spherical caps, so the
   //  turrets are round bubbles separated by sharp creases instead of soft pyramids)
   float bil = (sqrt(clSat(2.0 * wb - wb * wb)) - 0.8) * uClShape3.z + (n.r - 0.5) * uClShape3.w;
-  float turK = rad * grow * mix(0.35, 1.0, clSat(hc * 1.6));
-  float rS = rad * grow * g + turK * bil;
+  float turK = rad * lgR * grow * mix(0.35, 1.0, clSat(hc * 1.6));
+  float rS = rad * lgR * grow * g + turK * bil;
   // Round four: how steep is this field? The turret term multiplies a Worley bubble by the cell radius, so on the wall
   // of a turret the excess rises 3-8 times faster than the nominal 1 unit / km. The detail erosion, which subtracts
   // from the excess, moved such a wall by a tenth of what it moves a plain flank: big cumulus were smooth balloons
@@ -200,7 +211,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  a crisp growing cell and a soft decaying one would otherwise meet in a visible vertical seam)
   float phase = cl.a;
   if (uClDet.x > 0.5 && lod < 1.5) phase = mix(textureLod(tClCells, pc * uClCell.x, lod + 3.5).a, phase, clSat(lod * 2.0 - 2.0));
-  float decay = max(smoothstep(0.65, 0.92, phase), 0.6 * uClDet5.z * (1.0 - vig)) * (1.0 - uClShape.w);
+  float decay = max(mix(smoothstep(0.65, 0.92, phase), smoothstep(0.55, 0.85, age), uClLife.y), 0.6 * uClDet5.z * (1.0 - vig)) * (1.0 - uClShape.w);
   vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
 
   // ---- (2) layer clouds from the 3-D shape noise: stratus / nimbostratus deck, stratocumulus sheet, Cb core -----
@@ -228,6 +239,18 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // water content grows with height above the base (adiabatic), decaying fragments and glaciated anvils are thinner
   info.w = mix(0.45, 1.0, clSat(info.x * 2.5 + 0.1)) * mix(1.0, mix(0.05, 0.45, am * am), anvil) * mix(0.75, 1.15, wx.a)
          * mix(1.0, 0.6, decay);
+  if (uClPhys.w > 0.5) {
+    // Round five: extinction in real units from the microphysics. Liquid water rises adiabatically with the height above
+    // the condensation level (~2 g m^-3 per km), diluted by entrainment: the adiabatic fraction falls from ~0.8 near the
+    // base to ~0.3 at the top (more in dissolving clouds); layer clouds are capped. A droplet population of N per cm^3
+    // with Q_ext = 2 and r_e from LWC and N has sigma = 0.119 (N / 150)^(1/3) LWC^(2/3) 1/m (LWC in g m^-3).
+    // The anvil is ice (r_e ~ 40 um): sigma = 1.5 IWC / (rho_ice r_e) = 0.041 IWC, IWC ~0.3 g m^-3 near the core, 0.04 at the rim.
+    float fad = mix(0.8, 0.3, info.x) * mix(1.0, 0.45, decay);
+    float lwc = min(uClPhys.x * max(h, 0.0) * fad, isCell ? 3.0 : mix(uClPhys.z, 2.5, uClShape2.z * dev)) * mix(0.8, 1.2, wx.a) * (isCell ? lgW : 1.0);
+    float sigW = 0.119 * uClPhys.y * pow(max(lwc, 1e-4), 0.6667);
+    float sigI = 0.041 * mix(0.04, 0.3, am * am) * mix(0.8, 1.2, wx.a);
+    info.w = mix(sigW, sigI, anvil) / uClNoise.w;
+  }
   clGradK = isCell ? mix(1.0, gradC, uClDet.x * uClDet5.x) : 1.0;
   clDecay = decay; clRadius = isCell ? rad * grow : 1000.0;      // (layer clouds: no cell, nominal size)
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
@@ -302,7 +325,11 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
   m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z * sizeK * mix(0.35, 1.0, clSat(info.x * 12.0));
   clSurf = excess - m;
   // hard sunlit edges on growing towers, soft frayed edges on decaying fragments
-  return clSat((excess - m) / (edge * mix(1.0, 3.5, clDecay)));
+  float dens = clSat((excess - m) / (edge * mix(1.0, 3.5, clDecay)));
+  // round five, entrainment: dry air mixed in through the surface dilutes the outer ~20 m of a growing turret a little
+  // and the outer ~150 m of a dissolving cloud a lot (ragged, translucent edges vs crisp sunlit turrets)
+  if (uClPhys.w > 0.5) dens *= mix(mix(0.6, 0.15, clDecay), 1.0, clSat((excess - m) / mix(0.02, 0.15, clDecay)));
+  return dens;
 }
 
 // Rain / virga below the cloud base (air-mass position pa with pa.y < base). Returns relative density 0..1.
@@ -329,10 +356,29 @@ float clRain(vec3 pa, vec4 wx) {
 //   cosTheta cos(angle between the light's travel direction and the direction toward the viewer); 1 = forward scattering
 export const DEFAULT_SCATTER_GLSL = /* glsl */`
 float clHG(float c, float g) { float g2 = g * g; return (1.0 - g2) * 0.0795775 / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
+// Round five: phase function of a cloud-droplet population, the HG + Draine blend fitted to Lorenz-Mie theory by
+// Jendersie & d'Eon ("An approximate Mie scattering function for fog and cloud rendering", SIGGRAPH 2023 talk), for
+// an effective droplet diameter d in um (5..50; cumulus ~15-25). The fit's sharp diffraction peak (g ~0.99) is the
+// silver lining around a cloud edge in front of the sun; the Draine lobe carries the broad forward and the backward
+// (glory / fogbow side) part. Normalised over the sphere (sr^-1).
+float clDraine(float c, float g, float a) {
+  float g2 = g * g;
+  return ((1.0 - g2) * (1.0 + a * c * c)) / (12.566371 * (1.0 + a * (1.0 + 2.0 * g2) / 3.0) * pow(1.0 + g2 - 2.0 * g * c, 1.5));
+}
+float clMiePhase(float c, float d) {
+  float gHG = exp(-0.0990567 / (d - 1.67154));
+  float gD = exp(-2.20679 / (d + 3.91029) - 0.428934);
+  float aD = exp(3.62489 - 8.29288 / (d + 5.52825));
+  float wD = exp(-0.599085 / (d - 0.641583) - 0.665888);
+  return (1.0 - wD) * clDraine(c, gHG, 0.0) + wD * clDraine(c, gD, aD);
+}
+// parameters computed on the CPU (index.js mieParams) for the droplet size of the weather: x = gHG, y = gD, z = alpha, w = wD
+uniform vec4 uClMie;
+float clMiePhaseP(float c, vec4 p) { return mix(clDraine(c, p.x, 0.0), clDraine(c, p.y, p.z), p.w); }
 float cloudSunScatter(float tauSun, float tauUp, float cosTheta) {
   // (1) Single scattering: dual-lobe Henyey-Greenstein — a tight forward lobe (silver lining) plus a weak
-  //     backward lobe (glory side brightening) [Hillaire16].
-  float single = mix(clHG(cosTheta, 0.82), clHG(cosTheta, -0.30), 0.2) * exp(-tauSun);
+  //     backward lobe (glory side brightening) [Hillaire16]. Round five: the Mie fit above (uClPhys.w = 0: round four).
+  float single = (uClPhys.w > 0.5 ? clMiePhaseP(cosTheta, uClMie) : mix(clHG(cosTheta, 0.82), clHG(cosTheta, -0.30), 0.2)) * exp(-tauSun);
   // (2) Low-order multiple scattering as octaves of attenuated extinction / contribution / anisotropy
   //     [Wrenninge13, Hillaire16]: light that has scattered a few times penetrates deeper and forgets direction.
   float ms = 0.0, a = 1.0, b = 1.0, c = 1.0;
@@ -345,7 +391,9 @@ float cloudSunScatter(float tauSun, float tauUp, float cosTheta) {
   //     Weighted by a "powder" term [Schneider15]: thin wisps and the outermost skin have had no path length to
   //     build up multiply-scattered light, which gives the dark creases / bright bulges of cumulus.
   float depth = tauSun + 0.35 * tauUp;
-  float powder = 1.0 - 0.55 * exp(-0.8 * depth);
+  // (round five: angle dependent, research doc 2.4: the boundary depletion shows away from the sun; looking toward it
+  //  the thin edge is the brightest part)
+  float powder = 1.0 - 0.55 * exp(-0.8 * depth) * (uClPhys.w > 0.5 ? 1.0 - smoothstep(0.3, 0.9, cosTheta) : 1.0);
   float fwd = mix(1.0, 12.566 * clHG(cosTheta, 0.35), 0.55 * exp(-0.12 * tauSun));
   float diffuse = 0.2546 * (0.5 / (1.0 + 0.1125 * tauSun) + 0.5 * exp(-0.3 * tauSun)) * powder * fwd;
   return single + 0.5 * ms * powder + diffuse;
@@ -404,7 +452,25 @@ vec2 clShell(float dy, float c, float H) {
   return vec2(min(t0, t1), max(t0, t1));
 }
 
-vec3 clLightE(vec3 renderPos) { return atmSunIlluminance(renderPos) * uClLightSel.x + uClMoonE; }
+uniform vec4 uClLight2;      // round five: x = moon weight, y = 1: physical light (pipeline sun / moon illuminance with the local
+                             // horizon of the cloud, earth curvature included), 0 = round-four (camera-local sun, artistic moon)
+// Light arriving at a cloud at render-space position renderPos and true altitude alt (m). Round five: the sun / moon
+// elevation is measured against the LOCAL vertical of that point (a cloud 100 km toward a setting sun sees it ~0.9
+// degrees higher, which is why distant sunward clouds stay pink after sunset) and the moon is the pipeline's own
+// moon illuminance (phase, atmosphere), so moonlit clouds have the energy of moonlit white paint.
+vec3 clLightE2(vec3 renderPos, float alt) {
+#ifdef CL_ATM_LT
+  if (uClLight2.y > 0.5) {
+    vec2 d = (renderPos.xz - uCameraPos.xz) * (1.0 / CL_R);
+    vec3 up = normalize(vec3(d.x, 1.0, d.y));
+    float hk = max(alt, 0.0) * 0.001;
+    return uAtmSunIllum * atmLightTransmittance(hk, dot(uSunDir, up)) * uClLightSel.x
+         + uAtmMoonIllum * atmLightTransmittance(hk, dot(uMoonDir, up)) * uClLight2.x;
+  }
+#endif
+  return atmSunIlluminance(renderPos) * uClLightSel.x + uClMoonE;
+}
+vec3 clLightE(vec3 renderPos) { vec2 d = renderPos.xz - uCameraPos.xz; return clLightE2(renderPos, renderPos.y + dot(d, d) * 7.848e-8); }
 
 // Optical depth toward the light: a few exponentially spaced samples of the cheap density (cone/light march of
 // [Schneider15], shortened), then the baked shadow map for everything farther away (other clouds, upper layers).
@@ -498,13 +564,17 @@ vec4 clCirrusLayer(vec3 rd, float c, float sceneD, out float tHit) {
   float tau = min(tauV / mu, 3.0) * (1.0 - smoothstep(2.0e5, 3.2e5, t));
   if (tau <= 1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
   float T = exp(-tau), op = 1.0 - T;
-  vec3 E = clLightE(pr);
+  vec3 E = clLightE2(pr, H);
   float cosT = dot(rd, uClLightDir);
   float mu0 = clamp(uClLightDir.y + 0.08, 0.08, 1.0);
   // ice crystals: strong forward lobe + broad floor; self-shadowing of the slanted sun path through the sheet
   float ph = mix(clHG(cosT, 0.72), 0.0796, 0.4) + 0.045 * mu0;
   vec3 L = E * ph * op * exp(-0.5 * tauV / mu0);
-  L += 0.5 * (atmAmbient(pr, vec3(0.0, 1.0, 0.0)) + atmAmbient(pr, vec3(0.0, -1.0, 0.0))) * uClLightSel.z * op;
+  // (round five: the raw clear-sky ambient when the pipeline provides it; uAmbientSky is divided by the player's cloud
+  //  shadow and lit the cirrus over an overcast like day)
+  vec3 aU = uClAmbUp.w > 0.5 && uClLight2.y > 0.5 ? uClAmbUp.rgb : atmAmbient(pr, vec3(0.0, 1.0, 0.0));
+  vec3 aD = uClAmbUp.w > 0.5 && uClLight2.y > 0.5 ? uClAmbDn.rgb : atmAmbient(pr, vec3(0.0, -1.0, 0.0));
+  L += 0.5 * (aU + aD) * uClLightSel.z * op;
   vec4 ap = atmAerialPerspective(pr);
   tHit = t;
   return vec4(L * ap.a + ap.rgb * op, T);
@@ -541,7 +611,12 @@ void main() {
     if (t1 > t0) {
       // per-ray lighting inputs (atmosphere functions stay outside the loop: they may use implicit-LOD lookups)
       float tB = min(t1, t0 + 60000.0);
-      vec3 Ea = clLightE(uCameraPos + rd * t0), Eb = clLightE(uCameraPos + rd * tB);
+      // light at the two ends of the lit interval, each at the base and the top of the layer (bilinear per sample in
+      // distance and altitude: at twilight the earth's shadow climbs through the layer)
+      vec3 pA = uCameraPos + rd * t0, pB = uCameraPos + rd * tB;
+      float eLo = uClLayer.x + 0.1 * uClLayer.w, eHi = uClLayer.x + 0.9 * uClLayer.w;
+      vec3 EaL = clLightE2(pA, eLo), EaH = clLightE2(pA, eHi), EbL = clLightE2(pB, eLo), EbH = clLightE2(pB, eHi);
+      vec3 Ea = 0.5 * (EaL + EaH), Eb = 0.5 * (EbL + EbH);
       vec3 pm = uCameraPos + rd * min(t0 + 3000.0, t1);
       // uAmbientSky / uAmbientGround are divided by the cloud shadow AT THE PLAYER (the composite multiplies it back
       // for the scene), which must not brighten the clouds when the player flies under one: use the uncompensated
@@ -617,7 +692,7 @@ void main() {
           if (rd_ > 0.0) {
             float sig = rd_ * uClRain.x;
             float tauS = cloudShadowTau(pa.xz + uCloudShadowC.xy, h);
-            vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
+            vec3 E = mix(EaL, EbL, clSat((ts - t0) / max(tB - t0, 1.0)));
             float diffT = 1.0 / (1.0 + 0.11 * tauS);
             vec3 S = E * (mix(0.0796, clHG(cosT, 0.6), 0.5) * exp(-tauS) + 0.05 * diffT) + 0.5 * (ambUp * diffT + ambDn);
             float Ts = exp(-sig * ds), w = T * (1.0 - Ts);
@@ -692,7 +767,8 @@ void main() {
           #else
           float J = cloudSunScatter(tauSun, tauUp, cosT);
           #endif
-          vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
+          float eS = clSat((ts - t0) / max(tB - t0, 1.0)), eH = clSat((h - eLo) / (eHi - eLo));
+          vec3 E = mix(mix(EaL, EbL, eS), mix(EaH, EbH, eS), eH);
           #ifdef CL_AMBIENT_VIS
           // Round four, calibration of the round-three network against a path-traced 10 m cumulus at the new
           // extinction (tools/neural/gt_near.py, 9600 points): with a low sun the light enters through the flanks
@@ -984,9 +1060,25 @@ void main() {
   vec2 q = uClBakeShadowA.xy + (vUv - 0.5) * uClBakeShadowA.z;
   float tau = 0.0, m1 = 0.0, m2 = 0.0, y0 = 0.0;
   vec4 info;
+  // Round five: with an anvil the steps near the top (~560 m apart through a 9 km storm) cut the 0.3-1.5 km thick ice
+  // slab with 1-3 samples; as the slab's height drifts with the distance from the core, the count of samples inside
+  // it jumps and the optical depth comes in steps: rings around every storm core, on the anvil and on the ground.
+  // The last 8 steps now cover the anvil's height range evenly (from the weather map of this column), the rest the
+  // towers below. (uClDet4.w = 0: round four)
+  float aTop = 1.0;
+  int nA = 0;
+  if (uClShape2.z * uClDet4.w > 0.0 && uClPhys.w > 0.5) {
+    float yA = uClLayer.x + 0.85 * uClLayer.w;
+    vec4 wa = clWeather(q + uClBakeShadowB.xy * (yA - uClLayer.x), 0.0);
+    float am = uClShape2.z * smoothstep(uClShape2.x - 0.17, uClShape2.x + 0.03, wa.g);
+    if (am > 0.001) { aTop = clamp(0.89 - 0.035 - 0.15 * am * am - 0.09, 0.4, 0.9); nA = 8; }
+  }
   for (int i = 0; i < CL_SHADOW_STEPS; i++) {
     // denser sampling near the base, where most cloud mass is
-    float u1 = float(i + 1) / float(CL_SHADOW_STEPS); float y1 = u1 * sqrt(u1);
+    int nB = CL_SHADOW_STEPS - nA;
+    float y1;
+    if (i < nB) { float u1 = float(i + 1) / float(nB); y1 = u1 * sqrt(u1) * aTop; }
+    else y1 = aTop + (1.0 - aTop) * float(i + 1 - nB) / float(nA);
     float hN = 0.5 * (y0 + y1), dy = (y1 - y0) * uClLayer.w;
     float y = uClLayer.x + hN * uClLayer.w;
     vec3 pa = vec3(q.x + uClBakeShadowB.x * (y - uClLayer.x), y, q.y + uClBakeShadowB.y * (y - uClLayer.x));
