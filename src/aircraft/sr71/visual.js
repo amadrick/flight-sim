@@ -66,7 +66,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- fuselage + chines + inboard wing (one loft) -------------------------------------------------------------------------
   //   z       top     bot     w(core) yS(chine)  chW    tu    tl    k     e     kTop  kBot
-  const FW = { f: [0.14, 0.1, 0.12, 1.0], m: [0.3, 0.24, 0.2, 1.15], r: [0.34, 0.3, 0.22, 1.3] };
+  const FW = { f: [0.14, 0.1, 0.12, 1.0], m: [0.3, 0.24, 0.3, 1.15], r: [0.34, 0.3, 0.42, 1.3] };
   const FSR = [
     [-19.65, 0.150, 0.150, 0.000, 0.150, 0.00, FW.f, 0.5, 0.5],
     [-19.25, 0.200, 0.095, 0.050, 0.140, 0.09, FW.f, 0.5, 0.5],
@@ -88,9 +88,9 @@ export function createVisual(ctx, opts = {}) {
     [-3.50, 0.750, -0.505, 0.850, -0.100, 2.650, FW.r, 0.62, 0.6],
     [-2.60, 0.745, -0.515, 0.880, -0.100, 2.950, FW.r, 0.62, 0.6],
     [-1.80, 0.740, -0.530, 0.910, -0.100, 3.150, FW.r, 0.62, 0.6],
-    [0.00, 0.730, -0.555, 0.960, -0.100, 3.200, FW.r, 0.62, 0.62],
-    [1.20, 0.720, -0.565, 0.980, -0.100, 3.200, FW.r, 0.62, 0.62],
-    [3.00, 0.690, -0.545, 0.920, -0.100, 3.200, FW.r, 0.62, 0.62],
+    [0.00, 0.740, -0.560, 0.990, -0.100, 3.200, FW.r, 0.62, 0.62],
+    [1.20, 0.740, -0.570, 1.040, -0.100, 3.200, FW.r, 0.62, 0.62],
+    [3.00, 0.700, -0.550, 0.950, -0.100, 3.200, FW.r, 0.62, 0.62],
     [5.00, 0.635, -0.480, 0.820, -0.100, 3.200, FW.r, 0.6, 0.6],
     [7.60, 0.555, -0.395, 0.680, -0.100, 3.200, FW.r, 0.58, 0.58, true],
     [7.62, 0.555, -0.395, 0.680, -0.100, 1.450, FW.r, 0.58, 0.58],
@@ -117,9 +117,9 @@ export function createVisual(ctx, opts = {}) {
   };
   const T_SILL = snapT(fus0.tAtY(-12.6, 0.44));
   const Z_CK = [-13.62, -10.0];
-  const tW0 = snapT(tAtX(fus0, 1.2, 0.07, false)), tW1 = snapT(tAtX(fus0, 1.2, 1.3, false)), tW2 = snapT(tAtX(fus0, 1.2, 2.36, false));
+  const tW0 = snapT(tAtX(fus0, 1.2, 0.07, false)), tW1 = snapT(tAtX(fus0, 1.2, 1.2, false)), tW2 = snapT(tAtX(fus0, 1.2, 2.06, false));
   const Z_MLG = [0.68, 1.74];
-  const tN = snapT(tAtX(fus0, -11.8, 0.31, false)), Z_NG = [-12.9, -10.55];
+  const tN = snapT(tAtX(fus0, -11.8, 0.31, false)), Z_NG = [-12.78, -10.68];
   const fus = K.loft({
     stations: FS, segments: seg, step: 0.2 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.chute,
     cutouts: [
@@ -133,8 +133,8 @@ export function createVisual(ctx, opts = {}) {
   stat.add(fus.mesh);
   // the centreline strip between the two main wheel wells stays (keel); wells
   const P = fus.patches;
-  stat.add(K.well(P.mlwR, 0.5, U.well, [0, 1, 0])).add(K.well(P.mlwL, 0.5, U.well, [0, 1, 0]));
-  stat.add(K.well(P.mllR, 0.14, U.well, [0, 1, 0])).add(K.well(P.mllL, 0.14, U.well, [0, 1, 0]));
+  stat.add(K.well(P.mlwR, 0.32, U.well, [0, 1, 0])).add(K.well(P.mlwL, 0.32, U.well, [0, 1, 0]));
+  stat.add(K.well(P.mllR, 0.1, U.well, [0, 1, 0])).add(K.well(P.mllL, 0.1, U.well, [0, 1, 0]));
   const ngPatch = K.merge(P.ngR, P.ngL);
   stat.add(K.well(ngPatch, 0.45, U.well, [0, 1, 0]));
 
@@ -186,10 +186,10 @@ export function createVisual(ctx, opts = {}) {
     glows.push(K.afterburnerGlow({ zDeep: 8.32, zExit: 9.9, rDeep: 0.5, rExit: 0.45, centre: c }));
     // exhaust plume with shock diamonds (additive, only lit in afterburner)
     const pm = new K.Mesh();
-    pm.add(K.lathe([[0.44, 10.0], [0.4, 10.8], [0.33, 12.0], [0.2, 13.6], [0.0, 15.0]], { segments: 18, uv: (k) => [[0.5, 0.42, 0.3, 0.15, 0.05][k], 0.5] }));
+    pm.add(K.lathe([[0.44, 10.0], [0.4, 10.8], [0.33, 12.0], [0.2, 13.6], [0.0, 15.0]], { segments: 18, uv: (k) => [[0.16, 0.13, 0.09, 0.05, 0.0][k], 0.5] }));
     for (let d = 0; d < 5; d++) {
       const z0 = 10.35 + d * 0.92, r = 0.3 * (1 - d * 0.14), L = 0.62 - d * 0.04;
-      pm.add(K.lathe([[0, z0], [r * 0.7, z0 + L * 0.3], [r, z0 + L * 0.5], [r * 0.6, z0 + L * 0.75], [0, z0 + L]], { segments: 14, uv: (k) => [[0.4, 0.8, 1, 0.8, 0.4][k] * (1 - d * 0.12), 0.5] }));
+      pm.add(K.lathe([[0, z0], [r * 0.7, z0 + L * 0.3], [r, z0 + L * 0.5], [r * 0.6, z0 + L * 0.75], [0, z0 + L]], { segments: 14, uv: (k) => [[0.1, 0.32, 0.45, 0.32, 0.1][k] * (1 - d * 0.16), 0.5] }));
     }
     plumes.push(pm.translate(c[0], c[1], 0));
   }
@@ -264,9 +264,9 @@ export function createVisual(ctx, opts = {}) {
     const i = m.vertexCount; for (const p of [a, b, c]) m.vert(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]); m.tri(i, i + 1, i + 2);
   };
   tri(windshield, A, RT, SR, [0, 0]); tri(windshield, A, SL, RT, [0, 0]);
-  stat.add(K.tube(A, RT, 0.03, 0.03, { segments: 6, uv: U.frame }));
-  stat.add(K.tube(A, SR, 0.025, 0.025, { segments: 6, uv: U.frame })).add(K.tube(A, SL, 0.025, 0.025, { segments: 6, uv: U.frame }));
-  stat.add(K.tube(SR, RT, 0.03, 0.03, { segments: 6, uv: U.frame })).add(K.tube(SL, RT, 0.03, 0.03, { segments: 6, uv: U.frame }));
+  stat.add(K.tube(A, RT, 0.02, 0.02, { segments: 6, uv: U.frame }));
+  stat.add(K.tube(A, SR, 0.018, 0.018, { segments: 6, uv: U.frame })).add(K.tube(A, SL, 0.018, 0.018, { segments: 6, uv: U.frame }));
+  stat.add(K.tube(SR, RT, 0.025, 0.025, { segments: 6, uv: U.frame })).add(K.tube(SL, RT, 0.025, 0.025, { segments: 6, uv: U.frame }));
   stat.add(K.ellipsoid(0.04, 0.03, 0.05, { segments: 8, rings: 4, uv: U.frame }).translate(...A));
 
   // interior: tubs, bulkhead, panels, seats, crew in pressure suits
@@ -323,7 +323,7 @@ export function createVisual(ctx, opts = {}) {
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
-  rig.glass('canopy', K.glassMaterial(ctx, { tint: '#26313d', opacity: 0.16, edgeOpacity: 0.82, roughness: 0.03, reflect: 1 }));
+  rig.glass('canopy', K.glassMaterial(ctx, { tint: '#1b2430', opacity: 0.24, edgeOpacity: 0.85, roughness: 0.03, reflect: 0.75 }));
   const glowMat = [rig.material('glowL', K.glowMaterial(), { shadow: false }), rig.material('glowR', K.glowMaterial(), { shadow: false })];
   const plumeMat = [rig.material('plumeL', K.glowMaterial(), { shadow: false }), rig.material('plumeR', K.glowMaterial(), { shadow: false })];
 
@@ -375,7 +375,7 @@ export function createVisual(ctx, opts = {}) {
   });
   const MWIN = [0.2, 0.9];
   for (const [i, sx, key] of [[1, -1, 'L'], [2, 1, 'R']]) {
-    const c = gp[i].pos, Pv = [sx * 2.12, -0.12, c[2]], to = [sx * 0.67, 0.045, c[2]];
+    const c = gp[i].pos, Pv = [sx * 2.12, -0.12, c[2]], to = [sx * 0.66, -0.04, c[2]];
     // retraction axis/angle (same as the kit computes) for the strut door that follows the leg
     const C = new THREE.Vector3(c[0], c[1] + gp[i].wheelRadius, c[2]), PV = new THREE.Vector3(...Pv);
     const v1 = C.clone().sub(PV).normalize(), v2 = new THREE.Vector3(...to).sub(PV).normalize();
@@ -386,7 +386,7 @@ export function createVisual(ctx, opts = {}) {
       pivot: Pv, stroke: 0.3, staticFrac: 0.35, strutR: 0.085, fork: 'fork', links: 'none',
       retract: { to }, window: MWIN, brace: [sx * 1.55, -0.2, c[2] - 0.6],
       doors: [
-        { name: 'mainDoor' + key, ...doorOf(P['mlw' + key], sx > 0 ? wellEdge.tLo : wellEdge.tHi), open: 92, toward: [0, -1, 0] },
+        { name: 'mainDoor' + key, ...doorOf(P['mlw' + key], sx > 0 ? wellEdge.tLo : wellEdge.tHi), open: 92, toward: [0, -1, 0], closes: true },
         { name: 'strutDoor' + key, mesh: K.thicken(P['mll' + key], 0.02, U.well), hinge: { a: Pv, b: [Pv[0] + ax.x, Pv[1] + ax.y, Pv[2] + ax.z] }, ref: K.centroid(P['mll' + key]), toward: [0, -1, 0], open: ang / DEG, fn: (g) => K.seq(g, MWIN[0], MWIN[1]) },
       ],
     });
@@ -414,7 +414,7 @@ export function createVisual(ctx, opts = {}) {
     }
     setFin.R(sf.rudder * 20 * DEG); setFin.L(sf.rudder * 20 * DEG);
     // inlet spikes translate aft above Mach 1.6 (0.66 m at Mach 3.2)
-    const mach = S.raw && Number.isFinite(S.raw.mach) ? S.raw.mach : 0, target = clamp((mach - 1.6) / 1.6, 0, 1) * 0.66;
+    const mach = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('mach')) || (S.raw && Number.isFinite(S.raw.mach) ? S.raw.mach : 0), target = clamp((mach - 1.6) / 1.6, 0, 1) * 0.66;
     spikePos = first || !(dt > 0) ? target : spikePos + (target - spikePos) * Math.min(1, dt * 1.5); first = false;
     for (const n of spikeNodes) n.position.z = n.userData.pivot[2] + spikePos;
     for (let i = 0; i < 2; i++) {
@@ -422,7 +422,7 @@ export function createVisual(ctx, opts = {}) {
       nozNodes[i].morphTargetInfluences[0] = clamp(Math.max(e.nozzle ?? 0, ab, (mach - 0.9) / 1.5), 0, 1);
       K.abGlowColor(glowMat[i].color, e, S.night);
       const k = ab * (1 - 0.5 * S.night);
-      plumeMat[i].color.setRGB(2.2 * k, 1.05 * k, 1.1 * k);
+      plumeMat[i].color.setRGB(1.1 * k, 0.42 * k, 0.48 * k);
       plumeNodes[i].visible = ab > 0.02;
     }
     setCanP(sf.canopy * 42 * DEG); setCanR(sf.canopy * 42 * DEG);
@@ -440,7 +440,7 @@ function corrugate(pen, clip, lines, o = {}) {
   const amp = o.amp ?? 0.4, w = o.width ?? 0.07;
   pen.each('height', (g, setT, s, L) => {
     g.beginPath(); pen._path(clip)(g, s); g.clip();
-    const pxw = Math.max(1, w * Math.sqrt(Math.abs(s.sx * s.sy)) * L.scale);
+    const pxw = Math.max(1, (o.bw ? o.bw * Math.abs(s.sy) : w * Math.sqrt(Math.abs(s.sx * s.sy))) * L.scale);
     g.filter = `blur(${Math.max(0.6, pxw * 0.45).toFixed(2)}px)`;
     g.lineCap = 'round';
     for (const pts of lines) {
@@ -467,7 +467,7 @@ function paint(atlas, o) {
   const bands = [0, 0.06, 0.13, 0.19, 0.25, 0.31, 0.37, 0.44, 0.5, 0.56, 0.63, 0.69, 0.75, 0.81, 0.87, 0.94, 1];
   // iron-ball paint: panel-to-panel tone variation
   for (let i = 0; i < frames.length - 1; i++) for (let j = 0; j < bands.length - 1; j++) {
-    const k = (rnd() - 0.5) * 0.5; tone(P, (g) => g.rect(frames[i], bands[j], frames[i + 1] - frames[i], bands[j + 1] - bands[j]), k);
+    const k = (rnd() - 0.5) * 0.2; tone(P, (g) => g.rect(frames[i], bands[j], frames[i + 1] - frames[i], bands[j + 1] - bands[j]), k);
   }
   P.fill((g) => g.rect(-19.7, 0, 4.8, 1), { color: '#1a2020' }, { alpha: 0.45 });                         // slightly greenish nose section
   for (const z of frames) P.ring(z, 0, 1, z === -14.9 ? { px: 1.6, depth: 0.6, dark: 0.2 } : line);
@@ -479,9 +479,9 @@ function paint(atlas, o) {
     const tt = (z, x) => { const t = tAtX(fus, z, x, true); return s > 0 ? t : 1 - t; };
     const poly = (x, z0, z1) => { const pts = []; for (let z = z0; z <= z1 + 1e-6; z += (z1 - z0) / 8) pts.push([z, tt(z, x)]); return pts; };
     const lines = [];
-    for (let x = 1.12; x <= 2.72; x += 0.16) lines.push(poly(x, Math.max(-2.2, xLEin(x) + 0.9), 7.35));
+    for (let x = 1.14; x <= 2.72; x += 0.2) lines.push(poly(x, Math.max(-2.2, xLEin(x) + 0.9), 7.35));
     const clipPts = [...poly(1.05, -2.2, 7.4), ...poly(2.78, -2.2, 7.4).reverse()];
-    corrugate(P, clipPts, lines, { amp: 0.45, width: 0.07 });
+    corrugate(P, clipPts, lines, { amp: 0.5, bw: Math.abs(tt(2, 1.9) - tt(2, 2.1)) * 0.45 });
     for (const x of [1.05, 2.78]) P.line(poly(x, -2.2, 7.4), line);
     for (const z of [-2.2, 0.2, 2.6, 5.0, 7.4]) P.line([[z, tt(z, 1.05)], [z, tt(z, 2.78)]], line);
     // red walkway / NO STEP lines
@@ -515,11 +515,11 @@ function paint(atlas, o) {
     P.textOn('NASA', -16.2, 0.12, 'both', 0.2, { color: white, font: K.FONT.wide, spacing: 0.1 });
     P.decalOn(-15.2, 0.15, 'both', (g) => emblem(g, 0.3, SC));
   } else {
-    P.textOn('U.S. AIR FORCE', -16.4, 0.12, 'both', 0.075, { color: mark, font: K.FONT.wide, spacing: 0.08 });
+    P.textOn('U.S. AIR FORCE', -16.4, 0.12, 'both', 0.06, { color: mark, font: K.FONT.wide, spacing: 0.08 });
   }
   // weathering: JP-7 seepage streaks on the belly, heat at the tail, soot
-  P.noise({ alpha: 0.07, scale: 2.4, stretch: [1.8, 1], rough: 0.07 });
-  P.noise({ alpha: 0.05, scale: 0.8, mode: 'light' });
+  P.noise({ alpha: 0.05, scale: 2.4, stretch: [1.8, 1], rough: 0.07 });
+  P.noise({ alpha: 0.022, scale: 0.8, mode: 'light' });
   for (let i = 0; i < 40; i++) { const z = -9 + rnd() * 18, t = (rnd() < 0.5 ? 0.02 : 0.83) + rnd() * 0.15; P.streak(z, t, z + 0.8 + rnd() * 2.0, t + (rnd() - 0.5) * 0.01, 0.015 + rnd() * 0.03, { alpha: 0.12 + rnd() * 0.12, color: '2,2,3' }); }
   P.fill((g) => g.rect(10.5, 0, 2.4, 1), { color: '#2a2a2e', rough: 0.55, metal: 0.35 }, { alpha: 0.25, feather: 10 });
 
@@ -542,7 +542,7 @@ function paint(atlas, o) {
     // heat-worn titanium on the aft shroud
     Q.fill((g) => g.rect(7.6, 0, 2.2, 1), { color: '#2b2a2d', rough: 0.5, metal: 0.55 }, { alpha: 0.5, feather: 14 });
     for (let i = 0; i < 26; i++) { const t = rnd(); Q.streak(9.65, t, 7.4 + rnd(), t, 0.02 + rnd() * 0.04, { alpha: 0.25, color: '70,66,62' }); }
-    if (!SC.nasa) Q.decalT(-1.9, 0.25, { girth: 5.2 }, (g) => { g.scale(1, -1); K.drawStarBar(g, 0.5, { lowVis: mark }); });
+    if (!SC.nasa) Q.decalT(-1.9, 0.25, { girth: 5.2 }, (g) => { g.scale(1, -1); K.drawStarBar(g, 0.5, { lowVis: '#6a2420' }); });
     Q.noise({ alpha: 0.07, scale: 1.8, stretch: [1.6, 1], rough: 0.07 });
     for (let i = 0; i < 12; i++) { const z = -2 + rnd() * 9, t = 0.02 + rnd() * 0.08; Q.streak(z, t, z + 1 + rnd(), t, 0.02, { alpha: 0.15, color: '2,2,3' }); }
   }
@@ -600,8 +600,8 @@ function paint(atlas, o) {
       const d = at(0.95, 0.55); Q.text(SC.serial, d[0], d[1], 0.42, { color: white, font: K.FONT.wide });
       const e = at(1.8, 0.28); Q.decal(e[0], e[1], (g) => emblem(g, 0.28, SC));
     } else {
-      const d = at(1.85, 0.5); Q.text(SC.serial, d[0], d[1], 0.3, { color: mark, font: K.FONT.wide, spacing: 0.04 });
-      const e = at(1.45, 0.5); Q.text('U.S. AIR FORCE', e[0], e[1], 0.07, { color: mark, font: K.FONT.wide, spacing: 0.06 });
+      const d = at(1.85, 0.5); Q.text(SC.serial, d[0], d[1], 0.22, { color: mark, font: K.FONT.wide, spacing: 0.04 });
+      const e = at(1.45, 0.5); Q.text('U.S. AIR FORCE', e[0], e[1], 0.055, { color: mark, font: K.FONT.wide, spacing: 0.06 });
     }
     Q.noise({ alpha: 0.08, scale: 1.2, stretch: [1, 1.5], rough: 0.06 });
   }
