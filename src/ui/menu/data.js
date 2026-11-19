@@ -77,6 +77,25 @@ export const QUALITY_NOTES = {
   ultra: 'High-end GPUs. 4K shadows, densest clouds and terrain.',
 };
 
+/** Aircraft picker filters (the menu hides a filter whose group is empty). */
+export const AC_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'military', label: 'Military' },
+  { id: 'commercial', label: 'Commercial' },
+];
+
+/** Name of the part of the day for the time-of-day readout. */
+export function phaseOf(hr) {
+  hr = ((hr % 24) + 24) % 24;
+  if (hr < 4.6 || hr >= 20.2) return 'Night';
+  if (hr < 5.6) return 'Dawn';
+  if (hr < 10) return 'Morning';
+  if (hr < 15) return 'Midday';
+  if (hr < 17.8) return 'Afternoon';
+  if (hr < 19.0) return 'Golden hour';
+  return 'Dusk';
+}
+
 export const CATEGORY_CODE = { fighter: 'FTR', attack: 'ATK', bomber: 'BMR', recon: 'RCN', transport: 'TPT', airliner: 'PAX' };
 export const isCommercial = (def) => def.category === 'airliner';
 

@@ -1,23 +1,27 @@
 // Skyward menus / shell UI (DOM). API: createMenu(ctx) -> { isOpen, open(view?), close(), update(dt) }
 // Views: 'main' (hangar: aircraft + flight setup over the live, orbiting aircraft), 'settings', 'controls', 'pause'.
-// Also owns: the in-flight corner MENU / fullscreen buttons and the post-crash dialog.
+// Also owns: the in-flight corner buttons (controls help, fullscreen, menu), the post-crash dialog, and the runtime side
+// of the glass material (glass.js: scene tint, sun-lit rims, low-cost fallback).
 // Emits 'menu:open' / 'menu:close'; listens to 'cmd' (menu, hudToggle), 'crash', 'session:start', 'time:change',
-// 'weather:change', 'quality:change'.
+// 'weather:change', 'quality:change'. The corner help button emits 'cmd' { name: 'help' } (the HUD shows its controls card).
 // Debug: URL param menu=main|pause|settings|controls|crash opens that screen at boot (works with autostart).
 import { AIRCRAFT } from '../../aircraft/registry.js';
 import { AIRPORTS, runwayEnd } from '../../data/airports.js';
 import { WEATHER_PRESETS } from '../../core/weather.js';
 import { QUALITY_LEVELS } from '../../core/quality.js';
 import { CSS } from './style.js';
+import { createGlass } from './glass.js';
+import { planGlyph, ICON } from './icons.js';
 import {
-  DEFAULT_BINDINGS, BINDING_GROUPS, parseKeys, bindingSegments, TOD_PRESETS, START_MODES, QUALITY_NOTES,
-  CATEGORY_CODE, isCommercial, specRows, engineLine, metar, clearanceLine, fmtClock, group3, toFt, toKt,
+  DEFAULT_BINDINGS, BINDING_GROUPS, bindingSegments, TOD_PRESETS, START_MODES, QUALITY_NOTES,
+  CATEGORY_CODE, isCommercial, specRows, engineLine, metar, clearanceLine, fmtClock, group3, toFt, toKt, phaseOf, AC_FILTERS,
 } from './data.js';
 
 const STORE_KEY = 'skyward.menu.v1';
 const WX_CODE = { clear: 'SKC', fair: 'FEW', scattered: 'SCT', broken: 'BKN', overcast: 'OVC -RA', storm: 'TSRA CB' };
 const SPAWN_DEBOUNCE = 0.35;   // s (real time) before an aircraft/airport change re-spawns the hangar aircraft
 const CRASH_DELAY = 2;         // s (real time) before the crash dialog appears
+const KEY_SPECS = 4;           // spec rows always visible on the spec card
 
 // ---- tiny DOM helper ----------------------------------------------------------------------
 function h(tag, attrs, ...kids) {
@@ -27,6 +31,7 @@ function h(tag, attrs, ...kids) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;
     else if (k === 'text') el.textContent = v;
+    else if (k === 'html') el.innerHTML = v;
     else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else el.setAttribute(k, v === true ? '' : v);
   }
@@ -36,20 +41,26 @@ function h(tag, attrs, ...kids) {
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 /** Scroll `el` into view inside its own scroll container only (never scrolls the page or other ancestors). */
 function reveal(el) {
-  const box = el?.closest?.('.menu-scroll'); if (!box) return;
+  const box = el?.closest?.('.menu-scroll, .menu-sheet'); if (!box || !el.offsetParent) return;
   const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
-  if (r.top < b.top) box.scrollTop -= b.top - r.top + 4;
-  else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 4;
+  if (box.scrollWidth > box.clientWidth + 2) {
+    if (r.left < b.left) box.scrollLeft -= b.left - r.left + 12;
+    else if (r.right > b.right) box.scrollLeft += r.right - b.right + 12;
+  }
+  if (box.scrollHeight > box.clientHeight + 2) {
+    if (r.top < b.top) box.scrollTop -= b.top - r.top + 4;
+    else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 4;
+  }
 }
-
-function phaseOf(hr) {
-  if (hr < 4.6 || hr >= 20.2) return 'Night';
-  if (hr < 5.6) return 'Dawn';
-  if (hr < 10) return 'Morning';
-  if (hr < 15) return 'Midday';
-  if (hr < 17.8) return 'Afternoon';
-  if (hr < 19.0) return 'Golden hour';
-  return 'Dusk';
+/** Morphing selection highlight: moves `ind` (absolutely positioned in `group`) onto the selected item. */
+function placeInd(group, ind, snap) {
+  const it = group.querySelector('[aria-selected="true"]:not([hidden]), [aria-checked="true"]:not([hidden]), [aria-current="page"]:not([hidden])');
+  if (!it || !it.offsetParent || it.offsetWidth === 0) { ind.classList.remove('on'); return; }
+  if (snap || !ind.classList.contains('on')) { ind.classList.add('snap'); void ind.offsetWidth; }
+  ind.style.transform = `translate(${it.offsetLeft}px, ${it.offsetTop}px)`;
+  ind.style.width = it.offsetWidth + 'px'; ind.style.height = it.offsetHeight + 'px';
+  ind.classList.add('on');
+  if (ind.classList.contains('snap')) requestAnimationFrame(() => ind.classList.remove('snap'));
 }
 
 export async function createMenu(ctx) {
@@ -70,18 +81,24 @@ export async function createMenu(ctx) {
     tod: ctx.time.timeOfDay,
     weather: ctx.weather.preset,
     volume: clamp(Number.isFinite(saved.volume) ? saved.volume : (ctx.audio?.masterVolume ?? 0.8), 0, 1),
+    filter: 'all',
+    specsOpen: !!saved.specsOpen,
+    glassReduced: !!saved.glassReduced,
   };
   if (saved.airport === sel.airport) { sel.runway = saved.runway | 0; sel.end = saved.end ? 1 : 0; }
   if (!params.quality && saved.quality && QUALITY_LEVELS[saved.quality] && saved.quality !== ctx.quality.level) ctx.quality.set(saved.quality);
   if (Number.isFinite(saved.volume)) ctx.audio?.setMasterVolume?.(sel.volume);
   let hudOn = params.hud !== false;
 
+  const glass = createGlass(ctx);
+  glass.setReduced(sel.glassReduced);
+
   const def = () => AIRCRAFT.find(a => a.id === sel.aircraft) || AIRCRAFT[0];
   const apt = () => AIRPORTS.find(a => a.id === sel.airport) || AIRPORTS[0];
   const rwyEnd = () => { const a = apt(); const r = a.runways[sel.runway] || a.runways[0]; return runwayEnd(r, sel.end); };
   const save = () => {
     if (!persist) return;
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ aircraft: sel.aircraft, airport: sel.airport, runway: sel.runway, end: sel.end, start: sel.start, liveries: sel.liveries, quality: ctx.quality.level, volume: sel.volume })); } catch {}
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ aircraft: sel.aircraft, airport: sel.airport, runway: sel.runway, end: sel.end, start: sel.start, liveries: sel.liveries, quality: ctx.quality.level, volume: sel.volume, specsOpen: sel.specsOpen, glassReduced: sel.glassReduced })); } catch {}
   };
 
   // ---- runtime state ------------------------------------------------------------------------
@@ -90,7 +107,7 @@ export async function createMenu(ctx) {
   let inHangar = false;       // the parked showcase aircraft is up (no flight in progress)
   let spawnTimer = -1;        // >0: counting down to a hangar re-spawn
   let crashTimer = -1, crashInfo = null;
-  let clockTimer = 0;
+  let clockTimer = 0, cornerT = 0;
   let lastEscAt = -1e9, lastCmdAt = -1e9;
   const inFlight = () => !!(ctx.session?.active && !inHangar);
 
@@ -102,10 +119,12 @@ export async function createMenu(ctx) {
   root.style.pointerEvents = 'none';
 
   // ---- shared widgets -----------------------------------------------------------------------
+  const indicators = [];   // [group, ind]
   /** Roving-tabindex group. role 'listbox' (options) or 'radiogroup' (radios). Arrow keys move + select. */
-  function navGroup(el, role) {
+  function navGroup(el, role, withInd) {
     el.setAttribute('role', role);
     el.dataset.nav = '1';
+    if (withInd) { const ind = h('span', { class: 'menu-ind', 'aria-hidden': 'true' }); el.prepend(ind); indicators.push([el, ind]); }
     return el;
   }
   function item(el, role, checked) {
@@ -120,72 +139,94 @@ export async function createMenu(ctx) {
     for (const it of group.querySelectorAll('[data-item]')) {
       const on = !!pred(it);
       it.setAttribute(it.getAttribute('role') === 'option' ? 'aria-selected' : 'aria-checked', on ? 'true' : 'false');
-      it.tabIndex = on ? 0 : -1; any ||= on;
+      it.tabIndex = on && !it.hidden ? 0 : -1; any ||= on && !it.hidden;
     }
-    if (!any) { const f = group.querySelector('[data-item]'); if (f) f.tabIndex = 0; }
+    if (!any) { const f = [...group.querySelectorAll('[data-item]')].find(x => !x.hidden); if (f) f.tabIndex = 0; }
   }
-  function sec(n, title, aside, ...kids) {
+  function placeAll(snap) { for (const [g, ind] of indicators) placeInd(g, ind, snap); }
+  function sec(title, aside, ...kids) {
     return h('div', { class: 'menu-sec' },
-      h('div', { class: 'menu-h' }, n ? h('span', { class: 'menu-h-n', text: n }) : null, h('span', { text: title }), aside ? h('span', { class: 'menu-h-aside', text: aside }) : null),
+      h('div', { class: 'menu-h' }, h('span', { text: title }), aside ? (aside.nodeType ? aside : h('span', { class: 'menu-h-aside', text: aside })) : null),
       ...kids);
   }
 
-  // ---- top bar ----------------------------------------------------------------------------------
+  // ---- top bar: brand · tabs · status --------------------------------------------------------------
   const tabs = {};
-  const mkTab = (id, n, label) => (tabs[id] = h('button', { class: 'menu-tab', id: 'menu-tab-' + id, type: 'button', onclick: () => go(id === 'hangar' ? 'main' : id) },
-    h('span', { class: 'menu-tab-n', text: n }), label));
-  const tabBar = h('nav', { class: 'menu-tabs', 'aria-label': 'Menu sections' }, mkTab('hangar', '01', 'Hangar'), mkTab('settings', '02', 'Settings'), mkTab('controls', '03', 'Controls'));
+  const mkTab = (id, label) => (tabs[id] = h('button', { class: 'menu-tab', id: 'menu-tab-' + id, type: 'button', onclick: () => go(id === 'hangar' ? 'main' : id) },
+    h('span', { html: ICON[id], style: 'display:contents' }), label));
+  const tabBar = h('nav', { class: 'menu-tabs menu-cap glass-clear glass-lens', 'aria-label': 'Menu sections' }, mkTab('hangar', 'Hangar'), mkTab('settings', 'Settings'), mkTab('controls', 'Controls'));
+  const tabInd = h('span', { class: 'menu-ind', 'aria-hidden': 'true' }); tabBar.prepend(tabInd); indicators.push([tabBar, tabInd]);
   const stLcl = h('span', { class: 'menu-status-v', id: 'menu-status-lcl' });
   const stApt = h('span', { class: 'menu-status-v', id: 'menu-status-apt' });
   const canFs = !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
-  const fsBtn = (id) => h('button', { class: 'menu-iconbtn menu-fsbtn', id, type: 'button', 'aria-label': 'Toggle fullscreen', title: 'Fullscreen', 'aria-pressed': 'false', onclick: toggleFullscreen, hidden: !canFs },
-    h('span', { class: 'menu-ico-fs' }, h('i')));
   const top = h('header', { class: 'menu-top' },
-    h('div', { class: 'menu-brand' }, h('span', { class: 'menu-brand-mark', 'aria-hidden': 'true' }), h('span', { class: 'menu-brand-name', text: 'Skyward' }),
-      h('span', { class: 'menu-brand-sub', text: 'Flight' }, h('br'), 'Simulator')),
+    h('div', { class: 'menu-brand menu-cap glass-clear' }, h('span', { class: 'menu-brand-mark', html: ICON.brand }), h('span', { class: 'menu-brand-name', text: 'Skyward' })),
     tabBar,
-    h('div', { class: 'menu-status' },
-      h('div', { class: 'menu-status-item menu-status-keep' }, h('span', { class: 'menu-status-k', text: 'Field' }), stApt),
-      h('div', { class: 'menu-status-item menu-status-keep' }, h('span', { class: 'menu-status-k', text: 'Local' }), stLcl),
-      fsBtn('menu-fullscreen')));
+    h('div', { class: 'menu-status menu-cap glass-clear' },
+      h('div', { class: 'menu-status-item' }, h('span', { class: 'menu-status-k', text: 'Field' }), stApt),
+      h('div', { class: 'menu-status-item' }, h('span', { class: 'menu-status-k', text: 'Local' }), stLcl),
+      canFs ? h('button', { class: 'menu-iconbtn menu-fsbtn', id: 'menu-fullscreen', type: 'button', 'aria-label': 'Toggle fullscreen', title: 'Fullscreen', 'aria-pressed': 'false', onclick: toggleFullscreen, html: ICON.fullscreen }) : null));
 
   // ---- MAIN: aircraft panel -------------------------------------------------------------------
-  const acList = navGroup(h('div', { class: 'menu-list', 'aria-label': 'Aircraft' }), 'listbox');
-  const groups = [['Military', AIRCRAFT.filter(a => !isCommercial(a))], ['Commercial', AIRCRAFT.filter(isCommercial)]];
-  for (const [label, list] of groups) {
+  const military = AIRCRAFT.filter(a => !isCommercial(a)), commercial = AIRCRAFT.filter(isCommercial);
+  const filterSeg = navGroup(h('div', { class: 'menu-seg menu-filter', 'aria-label': 'Show aircraft' }), 'radiogroup', true);
+  const counts = { all: AIRCRAFT.length, military: military.length, commercial: commercial.length };
+  for (const f of AC_FILTERS) {
+    if (f.id !== 'all' && !counts[f.id]) continue;
+    filterSeg.append(item(h('button', { class: 'menu-segbtn', type: 'button', id: 'menu-filter-' + f.id, 'data-id': f.id, onclick: () => setFilter(f.id) }, f.label, h('small', { text: String(counts[f.id]) })), 'radio', f.id === sel.filter));
+  }
+  const acList = navGroup(h('div', { class: 'menu-list', 'aria-label': 'Aircraft' }), 'listbox', true);
+  const groupLabels = [];
+  for (const [label, list, gid] of [['Military', military, 'military'], ['Commercial', commercial, 'commercial']]) {
     if (!list.length) continue;
-    acList.append(h('div', { class: 'menu-grouplabel', role: 'presentation' }, label, h('span', { text: String(list.length).padStart(2, '0') })));
+    const gl = h('div', { class: 'menu-grouplabel', role: 'presentation', 'data-group': gid }, label, h('span', { class: 'menu-count', text: String(list.length) }));
+    groupLabels.push(gl); acList.append(gl);
     for (const a of list) {
-      acList.append(item(h('button', { class: 'menu-row', type: 'button', id: 'menu-ac-' + a.id, 'data-id': a.id, onclick: () => selectAircraft(a.id) },
-        h('span', { class: 'menu-row-code', text: a.id.toUpperCase() }),
+      acList.append(item(h('button', { class: 'menu-row', type: 'button', id: 'menu-ac-' + a.id, 'data-id': a.id, 'data-group': gid, title: a.name, onclick: () => selectAircraft(a.id) },
+        h('span', { class: 'menu-glyph', html: planGlyph(a.category) }),
         h('span', { class: 'menu-row-main' }, h('span', { class: 'menu-row-name', text: a.name }), h('span', { class: 'menu-row-sub', text: a.role || a.manufacturer || '' })),
         h('span', { class: 'menu-row-tag', text: CATEGORY_CODE[a.category] || (a.category || '').slice(0, 3).toUpperCase() })), 'option', a.id === sel.aircraft));
     }
   }
-  const acName = h('h2', { class: 'menu-acname', id: 'menu-acname' });
+  const livGroup = navGroup(h('div', { class: 'menu-chips menu-liveries', 'aria-label': 'Livery' }), 'radiogroup');
+  const livSec = h('div', { class: 'menu-livsec', hidden: true }, h('div', { class: 'menu-h' }, h('span', { text: 'Livery' })), livGroup);
+  const acScroll = h('div', { class: 'menu-scroll menu-aclist' }, acList);
+  const panelAc = h('section', { class: 'menu-panel menu-panel-ac glass', 'aria-label': 'Aircraft selection' },
+    h('div', { class: 'menu-phead' }, h('span', { class: 'menu-ptitle', text: 'Aircraft' }), h('span', { class: 'menu-count', text: String(AIRCRAFT.length), title: AIRCRAFT.length + ' aircraft' })),
+    filterSeg, acScroll, livSec);
+
+  // ---- MAIN: hero + spec card -------------------------------------------------------------------
+  const heroKicker = h('div', { class: 'menu-hero-kicker' });
+  const heroName = h('h1', { class: 'menu-hero-name', id: 'menu-acname' });
+  const heroTag = h('p', { class: 'menu-hero-tag' });
+  const specKey = h('div', { class: 'menu-spec-key' });
+  const specGrid = h('div', { class: 'menu-spec-grid' });
   const acMeta = h('div', { class: 'menu-acmeta' });
   const acLore = h('p', { class: 'menu-lore' });
-  const acSpecs = h('div', { class: 'menu-specs' });
-  const livGroup = navGroup(h('div', { class: 'menu-rwys menu-liveries', 'aria-label': 'Livery' }), 'radiogroup');
-  const livSec = h('div', { class: 'menu-livsec', hidden: true }, h('div', { class: 'menu-h' }, h('span', { text: 'Livery' })), livGroup);
-  const panelAc = h('section', { class: 'menu-panel menu-panel-ac', 'aria-label': 'Aircraft selection' },
-    h('div', { class: 'menu-sec', style: 'padding-bottom:10px;flex:none' }, h('div', { class: 'menu-h', style: 'margin:0' }, h('span', { class: 'menu-h-n', text: 'A' }), h('span', { text: 'Aircraft' }), h('span', { class: 'menu-h-aside', text: String(AIRCRAFT.length).padStart(2, '0') + ' types' }))),
-    h('div', { class: 'menu-scroll menu-aclist', style: 'padding:0 16px' }, acList),
-    h('div', { class: 'menu-scroll menu-acinfo' }, h('div', { class: 'menu-sec' }, livSec, h('div', { class: 'menu-h' }, h('span', { text: 'Type data' })), acName, acMeta, acLore, acSpecs)));
+  const moreBtn = h('button', { class: 'menu-more', id: 'menu-specs-more', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'menu-spec-more', 'aria-label': 'Show full specifications', onclick: () => { sel.specsOpen = !sel.specsOpen; save(); syncSpecs(); } }, h('i'));
+  const specCard = h('div', { class: 'menu-spec glass', role: 'group', 'aria-label': 'Specifications' },
+    h('div', { class: 'menu-spec-top' }, specKey, moreBtn),
+    h('div', { class: 'menu-spec-more', id: 'menu-spec-more' }, h('div', null, specGrid, h('div', { class: 'menu-spec-detail' }, acMeta, acLore))));
+  const hero = h('div', { class: 'menu-hero' }, heroKicker, heroName, heroTag, specCard);
 
-  // ---- MAIN: flight plan panel ----------------------------------------------------------------
-  const aptList = navGroup(h('div', { class: 'menu-list', 'aria-label': 'Departure airport' }), 'listbox');
+  // ---- MAIN: flight setup panel ----------------------------------------------------------------
+  const aptList = navGroup(h('div', { class: 'menu-list', 'aria-label': 'Departure airport' }), 'listbox', true);
   for (const a of AIRPORTS) {
-    aptList.append(item(h('button', { class: 'menu-row', type: 'button', id: 'menu-apt-' + a.id, 'data-id': a.id, onclick: () => selectAirport(a.id) },
+    aptList.append(item(h('button', { class: 'menu-row', type: 'button', id: 'menu-apt-' + a.id, 'data-id': a.id, onclick: (e) => { selectAirport(a.id); if (e.detail > 0) setAptOpen(false, true); } },
       h('span', { class: 'menu-row-code', text: a.id }),
       h('span', { class: 'menu-row-main' }, h('span', { class: 'menu-row-name', text: a.name }), h('span', { class: 'menu-row-sub', text: a.kind ? a.kind[0].toUpperCase() + a.kind.slice(1) : '' })),
       h('span', { class: 'menu-row-tag' }, group3(toFt(a.elevation)) + ' ft', h('br'), a.runways.length + (a.runways.length > 1 ? ' rwys' : ' rwy'))), 'option', a.id === sel.airport));
   }
+  const pkCode = h('span', { class: 'menu-picker-code' }), pkName = h('span', { class: 'menu-row-name' }), pkSub = h('span', { class: 'menu-row-sub' }), pkTag = h('span', { class: 'menu-row-tag' });
+  const aptPicker = h('button', { class: 'menu-picker', id: 'menu-apt-picker', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'menu-aptwrap', 'aria-label': 'Departure airport', onclick: () => setAptOpen(aptPicker.getAttribute('aria-expanded') !== 'true') },
+    pkCode, h('span', { class: 'menu-row-main' }, pkName, pkSub), pkTag, h('span', { class: 'menu-picker-chev', 'aria-hidden': 'true' }));
+  const aptWrap = h('div', { class: 'menu-aptwrap', id: 'menu-aptwrap' }, h('div', null, aptList));
+  aptWrap.inert = true;
   const aptDesc = h('p', { class: 'menu-aptdesc' });
   const rwyGroup = navGroup(h('div', { class: 'menu-rwys', 'aria-label': 'Runway' }), 'radiogroup');
   const rwyInfo = h('div', { class: 'menu-rwyinfo' });
-  const startGroup = navGroup(h('div', { class: 'menu-seg', 'aria-label': 'Start position' }), 'radiogroup');
-  for (const m of START_MODES) startGroup.append(item(h('button', { class: 'menu-chip', type: 'button', id: 'menu-start-' + m.id, 'data-id': m.id, title: m.label, onclick: () => { sel.start = m.id; save(); sync(); } }, m.short), 'radio', m.id === sel.start));
+  const startGroup = navGroup(h('div', { class: 'menu-seg', 'aria-label': 'Start position' }), 'radiogroup', true);
+  for (const m of START_MODES) startGroup.append(item(h('button', { class: 'menu-segbtn', type: 'button', id: 'menu-start-' + m.id, 'data-id': m.id, title: m.label, onclick: () => { sel.start = m.id; save(); sync(); } }, m.short), 'radio', m.id === sel.start));
   const startNote = h('p', { class: 'menu-note' });
 
   function conditions(prefix) {
@@ -202,61 +243,58 @@ export async function createMenu(ctx) {
     }
     const met = h('div', { class: 'menu-metar' });
     const el = [
-      sec(prefix ? '' : '04', 'Time of day', null,
+      sec('Time of day', null,
         h('div', { class: 'menu-tod-head' }, read, phase),
         h('div', { class: 'menu-slider' }, range),
         h('div', { class: 'menu-scale', 'aria-hidden': 'true' }, ...['00', '06', '12', '18', '24'].map(t => h('span', { text: t }))),
         chips),
-      sec(prefix ? '' : '05', 'Weather', null, wx, met),
+      sec('Weather', null, wx, met),
     ];
     return { el, read, phase, range, chips, wx, met };
   }
   const condMain = conditions('menu-');
-  const panelPlan = h('section', { class: 'menu-panel menu-panel-plan', 'aria-label': 'Flight setup' },
-    h('div', { class: 'menu-scroll' },
-      sec('01', 'Departure', null, aptList, aptDesc),
-      sec('02', 'Runway', null, rwyGroup, rwyInfo),
-      sec('03', 'Start', null, startGroup, startNote),
-      ...condMain.el));
+  const planScroll = h('div', { class: 'menu-scroll' },
+    sec('Departure', null, aptPicker, aptWrap, aptDesc),
+    sec('Runway', null, rwyGroup, rwyInfo),
+    sec('Start', null, startGroup, startNote),
+    ...condMain.el);
+  const panelPlan = h('section', { class: 'menu-panel menu-panel-plan glass', 'aria-label': 'Flight setup' }, planScroll);
 
   const clearLine = h('b', { id: 'menu-clearance' });
-  const flyBtn = h('button', { class: 'menu-fly', id: 'menu-fly', type: 'button', onclick: () => fly() }, 'Fly', h('span', { class: 'menu-fly-arrow', 'aria-hidden': 'true' }), h('span', { class: 'menu-fly-key', 'aria-hidden': 'true', text: '↵' }));
-  const flybar = h('div', { class: 'menu-panel menu-flybar' }, h('div', { class: 'menu-clear' }, h('span', { text: 'CLR' }), clearLine), flyBtn);
-
-  const heroKicker = h('div', { class: 'menu-hero-kicker' });
-  const heroName = h('div', { class: 'menu-hero-name' });
-  const heroTag = h('p', { class: 'menu-hero-tag' });
-  const heroMetar = h('span');
-  const hero = h('div', { class: 'menu-hero', 'aria-hidden': 'true' }, heroKicker, heroName, heroTag, h('div', { class: 'menu-hero-metar' }, h('span', { text: 'METAR' }), heroMetar));
+  const flyBtn = h('button', { class: 'menu-fly glass-tint glass-lens', id: 'menu-fly', type: 'button', onclick: () => fly() }, 'Fly', h('span', { class: 'menu-fly-arrow', 'aria-hidden': 'true' }), h('span', { class: 'menu-fly-key', 'aria-hidden': 'true', text: '↵' }));
+  const flybar = h('div', { class: 'menu-flybar glass' }, h('div', { class: 'menu-clear' }, h('span', { text: 'CLR' }), clearLine), flyBtn);
 
   const vMain = h('section', { class: 'menu-view menu-main', 'data-view': 'main' },
-    h('div', { class: 'menu-sheet' }, h('div', { class: 'menu-grab', 'aria-hidden': 'true' }), panelAc, hero, panelPlan, flybar));
+    h('div', { class: 'menu-sheet glass' }, h('div', { class: 'menu-grab', 'aria-hidden': 'true' }), panelAc, hero, panelPlan, flybar));
 
   // ---- SETTINGS ----------------------------------------------------------------------------------
   const qGroup = navGroup(h('div', { class: 'menu-opts', 'aria-label': 'Graphics quality' }), 'radiogroup');
   for (const [k, q] of Object.entries(QUALITY_LEVELS)) {
     qGroup.append(item(h('button', { class: 'menu-opt', type: 'button', id: 'menu-q-' + k, 'data-id': k, onclick: () => { ctx.quality.set(k); save(); sync(); } },
-      h('span', { class: 'menu-radio', 'aria-hidden': 'true' }),
-      h('span', null, h('span', { class: 'menu-opt-t' }, k, h('small', { text: `${Math.round(q.renderScale * 100)}% · ${q.shadows ? 'shadows ' + q.shadowMapSize : 'no shadows'}` })),
-        h('span', { class: 'menu-opt-d', text: QUALITY_NOTES[k] || '' }))), 'radio', k === ctx.quality.level));
+      h('span', { class: 'menu-opt-t' }, k, h('small', { text: `${Math.round(q.renderScale * 100)}%` })),
+      h('span', { class: 'menu-opt-d', text: QUALITY_NOTES[k] || '' })), 'radio', k === ctx.quality.level));
   }
   const volRange = h('input', { class: 'menu-range menu-range-plain', type: 'range', id: 'menu-volume', min: '0', max: '100', step: '1', 'aria-label': 'Master volume' });
   const volRead = h('span', { class: 'menu-vol-read' });
-  volRange.addEventListener('input', () => { sel.volume = +volRange.value / 100; ctx.audio?.setMasterVolume?.(sel.volume); volRead.textContent = volRange.value + '%'; });
+  volRange.addEventListener('input', () => { sel.volume = +volRange.value / 100; ctx.audio?.setMasterVolume?.(sel.volume); volRead.textContent = volRange.value + '%'; volRange.style.setProperty('--v', volRange.value + '%'); });
   volRange.addEventListener('change', save);
-  const hudBtn = h('button', { class: 'menu-annun', id: 'menu-hud', type: 'button', 'aria-label': 'HUD', onclick: () => ev.emit('cmd', { name: 'hudToggle' }) });
-  const fsRowBtn = h('button', { class: 'menu-annun', id: 'menu-fs-setting', type: 'button', 'aria-label': 'Fullscreen', onclick: toggleFullscreen });
-  const settingsBack = h('button', { class: 'menu-back', id: 'menu-settings-back', type: 'button', onclick: () => back() }, 'Back');
-  const vSettings = h('section', { class: 'menu-view menu-dock menu-dock-r', 'data-view': 'settings' },
-    h('div', { class: 'menu-panel', role: 'region', 'aria-label': 'Settings' },
+  const sw = (id, label, onclick) => h('button', { class: 'menu-switch', id, type: 'button', role: 'switch', 'aria-label': label, onclick });
+  const hudBtn = sw('menu-hud', 'Head-up display', () => ev.emit('cmd', { name: 'hudToggle' }));
+  const fsRowBtn = sw('menu-fs-setting', 'Fullscreen', toggleFullscreen);
+  const glassBtn = sw('menu-glass', 'Glass effects', () => { sel.glassReduced = !sel.glassReduced; glass.setReduced(sel.glassReduced); save(); sync(); });
+  const field = (t, d, ctl) => h('div', { class: 'menu-field' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: t }), d ? h('span', { class: 'menu-field-d', text: d }) : null), ctl);
+  const settingsBack = h('button', { class: 'menu-back', id: 'menu-settings-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
+  const vSettings = h('section', { class: 'menu-view menu-dock menu-dock-r', 'data-view': 'settings', style: '--origin: top center' },
+    h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Settings' },
       h('div', { class: 'menu-subhead' }, settingsBack, h('span', { class: 'menu-subtitle', text: 'Settings' })),
       h('div', { class: 'menu-scroll' },
-        sec('01', 'Graphics quality', null, qGroup, h('p', { class: 'menu-note', text: 'Applies immediately. Resolution also scales down automatically to hold frame rate.' })),
-        sec('02', 'Audio', null, h('div', { class: 'menu-field-l', style: 'margin-bottom:4px' }, h('span', { class: 'menu-field-t', text: 'Master volume' })), h('div', { class: 'menu-vol' }, volRange, volRead)),
-        sec('03', 'Display', null,
-          h('div', { class: 'menu-field' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: 'Head-up display' }), h('span', { class: 'menu-field-d', text: 'Flight symbology and instruments. Key: U' })), hudBtn),
-          canFs ? h('div', { class: 'menu-field' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: 'Fullscreen' }), h('span', { class: 'menu-field-d', text: 'Hide the browser around the sim.' })), fsRowBtn) : null),
-        sec('04', 'Units', null, h('div', { class: 'menu-fine', text: 'Airspeed kt · Mach  /  Altitude ft  /  Vertical speed ft/min  /  Heading ° true  /  Load factor G  /  Pressure hPa' })))));
+        sec('Graphics quality', null, qGroup, h('p', { class: 'menu-note', text: 'Applies immediately. Resolution also scales down on its own to hold the frame rate.' })),
+        sec('Sound', null, h('div', { class: 'menu-group' }, h('div', { class: 'menu-field-l', style: 'padding-top:10px' }, h('span', { class: 'menu-field-t', text: 'Master volume' })), h('div', { class: 'menu-vol' }, volRange, volRead))),
+        sec('Display', null, h('div', { class: 'menu-group' },
+          field('Head-up display', 'Flight symbology and instruments · U', hudBtn),
+          canFs ? field('Fullscreen', 'Hide the browser around the sim', fsRowBtn) : null,
+          field('Glass effects', 'Blur and light the panels. Off is faster on older GPUs', glassBtn))),
+        sec('Units', null, h('div', { class: 'menu-fine', text: 'Airspeed kt · Mach  /  Altitude ft  /  Vertical speed ft/min  /  Heading ° true  /  Load factor G  /  Pressure hPa' })))));
 
   // ---- CONTROLS ---------------------------------------------------------------------------------
   const keysWrap = h('div', { class: 'menu-keys' });
@@ -269,33 +307,33 @@ export async function createMenu(ctx) {
       if (!rows.length) continue;
       keysWrap.append(h('div', { class: 'menu-keygroup' },
         h('div', { class: 'menu-h' }, h('span', { text: g })),
-        rows.map(b => {
+        h('div', { class: 'menu-group' }, rows.map(b => {
           const segs = bindingSegments(b);
           const k = segs ? h('span', { class: 'menu-keyrow-k' }, segs.map((alts, i) => [
             i ? h('span', { class: 'menu-kslash', text: '/' }) : null,
             alts.map((key, j) => [j ? h('span', { class: 'menu-kor', text: 'or' }) : null, h('kbd', { class: 'menu-kbd', text: key })]),
           ])) : h('span', { class: 'menu-keyrow-k menu-keytext', text: String(b.keys) });
           return h('div', { class: 'menu-keyrow' }, h('span', { class: 'menu-keyrow-a', text: b.action }), k);
-        })));
+        }))));
     }
   }
-  const controlsBack = h('button', { class: 'menu-back', id: 'menu-controls-back', type: 'button', onclick: () => back() }, 'Back');
-  const vControls = h('section', { class: 'menu-view menu-dock menu-dock-r menu-dock-wide', 'data-view': 'controls' },
-    h('div', { class: 'menu-panel', role: 'region', 'aria-label': 'Controls reference' },
+  const controlsBack = h('button', { class: 'menu-back', id: 'menu-controls-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
+  const vControls = h('section', { class: 'menu-view menu-dock menu-dock-c menu-dock-wide', 'data-view': 'controls', style: '--origin: top center' },
+    h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Controls reference' },
       h('div', { class: 'menu-subhead' }, controlsBack, h('span', { class: 'menu-subtitle', text: 'Controls' })),
       h('div', { class: 'menu-scroll' }, keysWrap,
         h('div', { class: 'menu-devices' },
           h('div', { class: 'menu-device' }, h('b', { text: 'Mouse' }), 'M turns the mouse into a yoke. Right-drag looks around, wheel zooms.'),
           h('div', { class: 'menu-device' }, h('b', { text: 'Gamepad' }), 'Standard controllers connect automatically. Left stick flies, right stick looks.'),
-          h('div', { class: 'menu-device' }, h('b', { text: 'Touch' }), 'On-screen stick and throttle appear on touch screens. MENU, top right, opens this menu.')))));
+          h('div', { class: 'menu-device' }, h('b', { text: 'Touch' }), 'On-screen stick and throttle appear on touch screens. Menu, top right, opens this screen.')))));
 
   // ---- PAUSE ----------------------------------------------------------------------------------------
   const pauseSub = h('div', { class: 'menu-pause-sub' });
   const condPause = conditions('menu-p-');
   const kbd = (t) => h('kbd', { class: 'menu-kbd', text: t });
-  const resumeBtn = h('button', { class: 'menu-act menu-act-primary', id: 'menu-resume', type: 'button', onclick: () => close() }, 'Resume', kbd('Esc'));
-  const vPause = h('section', { class: 'menu-view menu-dock menu-dock-l', 'data-view': 'pause' },
-    h('div', { class: 'menu-panel', role: 'region', 'aria-label': 'Paused' },
+  const resumeBtn = h('button', { class: 'menu-act menu-act-primary glass-tint', id: 'menu-resume', type: 'button', onclick: () => close() }, 'Resume', kbd('Esc'));
+  const vPause = h('section', { class: 'menu-view menu-dock menu-dock-l', 'data-view': 'pause', style: '--origin: top left' },
+    h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Paused' },
       h('div', { class: 'menu-pause-head' }, h('div', { class: 'menu-pause-title', text: 'Paused' }), pauseSub),
       h('div', { class: 'menu-scroll' },
         h('div', { class: 'menu-actions' },
@@ -313,16 +351,18 @@ export async function createMenu(ctx) {
 
   // ---- in-flight corner buttons + crash dialog --------------------------------------------------
   const corner = h('div', { class: 'menu-corner' },
-    fsBtn('menu-fullscreen-fly'),
-    h('button', { class: 'menu-iconbtn menu-fab', id: 'menu-fab', type: 'button', 'aria-label': 'Open menu', onclick: () => open() }, h('span', { class: 'menu-ico-menu', 'aria-hidden': 'true' }), 'Menu'));
+    h('button', { class: 'menu-cbtn menu-cbtn-icon glass-clear glass-lens', id: 'menu-help', type: 'button', 'aria-label': 'Show controls', title: 'Controls (F1)', onclick: () => ev.emit('cmd', { name: 'help' }), html: ICON.help }),
+    canFs ? h('button', { class: 'menu-cbtn menu-cbtn-icon menu-fsbtn glass-clear glass-lens', id: 'menu-fullscreen-fly', type: 'button', 'aria-label': 'Toggle fullscreen', title: 'Fullscreen', 'aria-pressed': 'false', onclick: toggleFullscreen, html: ICON.fullscreen }) : null,
+    h('button', { class: 'menu-cbtn glass-clear glass-lens', id: 'menu-fab', type: 'button', 'aria-label': 'Open menu', onclick: () => open() }, h('span', { html: ICON.menu, style: 'display:contents' }), 'Menu'));
   corner.hidden = true;
   // Corner buttons must not keep focus during flight, or Space (wheel brakes) / Enter would re-trigger them.
   corner.addEventListener('click', (e) => { const b = e.target.closest?.('button'); if (b) setTimeout(() => b.blur(), 0); });
+  corner.addEventListener('pointerenter', () => { cornerT = 0; corner.classList.remove('dim'); });
   const crashReason = h('div', { class: 'menu-crash-r' });
-  const crash = h('div', { class: 'menu-crash', role: 'alertdialog', 'aria-label': 'Flight ended', 'aria-modal': 'false' },
+  const crash = h('div', { class: 'menu-crash glass', role: 'alertdialog', 'aria-label': 'Flight ended', 'aria-modal': 'false' },
     h('div', { class: 'menu-crash-t', text: 'Flight ended' }), crashReason,
     h('div', { class: 'menu-crash-b' },
-      h('button', { class: 'menu-btn menu-btn-primary', id: 'menu-crash-restart', type: 'button', onclick: () => { hideCrash(); ctx.session?.restart?.(); } }, 'Restart flight'),
+      h('button', { class: 'menu-btn glass-tint', id: 'menu-crash-restart', type: 'button', onclick: () => { hideCrash(); ctx.session?.restart?.(); } }, 'Restart flight'),
       h('button', { class: 'menu-btn', id: 'menu-crash-hangar', type: 'button', onclick: () => { hideCrash(); open('main'); } }, 'Back to hangar')));
   crash.hidden = true;
   ctx.uiRoot.append(root, corner, crash);
@@ -341,31 +381,51 @@ export async function createMenu(ctx) {
     return m;
   }
   function syncClock() {
-    const m = syncConditions(condMain); syncConditions(condPause);
+    syncConditions(condMain); syncConditions(condPause);
     stLcl.textContent = fmtClock(sel.tod);
-    heroMetar.textContent = m;
+  }
+  function kv(r) { return h('div', { class: 'menu-kv' }, h('div', { class: 'menu-kv-k', text: r.k }), h('div', { class: 'menu-kv-v' }, r.v, r.u ? h('span', { class: 'menu-kv-u', text: r.u }) : null)); }
+  function syncSpecs() {
+    specCard.classList.toggle('open', sel.specsOpen);
+    moreBtn.setAttribute('aria-expanded', String(sel.specsOpen));
+    moreBtn.setAttribute('aria-label', sel.specsOpen ? 'Hide full specifications' : 'Show full specifications');
+    const inner = specCard.querySelector('.menu-spec-more > div'); if (inner) inner.inert = !sel.specsOpen;
+  }
+  function syncFilter() {
+    setChecked(filterSeg, it => it.dataset.id === sel.filter);
+    for (const el of acList.children) {
+      if (!el.dataset.group) continue;
+      el.hidden = sel.filter !== 'all' && el.dataset.group !== sel.filter;
+    }
+    for (const gl of groupLabels) gl.hidden = sel.filter !== 'all';
   }
   function sync() {
     const d = def(), a = apt();
+    syncFilter();
     setChecked(acList, it => it.dataset.id === sel.aircraft);
     setChecked(aptList, it => it.dataset.id === sel.airport);
     // aircraft details
-    acName.textContent = d.name;
-    acMeta.textContent = '';
-    acMeta.append(h('b', { text: d.manufacturer || '' }), h('br'),
-      [d.role, d.firstFlight ? 'First flight ' + d.firstFlight : null, d.service].filter(Boolean).join(' · '),
-      ...(engineLine(d) ? [h('br'), engineLine(d)] : []));
-    acLore.textContent = '';
-    if (d.lore?.tagline) acLore.append(h('span', { class: 'menu-lore-tag', text: d.lore.tagline }), d.lore?.description ? ' ' : '');
-    if (d.lore?.description) acLore.append(d.lore.description);
-    acLore.hidden = !d.lore?.tagline && !d.lore?.description;
-    acSpecs.textContent = '';
-    for (const r of specRows(d)) acSpecs.append(h('div', { class: 'menu-spec' }, h('div', { class: 'menu-spec-k', text: r.k }), h('div', { class: 'menu-spec-v' }, r.v, r.u ? h('span', { class: 'menu-spec-u', text: r.u }) : null)));
     heroKicker.textContent = [d.manufacturer, d.firstFlight ? 'First flight ' + d.firstFlight : null].filter(Boolean).join('  ·  ');
     heroName.textContent = d.name;
     heroTag.textContent = d.lore?.tagline || d.role || '';
     heroTag.hidden = !heroTag.textContent;
+    const rows = specRows(d);
+    specKey.textContent = ''; specGrid.textContent = '';
+    rows.slice(0, KEY_SPECS).forEach(r => specKey.append(kv(r)));
+    rows.slice(KEY_SPECS).forEach(r => specGrid.append(kv(r)));
+    acMeta.textContent = '';
+    acMeta.append(h('b', { text: d.manufacturer || '' }), d.manufacturer ? ' · ' : '',
+      [d.role, d.service].filter(Boolean).join(' · '),
+      ...(engineLine(d) ? [h('br'), engineLine(d)] : []));
+    acLore.textContent = '';
+    if (d.lore?.tagline && d.lore?.description) acLore.append(d.lore.description);
+    else if (d.lore?.description) acLore.append(d.lore.description);
+    acLore.hidden = !d.lore?.description;
+    syncSpecs();
     // airport + runways
+    pkCode.textContent = a.id; pkName.textContent = a.name;
+    pkSub.textContent = a.kind ? a.kind[0].toUpperCase() + a.kind.slice(1) : '';
+    pkTag.textContent = ''; pkTag.append(group3(toFt(a.elevation)) + ' ft', h('br'), a.runways.length + (a.runways.length > 1 ? ' rwys' : ' rwy'));
     aptDesc.textContent = a.description || '';
     if (rwyGroup.dataset.apt !== a.id) {
       rwyGroup.dataset.apt = a.id; rwyGroup.textContent = '';
@@ -385,14 +445,17 @@ export async function createMenu(ctx) {
     // settings
     setChecked(qGroup, it => it.dataset.id === ctx.quality.level);
     if (document.activeElement !== volRange) volRange.value = String(Math.round(sel.volume * 100));
+    volRange.style.setProperty('--v', Math.round(sel.volume * 100) + '%');
     volRead.textContent = Math.round(sel.volume * 100) + '%';
-    hudBtn.setAttribute('aria-pressed', String(hudOn)); hudBtn.textContent = hudOn ? 'ON' : 'OFF';
+    hudBtn.setAttribute('aria-pressed', String(hudOn)); hudBtn.setAttribute('aria-checked', String(hudOn));
+    glassBtn.setAttribute('aria-pressed', String(!sel.glassReduced)); glassBtn.setAttribute('aria-checked', String(!sel.glassReduced));
     const fs = !!document.fullscreenElement;
-    fsRowBtn.setAttribute('aria-pressed', String(fs)); fsRowBtn.textContent = fs ? 'ON' : 'OFF';
+    fsRowBtn.setAttribute('aria-pressed', String(fs)); fsRowBtn.setAttribute('aria-checked', String(fs));
     for (const b of document.querySelectorAll('.menu-fsbtn')) b.setAttribute('aria-pressed', String(fs));
     // pause
     syncPause();
     syncClock();
+    if (menu.isOpen) placeAll(false);
   }
   function syncPause() {
     const p = ctx.player; pauseSub.textContent = '';
@@ -405,6 +468,16 @@ export async function createMenu(ctx) {
 
   // ---- actions ----------------------------------------------------------------------------------
   function selectAircraft(id) { if (sel.aircraft === id) return; sel.aircraft = id; save(); sync(); scheduleSpawn(); }
+  function setFilter(f) {
+    if (sel.filter === f) return;
+    sel.filter = f;
+    // keep a visible selection: jump to the first aircraft of the group if the current one is filtered out
+    const cur = AIRCRAFT.find(a => a.id === sel.aircraft);
+    const g = cur && (isCommercial(cur) ? 'commercial' : 'military');
+    if (f !== 'all' && g !== f) { const first = (f === 'military' ? military : commercial)[0]; if (first) { sel.aircraft = first.id; save(); scheduleSpawn(); } }
+    sync(); placeAll(true);
+    acScroll.scrollTop = 0; reveal(acList.querySelector('[aria-selected="true"]'));
+  }
   const LIVERY_LABEL = { lowvis: 'Low vis', usaf: 'USAF', raaf: 'RAAF', cag: 'CAG', house: 'House colours' };
   const liveryLabel = id => LIVERY_LABEL[id] || id.charAt(0).toUpperCase() + id.slice(1);
   /** Rebuild the livery chips from the aircraft that is actually on the ramp (its visual lists what it can paint). */
@@ -423,6 +496,14 @@ export async function createMenu(ctx) {
   }
   function selectLivery(id) { if (sel.liveries[sel.aircraft] === id && ctx.player?.visual?.livery === id) return; sel.liveries[sel.aircraft] = id; save(); scheduleSpawn(); setChecked(livGroup, it => it.dataset.id === id); }
   function selectAirport(id) { if (sel.airport === id) return; sel.airport = id; sel.runway = 0; sel.end = 0; save(); sync(); scheduleSpawn(); }
+  function setAptOpen(open, focusPicker) {
+    aptPicker.setAttribute('aria-expanded', String(open));
+    aptWrap.classList.toggle('open', open); aptWrap.inert = !open;
+    if (open) {
+      requestAnimationFrame(() => { placeAll(true); const s = aptList.querySelector('[aria-selected="true"]'); try { s?.focus({ preventScroll: true }); } catch {} });
+      setTimeout(() => reveal(aptWrap), 360);
+    } else if (focusPicker) { try { aptPicker.focus({ preventScroll: true }); } catch {} }
+  }
   function selectRunway(i, e) { if (sel.runway === i && sel.end === e) return; sel.runway = i; sel.end = e; save(); sync(); scheduleSpawn(); }
   function setTod(hr) { sel.tod = hr; ctx.time.setTimeOfDay(hr); syncClock(); }
   function setWeather(k) { sel.weather = k; ctx.weather.setPreset(k, true); syncClock(); }
@@ -449,13 +530,18 @@ export async function createMenu(ctx) {
   function toHangar() { go('main'); }
 
   function show(v) {
+    const prev = view;
     view = v;
     for (const [k, el] of Object.entries(views)) el.hidden = k !== v;
     const flight = inFlight();
     tabBar.hidden = flight;
     for (const [k, t] of Object.entries(tabs)) { if ((k === 'hangar' ? 'main' : k) === v) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); }
     if (v === 'pause') syncPause();
-    root.classList.remove('menu-anim'); void root.offsetWidth; root.classList.add('menu-anim');
+    if (v !== 'main') setAptOpen(false);
+    // panels grow out of the control that opened them: tabs (top centre) or the corner Menu button (top right)
+    if (v === 'pause') views[v].style.setProperty('--origin', 'top right');
+    if (prev !== v || !root.classList.contains('menu-anim')) { root.classList.remove('menu-anim'); void root.offsetWidth; root.classList.add('menu-anim'); }
+    requestAnimationFrame(() => placeAll(prev !== v));
   }
   // Audio may only start after a user gesture: the first interaction with the menu wakes it (hangar idle sound).
   root.addEventListener('pointerdown', () => { try { ctx.audio?.resume?.(); } catch {} }, { once: true });
@@ -475,12 +561,13 @@ export async function createMenu(ctx) {
     show(v); sync(); focusView();
   }
   function back() {
+    if (view === 'main' && aptPicker.getAttribute('aria-expanded') === 'true') { setAptOpen(false, true); return; }
     if (view === 'settings' || view === 'controls') { show(returnTo === 'pause' && inFlight() ? 'pause' : 'main'); sync(); focusView(); }
     else if (view === 'pause') close();
     // main: nothing to go back to (Esc is a no-op in the hangar)
   }
 
-  function open(v) {
+  function open(v, noFocus) {
     if (!v) v = inFlight() ? 'pause' : 'main';
     if (v === 'main') { if (!inHangar || !ctx.session?.active) enterHangar(); returnTo = 'main'; }
     else if (v === 'settings' || v === 'controls') returnTo = inFlight() ? 'pause' : 'main';
@@ -489,8 +576,9 @@ export async function createMenu(ctx) {
     hideCrash();
     const was = menu.isOpen;
     menu.isOpen = true; root.hidden = false; corner.hidden = true;
-    show(v); sync(); focusView();
-    if (v === 'main') { reveal(acList.querySelector('[aria-selected="true"]')); reveal(aptList.querySelector('[aria-selected="true"]')); }
+    root.classList.remove('menu-anim');
+    show(v); sync(); if (!noFocus) focusView();
+    if (v === 'main') requestAnimationFrame(() => { reveal(acList.querySelector('[aria-selected="true"]')); });
     if (!was) ev.emit('menu:open');
   }
   function close() {
@@ -502,7 +590,7 @@ export async function createMenu(ctx) {
     updateCorner();
     ev.emit('menu:close');
   }
-  function updateCorner() { corner.hidden = menu.isOpen || !ctx.session?.active; }
+  function updateCorner() { const was = corner.hidden; corner.hidden = menu.isOpen || !ctx.session?.active; if (was && !corner.hidden) { cornerT = 0; corner.classList.remove('dim'); } }
   function showCrash() {
     if (menu.isOpen || inHangar) return;
     const r = crashInfo?.reason || ctx.player?.state?.crashReason || '';
@@ -518,6 +606,8 @@ export async function createMenu(ctx) {
     } catch {}
   }
   document.addEventListener('fullscreenchange', () => sync());
+  window.addEventListener('resize', () => { if (menu.isOpen) requestAnimationFrame(() => placeAll(true)); });
+  try { document.fonts?.addEventListener?.('loadingdone', () => { if (menu.isOpen) placeAll(true); }); } catch {}
 
   // ---- keyboard --------------------------------------------------------------------------------
   function handleMenuKey() {
@@ -531,6 +621,7 @@ export async function createMenu(ctx) {
       if (now - lastCmdAt < 300) return;   // input already turned this Esc into a 'menu' cmd
       lastEscAt = now; e.preventDefault(); handleMenuKey(); return;
     }
+    if (e.code === 'F1' && !menu.isOpen) { e.preventDefault(); if (!e.repeat) ev.emit('cmd', { name: 'help' }); return; }
     if (!menu.isOpen) return;
     const t = e.target instanceof Element ? e.target : null;
     // arrow-key navigation inside list / radio groups
@@ -545,6 +636,7 @@ export async function createMenu(ctx) {
       e.preventDefault(); return;
     }
     if (e.key === 'Enter' && view === 'main' && !e.repeat) {
+      if (t && aptList.contains(t)) { e.preventDefault(); setAptOpen(false, true); return; }
       const plainButton = t && t.tagName === 'BUTTON' && !t.matches('[data-item]');
       if (!plainButton) { e.preventDefault(); fly(); }
     }
@@ -560,7 +652,7 @@ export async function createMenu(ctx) {
     } else if (name === 'hudToggle') { hudOn = !hudOn; sync(); }
   });
   ev.on('crash', (p) => { if (inHangar || crashTimer > 0 || !crash.hidden) return; crashInfo = p || null; crashTimer = CRASH_DELAY; });
-  ev.on('session:start', () => { hideCrash(); updateCorner(); syncLiveries(); });
+  ev.on('session:start', () => { hideCrash(); updateCorner(); syncLiveries(); if (menu.isOpen) requestAnimationFrame(() => placeAll(false)); });
   ev.on('session:end', () => { updateCorner(); });
   ev.on('time:change', (hr) => { if (Number.isFinite(hr)) { sel.tod = hr; if (menu.isOpen) syncClock(); } });
   ev.on('weather:change', ({ preset } = {}) => { if (preset && preset !== sel.weather) { sel.weather = preset; if (menu.isOpen) syncClock(); } });
@@ -568,8 +660,9 @@ export async function createMenu(ctx) {
   ev.on('ready', () => {
     const dbg = raw.menu;
     if (dbg === 'crash') { crashInfo = { reason: 'Debug: impact with terrain at 212 kt' }; showCrash(); return; }
-    if (dbg && views[dbg]) { open(dbg); return; }
-    if (!params.autostart) open('main');
+    // at boot nothing has been interacted with yet: do not move focus (it would draw a focus ring on the first row)
+    if (dbg && views[dbg]) { open(dbg, true); return; }
+    if (!params.autostart) open('main', true);
     else updateCorner();
   });
 
@@ -579,11 +672,14 @@ export async function createMenu(ctx) {
     open, close,
     get view() { return view; },
     get selection() { return { ...sel }; },
+    get glass() { return glass; },
     update() {
       const rdt = ctx.time.realDt || 0;
+      glass.update(rdt, menu.isOpen);
       if (spawnTimer > 0) { spawnTimer -= rdt; if (spawnTimer <= 0 && inHangar) spawnHangar(); }
       if (crashTimer > 0) { crashTimer -= rdt; if (crashTimer <= 0) showCrash(); }
       if (inHangar) holdParked();
+      if (!corner.hidden && !corner.classList.contains('dim')) { cornerT += rdt; if (cornerT > 6 && !corner.matches(':hover, :focus-within')) corner.classList.add('dim'); }
       if (menu.isOpen) {
         clockTimer -= rdt;
         if (clockTimer <= 0) {
