@@ -43,6 +43,7 @@ export function createVisual(ctx, opts = {}) {
   const finSpec = (view, density = 1) => ({ type: 'side', z: [2.35, 5.85], y: [0.7, 2.82], view, density });
   const cFin = { RO: atlas.chart('finRO', finSpec('right')), LO: atlas.chart('finLO', finSpec('left')), RI: atlas.chart('finRI', finSpec('left', 0.6)), LI: atlas.chart('finLI', finSpec('right', 0.6)) };
   const cBoom = atlas.chart('boom', { type: 'unwrap', z: [1.2, 6.2], girth: 1.6, vScale: 1, density: 0.8 });
+  const cCowl = atlas.chart('cowl', { type: 'side', z: [-3.95, -1.45], y: [-0.8, 0.45], view: 'right', density: 0.9 });
   const cPanel = atlas.chart('panel', { type: 'rect', w: 0.72, h: 0.3, density: 3 });
   const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.8, h: 0.75, density: 0.8 });
   atlas.pack();
@@ -84,7 +85,7 @@ export function createVisual(ctx, opts = {}) {
     [4.20, 0.100, 1.100, 0.730, 0.700, [0.9, 0.78], 0.72, 64, 70],
     [5.00, 0.100, 0.640, 0.620, 0.620, 0.5523, 0.5523, 90, 90],
   ].map(r => ({ z: r[0], y: r[1], w: r[2], top: r[3], bot: r[4], kTop: r[5], kBot: r[6], aTop: r[7], aBot: r[8] }));
-  const T_SILL = 0.385, T_NG = 0.05, T_MLG = [0.07, 0.16];
+  const T_SILL = 0.36, T_NG = 0.05, T_MLG = [0.07, 0.16];
   const fus = K.loft({
     stations: FS, segments: seg, step: 0.11 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.exhaust,
     cutouts: [
@@ -110,7 +111,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- canopy (one-piece, forward hinged, thick bow frame) ---------------------------------------------------------------------
   const CZ0 = -6.45, CZ1 = -3.5;
-  const canTop = K.pchip([-6.45, -6.2, -5.95, -5.65, -5.35, -5.05, -4.7, -4.35, -4.0, -3.75, -3.5], [fus.topAt(-6.45) + 0.005, 1.07, 1.24, 1.405, 1.515, 1.575, 1.595, 1.585, 1.545, 1.48, fus.topAt(-3.5) + 0.012]);
+  const canTop = K.pchip([-6.45, -6.2, -5.95, -5.65, -5.35, -5.05, -4.7, -4.35, -4.0, -3.75, -3.5], [fus.topAt(-6.45) + 0.005, 1.08, 1.26, 1.43, 1.545, 1.605, 1.625, 1.61, 1.565, 1.49, fus.topAt(-3.5) + 0.012]);
   const canZ = []; for (let z = CZ0; z < CZ1 - 1e-6; z += 0.15) canZ.push(z); canZ.push(CZ1);
   const canSt = canZ.map(z => { const s = fus.at(z, T_SILL).p; return { z, y: s[1], w: s[0], top: Math.max(0.004, canTop(z) - s[1]), bot: 0.01, kTop: [0.7, 0.62] }; });
   const cseg = Math.max(16, Math.round(32 * detail / 4) * 4), ct = 1 / cseg;
@@ -125,13 +126,13 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- cockpit -----------------------------------------------------------------------------------------------------------------
   const eye = G.pilotEye, tubX = 0.42;
-  stat.add(K.tub({ x: tubX, y0: 0.17, y1: 0.85, z0: -6.35, z1: -3.6, uv: U.interior, taper: 0.8 }));
+  stat.add(K.tub({ x: tubX, y0: 0.17, y1: 0.74, z0: -6.35, z1: -3.6, uv: U.interior, taper: 0.8 }));
   {  // sill ledge between the skin cut-out and the tub
     const zs = []; for (let z = CZ0; z <= CZ1 + 1e-6; z += 0.2) zs.push(z); if (zs[zs.length - 1] < CZ1 - 1e-6) zs.push(CZ1);
     for (const sx of [1, -1]) {
       let prev = null;
       for (const z of zs) {
-        const o = fus.at(z, sx > 0 ? T_SILL : 1 - T_SILL).p, a = stat.vert(o[0], o[1], z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]), b = stat.vert(sx * tubX * 0.92, 0.83, z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]);
+        const o = fus.at(z, sx > 0 ? T_SILL : 1 - T_SILL).p, a = stat.vert(o[0], o[1], z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]), b = stat.vert(sx * tubX * 0.92, 0.72, z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]);
         if (prev) { if (sx > 0) stat.quad(prev[0], a, b, prev[1]); else stat.quad(prev[0], prev[1], b, a); }
         prev = [a, b];
       }
@@ -162,10 +163,11 @@ export function createVisual(ctx, opts = {}) {
     stations: [
       IS(-1.7, 0.21, 0.3, 0.3, { x: 0.74, y: -0.14 }), IS(-2.6, 0.25, 0.39, 0.39, { x: 0.9, y: -0.17 }), IS(-3.33, 0.262, 0.41, 0.415, { hard: true }),
       IS(-3.43, 0.272, 0.42, 0.425), IS(-3.46, 0.285, 0.433, 0.438), IS(-3.43, 0.298, 0.446, 0.451),
-      IS(-3.3, 0.306, 0.47, 0.459, { kTop: [0.97, 0.9] }), IS(-2.8, 0.316, 0.5, 0.467, { kTop: [0.98, 0.9] }), IS(-2.0, 0.322, 0.52, 0.47, { kTop: [0.98, 0.9] }), IS(-1.5, 0.322, 0.52, 0.47, { kTop: [0.98, 0.9] }),
+      IS(-3.3, 0.31, 0.47, 0.47, { kTop: [0.97, 0.9] }), IS(-3.0, 0.325, 0.5, 0.53, { kTop: [0.98, 0.9], kBot: [0.92, 0.9] }), IS(-2.5, 0.335, 0.52, 0.58, { kTop: [0.98, 0.9], kBot: [0.94, 0.92] }),
+      IS(-2.0, 0.34, 0.52, 0.6, { kTop: [0.98, 0.9], kBot: [0.95, 0.92] }), IS(-1.5, 0.34, 0.52, 0.6, { kTop: [0.98, 0.9], kBot: [0.95, 0.92] }),
     ],
     segments: Math.max(24, Math.round(40 * detail / 4) * 4), step: 0.14, capStart: 'flat', capUV: U.black,
-    uvFn: (x, y, z, t, ring) => (ring.run === 0 ? (ring.k < 1.6 ? U.duct : U.skin) : ring.k < 4.3 ? U.tape : U.skin),
+    uvFn: (x, y, z, t, ring) => (ring.run === 0 ? (ring.k < 1.6 ? U.duct : U.skin) : ring.k < 4.3 ? U.tape : cCowl.uv3(x, y, z)),
   });
   const shear = new THREE.Matrix4().set(1, 0.25, 0, -0.25 * IY, 0, 1, 0, 0, -0.38, -0.25, 1, 0.38 * 0.7 + 0.25 * IY, 0, 0, 0, 1);
   const intakeR = intake.mesh.transform(shear);
@@ -242,7 +244,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- paint + materials -----------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, livery, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, skinF, NZ });
+  paint(atlas, { SC, livery, cCowl, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, skinF, NZ });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
@@ -378,7 +380,7 @@ function serrate(m, NZ, depth) {
 
 // ---- paint ---------------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, livery, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, skinF, NZ } = o, F = K.FINISH;
+  const { SC, livery, cCowl, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, skinF, NZ } = o, F = K.FINISH;
   const tape = { color: SC.tape, rough: 0.48, metal: 0.2, height: 0.12 };
   const mark = SC.mark;
   const rnd = (() => { let a = 4242; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
@@ -444,8 +446,16 @@ function paint(atlas, o) {
   for (let i = 0; i < 22; i++) { const z = -2.5 + rnd() * 6.5, t = (rnd() < 0.5 ? 0.02 : 0.9) + rnd() * 0.08; P.streak(z, t, z + 0.5 + rnd() * 1.2, t, 0.008 + rnd() * 0.012, { alpha: 0.08 + rnd() * 0.1 }); }
   P.fill((g) => g.rect(4.5, 0, 0.55, 1), { color: 'rgba(40,36,32,0.3)' }, { feather: 8 });
   // duct-visible region of the skin just behind the intake lips (inside the inlets): paint it duct white
-  P.fill((g) => { g.rect(-3.42, 0.13, 1.22, 0.105); g.rect(-3.42, 0.765, 1.22, 0.105); }, F.gloss('#e2e3df'));
+  P.fill((g) => { g.rect(-3.42, 0.13, 1.0, 0.105); g.rect(-3.42, 0.765, 1.0, 0.105); }, F.gloss('#e2e3df'));
 
+  // ================= intake cowls (side projection, shared by both sides) =================
+  { const Q = atlas.pen(cCowl); Q.fill('all', skinF);
+    Q.stroke((g) => { g.moveTo(-3.75, 0.3); g.lineTo(-1.5, 0.36); }, 0.03, tape);
+    Q.stroke((g) => { g.moveTo(-3.65, -0.58); g.lineTo(-1.5, -0.7); }, 0.03, tape);
+    const pts = []; for (let i = 0; i <= 4; i++) pts.push([-3.05 + (i % 2) * 0.08, 0.2 - i * 0.18]); for (let i = 4; i >= 0; i--) pts.push([-2.2 + (i % 2) * 0.08, 0.2 - i * 0.18]); pts.push(pts[0]);
+    Q.stroke((g) => pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))), 0.025, tape);
+    Q.text('DANGER', -3.3, 0.12, 0.035, { color: '#8d3a32', weight: 700 });
+    Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); Q.noise({ alpha: 0.04, scale: 0.5, mode: 'light' }); }
   // ================= booms =================
   { const Q = atlas.pen(cBoom); Q.fill('all', skinF); for (const t of [0.25, 0.75]) Q.stroke((g) => { g.moveTo(1.3, t); g.lineTo(6.1, t); }, 0, tape, { px: 2 }); Q.fill((g) => g.rect(5.2, 0, 1.0, 1), { color: 'rgba(40,36,32,0.25)' }, { feather: 6 }); Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); }
 
