@@ -91,7 +91,7 @@ export function makeWeatherFieldJS(noise) {
  * Derive the cloud-model parameters from ctx.weather's (smoothed) numbers. Everything is a continuous function of
  * coverage / base / top / precipitation / lightning so preset transitions morph instead of popping.
  */
-const PROF_SHALLOW = [0.75, 0.45, 2, 0.6], PROF_DEEP = [0.75, 0.7, 4, 0.4];   // [gb, hp, k, p]
+const PROF_SHALLOW = [0.75, 0.3, 2, 1.0], PROF_DEEP = [0.75, 0.7, 4, 0.4];   // [gb, hp, k, p]
 export function deriveWeatherParams(w, out = {}) {
   const cov = saturate(w.cloudCoverage);
   const base = w.cloudBase, top = Math.max(w.cloudTop, base + 300), th = top - base;
@@ -156,7 +156,7 @@ export function densityFromField(p, wf, n, y, cl, cells) {
   const h = y - p.base;
   const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, cl[1]);
   const vig = saturate((cov * 1.45 - cl[2]) * 8), grow = lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0);
-  const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), lid * p.thickness);
+  const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), 0.8 * lid * p.thickness);
   const hc = h / Math.max(H, 1);
   const pf = p.profShallow.map((v, i) => lerp(v, p.profDeep[i], dev));
   const g = (pf[0] + (1 - pf[0]) * (1 - Math.pow(1 - Math.min(hc / pf[1], 1), pf[2])))
@@ -164,7 +164,7 @@ export function densityFromField(p, wf, n, y, cl, cells) {
   const wb = n[1] * 0.6 + n[2] * 0.4, bil = (Math.sqrt(saturate(2 * wb - wb * wb)) - 0.8) * p.turret + (n[0] - 0.5) * p.lobes;
   const rS = rad * grow * (g + bil * lerp(0.35, 1, saturate(hc * 1.6)));
   const d = rad * (2 - 2 * cl[0]);
-  let ex = vig > 0 ? (rS - d) * 1e-3 - (cl[0] <= 0.002 ? 1 : 0) - (1 - bottom) * 0.4 - (hc >= 1 ? 0.3 * (hc - 1) : 0) : -1;
+  let ex = vig > 0 ? (rS - d) * 1e-3 - (cl[0] <= 0.002 ? 1 : 0) - (1 - bottom) * 0.4 - Math.max(hc - 1, 0) * H * 3e-3 : -1;
   const layerW = Math.max(p.stratus, p.anvil);
   ex = lerp(ex, -1, layerW);
   if (p.sheet > 0) {

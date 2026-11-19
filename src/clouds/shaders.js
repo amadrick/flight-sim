@@ -153,7 +153,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float sel = cov * 1.45;
   float vig = clSat((sel - cl.b) * 8.0);
   float grow = mix(0.55, 1.0, vig) + 1.4 * max(cov - 0.62, 0.0);
-  float H = min(2.0 * rad * mix(uClCell2.z, uClCell2.w, dev) * mix(0.75, 1.25, cl.a) * (0.6 + 0.4 * vig), lid * uClLayer.w);
+  float H = min(2.0 * rad * mix(uClCell2.z, uClCell2.w, dev) * mix(0.75, 1.25, cl.a) * (0.6 + 0.4 * vig), 0.8 * lid * uClLayer.w);   // (room under the lid for the turrets)
   float hc = h / max(H, 1.0);
   vec4 pf = mix(uClProf, uClProf2, dev);
   float g = (pf.x + (1.0 - pf.x) * (1.0 - pow(1.0 - min(hc / pf.y, 1.0), pf.z)))
@@ -165,7 +165,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float bil = (sqrt(clSat(2.0 * wb - wb * wb)) - 0.8) * uClShape3.z + (n.r - 0.5) * uClShape3.w;
   float rS = rad * grow * (g + bil * mix(0.35, 1.0, clSat(hc * 1.6)));
   float d = rad * (1.0 - (2.0 * cl.r - 1.0));                    // distance from the cell centre (m)
-  float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - step(1.0, hc) * 0.3 * (hc - 1.0);
+  float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - max(hc - 1.0, 0.0) * H * 3e-3;   // turrets may overshoot the dome a little, never reach the lid
   exC = vig > 0.0 ? mix(exC, -1.0, layerW) : -1.0;
   float decay = max(smoothstep(0.65, 0.92, cl.a), 0.6 * (1.0 - vig)) * (1.0 - uClShape.w);
   vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
