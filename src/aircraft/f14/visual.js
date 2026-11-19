@@ -24,8 +24,8 @@ const SCHEMES = {
     pilot: 'CDR R. "SPADE" MORROW', rio: 'LCDR T. "HAWG" OKAFOR',
   },
   lowvis: {
-    name: 'VF-169 tactical paint scheme (low visibility, carrier-weathered)', top: '#7f878d', under: '#a6acb0', radome: '#9ea2a1', finish: 'matte',
-    fin: '#7f878d', accent: '#5d6369', mark: '#50565b', code: 'AX', modex: '112', buno: '169044', sqn: 'VF-169', hivis: false, weather: 1,
+    name: 'VF-169 tactical paint scheme (low visibility, carrier-weathered)', top: '#6d757b', under: '#959ca1', radome: '#8f9493', finish: 'matte',
+    fin: '#6d757b', accent: '#4f555a', mark: '#41464b', code: 'AX', modex: '112', buno: '169044', sqn: 'VF-169', hivis: false, weather: 1,
     pilot: 'LT J. "DOC" BRANNIGAN', rio: 'LT S. "MOOSE" ADEYEMI',
   },
 };
@@ -43,9 +43,9 @@ export function createVisual(ctx, opts = {}) {
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.top) });
   const C = {
-    fus: atlas.chart('fus', { type: 'unwrap', z: [-11.5, 7.6], girth: 4.7, vScale: 0.95, strips: 2 }),
-    nacR: atlas.chart('nacR', { type: 'unwrap', z: [-4.0, 6.6], girth: 4.5, vScale: 0.9 }),
-    nacL: atlas.chart('nacL', { type: 'unwrap', z: [-4.0, 6.6], girth: 4.5, vScale: 0.9 }),
+    fus: atlas.chart('fus', { type: 'unwrap', z: [-11.5, 7.6], girth: 4.7, vScale: 0.95, strips: 2, density: 1.3 }),
+    nacR: atlas.chart('nacR', { type: 'unwrap', z: [-4.0, 6.6], girth: 4.5, vScale: 0.9, density: 1.15 }),
+    nacL: atlas.chart('nacL', { type: 'unwrap', z: [-4.0, 6.6], girth: 4.5, vScale: 0.9, density: 1.15 }),
     gloveT: atlas.chart('gloveTop', { type: 'plan', x: [0.4, 3.5], z: [-4.7, 5.7], view: 'top', mirror: true, density: 0.9 }),
     gloveB: atlas.chart('gloveBot', { type: 'plan', x: [0.4, 3.5], z: [-4.7, 5.7], view: 'bottom', mirror: true, density: 0.55 }),
     wTR: atlas.chart('wingTopR', { type: 'plan', x: [2.2, 9.86], z: [-1.42, 3.42], view: 'top' }),
@@ -425,7 +425,7 @@ export function createVisual(ctx, opts = {}) {
     stroke: 0.35, staticFrac: 0.32, strutR: 0.07, fork: 'axle', steer: true, links: 'rear', retract: { to: [0, -0.06, -7.45] }, window: [0.2, 0.88],
     brace: [0, -0.18, -6.95], extra: launchBar, uv: { tyre: U.tyre },
     doors: [{ name: 'noseDoorR', ...doorOf(P.ngwR, E.ngwR.tHi), open: 88 }, { name: 'noseDoorL', ...doorOf(P.ngwL, E.ngwL.tLo), open: 88 }],
-    lamps: [{ kind: 'landing', pos: [0.06, -0.86, -6.33], size: 0.045, color: [1, 0.96, 0.88] }, { kind: 'taxi', pos: [-0.06, -0.86, -6.33], size: 0.04, color: [1, 0.96, 0.88] }],
+    lamps: [{ kind: 'landing', pos: G.lights.landing, size: 0.05, color: [1, 0.96, 0.88] }, { kind: 'taxi', pos: [-0.09, -0.88, -6.38], size: 0.04, color: [1, 0.96, 0.88] }],
   });
   for (const [i, sx, key] of [[1, -1, 'L'], [2, 1, 'R']]) {
     const c = gp[i].pos, off = 0.2, n = nac[key], edge = sx > 0 ? n.edges.mlg.tHi : n.edges.mlg.tLo;
@@ -477,7 +477,7 @@ export function createVisual(ctx, opts = {}) {
     const e0 = S.eng[0] || {}, e1 = S.eng[1] || e0;
     K.abGlowColor(glow.color, (e1.afterburner || 0) > (e0.afterburner || 0) ? e1 : e0, S.night);
     setCanopy(sf.canopy * 30 * DEG);
-    setHook(sf.hook * 62 * DEG);
+    setHook(sf.hook * 38 * DEG);
     crewNode.visible = !rig.cameraInCockpit;
   });
   const visual = rig.build();
@@ -546,7 +546,7 @@ function paint(atlas, o) {
   P.noise({ alpha: 0.06 + 0.04 * WX, scale: 2.2, stretch: [1.6, 1], rough: 0.06 });
   P.noise({ alpha: 0.04 + 0.03 * WX, scale: 0.7, mode: 'light' });
   for (let i = 0; i < Math.round(14 + 26 * WX); i++) { const z = -6 + rnd() * 12, t = (rnd() < 0.5 ? 0.02 : 0.88) + rnd() * 0.1; P.streak(z, t, z + 0.5 + rnd() * 1.4, t, 0.006 + rnd() * 0.012, { alpha: (0.08 + rnd() * 0.12) * (0.6 + WX) }); }
-  if (WX > 0.7) touchUp(P, 22, -7, 6, 0.3, 0.7, [0.25, 0.04]);
+  if (WX > 0.7) { touchUp(P, 26, -7, 6, 0.3, 0.7, [0.25, 0.04]); P.noise({ alpha: 0.1, scale: 4.5, stretch: [2.5, 1], mode: 'dark', rough: 0.08 }); }
   P.fill((g) => g.rect(6.3, 0, 1.3, 1), { color: 'rgba(40,36,32,0.35)' }, { feather: 6 });
   for (const s of [0.3, 0.7]) P.streak(7.6, s, 5.8, s, 0.12, { alpha: 0.25 + 0.15 * WX });
 
@@ -567,15 +567,15 @@ function paint(atlas, o) {
     decal(-2.75, 0.315, (g) => K.drawText(g, 'INTAKE', 0.04, { color: red, weight: 700 }));
     // national insignia on the intake side, NAVY + BuNo aft
     decal(-1.55, 0.255, (g) => K.drawStarBar(g, 0.5, { lowVis }));
-    decal(3.6, 0.215, (g) => K.drawText(g, 'NAVY', 0.2, { color: mark, weight: 700, font: K.FONT.sans }));
-    decal(3.6, 0.27, (g) => K.drawText(g, SC.buno, 0.08, { color: mark, weight: 700 }));
+    decal(2.85, 0.215, (g) => K.drawText(g, 'NAVY', 0.2, { color: mark, weight: 700, font: K.FONT.sans }));
+    decal(2.85, 0.27, (g) => K.drawText(g, SC.buno, 0.08, { color: mark, weight: 700 }));
     if (SC.hivis) decal(0.6, 0.3, (g) => K.drawText(g, SC.sqn, 0.09, { color: SC.fin, weight: 700, italic: true }));
     decal(-0.6, 0.18, (g) => { g.fillStyle = slime.color; g.fillRect(-0.3, -0.025, 0.6, 0.05); });
     // weathering: exhaust soot on the aft nacelle, grime, leaks
     Q.noise({ alpha: 0.06 + 0.05 * WX, scale: 2.0, stretch: [1.6, 1], rough: 0.05 });
     Q.fill((g) => g.rect(5.4, 0, 1.2, 1), { color: 'rgba(38,34,30,0.45)' }, { feather: 8 });
     for (let i = 0; i < Math.round(8 + 18 * WX); i++) { const z = -2.5 + rnd() * 7, t = T(0.02 + rnd() * 0.17); Q.streak(z, t, z + 0.6 + rnd() * 1.2, t, 0.008 + rnd() * 0.01, { alpha: (0.1 + rnd() * 0.12) * (0.6 + WX) }); }
-    if (WX > 0.7) touchUp(Q, 10, -3, 5, T(0.2), T(0.3), [0.25, 0.03]);
+    if (WX > 0.7) { touchUp(Q, 12, -3, 5, Math.min(T(0.2), T(0.32)), Math.max(T(0.2), T(0.32)), [0.25, 0.03]); Q.noise({ alpha: 0.1, scale: 4, stretch: [2.5, 1], mode: 'dark', rough: 0.08 }); }
   }
 
   // ================= glove / overwing fairing (plan, mirrored: x, z) =================
@@ -598,7 +598,7 @@ function paint(atlas, o) {
       }
       Q.wear((g) => { const a = at(0.7, 0.004), b = at(3.2, 0.004); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }, 0.03, { color: '#9a9ea2', rough: 0.4, metal: 0.6 }, { alpha: 0.2 + 0.25 * WX });
       Q.noise({ alpha: 0.06 + 0.05 * WX, scale: 1.4, stretch: [1, 2], rough: 0.06 });
-      if (WX > 0.7 && isTop) touchUp(Q, 12, 0.7, 3.0, -4, 3, [0.2, 0.3]);
+      if (WX > 0.7 && isTop) { touchUp(Q, 14, 0.7, 3.0, -4, 3, [0.2, 0.3]); Q.noise({ alpha: 0.1, scale: 3, stretch: [1, 2.5], mode: 'dark', rough: 0.08 }); }
       if (!isTop) for (let i = 0; i < Math.round(6 + 10 * WX); i++) { const x = 1.9 + rnd() * 1.3, z = -2 + rnd() * 4; Q.streak(x, z, x, z + 0.8 + rnd(), 0.04, { alpha: 0.15 }); }
     }
   }
@@ -635,7 +635,7 @@ function paint(atlas, o) {
       Q.wear((g) => { g.moveTo(le[0][0], le[0][1]); g.lineTo(le[1][0], le[1][1]); }, 0.035, { color: '#9a9ea2', rough: 0.4, metal: 0.6 }, { alpha: 0.2 + 0.3 * WX });
       Q.noise({ alpha: 0.06 + 0.05 * WX, scale: 1.2, stretch: [1, 2.5], rough: 0.06 });
       for (let i = 0; i < Math.round(5 + 9 * WX); i++) { const x = 3.6 + rnd() * 5, a = at(x, 0.7); Q.streak(a[0] * s, a[1], a[0] * s, a[1] + 0.3 + rnd() * 0.4, 0.03, { alpha: 0.12 + 0.1 * WX }); }
-      if (WX > 0.7 && isTop) touchUp(Q, 8, s > 0 ? 3.6 : -9, s > 0 ? 9 : -3.6, -0.5, 2.5, [0.2, 0.25]);
+      if (WX > 0.7) { if (isTop) touchUp(Q, 10, s > 0 ? 3.6 : -9, s > 0 ? 9 : -3.6, -0.5, 2.5, [0.2, 0.25]); Q.noise({ alpha: 0.1, scale: 3, stretch: [1, 2.5], mode: 'dark', rough: 0.08 }); }
       // markings: insignia upper left / lower right, NAVY lower left, modex on the right flap
       const c = at(7.2, 0.4);
       if (isTop && key === 'L') Q.decal(-c[0], c[1], { rot: -20 }, (g) => K.drawStarBar(g, 0.75, { lowVis }));
