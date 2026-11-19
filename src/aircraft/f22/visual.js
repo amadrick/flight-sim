@@ -400,14 +400,14 @@ export function createVisual(ctx, opts = {}) {
     return m.rotateX(sy * NZ.rest);   // trailing edge toward the axis (convergent)
   };
   const nozzles = [];
-  // side walls: flat plates whose top/bottom edges flare a little aft so the vectored flaps stay inside, with a chevron
-  // (planform-aligned) trailing edge; outer face coated, inner face heat-tinted
-  const SW = [[0, -NZ.hh], [0, NZ.hh], [0.5, NZ.hh * 1.14], [0.98, NZ.hh * 1.3], [0.8, 0], [0.98, -NZ.hh * 1.3], [0.5, -NZ.hh * 1.14]];
+  // side walls: flush with the nacelle sides, top edge flaring slightly aft, raked (planform-aligned) trailing edge;
+  // outer face coated, inner face heat-tinted
+  const SW = [[0, -NZ.hh], [0, NZ.hh], [0.6, NZ.hh * 1.04], [0.98, NZ.hh * 1.08], [0.7, -NZ.hh]];
   for (const [i, sx] of [[0, -1], [1, 1]]) {
     const cx = sx * NAC.x, cy = NAC.y;
     const fixed = new K.Mesh();
     for (const sg of [-1, 1]) {
-      const x0 = sg * NZ.hw, t = sg * 0.03;
+      const x0 = sg * NZ.hw, t = sg * 0.032;
       fixed.add(K.prism(SW, Math.min(x0, x0 + t * 0.4), Math.max(x0, x0 + t * 0.4), U.heat));     // inner skin
       fixed.add(K.prism(SW, Math.min(x0 + t * 0.4, x0 + t), Math.max(x0 + t * 0.4, x0 + t), U.side)); // outer skin
     }
@@ -470,8 +470,6 @@ export function createVisual(ctx, opts = {}) {
     // air-refuelling receptacle doors (split on the centreline) on the spine
     doors.add(skinDoor([[s * 0.012, -1.9], [s * 0.16, -1.9], [s * 0.16, -1.25], [s * 0.012, -1.25]], true, 0.0015, 0.005));
   }
-  // M61A2 gun door over the right wing root
-  doors.add(skinDoor(sawPts([1.05, -2.6], [1.35, -2.6], 1, 0.1, [0, 1]).concat([[1.38, -1.7], [1.08, -1.7]]), true, 0.0015, 0.005));
   // side weapons bays: doors on the intake outer walls (wall plane x = x(y)), sawtooth fore / aft edges
   const wallX = (y) => INT.BO[0] + 0.028 + (y - INT.BO[1] + 0.009) * (INT.TO[0] - INT.BO[0]) / (INT.TO[1] - INT.BO[1]);
   for (const s of [1, -1]) {
@@ -604,9 +602,10 @@ export function createVisual(ctx, opts = {}) {
     ctl.rudR.set((sf.rudder * 30 + sb * 25) * DEG); ctl.rudL.set((sf.rudder * 30 - sb * 25) * DEG);
     setStabR(sf.elevatorR * 25 * DEG); setStabL(sf.elevatorL * 25 * DEG);
     for (const n of nozzles) {
-      // visual flap travel: ±15° about the hinge keeps the sawtooth tips inside the flared side walls at any combination
-      const e = S.eng[n.i] || {}, pitch = sf.nozzlePitch * 12, area = (e.nozzle ?? 0) * 5, cl = (v) => Math.max(-15, Math.min(15, v)) * DEG;
-      n.u(cl(pitch + area)); n.l(cl(pitch - area));
+      // visual flap travel: outward travel (away from the jet axis) is limited to 11° so the sawtooth tips never rise out
+      // of the side walls at any vectoring + area combination; inward travel 15°
+      const e = S.eng[n.i] || {}, pitch = sf.nozzlePitch * 13, area = (e.nozzle ?? 0) * 5, cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v)) * DEG;
+      n.u(cl(pitch + area, -15, 11)); n.l(cl(pitch - area, -11, 15));
       K.abGlowColor(glowM[n.i].color, e, S.night);
     }
     setCanopy(sf.canopy * 38 * DEG);
@@ -828,7 +827,7 @@ function paint(atlas, o) {
     Q.decal(-3.55, -0.22, (g) => { g.strokeStyle = '#8a2a24'; g.lineWidth = 0.012; g.beginPath(); g.moveTo(-0.07, 0.06); g.lineTo(0.07, 0.06); g.lineTo(0, -0.06); g.closePath(); g.stroke(); });
     Q.text('DANGER', -3.2, -0.22, 0.035, { color: '#8a2a24' });
     // national insignia on the aft cheek
-    Q.decal(-1.35, -0.47, (g) => K.drawStarBar(g, 0.4, { lowVis }));
+    Q.decal(-0.98, -0.5, (g) => K.drawStarBar(g, 0.36, { lowVis }));
     Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 });
   }
   // ================= nacelles =================
