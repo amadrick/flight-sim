@@ -61,7 +61,7 @@ export function createVisual(ctx, opts = {}) {
   A.pack();
   const UA = {
     body: A.swatch('body', F.gloss(SC.body)), fair: A.swatch('fair', F.gloss(SC.style === 'sweep' ? SC.belly : SC.belly)), dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black),
-    well: A.swatch('well', { color: '#7a7f78', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#9a9ea0', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#5d6266', rough: 0.7, metal: 0 }),
+    well: A.swatch('well', { color: '#7a7f78', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#aab1b7', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#7b838a', rough: 0.7, metal: 0 }),
     floor: A.swatch('floor', { color: '#3a3d42', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2a2d31', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#5f666d', rough: 0.75, metal: 0 }),
     seat: A.swatch('seat', { color: '#4c5157', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#3b4a63', rough: 1, metal: 0 }), stick: A.swatch('stick', { color: '#17181a', rough: 0.5, metal: 0 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9eaea')), lens: A.swatch('lens', F.lens),
@@ -103,7 +103,7 @@ export function createVisual(ctx, opts = {}) {
   const tAtX = (z, x) => { let lo = 0.25, hi = 0.5; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (fus.at(z, m).p[0] > x) lo = m; else hi = m; } return (lo + hi) / 2; };
 
   // wing-to-body ("belly") fairing with the main-wheel wells cut into its flat bottom
-  const fairStations = [[-6.7, 1.0, 0.25, 0.45], [-5.5, 1.8, 0.55, 0.95], [-3.9, 2.18, 0.75, 1.14], [-1.0, 2.32, 0.8, 1.21], [2.4, 2.5, 0.8, 1.22], [4.2, 2.24, 0.72, 1.14], [6.0, 1.8, 0.52, 1.0], [7.6, 1.15, 0.3, 0.62], [8.6, 0.6, 0.15, 0.3]]
+  const fairStations = [[-6.7, 1.0, 0.25, 0.45], [-5.5, 1.8, 0.55, 0.95], [-3.9, 2.18, 0.75, 1.2], [-1.0, 2.32, 0.8, 1.24], [2.4, 2.5, 0.8, 1.24], [4.2, 2.24, 0.72, 1.2], [6.0, 1.8, 0.52, 1.08], [7.6, 1.15, 0.3, 0.62], [8.6, 0.6, 0.15, 0.3]]
     .map(r => ({ z: r[0], y: -0.95, w: r[1], top: r[2], bot: r[3], kTop: 0.66, kBot: [0.94, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(28, Math.round(44 * detail / 4) * 4), step: 0.7, uv: UA.fair };
   let fair = K.loft(fairOpts);
@@ -115,7 +115,7 @@ export function createVisual(ctx, opts = {}) {
   // windows on the right side in (z, t); the left side is the mirror (t → 1 − t)
   const zy = (z, y) => [z, fus.tAtY(z, y)];
   const WS = { IB: [-15.66, tAtX(-15.66, 0.07)], OB: zy(-15.36, 0.5), OT: zy(-14.88, 1.17), IT: [-14.98, tAtX(-14.98, 0.07)] };
-  const S1 = { bf: zy(-15.25, 0.5), br: zy(-14.42, 0.53), tr: zy(-14.42, 1.21), tf: zy(-14.77, 1.18) };
+  const S1 = { bf: zy(-15.27, 0.5), br: zy(-14.42, 0.53), tr: zy(-14.42, 1.21), tf: zy(-14.79, 1.18) };
   const S2 = { bf: zy(-14.32, 0.53), br: zy(-13.84, 0.56), rt: zy(-13.84, 0.98), nt: zy(-14.04, 1.2), tf: zy(-14.32, 1.22) };
   const WIN = [[WS.IB, WS.OB, WS.OT, WS.IT], [S1.bf, S1.br, S1.tr, S1.tf], [S2.bf, S2.br, S2.rt, S2.nt, S2.tf]];
   const FLOOR = -0.35, zb = -13.2;
@@ -502,8 +502,13 @@ function paintSurfaces(B, o) {
     const c = fa(5.4, 0.42);
     if (SC.style === 'cheat') {           // white eight-point compass star inside a ring
       Q.decal(c[0], c[1], (g) => { g.strokeStyle = '#ffffff'; g.lineWidth = 0.14; g.beginPath(); g.arc(0, 0, 1.25, 0, Math.PI * 2); g.stroke(); drawStar(g, 1.05, '#ffffff'); });
-    } else if (SC.style === 'sweep') {    // three gold wave arcs rising aft
-      Q.decal(c[0] + 0.2, c[1], (g) => { g.strokeStyle = SC.accent; g.lineCap = 'round'; for (const [r, w] of [[1.7, 0.32], [1.15, 0.24], [0.65, 0.17]]) { g.lineWidth = w; g.beginPath(); g.arc(-0.4, 1.4, r, -Math.PI * 0.5, -Math.PI * 0.05); g.stroke(); } g.fillStyle = SC.accent; g.beginPath(); g.arc(-0.4, 1.4, 0.24, 0, Math.PI * 2); g.fill(); });
+    } else if (SC.style === 'sweep') {    // gold sun disc crossed by a stylised gliding bird
+      Q.decal(c[0] + 0.2, c[1], (g) => {
+        g.fillStyle = SC.accent; g.beginPath(); g.arc(0.25, -0.55, 0.95, 0, Math.PI * 2); g.fill();
+        g.fillStyle = SC.tail; g.beginPath(); g.moveTo(-1.9, 0.1); g.quadraticCurveTo(-0.9, -1.0, 0.05, -0.1); g.quadraticCurveTo(1.1, -1.25, 2.2, -0.75);
+        g.quadraticCurveTo(1.0, -0.65, 0.1, 0.45); g.quadraticCurveTo(-0.8, -0.35, -1.9, 0.1); g.closePath(); g.fill();
+        g.strokeStyle = SC.accent; g.lineWidth = 0.14; g.lineCap = 'round'; g.beginPath(); g.moveTo(-1.6, 0.75); g.quadraticCurveTo(0.2, 0.05, 1.9, 0.35); g.stroke();
+      });
     } else {                              // house: blue band along the root, grey "neo" mark
       Q.fill([fa(1.9, 0), fa(3.3, 0), fa(3.3, 1), fa(1.9, 1)], F.gloss(SC.accent));
       Q.text('neo', c[0] + 0.4, c[1] + 0.6, 1.1, { color: SC.accent, font: K.FONT.round, weight: 700 });
