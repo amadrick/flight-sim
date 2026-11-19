@@ -19,6 +19,7 @@
 // cockpit and engine humps, inlet ramps and exhaust troughs as true steps). Grid rows are anchored per column on the
 // inlet lips, the exhaust slots and the control hinge lines, so those edges are exact; windows, gear doors and the
 // auxiliary inlet doors are cut out of the grid by exact polygon clipping.
+import * as THREE from 'three';
 import geometry from './geometry.js';
 import * as K from '../kit/index.js';
 
@@ -27,12 +28,12 @@ export const LIVERIES = ['standard', 'weathered'];
 
 const SCHEMES = {
   standard: {
-    name: 'Standard AHSS grey', skin: '#3b4048', under: '#424750', le: '#5a6068', seam: '#464c55', patch: '#373c43', tile: '#26282c',
-    rough: 0.5, metal: 0.14, noise: 0.05, chalk: 0, code: 'WM', serial: 'AF 91-0347', acName: 'SPIRIT OF CASCADIA', unit: '509 BW',
+    name: 'Standard AHSS grey', skin: '#34383e', under: '#3a3e44', le: '#4f545a', seam: '#3d4148', patch: '#303439', tile: '#222326',
+    rough: 0.6, metal: 0.06, noise: 0.035, chalk: 0, code: 'WM', serial: 'AF 91-0347', acName: 'SPIRIT OF CASCADIA', unit: '509 BW',
   },
   weathered: {
     name: 'Weathered (repaired coating)', skin: '#4b5058', under: '#525760', le: '#6a7077', seam: '#565c64', patch: '#40454c', tile: '#2b2c2f',
-    rough: 0.58, metal: 0.1, noise: 0.09, chalk: 0.06, code: 'SK', serial: 'AF 93-1129', acName: 'SPIRIT OF THE HIGH DESERT', unit: '73 TES',
+    rough: 0.66, metal: 0.04, noise: 0.09, chalk: 0.06, code: 'SK', serial: 'AF 93-1129', acName: 'SPIRIT OF THE HIGH DESERT', unit: '73 TES',
   },
 };
 
@@ -41,7 +42,8 @@ const SCHEMES = {
 // ===================================================================================================================
 const T33 = Math.tan(33 * DEG);
 const NOSE = -9.4, TAIL = 11.5, TIP = 26.2, XO = 21.9, ZO = 11.1;
-const XN = (TAIL - ZO + T33 * XO) / (2 * T33), ZN = TAIL - T33 * XN;
+const XN = (TAIL - ZO + T33 * XO) / (2 * T33), ZN = TAIL - T33 * XN, XS = 18.8;
+const CHART_X = [0, XN, XS, Infinity];
 const zLE = (a) => NOSE + T33 * a;
 const zTE = (a) => (a <= XN ? TAIL - T33 * a : a <= XO ? ZO - T33 * (XO - a) : ZO - T33 * (a - XO));
 const chord = (a) => zTE(a) - zLE(a);
@@ -80,8 +82,8 @@ function exhaustDepth(a, z, thick) {
   return 0;
 }
 function humps(a, z) {
-  const lc = a < 2.0 ? Math.pow(1 - Math.pow(a / 2.0, 2.5), 2) : 0;
-  const hc = 0.62 * lc * ss(-7.9, -4.9, z) * (1 - ss(-4.3, -0.2, z));
+  const lc = a < 1.85 ? Math.pow(1 - Math.pow(a / 1.85, 3), 2.5) : 0;
+  const hc = 0.75 * lc * ss(-7.35, -5.0, z) * (1 - ss(-4.3, -0.2, z));
   const d = Math.abs(a - 3.0) / 2.4, le = d < 1 ? (1 - d * d) * (1 - d * d) : 0;
   const he = 0.3 * le * ss(-6.0, -2.6, z) * (1 - ss(0.5, 8.5, z));
   return hc + he;
@@ -135,7 +137,7 @@ function rowFracs(a) {
   return out;
 }
 function columns(detail) {
-  const bp = [0, TIP, XN, XO, 2.85, 3.05, 1.4, 2.5, 3.4, 4.5];
+  const bp = [0, TIP, XN, XO, XS, 2.85, 3.05, 1.4, 2.5, 3.4, 4.5];
   for (const cx of INLETS) for (let k = -2; k <= 2; k++) bp.push(cx + k * TOOTH);
   for (const C of CTRL) bp.push(C.x0, C.x1);
   const u = [...new Set(bp.map(v => Math.round(v * 1e6) / 1e6))].sort((p, q) => p - q);
@@ -227,8 +229,8 @@ function buildAirframe(o) {
     for (let j = 0; j <= NR; j++) {
       const z = zl + fr[j] * c;
       const yu = j === 0 || j === NR ? yEdge(a) : yUp(a, z), yl = j === 0 || j === NR ? yEdge(a) : yLow(a, z);
-      ue.push({ x: a, z, p: [a, yu, z], n: null, uv: cTop.uv3(a, yu, z) });
-      le.push({ x: a, z, p: [a, yl, z], n: null, uv: cBot.uv3(a, yl, z) });
+      ue.push({ x: a, z, p: [a, yu, z], n: null, uv: cTop[0].uv3(a, yu, z), uvs: cTop.map(c => c.uv3(a, yu, z)) });
+      le.push({ x: a, z, p: [a, yl, z], n: null, uv: cBot[0].uv3(a, yl, z), uvs: cBot.map(c => c.uv3(a, yl, z)) });
     }
     G.U.push(ue); G.L.push(le);
   }
@@ -246,16 +248,17 @@ function buildAirframe(o) {
   }
   const U = G.U, L = G.L, mid3 = (i, j) => mid(U[i][j].p, L[i][j].p);
 
-  const skin = new K.Mesh(), liner = new K.Mesh(), faces = new K.Mesh();
+  const skin = new K.Mesh(), liner = new K.Mesh(), faces = new K.Mesh(), voids = new K.Mesh();
   const caches = new Map();
-  const vid = (m, P, i, j) => {
+  const vid = (m, P, i, j, sd) => {
     let c = caches.get(m); if (!c) caches.set(m, c = new Map());
-    const key = (P === U ? 0 : 1e7) + i * 1000 + j; let id = c.get(key);
-    if (id === undefined) { const v = P[i][j]; id = m.vert(v.p[0], v.p[1], v.p[2], v.n[0], v.n[1], v.n[2], v.uv[0], v.uv[1]); c.set(key, id); }
+    const key = (P === U ? 0 : 1e7) + sd * 5e6 + i * 1000 + j; let id = c.get(key);
+    if (id === undefined) { const v = P[i][j], uv = v.uvs[sd]; id = m.vert(v.p[0], v.p[1], v.p[2], v.n[0], v.n[1], v.n[2], uv[0], uv[1]); c.set(key, id); }
     return id;
   };
   const quad = (m, P, i, j, up) => {
-    const a = vid(m, P, i, j), b = vid(m, P, i, j + 1), c = vid(m, P, i + 1, j + 1), d = vid(m, P, i + 1, j);
+    const xm = (cols[i] + cols[i + 1]) / 2, sd = CHART_X.findIndex((x, k) => xm < CHART_X[k + 1]);      // wing chart by span
+    const a = vid(m, P, i, j, sd), b = vid(m, P, i, j + 1, sd), c = vid(m, P, i + 1, j + 1, sd), d = vid(m, P, i + 1, j, sd);
     if (up) m.quad(a, b, c, d); else m.quad(a, d, c, b);
   };
   const inBox = (x, z) => cockpitBox && x >= cockpitBox[0] && x <= cockpitBox[1] && z >= cockpitBox[2] && z <= cockpitBox[3];
@@ -299,7 +302,7 @@ function buildAirframe(o) {
     if (ci >= 0) { quad(CM[ci].upper, U, i, j, true); quad(CM[ci].lower, L, i, j, false); continue; }
     if ((j === A1 && inletCol(i)) || (j === A3 && slotCol(i))) {
       const pts = [U[i][j].p, U[i][j + 1].p, U[i + 1][j + 1].p, U[i + 1][j].p];
-      flatPoly(faces, pts, j === A1 ? SW.duct : SW.slot, [0, 0, j === A1 ? -1 : 1]);
+      flatPoly(j === A1 ? voids : faces, pts, j === A1 ? SW.duct : SW.slot, [0, 0, j === A1 ? -1 : 1]);
     } else cell(U, i, j, true);
     cell(L, i, j, false);
   }
@@ -334,7 +337,7 @@ function buildAirframe(o) {
       ctrls[C.name] = { upper: up, lower: lo, ...ax };
     }
   }
-  return { G, skin, faces, liner, ctrls };
+  return { G, skin, faces, voids, liner, ctrls };
 }
 
 // ===================================================================================================================
@@ -346,15 +349,18 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- atlas --------------------------------------------------------------------------------------------------------
   const atlas = K.createAtlas({ size: atlasSize, base: coat(SC.skin) });
-  const cTop = atlas.chart('top', { type: 'plan', x: [0, 26.3], z: [-9.5, 11.6], view: 'top', mirror: true });
-  const cBot = atlas.chart('bot', { type: 'plan', x: [0, 26.3], z: [-9.5, 11.6], view: 'bottom', mirror: true, density: 0.72 });
+  // wing charts are sheared along the leading edge (paint b = z - x·tan33) and split at the notch: the inner chart holds
+  // the centre body, the outer one the constant-chord outer wing and tip — far less wasted atlas than a plain plan view
+  const wchart = (name, a, b, flip, density) => atlas.chart(name, { type: 'proj', origin: [0, 0, 0], u: [1, 0, 0], v: [-T33, 0, 1], a, b, flip, mirror: true, density });
+  const cTop = [wchart('topIn', [0, XN + 0.05], [-9.5, 11.6], false, 1), wchart('topMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], false, 1.1), wchart('topOut', [XS - 0.05, 26.3], [-9.5, -3.0], false, 1.1)];
+  const cBot = [wchart('botIn', [0, XN + 0.05], [-9.5, 11.6], true, 0.8), wchart('botMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], true, 0.85), wchart('botOut', [XS - 0.05, 26.3], [-9.5, -3.0], true, 0.85)];
   const cND = { R: atlas.chart('ndoorR', { type: 'rect', w: 3.4, h: 0.5, density: 2.2 }), L: atlas.chart('ndoorL', { type: 'rect', w: 3.4, h: 0.5, density: 2.2 }) };
   const cMD = { R: atlas.chart('mdoorR', { type: 'rect', w: 4.6, h: 1.05, density: 1.4 }), L: atlas.chart('mdoorL', { type: 'rect', w: 4.6, h: 1.05, density: 1.4 }) };
   const cPanel = atlas.chart('panel', { type: 'rect', w: 2.3, h: 0.45, density: 2.4 });
   atlas.pack();
   const sw = (k, f) => atlas.swatch(k, f);
   const U = {
-    duct: sw('duct', F.black), slot: sw('slot', { color: '#1d1a19', rough: 0.6, metal: 0.6 }), cove: sw('cove', { color: '#2b2e33', rough: 0.6, metal: 0.1 }),
+    duct: sw('duct', { color: '#040405', rough: 0.95, metal: 0 }), slot: sw('slot', { color: '#1d1a19', rough: 0.6, metal: 0.6 }), cove: sw('cove', { color: '#2b2e33', rough: 0.6, metal: 0.1 }),
     le: sw('le', coat(SC.le)), skin: sw('skin', coat(SC.skin)), under: sw('under', coat(SC.under)),
     well: sw('well', { color: '#c9cbc7', rough: 0.55, metal: 0 }), doorIn: sw('doorIn', { color: '#bfc1bd', rough: 0.55, metal: 0 }),
     interior: sw('interior', F.interior), console: sw('console', { color: '#1e2023', rough: 0.6, metal: 0 }), black: sw('black', F.black),
@@ -371,8 +377,8 @@ export function createVisual(ctx, opts = {}) {
   // ---- cut-out regions (right half, (x, z) polygons) ----------------------------------------------------------------
   const EYE = Gm.pilotEye, EYEY = EYE[1], EYEZ = EYE[2];
   const WIN = {
-    front: [[0.07, -6.55], [0.95, -6.28], [1.12, -5.86], [0.07, -5.88]],
-    side: [[1.05, -6.16], [1.42, -5.55], [1.42, -4.92]],
+    front: [[0.07, -6.95], [0.98, -6.6], [1.12, -5.85], [0.07, -5.8]],
+    side: [[1.1, -6.45], [1.52, -5.75], [1.55, -4.85], [1.25, -5.55]],
   };
   const MB = { xi: 3.85, xm: 4.3, xo: 5.35, zf: -2.6, za: 2.0 };          // main gear bay: trapezoid with LE-parallel ends
   const mbF = (x) => MB.zf + (x - MB.xi) * T33, mbA = (x) => MB.za - (x - MB.xi) * T33;
@@ -387,7 +393,7 @@ export function createVisual(ctx, opts = {}) {
     mkReg('aux0', 'U', [AUX[0]]), mkReg('aux1', 'U', [AUX[1]]),
   ];
   const REG = Object.fromEntries(regions.map(r => [r.name, r]));
-  const CPX = 1.45, CPZ0 = -7.0, CPZ1 = -3.9, FLOOR = EYEY - 1.12;
+  const CPX = 1.62, CPZ0 = -7.0, CPZ1 = -3.9, FLOOR = EYEY - 1.12;
 
   // ---- airframe ------------------------------------------------------------------------------------------------------
   const cols = columns(detail);
@@ -446,7 +452,7 @@ export function createVisual(ctx, opts = {}) {
     const i0 = cabAll.vertexCount, q = [[-1.15, PB, PZ + 0.08], [1.15, PB, PZ + 0.08], [1.15, PT, PZ], [-1.15, PT, PZ]], uvs = [[0, 0.45], [2.3, 0.45], [2.3, 0], [0, 0]];
     q.forEach((p, k) => { const uv = cPanel.uv(uvs[k][0], uvs[k][1]); cabAll.vert(p[0], p[1], p[2], 0, 0.2, 1, uv[0], uv[1]); });
     cabAll.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-    cabAll.add(K.prism([[PZ + 0.02, PT - 0.02], [PZ - 0.02, PT + 0.07], [PZ - 0.4, PT + 0.05], [PZ - 0.4, PT - 0.08]], -1.2, 1.2, U.black));   // glareshield
+    cabAll.add(K.prism([[PZ + 0.02, PT - 0.02], [PZ - 0.02, PT + 0.06], [PZ - 0.32, PT + 0.04], [PZ - 0.32, PT - 0.08]], -0.95, 0.95, U.black));   // glareshield
     cabAll.add(K.boxBetween([-0.22, FLOOR, PZ + 0.05], [0.22, PB + 0.15, EYEZ + 0.3], U.console));                                              // centre console
     for (const e of eyes) {
       cabAll.add(K.ejectionSeat({ eye: e, recline: 13, width: 0.5, uv: { frame: U.seat, cushion: U.cushion, accent: U.accent } }));
@@ -466,10 +472,12 @@ export function createVisual(ctx, opts = {}) {
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
-  rig.glass('glass', K.glassMaterial(ctx, { tint: '#141a20', opacity: 0.22, edgeOpacity: 0.85, metalness: 0.3, roughness: 0.04 }));
+  rig.glass('glass', K.glassMaterial(ctx, { tint: '#0e1216', opacity: 0.5, edgeOpacity: 0.9, metalness: 0.35, roughness: 0.04 }));
+  rig.material('void', new THREE.MeshBasicMaterial({ color: 0x000000 }));
   const glow = rig.material('glow', K.glowMaterial(), { shadow: false });
   rig.addStatic(stat, 'paint');
   rig.addStatic(glass, 'glass');
+  rig.addStatic(new K.Mesh().add(AF.voids).add(AF.voids.mirrorX()), 'void');
   rig.part('engineGlow', glowAll, { key: 'glow' });
   const pilotNode = rig.part('crew', pilots, { pivot: eyes[0] });
 
@@ -508,8 +516,9 @@ export function createVisual(ctx, opts = {}) {
   const yl = (x, z) => yLow(Math.abs(x), z);
   // wells (both sides)
   const wellsR = new K.Mesh().add(K.well(K.merge(REG.mainIn.mesh, REG.mainOut.mesh), 1.05, U.well)).add(K.well(REG.nose.mesh, 0.7, U.well));
-  for (const r of [REG.aux0, REG.aux1]) wellsR.add(K.well(r.mesh, 0.35, U.duct));
   rig.addStatic(new K.Mesh().add(wellsR).add(wellsR.mirrorX()), 'paint');
+  const auxW = new K.Mesh(); for (const r of [REG.aux0, REG.aux1]) auxW.add(K.well(r.mesh, 0.35, U.duct));
+  rig.addStatic(new K.Mesh().add(auxW).add(auxW.mirrorX()), 'void');
   // door meshes (right) with door-chart UVs on the outer faces
   const ndUV = (side) => (x, z) => cND[side].uv(side === 'R' ? (NB[3][1] + 0.2) - z : z - (NB[0][1] - 0.2) , 0.5 - Math.abs(x));
   const mdUV = (side) => (x, z) => cMD[side].uv(side === 'R' ? (MB.za + 0.1) - z : z - (MB.zf - 0.1), MB.xo - Math.abs(x));
@@ -595,67 +604,119 @@ export function createVisual(ctx, opts = {}) {
 // ===================================================================================================================
 // paint
 // ===================================================================================================================
+/** Forwards world-plan (x, z) painting to the sheared inner + outer wing charts (paint coords a = x, b = z - x·tan33). */
+function dualPen(pens) {
+  const S = (pts) => pts.map(p => [p[0], p[1] - T33 * p[0]]);
+  const open = (pts) => { const q = S(pts); return (g) => q.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); };
+  return {
+    fill: (path, f, o) => pens.forEach(P => P.fill(path === 'all' ? 'all' : S(path), f, o)),
+    stroke: (pts, w, f, o) => pens.forEach(P => P.stroke(open(pts), w, f, o)),
+    line: (pts, o) => pens.forEach(P => P.line(S(pts), o)),
+    panel: (a0, b0, a1, b1, o) => pens.forEach(P => P.line(S([[a0, b0], [a1, b0], [a1, b1], [a0, b1], [a0, b0]]), o)),
+    streak: (a0, b0, a1, b1, w, o) => pens.forEach(P => P.streak(a0, b0 - T33 * a0, a1, b1 - T33 * a1, w, o)),
+    noise: (o) => pens.forEach(P => P.noise(o)),
+    wear: (pts, w, f, o) => pens.forEach(P => P.wear(open(pts), w, f, o)),
+  };
+}
+
 function paint(atlas, o) {
   const { SC, cTop, cBot, cND, cMD, cPanel, WIN, MB, mbF, mbA, NB, AUX, coat } = o, F = K.FINISH;
-  const rnd = (() => { let s = 4711; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
-  const lePoly = (w) => { const pts = []; for (let k = 0; k <= 26; k++) { const a = k / 26 * TIP; pts.push([a, zLE(a)]); } for (let k = 26; k >= 0; k--) { const a = k / 26 * TIP; pts.push([a, zLE(a) + w * (1 - 0.5 * a / TIP)]); } return pts; };
-  const tePts = () => [[0, TAIL], [XN, ZN], [XO, ZO], [TIP, zTE(TIP)]];
-  for (const [chart, top] of [[cTop, true], [cBot, false]]) {
-    const P = atlas.pen(chart);
+  const rnd = (() => { let s = SC.chalk ? 977 : 4711; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+  const at = (a, f) => [a, zLE(a) + f * chord(a)];
+  const fLine = (f, a0 = 0, a1 = TIP - 0.25, n = 44) => { const r = []; for (let k = 0; k <= n; k++) r.push(at(a0 + (a1 - a0) * k / n, f)); return r; };
+  const lePoly = (w) => { const pts = []; for (let k = 0; k <= 26; k++) { const a = k / 26 * TIP; pts.push([a, zLE(a)]); } for (let k = 26; k >= 0; k--) { const a = k / 26 * TIP; pts.push([a, zLE(a) + w * (1 - 0.6 * a / TIP)]); } return pts; };
+  const weathered = !!SC.chalk;
+  const FR = [0, 0.07, 0.19, 0.33, 0.48, 0.63, 0.8, 1], SP = [0, 0.95, 2.0, 3.05, 4.4, 5.9, 7.5, 9.3, XN, 13.6, 16.1, 18.8, XO, 24.0, TIP];
+  const seamF = coat(SC.seam), patchF = coat(SC.patch);
+  const tape = (P, pts, w = 0.055, alpha = weathered ? 0.7 : 0.45) => P.stroke(pts, w, seamF, { alpha });
+  const joint = (P, pts) => P.line(pts, { px: 1, depth: 0.14, dark: 0.045 });
+  const zig = (x0, x1, z, n, dir) => { const r = [], w = (x1 - x0) / n; for (let k = 0; k <= 2 * n; k++) r.push([x0 + w * k / 2, z + (k % 2) * dir * (w / 2) * T33]); return r; };
+
+  for (const [charts, top] of [[cTop, true], [cBot, false]]) {
+    const P = dualPen(charts.map(c => atlas.pen(c)));
     P.fill('all', coat(top ? SC.skin : SC.under));
-    // repair / coating patches in a slightly different tone
-    for (let k = 0; k < (SC.chalk ? 26 : 12); k++) {
-      const a = 0.5 + rnd() * 22, z = zLE(a) + 0.8 + rnd() * Math.max(0.5, chord(a) - 2), w = 0.4 + rnd() * 1.6, h = 0.3 + rnd() * 1.2;
-      P.fill((g) => g.rect(a, z, w, h), coat(rnd() < 0.5 ? SC.patch : SC.seam), { alpha: 0.35 + rnd() * 0.3 });
+    // panel patchwork: large skin panels in faintly different tones (the coating is applied and repaired panel by panel)
+    for (let k = 0; k < FR.length - 1; k++) for (let m = 0; m < SP.length - 1; m++) {
+      const q = [at(SP[m], FR[k]), at(SP[m + 1], FR[k]), at(SP[m + 1], FR[k + 1]), at(SP[m], FR[k + 1])], r = rnd();
+      P.fill(q, r < 0.5 ? patchF : seamF, { alpha: (weathered ? 0.25 : 0.12) + rnd() * (weathered ? 0.4 : 0.16) });
     }
-    // leading-edge strip
-    P.fill(lePoly(0.42), coat(SC.le));
-    P.line(lePoly(0.42).slice(27), { px: 1, depth: 0.25, dark: 0.08 });
-    // panel joints (barely visible) and taped seams
-    for (const f of [0.18, 0.42, 0.65]) { const pts = []; for (let k = 0; k <= 30; k++) { const a = k / 30 * (TIP - 1); pts.push([a, zLE(a) + f * chord(a)]); } P.line(pts, { px: 1, depth: 0.22, dark: 0.07 }); }
-    for (let k = 0; k < 22; k++) { const a = 1 + k * 1.15; P.line([[a, zLE(a) + 0.5], [a, zTE(a) - 0.3]], { px: 1, depth: 0.18, dark: 0.05 }); }
-    for (let k = 0; k < 9; k++) { const a = 0.8 + k * 2.6; P.stroke([[a, zLE(a) + 0.45], [a + 0.9, zTE(a + 0.9) - 0.4]], 0.05, coat(SC.seam), { alpha: 0.5 }); }
-    // control-surface gaps
+    if (weathered) for (let k = 0; k < 34; k++) {                     // fresh repair patches
+      const a = 0.4 + rnd() * 23, z = zLE(a) + 0.5 + rnd() * Math.max(0.3, chord(a) - 1.4), w = 0.25 + rnd() * 1.1, h = 0.2 + rnd() * 0.8;
+      P.fill([[a, z], [a + w, z], [a + w, z + h], [a, z + h]], coat(rnd() < 0.6 ? '#3d4249' : '#5a5f66'), { alpha: 0.55 + rnd() * 0.3 });
+    }
+    // panel joints (barely visible) with taped seams on the main joints
+    for (let k = 1; k < FR.length - 1; k++) { const L = fLine(FR[k]); joint(P, L); if (k === 2 || k === 5) tape(P, L); }
+    for (let m = 1; m < SP.length - 1; m++) { const L = [at(SP[m], 0.02), at(SP[m], 0.995)]; joint(P, L); if (m % 3 === 1) tape(P, L, 0.05); }
+    // leading-edge strip (lighter edge treatment) and its seam
+    P.fill(lePoly(0.3), coat(SC.le), { alpha: 0.85 });
+    tape(P, lePoly(0.3).slice(27), 0.04);
+    // control-surface gaps and the taped hinge line ahead of them
     for (const C of CTRL) {
       const pts = []; for (let k = 0; k <= 10; k++) { const a = C.x0 + (C.x1 - C.x0) * k / 10; pts.push([a, C.hz(a)]); }
-      P.line([[C.x0, zTE(C.x0)], ...pts, [C.x1, zTE(C.x1)]], { px: 2, depth: 0.7, dark: 0.4 });
+      P.line([[C.x0, zTE(C.x0)], ...pts, [C.x1, zTE(C.x1)]], { px: 2, depth: 0.7, dark: 0.45 });
+      tape(P, pts.map(p => [p[0], p[1] - 0.12]), 0.07);
     }
     if (top) {
-      // exhaust decks: heat-resistant tiles
+      // exhaust decks: heat-resistant tiles, sooty towards the trailing edge
       for (const e of ENG) {
         const x0 = e.cx - EHW, x1 = e.cx + EHW, poly = [[x0, e.z], [x1, e.z], [x1, zTE(x1)], [x0, zTE(x0)]];
-        P.fill(poly, { color: SC.tile, rough: 0.72, metal: 0.05 });
-        for (let z = e.z + 0.18; z < zTE(x0); z += 0.18) P.line([[x0, z], [x1, z]], { px: 1, depth: 0.3, dark: 0.18 });
-        for (let x = x0 + 0.183; x < x1; x += 0.183) P.line([[x, e.z], [x, zTE(x)]], { px: 1, depth: 0.3, dark: 0.18 });
-        P.fill([[x0 - 0.15, e.z - 0.2], [x1 + 0.15, e.z - 0.2], [x1 + 0.15, zTE(x1 + 0.15)], [x0 - 0.15, zTE(x0 - 0.15)]], { color: '#2b2522' }, { alpha: 0.25, feather: 8 });
+        P.fill(poly, { color: SC.tile, rough: 0.74, metal: 0.05 });
+        for (let z = e.z + 0.16; z < zTE(x0); z += 0.16) P.line([[x0, z], [x1, z]], { px: 1, depth: 0.3, dark: 0.22 });
+        for (let x = x0 + 0.157; x < x1; x += 0.157) P.line([[x, e.z], [x, zTE(x)]], { px: 1, depth: 0.3, dark: 0.22 });
+        P.fill(poly, { color: '#1a1614' }, { alpha: 0.3 });
+        P.streak(e.cx, e.z + 0.1, e.cx, zTE(e.cx) + 0.3, EHW * 1.6, { alpha: 0.35, color: '12,10,9' });
+        P.fill([[x0 - 0.12, e.z - 0.15], [x1 + 0.12, e.z - 0.15], [x1 + 0.12, zTE(x1 + 0.12)], [x0 - 0.12, zTE(x0 - 0.12)]], { color: '#2b2522' }, { alpha: 0.22, feather: 8 });
+        tape(P, [[x0 - 0.08, zTE(x0 - 0.08)], [x0 - 0.08, e.z - 0.1], [x1 + 0.08, e.z - 0.1], [x1 + 0.08, zTE(x1 + 0.08)]], 0.06);
       }
-      // inlet ramps darken into the duct
-      for (const cx of INLETS) P.fill([[cx - IHW, ZLIP - 1.0], [cx + IHW, ZLIP - 1.0], [cx + IHW, ZLIP + 0.3], [cx - IHW, ZLIP + 0.3]], { color: '#202226' }, { alpha: 0.5, feather: 10 });
-      // window frames
-      for (const w of [WIN.front, WIN.side]) { P.fill(w, F.paintedGlass); P.stroke(w.concat([w[0]]), 0.07, { color: '#2a2d32', rough: 0.6, metal: 0 }); }
-      for (const a of AUX) P.stroke(a.concat([a[0]]), 0.03, { color: '#2b2e33' });
+      // inlet ramps darken into the ducts; taped outline round each inlet; engine access panels behind
+      for (const cx of INLETS) {
+        P.fill([[cx - IHW, ZLIP - 1.1], [cx + IHW, ZLIP - 1.1], [cx + IHW, ZLIP + 0.3], [cx - IHW, ZLIP + 0.3]], { color: '#16181b' }, { alpha: 0.55, feather: 10 });
+        tape(P, [[cx - IHW - 0.25, ZLIP - 2.2], [cx - IHW - 0.25, ZLIP + 0.9], [cx + IHW + 0.25, ZLIP + 0.9], [cx + IHW + 0.25, ZLIP - 2.2]], 0.06);
+        for (const [z0, z1] of [[0.2, 2.4], [2.7, 5.4]]) P.panel(cx - 0.62, z0, cx + 0.62, z1, { px: 1, depth: 0.2, dark: 0.07, r: 0.08 });
+      }
+      for (const a of AUX) { P.stroke(a.concat([a[0]]), 0.035, { color: '#22252a' }); tape(P, [[a[0][0] - 0.08, a[0][1] - 0.08], [a[1][0] + 0.08, a[1][1] - 0.08], [a[2][0] + 0.08, a[2][1] + 0.08], [a[3][0] - 0.08, a[3][1] + 0.08], [a[0][0] - 0.08, a[0][1] - 0.08]], 0.04); }
+      // flight-deck windows: dark frames and the taped seam round the hump
+      for (const w of [WIN.front, WIN.side]) { P.fill(w, F.paintedGlass); P.stroke(w.concat([w[0]]), 0.08, { color: '#24272b', rough: 0.55, metal: 0 }); }
+      { const r = []; for (let k = 0; k <= 24; k++) { const t = k / 24 * Math.PI; r.push([Math.sin(t) * 1.95, -5.3 - Math.cos(t) * 2.3]); } tape(P, r, 0.06); }
+      // dorsal air-refuelling receptacle (slipway doors) behind the cockpit, with its lead-in stripes
+      P.fill([[0, -3.45], [0.24, -3.4], [0.24, -2.4], [0, -2.35]], { color: '#26292d', rough: 0.6, metal: 0 });
+      P.line([[0, -3.45], [0.24, -3.4], [0.24, -2.4], [0, -2.35]], { px: 1.5, depth: 0.5, dark: 0.3 });
+      P.fill([[0, -3.25], [0.1, -3.22], [0.1, -2.6], [0, -2.58]], { color: '#121315', rough: 0.6, metal: 0 });
+      for (const x of [0.33, 0.42]) P.stroke([[x, -5.0 + (x - 0.33) * 0.4], [x - 0.08, -3.55]], 0.025, coat('#6c7176'), { alpha: 0.6 });
+      // flush air-data ports on the nose
+      for (const [x, z] of [[0.55, -8.45], [0.95, -7.95], [1.35, -7.45]]) P.fill([0, 1, 2, 3, 4, 5, 6, 7].map(k => [x + 0.035 * Math.cos(k * Math.PI / 4), z + 0.035 * Math.sin(k * Math.PI / 4)]), { color: '#1a1c1f', rough: 0.4, metal: 0.3 });
     } else {
-      // weapon-bay doors (two bays side by side on the centreline), door outlines
-      const bay = [[0.18, -3.3], [2.7, -3.3], [2.7, 3.6], [0.18, 3.6]];
-      P.line(bay.concat([bay[0]]), { px: 1.5, depth: 0.5, dark: 0.3 });
-      P.line([[1.44, -3.3], [1.44, 3.6]], { px: 1.2, depth: 0.4, dark: 0.22 });
-      P.line([[MB.xi, mbF(MB.xi)], [MB.xo, mbF(MB.xo)], [MB.xo, mbA(MB.xo)], [MB.xi, mbA(MB.xi)], [MB.xi, mbF(MB.xi)]], { px: 1.5, depth: 0.5, dark: 0.3 });
-      P.line(NB.concat([NB[0]]), { px: 1.5, depth: 0.5, dark: 0.3 });
+      // weapon-bay doors: two bays side by side, saw-toothed ends, each closed by two doors
+      const zf = -3.1, za = 3.3, x0 = 0.22, x1 = 2.55;
+      const front = zig(x0, x1, zf, 3, -1), aft = zig(x0, x1, za, 3, 1);
+      const out = front.concat(aft.slice().reverse()); out.push(out[0]);
+      P.line(out, { px: 1.6, depth: 0.55, dark: 0.32 }); tape(P, out, 0.07);
+      P.line([[(x0 + x1) / 2, zf], [(x0 + x1) / 2, za]], { px: 1.3, depth: 0.45, dark: 0.25 });
+      P.line([[0, zf - 0.4], [0, za + 0.4]], { px: 1, depth: 0.2, dark: 0.08 });
+      // gear doors: exact outlines plus tape
+      const md = [[MB.xi, mbF(MB.xi)], [MB.xo, mbF(MB.xo)], [MB.xo, mbA(MB.xo)], [MB.xi, mbA(MB.xi)], [MB.xi, mbF(MB.xi)]];
+      P.line(md, { px: 1.6, depth: 0.55, dark: 0.35 }); tape(P, md.map(p => [p[0] + (p[0] > 4.5 ? 0.1 : -0.1), p[1] + (p[1] > 0 ? 0.1 : -0.1)]), 0.06);
+      P.line(NB.concat([NB[0]]), { px: 1.6, depth: 0.55, dark: 0.35 });
+      // access panels and flush antennas
+      for (const [xa, za2, xb, zb] of [[0.6, -6.6, 1.3, -5.6], [5.8, -1.4, 6.6, -0.2], [7.2, 0.5, 8.0, 1.6], [3.0, 4.2, 4.2, 5.4], [0.3, 4.4, 1.6, 6.0]]) P.panel(xa, za2, xb, zb, { px: 1, depth: 0.25, dark: 0.08, r: 0.06 });
+      for (const [x, z] of [[1.9, -6.2], [6.2, 2.4], [0.8, 7.0]]) P.fill([[x, z], [x + 0.35, z], [x + 0.35, z + 0.18], [x, z + 0.18]], { color: '#2c2f33', rough: 0.5, metal: 0 }, { alpha: 0.8 });
     }
-    P.noise({ alpha: SC.noise, scale: 3.2, stretch: [1, 1.3], rough: 0.05 });
-    P.noise({ alpha: SC.noise * 0.6, scale: 0.9, mode: 'light' });
-    if (SC.chalk) P.noise({ alpha: SC.chalk, scale: 6, mode: 'light', rough: 0.05 });
+    // weathering: tonal variation, chalking, dirt along the leading edge
+    P.noise({ alpha: SC.noise, scale: 3.4, stretch: [1, 1.3] });
+    if (weathered) P.noise({ alpha: SC.chalk, scale: 6, mode: 'light', rough: 0.06 });
+    P.wear([[0.3, zLE(0.3) + 0.03], [TIP - 0.4, zLE(TIP - 0.4) + 0.03]], 0.05, coat('#6d7277'), { alpha: weathered ? 0.5 : 0.25 });
   }
-  // door charts: nose-gear doors carry the aircraft name and serial, main outer doors the tail code
+  // door charts: nose-gear doors carry the aircraft name and serial, main outer doors the tail code and serial
   for (const side of ['R', 'L']) {
     const P = atlas.pen(cND[side]); P.fill('all', coat(SC.under));
-    P.text(SC.acName, 1.7, 0.2, 0.075, { color: '#1c1e22', weight: 700 });
-    P.text(SC.serial, 1.7, 0.34, 0.06, { color: '#1c1e22', weight: 700 });
+    P.text(SC.acName, 1.75, 0.19, 0.075, { color: '#18191c', weight: 700 });
+    P.text(SC.serial, 1.75, 0.33, 0.055, { color: '#18191c', weight: 700 });
     P.noise({ alpha: SC.noise, scale: 1.2 });
     const M = atlas.pen(cMD[side]); M.fill('all', coat(SC.under));
-    M.text(SC.code, 2.3, 0.38, 0.42, { color: '#202227', weight: 700 });
-    M.text(SC.serial, 2.3, 0.78, 0.13, { color: '#202227', weight: 700 });
-    M.noise({ alpha: SC.noise, scale: 1.5 });
+    M.text(SC.code, 2.25, 0.4, 0.4, { color: '#1b1c20', weight: 700, spacing: 0.04 });
+    M.text(SC.serial, 2.25, 0.76, 0.12, { color: '#1b1c20', weight: 700 });
+    M.text(SC.unit, 2.25, 0.92, 0.06, { color: '#1b1c20', weight: 700 });
+    M.noise({ alpha: SC.noise, scale: 1.5 }); if (weathered) M.noise({ alpha: SC.chalk, scale: 3, mode: 'light' });
   }
   { // instrument panel: eight colour MFDs
     const Q = atlas.pen(cPanel); Q.fill('all', { color: '#1b1d20', rough: 0.6, metal: 0 });
