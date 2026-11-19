@@ -76,7 +76,7 @@ export function createVisual(ctx, opts = {}) {
     frame: sw('frame', paintF(SC.top)), steel: sw('steel', F.steel), lens: sw('lens', F.lens), probe: sw('probe', F.bareMetal),
     aim9: sw('aim9', F.semigloss('#c8cbcc')), aim7: sw('aim7', F.semigloss('#e2e3e0')), seeker: sw('seeker', { color: '#1c1e20', rough: 0.15, metal: 0.3 }),
     pylon: sw('pylon', paintF(SC.under)), irst: sw('irst', { color: '#20262c', rough: 0.08, metal: 0.5 }), hook: sw('hook', { color: '#202224', rough: 0.45, metal: 0.4 }),
-    hookShoe: sw('hookShoe', F.steel), radome: sw('radome', F.semigloss(SC.radome)), tyre: sw('tyre', F.rubber), fan: sw('fan', { color: '#5b5e60', rough: 0.4, metal: 0.9 }),
+    hookShoe: sw('hookShoe', F.steel), radome: sw('radome', F.semigloss(SC.radome)), tyre: sw('tyre', F.rubber), fan: sw('fan', { color: '#3c3f41', rough: 0.45, metal: 0.85 }),
   };
 
   const rig = K.createRig(ctx, { geometry: G, name: 'f14', glassLayer: opts.glassLayer });
@@ -207,7 +207,7 @@ export function createVisual(ctx, opts = {}) {
       cutouts: [{ name: 'mlg', z: [-0.5, 1.1], t: sx > 0 ? [0.07, 0.2] : [0.8, 0.93] }],
     });
     // variable ramp: the upper duct wall slopes down from the lip to the throat (hides most of the compressor face)
-    n.mesh.add(K.prism([[-3.8, 0.43], [-2.5, 0.02], [-2.45, 0.04], [-2.45, 0.44]], sx > 0 ? 1.5 - 0.46 : -1.5 - 0.46, sx > 0 ? 1.5 + 0.46 : -1.5 + 0.46, U.duct));
+    n.mesh.add(K.prism([[-3.78, 0.43], [-2.48, -0.1], [-2.42, -0.08], [-2.42, 0.44]], sx > 0 ? 1.5 - 0.46 : -1.5 - 0.46, sx > 0 ? 1.5 + 0.46 : -1.5 + 0.46, U.duct));
     // rake the lip (top forward), sweep it in plan (outer wall aft) and lean the box slightly outward; fades out by z −2.6
     const p = n.mesh.p;
     for (let i = 0; i < p.length; i += 3) {
@@ -318,7 +318,7 @@ export function createVisual(ctx, opts = {}) {
     const yb = fus.botAt(-8.6);
     stat.add(K.loft({ stations: [{ z: -9.15, y: yb + 0.02, w: 0.03, top: 0.02, bot: 0.02 }, { z: -8.95, y: yb - 0.04, w: 0.19, top: 0.07, bot: 0.09, kBot: 0.7 }, { z: -8.3, y: yb - 0.04, w: 0.21, top: 0.08, bot: 0.1, kBot: 0.7 }, { z: -7.95, y: yb + 0.02, w: 0.04, top: 0.03, bot: 0.03 }], segments: 16, step: 0.12, uv: U.under }).mesh);
     for (const sx of [-1, 1]) {
-      stat.add(K.lathe([[0, -9.3], [0.055, -9.28], [0.078, -9.18, 1], [0.08, -8.9]], { segments: 14, uv: U.irst }).translate(sx * 0.095, yb - 0.075, 0));
+      stat.add(K.lathe([[0, -9.22], [0.06, -9.215], [0.072, -9.2, 1], [0.08, -9.12, 1], [0.08, -8.9]], { segments: 14, uv: U.irst }).translate(sx * 0.095, yb - 0.075, 0));
       stat.add(K.lathe([[0.082, -9.18], [0.085, -8.6], [0.05, -8.4], [0, -8.4]], { segments: 14, uv: U.under }).translate(sx * 0.095, yb - 0.075, 0));
     }
   }
