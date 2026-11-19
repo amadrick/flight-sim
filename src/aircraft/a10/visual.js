@@ -42,7 +42,7 @@ export function createVisual(ctx, opts = {}) {
   const cWB = atlas.chart('wingBot', { type: 'plan', x: [0.5, 8.85], z: [-1.12, 2.12], view: 'bottom', mirror: true, density: 0.75 });
   const cST = atlas.chart('stabTop', { type: 'plan', x: [0, 2.85], z: [6.35, 8.3], view: 'top', mirror: true, density: 0.9 });
   const cSB = atlas.chart('stabBot', { type: 'plan', x: [0, 2.85], z: [6.35, 8.3], view: 'bottom', mirror: true, density: 0.7 });
-  const cFin = { L: atlas.chart('finLV', { type: 'side', z: [6.6, 9.0], y: [0.0, 2.92], view: 'left' }), R: atlas.chart('finRV', { type: 'side', z: [6.6, 9.0], y: [0.0, 2.92], view: 'right' }) };
+  const cFin = { L: atlas.chart('finLV', { type: 'side', z: [6.6, 9.0], y: [-0.1, 2.92], view: 'left' }), R: atlas.chart('finRV', { type: 'side', z: [6.6, 9.0], y: [-0.1, 2.92], view: 'right' }) };
   const cPod = atlas.chart('pod', { type: 'unwrap', z: [-2.3, 1.85], girth: 2.0, vScale: 0.8, density: 0.8 });
   const cNac = atlas.chart('nac', { type: 'unwrap', z: [1.6, 4.45], girth: 4.2, vScale: 0.8, density: 0.85 });
   const cPanel = atlas.chart('panel', { type: 'rect', w: 0.9, h: 0.5, density: 2.2 });
@@ -75,13 +75,13 @@ export function createVisual(ctx, opts = {}) {
   // ---- fuselage: blunt gun nose, slab-sided armoured cockpit section, long tapering tail cone ----------------------------
   //   z       yW     w      top    bot    kTop  kBot      (yW = height of the widest point; top / bot absolute heights)
   const FSR = [
-    [-6.98, 0.02, 0.000, 0.020, 0.020],
-    [-6.94, 0.02, 0.120, 0.150, -0.110, 0.6, 0.6],
-    [-6.82, 0.03, 0.250, 0.290, -0.215, 0.62, 0.64],
-    [-6.50, 0.05, 0.410, 0.470, -0.370, 0.66, 0.7],
-    [-6.00, 0.09, 0.560, 0.660, -0.505, 0.7, 0.76],
-    [-5.50, 0.13, 0.650, 0.805, -0.575, 0.72, 0.8],
-    [-5.00, 0.17, 0.705, 0.925, -0.605, 0.74, 0.83],
+    [-6.99, 0.10, 0.000, 0.100, 0.100],
+    [-6.95, 0.10, 0.140, 0.240, -0.040, 0.6, 0.6],
+    [-6.84, 0.10, 0.270, 0.375, -0.160, 0.62, 0.64],
+    [-6.55, 0.11, 0.420, 0.535, -0.330, 0.66, 0.7],
+    [-6.00, 0.13, 0.565, 0.705, -0.500, 0.7, 0.76],
+    [-5.50, 0.15, 0.655, 0.830, -0.585, 0.72, 0.8],
+    [-5.00, 0.18, 0.710, 0.935, -0.620, 0.74, 0.83],
     [-4.40, 0.20, 0.730, 0.990, -0.620, 0.76, 0.85],
     [-3.50, 0.21, 0.740, 1.010, -0.630, 0.76, 0.86],
     [-2.50, 0.21, 0.740, 1.040, -0.630, 0.74, 0.86],
@@ -158,20 +158,20 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   {
-    const gs = K.prism([[-4.9, 0.95], [-4.9, 1.04], [-4.56, 1.1], [-4.5, 1.08], [-4.5, 0.95]], -0.44, 0.44, U.black);
+    const gs = K.prism([[-4.9, 0.9], [-4.9, 0.97], [-4.58, 1.0], [-4.52, 0.985], [-4.52, 0.9]], -0.44, 0.44, U.black);
     for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * Math.min(1, (gs.p[i + 2] + 4.9) / 0.4);
     stat.add(gs);
   }
   {
     const i0 = stat.vertexCount;
-    for (const [x, y, b] of [[-0.42, 0.55, 0.5], [0.42, 0.55, 0.5], [0.42, 1.0, 0], [-0.42, 1.0, 0]]) { const uv = cPanel.uv(x + 0.45, b); stat.vert(x, y, -4.5, 0, 0.25, 1, uv[0], uv[1]); }
+    for (const [x, y, b] of [[-0.42, 0.5, 0.5], [0.42, 0.5, 0.5], [0.42, 0.97, 0], [-0.42, 0.97, 0]]) { const uv = cPanel.uv(x + 0.45, b); stat.vert(x, y, -4.5, 0, 0.25, 1, uv[0], uv[1]); }
     stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
   }
   for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.1, 1.5, U.console).translate(sx * 0.42, 0.62, -3.55));
   stat.add(K.stick({ base: [0, 0.35, -4.1], height: 0.38, uv: U.black, uvGrip: U.dark }));
   stat.add(K.box(0.07, 0.08, 0.14, U.dark).translate(-0.4, 0.72, -3.8));
   stat.add(K.ejectionSeat({ eye, recline: 12, uv: { frame: U.seat, cushion: U.cushion, accent: U.accent } }));
-  const hudParts = K.hud({ eye, dist: 0.58, width: 0.18, height: 0.16, drop: 0.05, uv: U.black });
+  const hudParts = K.hud({ eye, dist: 0.6, width: 0.18, height: 0.16, drop: 0.12, uv: U.black });
   stat.add(hudParts.frame);
   const pilotMesh = K.pilot({ eye, recline: 10, stick: [0, -0.55, -0.15], throttle: [-0.4, -0.5, 0.15], uv: { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove } });
 
@@ -225,12 +225,12 @@ export function createVisual(ctx, opts = {}) {
   });
   const stab = { R: mkStab(1), L: mkStab(-1) };
   stat.add(stab.R.mesh).add(stab.L.mesh);
-  const FINST = [[0.08, 7.4, 8.78], [0.17, 6.98, 8.88], [0.34, 6.76, 8.93], [1.5, 6.86, 8.95], [2.5, 7.05, 8.95], [2.7, 7.25, 8.9], [2.82, 7.62, 8.7]];
+  const FINST = [[-0.05, 7.42, 8.76], [0.05, 7.0, 8.87], [0.25, 6.76, 8.93], [1.5, 6.86, 8.95], [2.5, 7.05, 8.95], [2.7, 7.25, 8.9], [2.82, 7.62, 8.7]];
   const RZ = 8.3;
   const mkFin = (sx) => K.wing({
     airfoil: K.naca4('0008'), chordPts: Math.round(10 * detail), spanAxis: 'y', tip: 'flat', root: 'flat',
     stations: FINST.map(([y, le, te]) => ({ x: sx * FX, y, z: le, chord: te - le, tc: 0.075 })),
-    lines: { rh: [[0.34, (RZ - 6.76) / 2.17], [1.5, (RZ - 6.86) / 2.09], [2.5, (RZ - 7.05) / 1.9], [2.7, (RZ - 7.25) / 1.65]] },
+    lines: { rh: [[0.25, (RZ - 6.76) / 2.17], [1.5, (RZ - 6.86) / 2.09], [2.5, (RZ - 7.05) / 1.9], [2.7, (RZ - 7.25) / 1.65]] },
     controls: [{ name: 'rudder', type: 'flap', span: [0.88, 2.62], from: 'rh', nose: 1 }],
     charts: { upper: cFin.L, lower: cFin.R }, innerUV: U.dark,
   });
@@ -492,8 +492,8 @@ function paint(atlas, o) {
   P.decalT(-5.2, 0.5, {}, (g) => { g.fillStyle = 'rgba(28,30,32,0.7)'; g.beginPath(); g.roundRect(-0.16, -0.13, 0.32, 0.26, 0.04); g.fill(); g.strokeStyle = '#e6e6df'; g.lineWidth = 0.012; for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(-0.75, sx * 0.17); g.lineTo(-0.2, sx * 0.17); g.stroke(); } });
   P.fill([[-6.6, 0.47], [-5.35, 0.45], [-5.35, 0.55], [-6.6, 0.53]], F.matte('#30343a'), { alpha: SC.camo ? 0 : 0.6 });
   // gun gas soot on the lower nose
-  P.fill((g) => { g.rect(-7.0, 0.82, 1.5, 0.18); g.rect(-7.0, 0.0, 1.5, 0.18); }, { color: '#1c1c1b', rough: 0.85, metal: 0 }, { alpha: 0.55, feather: 14 });
-  for (let i = 0; i < 14; i++) { const t = (rnd() < 0.5 ? 0.04 : 0.8) + rnd() * 0.16; P.streak(-6.9, t, -6.9 + 0.8 + rnd() * 1.4, t + (rnd() - 0.5) * 0.03, 0.03 + rnd() * 0.04, { alpha: 0.25 + rnd() * 0.2 }); }
+  P.fill((g) => { g.rect(-7.0, 0.9, 0.55, 0.1); g.rect(-7.0, 0.0, 0.55, 0.1); }, { color: '#1c1c1b', rough: 0.85, metal: 0 }, { alpha: 0.4, feather: 12 });
+  for (let i = 0; i < 14; i++) { const t = (rnd() < 0.5 ? 0.03 : 0.85) + rnd() * 0.12; P.streak(-6.9, t, -6.9 + 0.6 + rnd() * 1.2, t + (rnd() - 0.5) * 0.03, 0.02 + rnd() * 0.03, { alpha: 0.15 + rnd() * 0.15 }); }
   // markings
   P.decalOn(3.3, 0.28, 'both', (g) => K.drawStarBar(g, 0.62, { lowVis: SC.camo ? '#141514' : '#3a3e42' }));
   P.textOn('LT COL R. "TUSK" HALVERSEN', -3.5, 0.72, 'L', 0.042, { color: SC.camo ? '#d8d8cf' : '#2a2d30', weight: 700 });
