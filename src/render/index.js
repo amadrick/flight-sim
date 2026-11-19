@@ -32,7 +32,7 @@ const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i
 // opens up ~5 stops, which keeps half-float precision and other modules' emissive values in a sane range.
 const MOON_FULL = 0.004;
 const MOON_TINT = new THREE.Vector3(0.80, 0.90, 1.0);
-const AIRGLOW = new THREE.Vector3(0.55, 0.85, 1.0).multiplyScalar(2e-5);    // per km of sea-level air, × night
+const AIRGLOW = new THREE.Vector3(0.55, 0.85, 1.0).multiplyScalar(5e-5);    // per km of sea-level air, × night
 const GROUND_ALBEDO = new THREE.Vector3(0.14, 0.15, 0.13);
 const MOON_RADIUS = 0.00452 * 1.7;       // drawn 1.7x larger than life, as every film does
 const MOON_DISC_RADIANCE = 0.075;
@@ -57,7 +57,9 @@ void main() {
   if (depthIsSky(d)) {
     vec3 dir = viewRay(vUv);
     col = sky_radiance(dir);
-    col += uFlash.rgb * (0.02 + 0.10 * pow(max(dot(dir, uFlashDir), 0.0), 6.0));
+    // lightning lights the haze, not empty sky: scale by the opacity of the air column along the ray
+    float hazeS = 1.0 - texture(tAtmSkyView, atmSkyUV(dir)).a;
+    col += uFlash.rgb * hazeS * (0.03 + 0.12 * pow(max(dot(dir, uFlashDir), 0.0), 6.0));
   } else {
     vec3 P = renderPosFromDepth(vUv, d);
     col = texture(tScene, vUv).rgb;
@@ -68,16 +70,16 @@ void main() {
     float s = uCloudK.w >= 0.0 ? uCloudK.w : clamp(cloudShadow(P), 0.0, 1.0);
     float F = 1.0 - uCloudK.x + uCloudK.x * s;
     col = mix(col, vec3(dot(col, LUMA)), 0.3 * uCloudK.x * (1.0 - s)) * F;
-    col = col * (1.0 + 3.0 * uFlash.a) + uFlash.rgb * 0.012;
     // Aerial perspective. The mean dimming of the air under a cloud deck is already in the LUTs (uAtmDeck), and the
     // in-scatter along the path does not depend on the shadow at its end point, so cloud shadows fade with distance.
     vec4 ap = atmAerialPerspective(P);
     col = col * ap.a + ap.rgb;
+    if (uFlash.a > 0.0) col += uFlash.rgb * (1.0 - ap.a) * (0.03 + 0.12 * pow(max(dot(normalize(P - uCameraPos), uFlashDir), 0.0), 6.0));
   }
   if (uHasClouds > 0.5) {
     vec4 c = texture(tClouds, vUv);
     if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
-    col = col * c.a + c.rgb * (1.0 + 2.0 * uFlash.a) + uFlash.rgb * (0.3 * (1.0 - c.a));
+    col = col * c.a + c.rgb + uFlash.rgb * (1.0 - c.a) * (0.035 + 0.25 * pow(max(dot(viewRay(vUv), uFlashDir), 0.0), 8.0));
   }
   outColor = vec4(clamp(col, 0.0, 30000.0), 1.0);
   gl_FragDepth = d;     // depth copy: LAYERS.POST objects test against this while still being able to SAMPLE tSceneDepth
@@ -345,11 +347,12 @@ export async function createPipeline(ctx) {
     // generic ground radiance (true value) → sky-view "ground", IBL lower hemisphere
     groundRad.copy(keyE).multiplyScalar(Math.max(keyDir.y, 0) / Math.PI).add(tmpV).multiply(GROUND_ALBEDO);
     atmosphere.uniforms.uAtmGround.value.copy(groundRad);
-    const fl = 1 + 4 * flash;
+    // lightning: an extra ambient light of fixed strength, so a stroke is blinding at night and barely there by day
+    const fa = 0.05 * flash, fg = fa * 0.35;
     ctx.env.sunColor.setRGB(sunE.x, sunE.y, sunE.z);
-    ctx.env.ambientSky.setRGB(tmpV.x / Fpl * fl, tmpV.y / Fpl * fl, tmpV.z / Fpl * fl);
-    ctx.env.ambientGround.setRGB(groundRad.x / Fpl * fl, groundRad.y / Fpl * fl, groundRad.z / Fpl * fl);
-    scene.environmentIntensity = fl / Fpl;
+    ctx.env.ambientSky.setRGB(tmpV.x / Fpl + flashCol.x * fa, tmpV.y / Fpl + flashCol.y * fa, tmpV.z / Fpl + flashCol.z * fa);
+    ctx.env.ambientGround.setRGB(groundRad.x / Fpl + flashCol.x * fg, groundRad.y / Fpl + flashCol.y * fg, groundRad.z / Fpl + flashCol.z * fg);
+    scene.environmentIntensity = Math.min(1 / Fpl + fa * 0.82 / Math.max(lum3(tmpV), 1e-6), 1e5);
     // zero-lag copy into the shared frame uniforms (core copied last frame's values before we ran)
     F.uSunColor.value.copy(ctx.env.sunColor); F.uAmbientSky.value.copy(ctx.env.ambientSky); F.uAmbientGround.value.copy(ctx.env.ambientGround);
 
@@ -569,9 +572,11 @@ export async function createPipeline(ctx) {
   }
 
   // ------------------------------------------------------------------------------------------------ render
+  const enablePostLayer = (o) => { if (o.isLight) o.layers.enable(LAYERS.POST); };
   function render(dt) {
     const realDt = ctx.time.realDt || 0;
     frameNo++;
+    if (dbg.dbgflash !== undefined && frameNo === +dbg.dbgflash) ctx.events.emit('lightning', { intensity: 1 });   // debug: ?dbgflash=<frame>
     if (!composite) buildLazy();
     syncReversedDepth();
     updateDRS();
@@ -612,6 +617,9 @@ export async function createPipeline(ctx) {
 
     // --- composite (+ depth copy) → hdrTarget, then the POST layer on top, depth-tested --------------------------
     composite.render(renderer, hdrTarget);
+    // Every light must also be visible to the POST pass: if the set of lights differed between the two scene renders,
+    // three's light-state version would flip twice a frame and every lit material would re-resolve its program.
+    if (frameNo < 12 || frameNo % 120 === 0) scene.traverse(enablePostLayer);
     camera.layers.set(LAYERS.POST);
     renderer.shadowMap.autoUpdate = false;
     renderer.setRenderTarget(hdrTarget);
@@ -638,7 +646,7 @@ export async function createPipeline(ctx) {
       let src = hdr;
       const levels = bloomOn ? bloomDown.length : Math.min(4, bloomDown.length);
       for (let i = 0; i < levels; i++) {
-        u.tSrc.value = src.texture; u.uSrcTexel.value.set(1 / src.width, 1 / src.height); u.uKaris.value = i === 0 ? 1 : 0;
+        u.tSrc.value = src.texture; u.uSrcTexel.value.set(1 / src.width, 1 / src.height); u.uKaris.value = i === 0 ? 0.2 * exposure : 0;
         post.down.render(renderer, bloomDown[i]);
         src = bloomDown[i];
       }

@@ -92,9 +92,17 @@ vec3 atmDirFromAzEl(float x, float el) {
 // in elevation so most texels sit at the horizon (Hillaire 2020 §5.3). Directions below the horizon clamp to it.
 vec2 atmSkyUV(vec3 dir) {
   float beta = uAtmView.x;
-  float e = max(asin(clamp(dir.y, -1.0, 1.0)) + beta, 0.0);
-  float c = sqrt(min(e / (1.5707963 + beta), 1.0));
-  return (0.5 + vec2(atmAzToX(dir), 1.0 - c) * (ATM_SKY_SIZE - 1.0)) / ATM_SKY_SIZE;
+  float e = asin(clamp(dir.y, -1.0, 1.0)) + beta;
+  float x = atmAzToX(dir);
+  if (e < 0.0) {
+    // Below the horizon this is only the aerial-perspective reference. Looking steeply down, in-scatter hardly
+    // depends on azimuth while the horizon sky does, so the reference slides to the azimuth perpendicular to the
+    // light as the ray steepens (the sky is symmetric about the light's azimuth, so this stays continuous).
+    float s = abs(x - 0.5) * 2.0;
+    x = 0.5 + (x < 0.5 ? -0.5 : 0.5) * sqrt(mix(s * s, 0.5, smoothstep(0.0, 0.5, -e)));
+  }
+  float c = sqrt(clamp(e / (1.5707963 + beta), 0.0, 1.0));
+  return (0.5 + vec2(x, 1.0 - c) * (ATM_SKY_SIZE - 1.0)) / ATM_SKY_SIZE;
 }
 vec3 atmSkyUVToDir(vec2 uv) {
   float beta = uAtmView.x;
@@ -121,7 +129,7 @@ vec3 atmXYToDir(vec2 uv, vec2 size) {
 }
 
 // Reference radiance the aerial-perspective volume is normalised against: the sky along dir, or — for directions
-// below the horizon — the sky at the horizon in the same azimuth (smooth in elevation, keeps the Mie peak in azimuth).
+// below the horizon — the sky at the horizon (same azimuth just under the horizon, see atmSkyUV).
 vec3 atmSkyRef(vec3 dir) { return atmDecode(texture(tAtmSkyView, atmSkyUV(dir)).rgb); }
 
 // In-scatter (rgb) and transmittance (a) over distKm kilometres from the camera along unit dir. 3 fetches.

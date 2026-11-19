@@ -55,7 +55,9 @@ vec3 sky_stars(vec3 dir) {
   float band = exp(-b * b * 16.0);
   float n = sky_fbm3(d * 5.0 + 3.0);
   c += vec3(0.80, 0.86, 1.0) * (band * (0.25 + 1.6 * n * n * n) * 3.2e-4);
-  return c * uSkyParams.y;
+  // keep a star's energy roughly constant when pixels (and with them its footprint) get large
+  float px = uSkyParams.x * 625.0;
+  return c * (uSkyParams.y * clamp(1.0 / (px * px), 0.2, 1.6));
 }
 
 // rgb = radiance of the lunar disc, a = coverage. Lit by the real sun direction, so the phase is always right.

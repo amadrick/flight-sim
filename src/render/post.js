@@ -102,14 +102,14 @@ void main() {
 // 13-tap downsample (Karis partial average on the first level: no fireflies), 9-tap tent upsample, levels blended
 // with a lerp so the result is a normalised (energy conserving) wide kernel; no threshold.
 const DOWN_FRAG = HEAD + /* glsl */`
-uniform sampler2D tSrc; uniform vec2 uSrcTexel; uniform float uKaris;
+uniform sampler2D tSrc; uniform vec2 uSrcTexel; uniform float uKaris;     // > 0 on the first level
 vec3 s(float x, float y) { return min(max(texture(tSrc, vUv + vec2(x, y) * uSrcTexel).rgb, 0.0), vec3(30000.0)); }
-float kw(vec3 c) { return 1.0 / (1.0 + dot(c, LUMA)); }
+float kw(vec3 c) { return 1.0 / (1.0 + dot(c, LUMA) * uKaris); }      // uKaris = 0.2 * exposure: display-referred weight
 void main() {
   vec3 a = s(-2.0, 2.0), b = s(0.0, 2.0), c = s(2.0, 2.0), d = s(-2.0, 0.0), e = s(0.0, 0.0), f = s(2.0, 0.0);
   vec3 g = s(-2.0, -2.0), h = s(0.0, -2.0), i = s(2.0, -2.0), j = s(-1.0, 1.0), k = s(1.0, 1.0), l = s(-1.0, -1.0), m = s(1.0, -1.0);
   vec3 col;
-  if (uKaris > 0.5) {
+  if (uKaris > 0.0) {
     vec3 g0 = (j + k + l + m) * 0.25, g1 = (a + b + d + e) * 0.25, g2 = (b + c + e + f) * 0.25, g3 = (d + e + g + h) * 0.25, g4 = (e + f + h + i) * 0.25;
     float w0 = kw(g0) * 0.5, w1 = kw(g1) * 0.125, w2 = kw(g2) * 0.125, w3 = kw(g3) * 0.125, w4 = kw(g4) * 0.125;
     col = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
