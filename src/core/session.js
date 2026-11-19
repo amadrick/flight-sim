@@ -51,7 +51,9 @@ export function createSession(ctx) {
       if (!ctx.player) return;
       ctx.events.emit('session:end', ctx.player);
       ctx.scene.remove(ctx.player.visual.object3D);
-      ctx.player.visual.dispose?.(); ctx.player.sim.dispose?.();
+      // a failing dispose must never leave a dead session behind
+      try { ctx.player.visual.dispose?.(); } catch (e) { console.warn('[session] visual dispose failed', e); }
+      try { ctx.player.sim.dispose?.(); } catch (e) { console.warn('[session] sim dispose failed', e); }
       ctx.player = null; session.active = false;
     },
     update(dt) {

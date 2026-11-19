@@ -160,9 +160,9 @@ export function createRig(ctx, o = {}) {
           }
         },
         dispose() {
-          root.traverse(n => { if (n.isMesh) n.geometry.dispose(); });
-          for (const m of owned) m.dispose?.();
-          for (const d of rig.disposables) d.dispose?.();
+          root.traverse(n => { if (n.isMesh) n.geometry?.dispose(); });
+          for (const m of owned) m?.dispose?.();
+          for (const d of rig.disposables) d?.dispose?.();
           root.removeFromParent();
         },
       };
