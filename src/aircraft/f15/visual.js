@@ -289,8 +289,8 @@ export function createVisual(ctx, opts = {}) {
   const ramps = [];
   for (const sx of [1, -1]) {
     const z0 = ZLIP - 0.62 * RAKE + 0.12, z1 = z0 + 1.15;
-    const m = K.prism([[z0, 0.645], [z1, 0.645], [z1, 0.6], [z0 + 0.2, 0.625]], sx * 1.12 - 0.44, sx * 1.12 + 0.44, U.rampW);
-    ramps.push({ m, a: [sx * 1.12 - 0.44, 0.645, z0], b: [sx * 1.12 + 0.44, 0.645, z0], ref: [sx * 1.12, 0.62, z1] });
+    const m = K.prism([[z0, 0.625], [z1, 0.625], [z1, 0.58], [z0 + 0.2, 0.605]], sx * 1.12 - 0.37, sx * 1.12 + 0.37, U.rampW);
+    ramps.push({ m, a: [sx * 1.12 - 0.37, 0.625, z0], b: [sx * 1.12 + 0.37, 0.625, z0], ref: [sx * 1.12, 0.6, z1] });
   }
 
   // ---- speedbrake (large dorsal panel behind the canopy, hinged at its front edge) ----------------------------------------------
@@ -359,7 +359,7 @@ export function createVisual(ctx, opts = {}) {
     // centreline pylon
     stat.add(K.prism([[-2.0, -0.6], [0.6, -0.6], [0.4, -0.78], [-1.6, -0.78]], -0.06, 0.06, U.pylon));
     // M61 gun fairing bump at the right wing root
-    stat.add(K.ellipsoid(0.11, 0.08, 0.8, { segments: 10, rings: 6, uv: U.mid }).translate(1.62, 0.68, -2.05));
+    stat.add(K.ellipsoid(0.07, 0.05, 0.55, { segments: 10, rings: 6, uv: U.mid }).translate(1.6, 0.7, -2.2));
   }
 
   // ---- materials ----------------------------------------------------------------------------------------------------------
