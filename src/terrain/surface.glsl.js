@@ -482,8 +482,9 @@ TerrSurf terrSurface(vec3 rp) {
     crown = mix(0.5, cn.b, fine);
     crownG = terrUnrot(TERR_TILE3, cn.rg - 0.5) * fine;
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
-    fcol *= mix(1.0, 0.72 + 0.56 * cn.a, fine) * mix(1.0, 0.86, conifer);
-    canopyAO = mix(1.0, 0.42 + 0.78 * crown, fine);
+    // sunlit crown tops over the dark gaps between the trees; every crown its own shade of green
+    fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine) * mix(1.0, 0.86, conifer);
+    canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine);
     // from further off the canopy reads as an uneven, mottled surface (no cell pattern: it would show its grid)
     float fineF = ss(40.0, 8.0, px) * (1.0 - 0.7 * fine);
     fcol *= 1.0 + fineF * (0.9 * (n3.g - 0.5) + 0.5 * (n3.r - 0.5));
@@ -703,7 +704,7 @@ TerrSurf terrSurface(vec3 rp) {
   float soft = 1.0 - 0.75 * snow;                     // snow smooths everything
   col *= clamp(1.0 + (mp.x * tint + mp.y * hgt) * soft, 0.35, 1.7);
   rough = clamp(rough + (mp.w - 0.9) * 0.6 - 0.10 * hgt * soft, 0.3, 1.0);
-  dn = dn * mp.z * soft + crownG * 1.6 * paint;
+  dn = dn * mp.z * soft + crownG * 2.4 * paint;
 
   // ---- water on the land: rain-wet ground, puddles in the hollows of the micro relief, tide line, rivers ---------
   float rainWet = uTerrWet * (1.0 - snow) * (1.0 - paint * 0.7);
