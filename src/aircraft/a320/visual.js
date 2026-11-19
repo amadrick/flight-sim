@@ -136,7 +136,7 @@ export function createVisual(ctx, opts = {}) {
   const fairStations = [[-6.7, 1.0, 0.25, 0.45], [-5.5, 1.8, 0.55, 0.95], [-3.9, 2.18, 0.75, 1.2], [-1.0, 2.32, 0.8, 1.24], [2.4, 2.5, 0.8, 1.24], [4.2, 2.24, 0.72, 1.2], [6.0, 1.8, 0.52, 1.08], [7.6, 1.15, 0.3, 0.62], [8.6, 0.6, 0.15, 0.3]]
     .map(r => ({ z: r[0], y: -0.95, w: r[1], top: r[2], bot: r[3], kTop: 0.66, kBot: [0.94, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(28, Math.round(44 * detail / 4) * 4), step: 0.7, chart: cFair };
-  let fair = K.loft(fairOpts);
+  let fair = K.loft({ ...fairOpts, chart: undefined, uv: UA.fair });                        // first pass only to measure the bay
   const fAtX = (x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(1.14, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
   fair = K.loft({ ...fairOpts, cutouts: [{ name: 'bay', z: [0.44, 1.84], t: [fAtX(0.85), fAtX(2.38)], mirror: true }] });
   cFair.body = fair;
