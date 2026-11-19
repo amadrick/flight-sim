@@ -3,38 +3,51 @@
 import { num, FPM } from './common.js';
 
 const CSS = `
-.hud-root{position:absolute;inset:0;pointer-events:none!important;overflow:hidden;font-family:var(--font-mono,'B612 Mono',ui-monospace,Menlo,Consolas,monospace);color:var(--fg,#e6edf3)}
-.hud-root[hidden]{display:none}
-.hud-toasts{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 max(16px,env(safe-area-inset-left,0px))}
-.hud-toast{display:flex;align-items:center;gap:10px;max-width:100%;box-sizing:border-box;padding:7px 14px 7px 12px;background:rgba(9,14,20,.78);border:1px solid rgba(143,161,179,.22);border-left:2px solid var(--hud,#5dff9b);border-radius:3px;
-  font-size:13px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 6px 24px rgba(0,0,0,.25);
-  opacity:0;transform:translateY(-6px);transition:opacity .22s ease,transform .22s ease}
+.hud-root{position:absolute;inset:0;pointer-events:none!important;overflow:hidden;font-family:var(--font-body,'Saira','Segoe UI',system-ui,Arial,sans-serif);color:var(--fg,#f2f6fa)}
+.hud-root[hidden],.hud-root [hidden]{display:none!important}
+.hud-toasts{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 max(16px,env(safe-area-inset-left,0px))}
+.hud-toast{--r:999px;display:flex;align-items:center;gap:10px;max-width:100%;box-sizing:border-box;height:38px;padding:0 18px 0 14px;
+  font-size:13.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  opacity:0;transform:translateY(-10px) scale(.94);transition:opacity .22s ease,transform .38s var(--spring,cubic-bezier(.34,1.32,.5,1))}
+.hud-toast::marker{content:none}
+.hud-toast i{width:8px;height:8px;border-radius:50%;flex:none;background:var(--hud,#5dff9b);box-shadow:0 0 8px currentColor;color:var(--hud,#5dff9b)}
 .hud-toast.on{opacity:1;transform:none}
-.hud-toast[data-tone=caution]{border-left-color:var(--accent,#ffb000);color:#ffd27a}
-.hud-toast[data-tone=warn]{border-left-color:var(--warn,#ff5a3c);color:#ffb3a3}
-.hud-toast[data-tone=info]{border-left-color:var(--ok,#4cc9f0)}
-.hud-toast b{font-weight:700;color:var(--fg,#e6edf3)}
-.hud-paused{position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;
-  font-size:clamp(20px,3.2vw,34px);letter-spacing:.5em;padding:8px 10px 8px 26px;color:var(--fg,#e6edf3);background:rgba(5,8,12,.55);border-top:1px solid rgba(230,237,243,.35);border-bottom:1px solid rgba(230,237,243,.35)}
-.hud-crash{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:min(520px,calc(100% - 32px));box-sizing:border-box;text-align:center;padding:22px 20px 18px;
-  background:rgba(8,10,14,.84);border:1px solid rgba(255,90,60,.45);border-top:3px solid var(--warn,#ff5a3c);border-radius:4px;box-shadow:0 18px 60px rgba(0,0,0,.45)}
-.hud-crash h2{margin:0 0 6px;font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;font-size:clamp(22px,4vw,32px);letter-spacing:.32em;text-transform:uppercase;color:var(--fg,#e6edf3)}
-.hud-crash p{margin:0;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#ffb3a3}
-.hud-crash .hud-k{margin-top:14px;color:var(--fg-dim,#8fa1b3);font-size:12px;letter-spacing:.14em}
-.hud-kbd{display:inline-block;min-width:1.2em;padding:1px 6px;margin:0 2px;border:1px solid rgba(230,237,243,.35);border-bottom-width:2px;border-radius:3px;color:var(--fg,#e6edf3);font-size:11px;letter-spacing:.05em;text-transform:none}
-.hud-hint{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:max(16px,env(safe-area-inset-top,0px));max-width:min(330px,calc(100% - 32px));box-sizing:border-box;padding:12px 14px;
-  background:rgba(9,14,20,.72);border:1px solid rgba(143,161,179,.22);border-radius:4px;font-size:11px;letter-spacing:.06em;color:var(--fg-dim,#8fa1b3);transition:opacity .8s ease}
-.hud-hint h3{margin:0 0 8px;font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;font-size:13px;letter-spacing:.24em;text-transform:uppercase;color:var(--fg,#e6edf3)}
-.hud-hint dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;margin:0}
-.hud-hint dt{text-align:right;white-space:nowrap}.hud-hint dd{margin:0;align-self:center}
-@media (max-width:520px){.hud-toast{font-size:12px;letter-spacing:.1em}.hud-hint{display:none}}
+.hud-toast[data-tone=caution]{color:#ffd27a}.hud-toast[data-tone=caution] i{background:var(--accent,#ffb000);color:var(--accent,#ffb000)}
+.hud-toast[data-tone=warn]{color:#ffb3a3}.hud-toast[data-tone=warn] i{background:var(--warn,#ff5a3c);color:var(--warn,#ff5a3c)}
+.hud-toast[data-tone=info] i{background:var(--ok,#4cc9f0);color:var(--ok,#4cc9f0)}
+.hud-root .hud-paused{--r:999px;position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:14px;height:52px;padding:0 26px 0 22px;box-sizing:border-box;
+  font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;font-size:clamp(20px,2.6vw,28px);letter-spacing:.3em;color:var(--fg,#f2f6fa)}
+.hud-paused::after{content:"";order:-1;width:11px;height:20px;border:solid currentColor;border-width:0 4px;box-sizing:border-box;border-radius:1px}
+.hud-root .hud-crash{--r:30px;position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:min(500px,calc(100% - 32px));box-sizing:border-box;text-align:center;padding:24px 22px 20px}
+.hud-crash h2{margin:0 0 6px;font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;font-size:clamp(24px,4vw,34px);letter-spacing:.2em;text-transform:uppercase;color:var(--fg,#f2f6fa)}
+.hud-crash h2::before{content:"";display:inline-block;width:12px;height:12px;border-radius:50%;margin:0 14px 4px 0;vertical-align:middle;background:var(--warn,#ff5a3c);box-shadow:0 0 12px var(--warn,#ff5a3c)}
+.hud-crash p{margin:0;font-size:14px;letter-spacing:.04em;color:#ffc2b4}
+.hud-crash .hud-k{margin-top:14px;color:var(--fg-dim,#a9b8c7);font-size:13px}
+.hud-kbd{display:inline-grid;place-items:center;min-width:24px;height:23px;padding:0 7px;margin:0 2px;box-sizing:border-box;border-radius:7px;color:var(--fg,#f2f6fa);
+  font-family:var(--font-mono,'B612 Mono',ui-monospace,monospace);font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;
+  background:linear-gradient(rgb(255 255 255/.18),rgb(255 255 255/.08));box-shadow:inset 0 0 0 1px rgb(255 255 255/.18),inset 0 -2px 0 rgb(0 0 0/.25)}
+.hud-root .hud-hint{--r:24px;position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:max(16px,env(safe-area-inset-top,0px));width:min(300px,calc(100% - 32px));box-sizing:border-box;padding:14px 16px 14px;
+  font-size:13px;color:var(--fg-dim,#a9b8c7);transform-origin:top left;transition:opacity .7s ease,transform .5s var(--spring,cubic-bezier(.34,1.32,.5,1))}
+.hud-hint.off{opacity:0;transform:scale(.96) translateY(-6px)}
+.hud-hint h3{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;font-size:15px;font-weight:600;letter-spacing:.01em;color:var(--fg,#f2f6fa)}
+.hud-hint h3>span{font-size:11.5px;font-weight:500;color:var(--fg-faint,rgba(214,226,238,.56))}
+.hud-hint dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0}
+.hud-hint dt{text-align:right;white-space:nowrap}.hud-hint dd{margin:0;align-self:center;color:var(--fg,#f2f6fa)}
+.hud-plate.hud-plate{position:absolute;left:0;top:0;pointer-events:none!important;transition:opacity .25s}
+.hud-plate[hidden]{display:none}
+@media (max-width:520px),(pointer:coarse){.hud-toast{font-size:12px;height:34px}.hud-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.hud-toast,.hud-hint{transition:none}}
 `;
 
 const HINT = [
-  [['W', 'S'], 'Pitch down / up'], [['A', 'D'], 'Roll'], [['R', 'F'], 'Throttle up / down'],
-  [['G'], 'Landing gear'], [['[', ']'], 'Flaps'], [['C'], 'Change camera'], [['U'], 'HUD on / off'], [['Esc'], 'Menu'],
+  [['W', 'S'], 'Pitch down / up'], [['A', 'D'], 'Roll'], [['Q', 'E'], 'Rudder'], [['R', 'F'], 'Throttle up / down'],
+  [['G'], 'Landing gear'], [['[', ']'], 'Flaps'], [['B'], 'Speedbrake'], [['T'], 'Autopilot'], [['C'], 'Change camera'],
+  [['U'], 'HUD on / off'], [['P'], 'Pause'], [['Esc'], 'Menu'],
 ];
+const HINT_AUTO = 7;        // s of flying the controls card stays up by itself
+const HINT_ASKED = 12;      // s when brought back with F1 / the help button
+const HINT_FADE = 0.8;
+const HINT_AUTO_SESSIONS = 6;   // the card comes up by itself for the first few flights, then only on request
 
 const AIRLINER_FLAPS = [0, 1, 2, 5, 10, 15, 25, 30, 40];
 
@@ -43,19 +56,20 @@ export function createNotices(ctx) {
   const style = doc.createElement('style'); style.textContent = CSS; doc.head.appendChild(style);
   const root = doc.createElement('div'); root.className = 'hud-root'; root.setAttribute('aria-live', 'polite');
   const toasts = doc.createElement('div'); toasts.className = 'hud-toasts'; root.appendChild(toasts);
-  const paused = doc.createElement('div'); paused.className = 'hud-paused'; paused.textContent = 'PAUSED'; paused.hidden = true; root.appendChild(paused);
-  const crash = doc.createElement('div'); crash.className = 'hud-crash'; crash.hidden = true; crash.setAttribute('role', 'alert');
+  const paused = doc.createElement('div'); paused.className = 'hud-paused glass'; paused.textContent = 'PAUSED'; paused.hidden = true; root.appendChild(paused);
+  const crash = doc.createElement('div'); crash.className = 'hud-crash glass'; crash.hidden = true; crash.setAttribute('role', 'alert');
   crash.innerHTML = '<h2>Flight ended</h2><p class="hud-reason"></p><div class="hud-k">Press <span class="hud-kbd">Backspace</span> to restart</div>';
   root.appendChild(crash);
   const crashReason = crash.querySelector('.hud-reason');
-  const hint = doc.createElement('div'); hint.className = 'hud-hint'; hint.hidden = true;
-  hint.innerHTML = '<h3>Controls</h3><dl>' + HINT.map(([k, d]) => `<dt>${k.map(x => `<span class="hud-kbd">${x}</span>`).join('')}</dt><dd>${d}</dd>`).join('') + '</dl>';
+  const hint = doc.createElement('div'); hint.className = 'hud-hint glass'; hint.hidden = true;
+  hint.innerHTML = '<h3>Controls <span><span class="hud-kbd">F1</span> show / hide</span></h3><dl>' + HINT.map(([k, d]) => `<dt>${k.map(x => `<span class="hud-kbd">${x}</span>`).join('')}</dt><dd>${d}</dd>`).join('') + '</dl>';
   root.appendChild(hint);
   ctx.uiRoot.appendChild(root);
 
   // ---- toasts ---------------------------------------------------------------------------------------
   const POOL = 4, pool = [];
-  for (let i = 0; i < POOL; i++) { const el = doc.createElement('div'); el.className = 'hud-toast'; el.hidden = true; toasts.appendChild(el); pool.push({ el, t: 0, life: 0, key: '' }); }
+  for (let i = 0; i < POOL; i++) { const el = doc.createElement('div'); el.className = 'hud-toast glass-clear'; el.hidden = true;
+    el.appendChild(doc.createElement('i')); el.appendChild(doc.createElement('span')); toasts.appendChild(el); pool.push({ el, t: 0, life: 0, key: '' }); }
   const lastByKey = new Map();
   let now = 0;
   function toast(text, opts = {}) {
@@ -68,7 +82,7 @@ export function createNotices(ctx) {
     if (!slot) slot = pool.find(p => p.life <= 0 && p.el.hidden) || pool.reduce((a, b) => (a.t <= b.t ? a : b));
     slot.hideAt = 0;
     slot.key = key; slot.t = now; slot.life = opts.duration ?? 2.6;
-    slot.el.textContent = String(text).toUpperCase();
+    slot.el.lastChild.textContent = String(text).toUpperCase();
     slot.el.dataset.tone = opts.tone || '';
     slot.el.hidden = false;
     toasts.appendChild(slot.el);                 // newest at the bottom of the stack
@@ -77,7 +91,7 @@ export function createNotices(ctx) {
 
   // ---- state-diff watchers --------------------------------------------------------------------------
   let W = null;                                  // previous snapshot
-  let sessionT = 0, hintT = -1, hintShown = false;
+  let sessionT = 0, hintT = -1, hintLife = HINT_AUTO;
   const settle = { flaps: { v: 0, since: 0, said: 0 }, sb: { v: 0, since: 0, said: 0 } };
   function flapLabel(def, s, v) {
     const det = def.physics?.flapDetents || def.physics?.flaps?.detents || def.flapDetents;
@@ -105,11 +119,22 @@ export function createNotices(ctx) {
     settle.sb.v = settle.sb.said = num(p?.state.surfaces?.speedbrake, 0); settle.sb.since = now;
     for (const sl of pool) { sl.life = 0; sl.el.classList.remove('on'); sl.el.hidden = true; }
     lastByKey.clear();
-    if (p && !hintShown && ctx.params.raw?.hint !== '0') {
-      let seen = false; try { seen = localStorage.getItem('skyward.hud.hint') === '1'; } catch {}
-      if (!seen) { hintT = 0; hintShown = true; try { localStorage.setItem('skyward.hud.hint', '1'); } catch {} }
+    if (!p) { hideHint(); return; }
+    if (ctx.params.raw?.hint === '0') return;
+    let n = 0; try { n = parseInt(localStorage.getItem('skyward.hud.hint') || '0', 10) || 0; } catch {}
+    if (ctx.params.raw?.hint === '1' || n < HINT_AUTO_SESSIONS) {
+      showHint(HINT_AUTO);
+      if (!ctx.params.test) { try { localStorage.setItem('skyward.hud.hint', String(n + 1)); } catch {} }
     }
   }
+  function showHint(life) { hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
+  function hideHint() { hintT = -1; hint.classList.add('off'); hint.hidden = true; }
+  /** F1 / help button: bring the card back, or put it away. */
+  function toggleHint() {
+    if (hintT >= 0 && hintT < hintLife) { hintT = hintLife; return; }   // fade out now
+    showHint(HINT_ASKED);
+  }
+  ctx.events.on('cmd', (c) => { if (c?.name === 'help') toggleHint(); });
   function dirOf(prev, cur) { return cur > prev + 1e-4 ? 1 : cur < prev - 1e-4 ? -1 : 0; }
   function watch(p) {
     const s = p.state, def = p.def;
@@ -161,6 +186,8 @@ export function createNotices(ctx) {
   return {
     toast,
     onSession,
+    toggleHint,
+    get hintVisible() { return hintT >= 0 && hintT < hintLife; },
     /** realDt: wall-clock seconds; show: overall visibility; p: ctx.player */
     update(realDt, show, p) {
       now += realDt;
@@ -179,10 +206,10 @@ export function createNotices(ctx) {
       } else lastReason = null;
       if (p && !crashed) watch(p);
       if (hintT >= 0) {
-        hintT += realDt;
-        hint.hidden = hintT > 12;
-        hint.style.opacity = hintT > 9 ? String(Math.max(0, 1 - (hintT - 9) / 2)) : '1';
-        if (hintT > 12) hintT = -1;
+        // the card's clock only runs while flying (not paused), so it is still there after a pause at the start
+        if (!ctx.time?.paused) hintT += realDt;
+        hint.classList.toggle('off', hintT >= hintLife);
+        if (hintT >= hintLife + HINT_FADE) { hintT = -1; hint.hidden = true; }
       }
     },
   };
