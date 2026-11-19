@@ -1,5 +1,39 @@
 # src/neural — integration notes
 
+## Round two (default since this round): trained on the game's own clouds
+
+`createNeuralCloudScatter(opts)` now returns the round-two model (`src/neural/cloud-light.js`, weights in
+`weights-light.js`); `{ version: 1 }` still builds the round-one network documented further down.
+`createNeuralCloudScatter4(opts)` returns `null` by default (the round-one 4-feature model with `{ version: 1 }`), so
+the existing `main.js` wiring (`s3.glsl + s4.glsl` when `s4` is truthy) picks up round two unchanged in both the
+default and `scatter=neural3` paths. `scatter=classic` is untouched (the clouds module's hand-built model).
+
+Why: a ground-truth comparison (tools/neural/gt_*.py) exported the real density fields from the cloud GLSL, path
+traced them (sun + sky + ground, all orders) and ran a numpy port of the real-time march on the same fields. It
+found that (1) the march's tauUp is a height-based proxy ~5x the true optical depth to the local cloud top at the
+lit samples (median 10.6 vs 1.9), so a network trained on true optical depths is fed out-of-distribution inputs,
+and (2) the hand-written sky / ground-bounce visibility was 4-6x too dark, which is what made the neural clouds read
+grey (the classic model looked "right" only because its sun term is ~2x too bright and cancels the dark ambient).
+
+The round-two GLSL defines
+
+```glsl
+float cloudSunScatter(float tauSun, float tauUp, float cosTheta);   // same contract as before
+vec2  cloudAmbientVis(float tauUp, float tauDown);                  // x: per unit sky radiance, y: per unit ground radiance
+```
+
+and the clouds module, when it sees `cloudAmbientVis`, lights a sample with `S = E J + ambUp V.x + ambDown V.y`
+(`#define CL_AMBIENT_VIS`). Both networks are trained at the samples the march actually lights (weighted by their
+contribution to the image), with the features the march actually computes (light-march tauSun, the height-based
+tauUp / tauDown): 160k-235k path-traced points on cumulus exported from the game, 15 sun / view configurations per
+field. J net 3-16-16-1 (353 parameters, 32^3 R16F LUT), V net 2-12-12-2 (218 parameters, 32^2 RG16F LUT); both
+baked at boot (tens of ms). Test vectors: `test-vectors-light.json`, tests: `cloud-light.test.js`.
+Per lit sample: 2 texture fetches (J LUT + ambient LUT), the same as the round-one default (4-feature model: 2
+fetches), one more than `scatter=neural3` in round one.
+
+---
+
+
 Neural multiple scattering for the volumetric clouds. Nothing here touches integrator-owned files; wiring it in is
 three lines in whoever creates the clouds (the clouds module itself, or `src/main.js`).
 
