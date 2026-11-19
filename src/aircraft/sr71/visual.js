@@ -46,7 +46,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   // skin: thin titanium skins between closely spaced ribs (more oil-canning than a fighter's machined skins), hard-used
   // paint (chalking, streaks, dirt in the gaps), clear coat only on the few gloss swatches (helmets, visors, lenses)
-  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.base), skin: { weathering: SC.weather, framePitch: 0.5, waviness: 1.3, heatTint: 1.2, cavity: 1.15 } });
+  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.base), swatchRows: 5, skin: { weathering: SC.weather, framePitch: 0.5, waviness: 1.3, heatTint: 1.2, cavity: 1.15 } });
   const cFus = atlas.chart('fus', { type: 'unwrap', z: [-19.7, 12.8], girth: 13.6, vScale: 0.78, strips: 2 });
   const cNac = atlas.chart('nac', { type: 'unwrap', z: [-3.7, 9.75], girth: 5.8, vScale: 0.85 });
   const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [3.6, 8.6], z: [-1.6, 9.1], view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-8.6, -3.6], z: [-1.6, 9.1], view: 'top' }) };
@@ -81,7 +81,7 @@ export function createVisual(ctx, opts = {}) {
         band(g, 0, 1, '#8b8e90');
         const gr = g.createLinearGradient(0.26, 0, 0.74, 0); gr.addColorStop(0, '#8b8e90'); gr.addColorStop(0.2, '#6f716f'); gr.addColorStop(0.5, '#5f605d'); gr.addColorStop(0.8, '#6f716f'); gr.addColorStop(1, '#8b8e90');
         band(g, 0.26, 0.74, gr);                                     // crown: scrubbed, rubber-dusted
-        for (const u of grooves) band(g, u - 0.012, u + 0.012, '#2c2d2e');
+        for (const u of grooves) band(g, u - 0.008, u + 0.008, '#3e3f40');
         for (const u of [0.12, 0.88]) band(g, u - 0.012, u + 0.012, '#9ea1a3');
         band(g, 0, 0.03, '#3a3b3c'); band(g, 0.97, 1, '#3a3b3c');
       } else if (layer === 'orm') { band(g, 0, 1, orm(0.48, 0.6)); band(g, 0.26, 0.74, orm(0.7, 0.4)); }
@@ -182,7 +182,16 @@ export function createVisual(ctx, opts = {}) {
   //      drag-chute doors on the aft spine -----------------------------------------------------------------------------------
   const tTop = (z, x) => snapT(tAtX(fus0, z, x, true));
   const HATCH = [];
-  const skinPanel = (zr, tr, lift = 0.0035) => { HATCH.push({ zr, tr }); return K.loft({ stations: FS, segments: seg, step: 0.1, tRange: tr, zRange: zr, inflate: lift, chart: cFus, creases: ['side'] }).mesh; };
+  const skinPanel = (zr, tr, lift = 0.0035) => {      // grid sampled on the skin, pushed out along its normal, skin UVs
+    HATCH.push({ zr, tr });
+    const m = new K.Mesh(), nz = Math.max(2, Math.ceil((zr[1] - zr[0]) / 0.15)), nt = Math.max(2, Math.ceil((tr[1] - tr[0]) * KF * 2)), k = cFus.stripAt((zr[0] + zr[1]) / 2);
+    for (let i = 0; i <= nz; i++) for (let j = 0; j <= nt; j++) {
+      const z = zr[0] + (zr[1] - zr[0]) * i / nz, t = tr[0] + (tr[1] - tr[0]) * j / nt, { p, n } = fus.at(z, t), uv = cFus.uvUnwrap(z, t, k);
+      m.vert(p[0] + n[0] * lift, p[1] + n[1] * lift, p[2] + n[2] * lift, n[0], n[1], n[2], uv[0], uv[1]);
+    }
+    for (let i = 0; i < nz; i++) for (let j = 0; j < nt; j++) { const a = i * (nt + 1) + j; m.quad(a, a + 1, a + nt + 2, a + nt + 1); }
+    return m;
+  };
   for (const [z0, z1, x0, x1] of [[-12.2, -10.9, 0.78, 1.18], [-10.6, -9.1, 0.84, 1.42], [-8.8, -7.2, 0.9, 1.5], [-6.9, -5.3, 0.95, 1.55], [-5.0, -3.8, 1.0, 1.6]]) {
     const ta = tTop((z0 + z1) / 2, x1), tb = tTop((z0 + z1) / 2, x0);
     stat.add(skinPanel([z0, z1], [ta, tb])).add(skinPanel([z0, z1], [1 - tb, 1 - ta]));
@@ -221,7 +230,20 @@ export function createVisual(ctx, opts = {}) {
 
   // inlet spikes (translating): sharp 10° cone, porous bleed band at the throat shoulder, closed behind the throat
   const spikeProf = [[0, -6.5], [0.025, -6.36], [0.2, -5.36], [0.4, -4.22], [0.53, -3.5], [0.565, -3.15], [0.585, -2.75], [0.59, -2.4], [0.575, -1.9], [0.5, -1.2], [0.3, -0.75], [0, -0.6]];
-  const spikeUV = (k) => (k <= 1 ? U.spikeTip : k >= 5 && k <= 7 ? U.bleed : U.spike);
+  // spike paint as a 1-D strip along the profile: bare-metal tip, painted cone, the porous bleed band on the shoulder
+  // (rows of slots: dark rings between narrow lands), dark aft body inside the duct
+  const spL = [0]; for (let k = 1; k < spikeProf.length; k++) spL.push(spL[k - 1] + Math.hypot(spikeProf[k][0] - spikeProf[k - 1][0], spikeProf[k][1] - spikeProf[k - 1][1]));
+  const spT = (z) => { for (let k = 1; k < spikeProf.length; k++) if (spikeProf[k][1] >= z) { const f = (z - spikeProf[k - 1][1]) / (spikeProf[k][1] - spikeProf[k - 1][1]); return (spL[k - 1] + f * (spL[k] - spL[k - 1])) / spL[spL.length - 1]; } return 1; };
+  const spikeStrip = atlas.strip('sr71.spike', 12, (g, layer) => {
+    const band = (a, b, st) => { g.fillStyle = st; g.fillRect(a, 0, b - a, 1); }, orm = atlas.ormStyle;
+    const tTip = spT(-6.2), b0 = spT(-3.45), b1 = spT(-2.5), tIn = spT(-1.9);
+    if (layer === 'color') {
+      band(0, 1, '#101217'); band(0, tTip, '#58554f'); band(tIn, 1, '#0a0b0d');
+      band(b0, b1, '#08090a'); for (let k = 0; k <= 9; k++) { const t = b0 + (b1 - b0) * k / 9; band(t - 0.0015, t + 0.0015, '#202226'); }
+    } else if (layer === 'orm') { band(0, 1, orm(0.66, 0.15)); band(0, tTip, orm(0.36, 0.92)); band(b0, b1, orm(0.8, 0.3)); }
+    else { band(b0, b1, '#5a5a5a'); for (let k = 0; k <= 9; k++) { const t = b0 + (b1 - b0) * k / 9; band(t - 0.0015, t + 0.0015, '#909090'); } }
+  });
+  const spikeUV = spikeStrip ? (k) => spikeStrip.uv(spL[k] / spL[spL.length - 1]) : (k) => (k <= 1 ? U.spikeTip : k >= 5 && k <= 7 ? U.bleed : U.spike);
   const spikes = [];
   for (const sx of [1, -1]) spikes.push(K.lathe(spikeProf, { segments: Math.max(20, Math.round(32 * detail)), uv: spikeUV }).translate(sx * NX, NY, 0));
   for (const sx of [1, -1]) {   // spike support struts in the duct, centre-body cone behind
@@ -326,9 +348,9 @@ export function createVisual(ctx, opts = {}) {
     const i = m.vertexCount; for (const p of [a, b, c]) m.vert(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]); m.tri(i, i + 1, i + 2);
   };
   tri(windshield, A, RT, SR, [0, 0]); tri(windshield, A, SL, RT, [0, 0]);
-  stat.add(K.tube(A, RT, 0.02, 0.02, { segments: 6, uv: U.frame }));
-  stat.add(K.tube(A, SR, 0.018, 0.018, { segments: 6, uv: U.frame })).add(K.tube(A, SL, 0.018, 0.018, { segments: 6, uv: U.frame }));
-  stat.add(K.tube(SR, RT, 0.025, 0.025, { segments: 6, uv: U.frame })).add(K.tube(SL, RT, 0.025, 0.025, { segments: 6, uv: U.frame }));
+  stat.add(K.tube(A, RT, 0.016, 0.016, { segments: 6, uv: U.frame }));
+  stat.add(K.tube(A, SR, 0.016, 0.016, { segments: 6, uv: U.frame })).add(K.tube(A, SL, 0.016, 0.016, { segments: 6, uv: U.frame }));
+  stat.add(K.tube(SR, RT, 0.019, 0.019, { segments: 6, uv: U.frame })).add(K.tube(SL, RT, 0.019, 0.019, { segments: 6, uv: U.frame }));
   stat.add(K.ellipsoid(0.04, 0.03, 0.05, { segments: 8, rings: 4, uv: U.frame }).translate(...A));
 
   lap('canopy');
