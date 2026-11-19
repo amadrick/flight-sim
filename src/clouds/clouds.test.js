@@ -88,3 +88,25 @@ test('CPU density with cells: fair weather has separate clouds with flat bases',
   assert.equal(below, 0, 'nothing below the condensation level');
   assert.ok(cloudy / n > 0.04 && cloudy / n < 0.5, `fair-weather cloud fraction ${(cloudy / n).toFixed(2)}`);
 });
+
+test('life cycle (round five): clouds change over minutes, without jumps, and the field keeps its cloud fraction', () => {
+  const c = createCellField({ seed: 1337, size: 512, period: 20480 });
+  const p = deriveWeatherParams(WEATHER_PRESETS.scattered), o = {}, cl = [0, 0, 0, 0];
+  const frac = (t) => {
+    let cloudy = 0, n = 0, maxJump = 0;
+    for (let i = 0; i < 50; i++) for (let j = 0; j < 50; j++) {
+      const x = i * 113, z = j * 113;
+      field(x, z, bake, o); o.m = 0.5; o.dev = 0.5;
+      c.sample(x / c.period, z / c.period, cl);
+      const d = densityFromField(p, o, N(0.6), p.base + 200, cl, c, { on: 1, t });
+      const d2 = densityFromField(p, o, N(0.6), p.base + 200, cl, c, { on: 1, t: t + 1 / 1400 });   // one second later
+      maxJump = Math.max(maxJump, Math.abs(d2 - d));
+      n++; if (d > 0.1) cloudy++;
+    }
+    return { f: cloudy / n, maxJump };
+  };
+  const a = frac(0), b = frac(0.37), c2 = frac(0.81);
+  for (const r of [a, b, c2]) { assert.ok(r.f > 0.03 && r.f < 0.6, `cloud fraction ${r.f}`); assert.ok(r.maxJump < 0.35, `jump in 1 s: ${r.maxJump}`); }
+  assert.ok(Math.abs(a.f - b.f) + Math.abs(b.f - c2.f) > 0.002, 'the field evolves');
+  assert.ok(p.dropletN >= 50 && p.dropletN <= 1000);
+});
