@@ -247,7 +247,7 @@ export function createVisual(ctx, opts = {}) {
   stA.add(K.ellipsoid(0.45, 0.12, 1.0, { segments: 12, rings: 6, uv: UA.antenna }).translate(0, fus.topAt(-4.5) - 0.02, -4.5));      // satcom / ADS-B fairing
   stA.add(K.bladeAntenna({ pos: [0, fus.botAt(-9.6) + 0.02, -9.6], height: 0.25, chord: 0.38, sweep: 0.18, down: true, uv: UA.antenna }));
   stA.add(K.bladeAntenna({ pos: [0, fus.botAt(8.8) + 0.02, 8.8], height: 0.25, chord: 0.38, sweep: 0.18, down: true, uv: UA.antenna }));
-  for (const sx of [-1, 1]) for (const [z, y] of [[-16.25, -0.15], [-16.05, -0.45], [-15.85, 0.05]]) {        // pitot / AoA probes
+  for (const sx of [-1, 1]) for (const [z, y] of [[-14.95, -0.2], [-14.55, -0.55], [-14.2, -0.05]]) {        // pitot / AoA probes
     const t = fus.tAtY(z, y), p = fus.at(z, sx > 0 ? t : 1 - t).p; stA.add(K.probe(p, [p[0] + sx * 0.12, p[1] - 0.01, p[2] - 0.17], 0.012, UA.steel));
   }
   { const wicks = []; for (const sx of [-1, 1]) { for (const x of [14.6, 15.6, 16.4]) { const p = W.R.at(x, 1, 'mid'); wicks.push([sx * p[0], p[1], p[2]]); } for (const x of [3.6, 4.9, 5.9]) { const p = stab.R.at(x, 1, 'mid'); wicks.push([sx * p[0], p[1], p[2]]); } } for (const y of [6.8, 8.0]) { const p = fin.at(y, 1, 'mid'); wicks.push(p); } stB.add(K.staticWicks(wicks, 0.2, UB.wick)); }
