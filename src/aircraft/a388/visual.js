@@ -505,7 +505,7 @@ export function createVisual(ctx, opts = {}) {
   paintFuselage(A, { SC, fus, cFus, cPanel, cOver, cPed, WIN: WIN.list });
   paintSurfaces(B, { SC, W: W.R, fin, stab: stab.R, cWT, cWB, cSt, cFin });
   lap('paint');
-  const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1 });
+  const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 });
   lap('textures');
   rig.material('paint', matA, { shared: true }); rig.material('wing', matB, { shared: true });
   rig.glass('glass', K.glassMaterial(ctx, { ...K.GLASS.airliner, dust: 0.03 }));
@@ -633,6 +633,7 @@ export function createVisual(ctx, opts = {}) {
     }
     sleeves.morphTargetInfluences[0] = rev;
     matA.emissiveIntensity = S.night * 2.4;
+    matB.emissiveIntensity = S.night * ((S.lights || {}).nav ? 0.4 : 0);
     const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0;
     HALO.forEach((h, i) => {
       let on = 0;
@@ -953,6 +954,10 @@ function paintSurfaces(B, o) {
       Q.text('380', c[0], c[1], 2.4, { color: SC.cheat, font: K.FONT.wide, weight: 700 });
     }
     Q.text(SC.reg, fa(5.6, 0.62)[0], fa(5.6, 0.62)[1], 0.42, { color: '#ffffff', font: K.FONT.sans, weight: 700 });
+    { const p = fa(4.2, 0.45); Q.decal(p[0], p[1], { layers: ['emis'] }, (g) => {          // pool of the logo lights on the fin (lit at night)
+      const t = new THREE.Color(SC.tail), k = 0.35, c = `${Math.round(255 * (t.r * (1 - k) + k))},${Math.round(238 * (t.g * (1 - k) + k))},${Math.round(210 * (t.b * (1 - k) + k))}`;   // the lamp's warm light on the fin's own colour
+      const gr = g.createRadialGradient(0, -1.5, 0.5, 0, -1.5, 9); gr.addColorStop(0, `rgba(${c},0.85)`); gr.addColorStop(0.45, `rgba(${c},0.3)`); gr.addColorStop(1, `rgba(${c},0)`);
+      g.fillStyle = gr; g.fillRect(-10, -11, 20, 20); }); }
     Q.fill([fa(3.5, 0), fa(18.2, 0), fa(18.2, 0.03), fa(3.5, 0.03)], metal);
     const fg = { px: 1.6, depth: 0.5, dark: 0.3 };
     Q.line([fa(4.6, 1), fa(4.6, 0.7), fa(11.0, 0.7), fa(11.0, 1)], fg); Q.line([fa(11.1, 1), fa(11.1, 0.7), fa(18.0, 0.7), fa(18.0, 1)], fg);
