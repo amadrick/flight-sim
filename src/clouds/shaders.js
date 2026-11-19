@@ -428,10 +428,16 @@ void main() {
           // optical depth to the cloud top: mostly a smooth height-based estimate (using only the local density
           // would print the density field onto the ambient term: an "x-ray" look in diffuse light)
           float tauUp = uClNoise.w * (0.3 + 0.2 * d) * max(info.y - h, 0.0);
+          // optical depth down to the cloud base (same smooth estimate): ambient from below, and the column-thickness
+          // input of the 4-feature scatter model
+          float tauDn = uClNoise.w * (0.3 + 0.2 * d) * max(h - uClLayer.x, 0.0);
+          #ifdef CL_SCATTER4
+          float J = cloudSunScatter4(tauSun, tauUp, cosT, tauDn);
+          #else
           float J = cloudSunScatter(tauSun, tauUp, cosT);
+          #endif
           vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
           // ambient: sky light diffusing down from the cloud top, ground bounce coming up through the base
-          float tauDn = uClNoise.w * (0.3 + 0.2 * d) * max(h - uClLayer.x, 0.0);
           float visUp = 0.35 * exp(-0.6 * tauUp) + 0.65 / (1.0 + 0.2 * tauUp);
           float visDn = 0.35 * exp(-0.6 * tauDn) + 0.65 / (1.0 + 0.2 * tauDn);
           vec3 S = E * J + 0.5 * (ambUp * visUp + ambDn * visDn);

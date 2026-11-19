@@ -432,6 +432,9 @@ export async function createClouds(ctx) {
         // cirrus / rain use the HG helper from the default chunk; keep it available for replacement models
         scatterModel.glsl = `float clHG(float c, float g) { float g2 = g * g; return (1.0 - g2) * 0.0795775 / pow(1.0 + g2 - 2.0 * g * c, 1.5); }\n${scatterModel.glsl}`;
       }
+      // a model that also provides cloudSunScatter4(tauSun, tauUp, cosTheta, tauDown) is called with the column
+      // thickness below the sample as well (see the march in shaders.js)
+      if (scatterModel && /float\s+cloudSunScatter4\s*\(/.test(scatterModel.glsl)) scatterModel.glsl = `#define CL_SCATTER4 1\n${scatterModel.glsl}`;
       buildMaterials();
       historyValid = false;
     },

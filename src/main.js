@@ -7,6 +7,7 @@ import { createTerrain } from './terrain/index.js';
 import { createWater } from './water/index.js';
 import { createScenery } from './scenery/index.js';
 import { createClouds } from './clouds/index.js';
+import { createNeuralCloudScatter, createNeuralCloudScatter4 } from './neural/cloud-scatter.js';
 import { createInput } from './input/index.js';
 import { createCameraRig } from './camera/index.js';
 import { createEffects } from './effects/index.js';
@@ -34,6 +35,18 @@ async function boot() {
   setLoading('Ocean');      ctx.water = await createWater(ctx);
   setLoading('Airports');   ctx.scenery = await createScenery(ctx);
   setLoading('Clouds');     ctx.clouds = await createClouds(ctx);
+  // Cloud lighting: multiple scattering from the network trained against the Monte Carlo path tracer (tools/neural),
+  // baked into a small 3D texture at boot. `?scatter=classic` keeps the clouds module's hand-built approximation.
+  if (params.raw.scatter !== 'classic') {
+    try {
+      // the 4-input network (sun depth, depth to top, view angle, depth to base) is the accurate one; the 3-input
+      // network supplies the shared helpers and is what `?scatter=neural3` uses on its own
+      const s3 = createNeuralCloudScatter({ phaseMax: 20 });
+      const s4 = params.raw.scatter === 'neural3' ? null : createNeuralCloudScatter4({ phaseMax: 20 });
+      ctx.clouds.setScatterModel(s4 ? { glsl: s3.glsl + '\n' + s4.glsl, uniforms: { ...s3.uniforms, ...s4.uniforms } } : { glsl: s3.glsl, uniforms: s3.uniforms });
+      ctx.neural = { cloudScatter: s3, cloudScatter4: s4 };
+    } catch (e) { console.warn('[neural] cloud scatter unavailable, using the classic model', e); }
+  }
   setLoading('Systems');
   ctx.session = createSession(ctx);
   ctx.input = await createInput(ctx);
