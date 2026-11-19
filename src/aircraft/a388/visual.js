@@ -955,7 +955,7 @@ function paintSurfaces(B, o) {
     }
     Q.text(SC.reg, fa(5.6, 0.62)[0], fa(5.6, 0.62)[1], 0.42, { color: '#ffffff', font: K.FONT.sans, weight: 700 });
     { const p = fa(4.2, 0.45); Q.decal(p[0], p[1], { layers: ['emis'] }, (g) => {          // pool of the logo lights on the fin (lit at night)
-      const t = new THREE.Color(SC.tail), k = 0.35, c = `${Math.round(255 * (t.r * (1 - k) + k))},${Math.round(238 * (t.g * (1 - k) + k))},${Math.round(210 * (t.b * (1 - k) + k))}`;   // the lamp's warm light on the fin's own colour
+      const h = parseInt(SC.tail.slice(1), 16), t = [(h >> 16) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255], k = 0.35, c = `${Math.round(255 * (t[0] * (1 - k) + k))},${Math.round(238 * (t[1] * (1 - k) + k))},${Math.round(210 * (t[2] * (1 - k) + k))}`;   // the lamp's warm light on the fin's own colour
       const gr = g.createRadialGradient(0, -1.5, 0.5, 0, -1.5, 9); gr.addColorStop(0, `rgba(${c},0.85)`); gr.addColorStop(0.45, `rgba(${c},0.3)`); gr.addColorStop(1, `rgba(${c},0)`);
       g.fillStyle = gr; g.fillRect(-10, -11, 20, 20); }); }
     Q.fill([fa(3.5, 0), fa(18.2, 0), fa(18.2, 0.03), fa(3.5, 0.03)], metal);
