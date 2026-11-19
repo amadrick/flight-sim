@@ -20,6 +20,7 @@ import {
   CLOUD_SHADOW_GLSL, DEFAULT_SCATTER_GLSL, marchFragment, resolveFragment, resolveFragmentR3, OUTPUT_FRAG,
   shadowBakeFragment, weatherBakeFragment, CIRRUS_BAKE_FRAG,
 } from './shaders.js';
+import { createCloudMultiScatter } from '../neural/cloud-ms.js';
 
 const FALLBACK_ATMOSPHERE_GLSL = /* glsl */`
 vec3 atmSunIlluminance(vec3 p) { return uSunColor; }
@@ -113,7 +114,18 @@ export async function createClouds(ctx) {
     uClBakeA: v4(1, 0, 0, 0), uClBakeB: v4(), uClBakeWx: v4(0, 0, WEATHER_MAP_SIZE_M, 0),
     uClBakeShadowA: v4(0, 0, SHADOW_MAP_SIZE_M, 0), uClBakeShadowB: v4(0, 0, 1, 0),
   };
-  const allUniforms = () => ({ ...ctx.uniforms.frame, ...atmUniforms, ...shadowUniforms, ...U, ...(scatterModel?.uniforms || {}) });
+  // Round five: learned multiple scattering (src/neural/cloud-ms.js, docs/clouds/NEURAL.md) is the default light model.
+  // ?clMs=0 falls back to the model main.js installs with setScatterModel (round-three nets), ?scatter=classic to the
+  // analytic one. reff from the droplet number of the starting weather (only the phase LUT depends on it).
+  let msModel = null;
+  if (raw.clMs !== '0' && raw.scatter !== 'classic') {
+    try {
+      const reff = Math.min(16, Math.max(6, 12 * Math.cbrt(150 / P.dropletN)));
+      msModel = createCloudMultiScatter({ reff });
+    } catch (e) { console.warn('[clouds] learned multiple scattering unavailable', e); msModel = null; }
+  }
+  U.uClMs = v4(dbg('clMsN', 4), dbg('clMsDetail', 0.5), 0, 0);
+  const allUniforms = () => ({ ...ctx.uniforms.frame, ...atmUniforms, ...shadowUniforms, ...U, ...(scatterModel?.uniforms || {}), ...(msModel?.uniforms || {}) });
   const mkPass = (frag, uniforms) => new FullscreenPass(new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
     uniforms: uniforms || allUniforms(), vertexShader: FULLSCREEN_VERT, fragmentShader: frag,
@@ -148,7 +160,7 @@ export async function createClouds(ctx) {
     marchPass?.dispose(); resolvePass?.dispose(); shadowPass?.dispose();
     marchPass = mkPass(marchFragment({
       frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, atmosphereGLSL: (physLight ? '#define CL_ATM_LT 1\n' : '') + atmGLSL,
-      scatterGLSL: scatterModel?.glsl || DEFAULT_SCATTER_GLSL, steps, lightSteps, N,
+      scatterGLSL: scatterModel?.glsl || DEFAULT_SCATTER_GLSL, steps, lightSteps, N, msGLSL: msModel?.glsl || '',
     }));
     resolvePass = mkPass((taaR4 ? resolveFragment : resolveFragmentR3)({ frameGLSL: FRAME_UNIFORMS_GLSL, depthGLSL: DEPTH_GLSL, N }));
     shadowPass = mkPass(shadowBakeFragment({ steps: shadowSteps }));
@@ -604,6 +616,7 @@ export async function createClouds(ctx) {
     },
     // extras (not part of the pipeline contract)
     params: P,
+    get lightModel() { return msModel ? 'ms5' : scatterModel ? 'scatter-model' : 'classic'; },
     get windOffset() { return windOffset; },
     weatherAt(worldX, worldZ, out = {}) { return weatherField(worldX - windOffset.x, worldZ - windOffset.y, bake, out); },
     debug: { spawnFlash, get spawnInfo() { return spawnInfo; }, noise3, noise2, cells, get weatherRT() { return weatherRT; }, get cirrusRT() { return cirrusRT; }, get shadowRT() { return shadowFront; }, get marchRT() { return marchRT; }, get outRT() { return outRT; }, U },

@@ -404,7 +404,7 @@ float cloudSunScatter(float tauSun, float tauUp, float cosTheta) {
 // The ray march. Renders at 1/N resolution into two attachments:
 //   0: rgb = in-scattered radiance (premultiplied, including aerial perspective), a = transmittance
 //   1: r = mean cloud distance (km, for reprojection), g = scene distance used (km), b = lightning glow, a = unused
-export function marchFragment({ frameGLSL, depthGLSL, atmosphereGLSL, scatterGLSL, steps, lightSteps, N }) {
+export function marchFragment({ frameGLSL, depthGLSL, atmosphereGLSL, scatterGLSL, steps, lightSteps, N, msGLSL = '' }) {
   return /* glsl */`
 precision highp float; precision highp int; precision highp sampler3D;
 #define CL_STEPS ${steps | 0}
@@ -419,6 +419,16 @@ ${atmosphereGLSL}
 ${CLOUD_SHADOW_GLSL}
 ${CLOUD_DENSITY_GLSL}
 ${scatterGLSL}
+${msGLSL ? `
+// ---- round five: learned multiple scattering (docs/clouds/NEURAL.md). Taps = physical extinction of the cheap base
+// density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
+#define CL_MS5 1
+vec4 clMsWx = vec4(0.0); float clMsLod = 1.0;
+float clMsSigma(vec3 p) { vec4 info; return clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; }
+#define CLOUD_MS_SIGMA(p) clMsSigma(p)
+${msGLSL}
+uniform vec4 uClMs;          // x = network evaluations per ray (deeper samples reuse the last), y = strength of lam / occ on this path
+` : ''}
 
 uniform sampler2D tClBlue;
 uniform sampler2D tClCirrus;
@@ -643,6 +653,9 @@ void main() {
         ambUp = mix(ambUp, side * uClLightSel.z * uClLightSel.x + ambUp * (1.0 - uClLightSel.x), uClDet3.w);
       }
       float cosT = dot(rd, uClLightDir);
+      #ifdef CL_MS5
+      vec3 msPhase = cloudPhaseMie(cosT), msLast = vec3(0.0);
+      #endif
       float voxel = 1.0 / (uClNoise.x * 128.0), voxelD = 1.0 / (uClNoise.y * 32.0);
 
       // Step sizes. Inside cloud: fine steps ~ Kf * distance. Searching for cloud: coarse steps (~3 Kf * distance),
@@ -771,14 +784,16 @@ void main() {
           // optical depth down to the cloud base (same smooth estimate): ambient from below, and the column-thickness
           // input of the 4-feature scatter model
           float tauDn = uClNoise.w * (0.3 + 0.2 * d) * max(h - uClLayer.x, 0.0);
-          #ifdef CL_SCATTER4
+          #if defined(CL_MS5)
+          float J = 0.0;
+          #elif defined(CL_SCATTER4)
           float J = cloudSunScatter4(tauSun, tauUp, cosT, tauDn);
           #else
           float J = cloudSunScatter(tauSun, tauUp, cosT);
           #endif
           float eS = clSat((ts - t0) / max(tB - t0, 1.0)), eH = clSat((h - eLo) / (eHi - eLo));
           vec3 E = mix(mix(EaL, EbL, eS), mix(EaH, EbH, eS), eH);
-          #ifdef CL_AMBIENT_VIS
+          #if defined(CL_AMBIENT_VIS) && !defined(CL_MS5)
           // Round four, calibration of the round-three network against a path-traced 10 m cumulus at the new
           // extinction (tools/neural/gt_near.py, 9600 points): with a low sun the light enters through the flanks
           // and the shaded interior is 1.4-2.2 x brighter than the network (trained on coarser, thinner fields)
@@ -793,7 +808,21 @@ void main() {
           // cav = where the sample sits in that pattern (0.2 = mean of the billow profile); x: sun term, y: ambient.
           vec2 occ = clamp(1.0 - uClDet.z * vec2(0.55, 1.0) * (cav - 0.2) * 1.25, 0.25, 1.3);
           // ambient: sky light diffusing down from the cloud top, ground bounce coming up through the base
-          #ifdef CL_AMBIENT_VIS
+          #if defined(CL_MS5)
+          // Round five (NEURAL.md 2.1): single scattering with the tabulated Mie phase (forward peak, fogbow, glory), the
+          // light kept in the beam by the diffraction peak, and every higher order of sun, sky and ground light from the
+          // network fed with physical optical depths. Replaces J (octaves / diffusion / powder / round-three nets), the
+          // ambient visibility and both round-four calibrations. lam / occ (sub-100 m lobe detail) at reduced strength.
+          if (nDense <= uClMs.x) {
+            clMsWx = wx; clMsLod = lod + 1.5;
+            vec3 tU = cloudMsTapSegments(pa, vec3(0.0, 1.0, 0.0)), tD = cloudMsTapSegments(pa, vec3(0.0, -1.0, 0.0));
+            vec3 tF = cloudMsTapSegments(pa, rd);
+            msLast = cloudMsLight(tauSun, -log(max(T, 1e-30)), uClLightDir.y, cosT, tU, tD, tF);
+          }
+          vec3 occM = vec3(mix(1.0, occ.x * lam, uClMs.y), mix(1.0, occ.y, uClMs.y), 0.0);
+          vec3 S = E * (msPhase * exp(-tauSun) + cloudMsForwardPeak(tauSun, msPhase.g) + msLast.x) * occM.x
+                 + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;
+          #elif defined(CL_AMBIENT_VIS)
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
           vec2 vis = cloudAmbientVis(tauUp, tauDn) * mix(vec2(1.0), vec2(0.84, 1.17), uClDet5.y);   // (same calibration)
           vec3 S = E * J * (occ.x * lam) + (ambUp * vis.x + ambDn * vis.y) * occ.y;
