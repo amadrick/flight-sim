@@ -15,6 +15,6 @@ export default {
     { nozzle: [-1.05, 0.1, 7.5], intake: [-1.5, -0.2, -3.9], nozzleRadius: 0.55 },
     { nozzle: [1.05, 0.1, 7.5], intake: [1.5, -0.2, -3.9], nozzleRadius: 0.55 },
   ],
-  wingtips: [[-9.775, 0.35, 1], [9.775, 0.35, 1]],
-  lights: { navLeft: [-9.7, 0.35, 1], navRight: [9.7, 0.35, 1], tail: [0, 0.4, 7.5], strobe: [-1.9, 2.9, 6.3], beacon: [0, 0.7, 1.3], landing: [0, -0.9, -6.7] },
+  wingtips: [[-9.775, 0.35, 2.1], [9.775, 0.35, 2.1]],                        // at 20° sweep (they move with the wing)
+  lights: { navLeft: [-9.77, 0.35, 2.31], navRight: [9.77, 0.35, 2.31], tail: [0, 0.19, 7.62], strobe: [-2.05, 3.12, 6.42], beacon: [0, 0.735, 1.3], landing: [0.06, -0.86, -6.33] },
 };
