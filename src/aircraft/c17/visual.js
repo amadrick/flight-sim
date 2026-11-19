@@ -70,7 +70,7 @@ export function createVisual(ctx, opts = {}) {
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.matte(SC.body)), hud: A.swatch('hud', { color: '#26282a', rough: 0.5, metal: 0.3 }),
   };
   const B = K.createAtlas({ size: atlasSize, base: skin });
-  const cWT = B.chart('wingTop', { type: 'plan', x: [0.5, 26.0], z: [-7.0, 8.4], view: 'top', mirror: true });
+  const cWT = B.chart('wingTop', { type: 'plan', x: [0.5, 26.0], z: [-7.0, 8.4], view: 'top', mirror: true, density: 1.2 });
   const cWB = B.chart('wingBot', { type: 'plan', x: [0.5, 26.0], z: [-7.0, 8.4], view: 'bottom', mirror: true, density: 0.7 });
   const cWl = B.chart('winglet', { type: 'side', z: [4.2, 8.6], y: [1.3, 4.9], view: 'right', density: 0.9 });
   const cSt = B.chart('stab', { type: 'plan', x: [0, 10.4], z: [20.8, 28.9], view: 'top', mirror: true, density: 0.8 });
@@ -461,7 +461,7 @@ function paintSurfaces(B, o) {
       Q.stroke((g) => { g.moveTo(w0[0], w0[1]); g.lineTo(w3[0], w3[1]); g.moveTo(w1[0], w1[1]); g.lineTo(w2[0], w2[1]); }, 0.05, walk);
       for (const x of [9, 20]) { const p = at(x, 0.62); Q.text('NO STEP', p[0], p[1], 0.14, { color: SC.mark, font: K.FONT.sans }); }
       // exhaust soot behind the engines over the flaps
-      for (const x of [8, 16.5]) { const a = at(x, 0.62); Q.streak(a[0], a[1], a[0], a[1] + 3.2, 1.2, { alpha: 0.12 }); }
+      for (const x of [8, 16.5]) { const a = at(x, 0.62); Q.streak(a[0], a[1], a[0], a[1] + 3.0, 1.5, { alpha: 0.06 }); }
     } else {
       for (let i = 0; i < 14; i++) { const x = 4 + i * 1.45, a = at(x, 0.66); Q.streak(a[0], a[1], a[0], a[1] + 1.6, 0.07, { alpha: 0.09 }); }
     }
@@ -486,8 +486,8 @@ function paintSurfaces(B, o) {
     if (SC.style === 'camo') camo(Q, [12.6, 27], [2.5, 13], SC.alt, key === 'L' ? 31 : 32, 0.9);
     const fa = (y, f) => { const p = fin.at(y, f); return [p[2], p[1]]; };
     if (SC.band) {                                                                // AMC base tail band near the top of the fin
-      Q.fill([fa(10.3, -0.1), fa(11.25, -0.1), fa(11.25, 1.1), fa(10.3, 1.1)], F.matte(SC.band));
-      Q.fill([fa(10.2, -0.1), fa(10.3, -0.1), fa(10.3, 1.1), fa(10.2, 1.1)], F.matte('#c8a234'));
+      Q.fill([[12.6, 10.3], [27, 10.3], [27, 11.25], [12.6, 11.25]], F.matte(SC.band));
+      Q.fill([[12.6, 10.18], [27, 10.18], [27, 10.3], [12.6, 10.3]], F.matte('#c8a234'));
       const c = fa(10.78, 0.4); Q.text(SC.bandText, c[0], c[1], 0.42, { color: '#e8e8e2', font: K.FONT.sans, weight: 700, spacing: 0.08 });
     }
     // flag (low-vis outline), serial, unit crest
