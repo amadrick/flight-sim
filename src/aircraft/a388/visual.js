@@ -841,6 +841,10 @@ function paintFuselage(A, o) {
   const lapY = (y) => (z) => Math.min(fus.topAt(z) - 0.3, Math.max(fus.botAt(z) + 0.25, y + Math.max(0, z - 18) * 0.06));
   for (const y of [3.15, 1.35, -0.1, -1.7, -3.0]) { P.yLine(-33.5, 33.5, lapY(y), { px: 1, depth: 0.3, dark: 0.06 }); P.yLine(-33.5, 33.5, lapY(y + 0.06), { px: 1, depth: 0.12, dark: 0.02 }); }
   P.line([[-34.5, 0.5], [35.0, 0.5]], { px: 1, depth: 0.22, dark: 0.04 });
+  for (const y of [1.35, -1.7]) for (let z = -30; z < 30; z += 4) for (const side of [0, 1]) {    // rivet rows along the window-belt lap joints
+    const ta = fus.tAtY(z, lapY(y + 0.09)(z)), tb = fus.tAtY(z + 4, lapY(y + 0.09)(z + 4));
+    P.rivets(z, side ? 1 - ta : ta, z + 4, side ? 1 - tb : tb, 0.09, { px: 1, depth: 0.12, dark: 0.03 });
+  }
   // static ports, outflow valves, APU door, stencils
   P.decalOn(D(4.5), -0.9, 'both', (g) => { g.fillStyle = '#a1a6aa'; g.beginPath(); g.arc(0, 0, 0.09, 0, TAU); g.fill(); g.strokeStyle = '#c42a1e'; g.lineWidth = 0.014; g.strokeRect(-0.18, -0.13, 0.36, 0.26); });
   P.decalOn(D(6.6), -1.5, 'both', (g) => { g.fillStyle = '#a1a6aa'; g.beginPath(); g.arc(0, 0, 0.07, 0, TAU); g.fill(); g.strokeStyle = '#c42a1e'; g.lineWidth = 0.012; g.strokeRect(-0.15, -0.11, 0.3, 0.22); });
