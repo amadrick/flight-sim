@@ -22,7 +22,7 @@ export const LIVERIES = ['navy', 'cag'];
 
 const SCHEMES = {
   navy: {
-    name: 'US Navy TPS two-tone grey', top: '#646b71', under: '#8d9398', radome: '#767c80', finish: 'matte', mark: '#3f4347',
+    name: 'US Navy TPS two-tone grey', top: '#5f666c', under: '#888e93', radome: '#72787c', finish: 'matte', mark: '#3c4044',
     code: 'NX', modex: '211', squadron: 'VFA-177', buno: '169213', weather: 1,
   },
   cag: {
@@ -190,7 +190,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- intakes: raked rectangular boxes under the LERX (duct → lip → outer skin), canted 10° -------------------------------------
   const IN = { z: G.engines[0].intake[2], x: Math.abs(G.engines[0].intake[0]), y: G.engines[0].intake[1], w: 0.38, h: 0.5, lean: 0.16, rakeY: 0.6, rakeX: 0.45 };
   const inSt = (() => {
-    const k = 0.97, lip = 0.022, z0 = IN.z;
+    const k = 0.985, lip = 0.022, z0 = IN.z;
     const st = (z, x, y, w, h) => ({ z, x, y, w, h, kTop: k, kBot: k });
     return [
       st(z0 + 1.0, 0, 0, (IN.w - lip * 1.3) * 0.86, (IN.h - lip * 1.3) * 0.86), st(z0 + lip * 3, 0, 0, IN.w - lip * 1.3, IN.h - lip * 1.3), st(z0 + lip * 0.6, 0, 0, IN.w - lip * 0.9, IN.h - lip * 0.9),
@@ -199,7 +199,7 @@ export function createVisual(ctx, opts = {}) {
     ];
   })();
   for (const sx of [1, -1]) {
-    const L = K.loft({ stations: inSt, segments: Math.max(24, Math.round(40 * detail / 4) * 4), step: 0.14, capStart: 'flat', capUV: U.black,
+    const L = K.loft({ stations: inSt, segments: Math.max(32, Math.round(64 * detail / 4) * 4), step: 0.14, capStart: 'flat', capUV: U.black,
       uvFn: (x, y, z, t, ring) => (ring.k < 2.3 ? U.duct : cIn[sx > 0 ? 'R' : 'L'].uv(z, y + IN.y)) });
     // lean (tops outboard), rake (top lip forward, inner edge forward), then move into place
     const m = new THREE.Matrix4().set(
@@ -286,7 +286,14 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.bladeAntenna({ pos: [0, upperAt(2.6, 0.01) - 0.02, 2.6], height: 0.12, chord: 0.2, sweep: 0.1, uv: U.top }));
   stat.add(K.bladeAntenna({ pos: [0, -0.64, -2.6], height: 0.16, chord: 0.22, sweep: 0.1, down: true, uv: U.under }));
   stat.add(K.bladeAntenna({ pos: [0, -0.6, 2.8], height: 0.12, chord: 0.18, sweep: 0.08, down: true, uv: U.under }));
-  for (const sx of [1, -1]) stat.add(K.prism([[-2.95, 0], [-2.35, 0.17], [-2.05, 0.17], [-2.05, 0]], sx * 0.96 - 0.007, sx * 0.96 + 0.007, U.top).translate(0, upperAt(-2.4, 0.96) - 0.01, 0));   // LERX fences
+  // underwing pylons (toed out 4°, the Super Hornet signature) and the centreline station
+  for (const sx of [1, -1]) for (const [x, len] of [[2.45, 2.3], [3.3, 2.1], [4.75, 1.9]]) {
+    const zc = zLE(x) + (x > X_FOLD ? -DT : 0) + (zTE(x) - zLE(x)) * 0.42;
+    const py = K.pylon([{ y: WY + 0.02, z0: zc - len / 2, z1: zc + len / 2 }, { y: WY - 0.3, z0: zc - len / 2 + 0.25, z1: zc + len / 2 - 0.12 }], { tc: 0.09, uv: U.under });
+    py.translate(0, 0, -zc).rotateY(sx * 4 * DEG).translate(sx * x, 0, zc);
+    stat.add(py).add(K.box(0.05, 0.03, len * 0.5, U.dark).translate(sx * x, WY - 0.31, zc));
+  }
+  stat.add(K.pylon([{ y: -0.6, z0: -0.4, z1: 1.6 }, { y: -0.92, z0: -0.15, z1: 1.45 }], { tc: 0.1, uv: U.under }));
 
   // ---- gear wells ---------------------------------------------------------------------------------------------------------
   const P = fus.patches;
@@ -341,9 +348,9 @@ export function createVisual(ctx, opts = {}) {
   const nozNodes = nozzles.map((m, i) => rig.part('nozzle' + i, m, { pivot: [G.engines[i].nozzle[0], ENG_Y, NZ.z0] }));
   glows.forEach((m, i) => rig.part('abGlow' + i, m, { key: 'glow' + i }));
   // arrestor hook: striped bar in a slot under the beaver tail
-  const HK = { p: [0, -0.3, 5.55], len: 2.25 };
+  const HK = { p: [0, -0.37, 5.5], len: 2.3 };
   const hookMesh = new K.Mesh();
-  { const n = 7, dir = [0, 0.11, 1], dl = Math.hypot(...dir), d = dir.map((v) => v / dl);
+  { const n = 7, dir = [0, 0.035, 1], dl = Math.hypot(...dir), d = dir.map((v) => v / dl);
     for (let k = 0; k < n; k++) { const a = HK.p.map((v, j) => v + d[j] * HK.len * k / n), b = HK.p.map((v, j) => v + d[j] * HK.len * (k + 1) / n); hookMesh.add(K.tube(a, b, 0.045 - 0.012 * k / n, 0.045 - 0.012 * (k + 1) / n, { segments: 8, uv: k % 2 ? U.hookK : U.hookY })); }
     const e = HK.p.map((v, j) => v + d[j] * HK.len);
     hookMesh.add(K.prism([[e[2] - 0.08, e[1] + 0.03], [e[2] + 0.12, e[1] + 0.02], [e[2] + 0.14, e[1] - 0.08], [e[2] + 0.02, e[1] - 0.1], [e[2] - 0.1, e[1] - 0.04]], -0.05, 0.05, U.hookK));
