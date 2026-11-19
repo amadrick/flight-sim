@@ -85,3 +85,20 @@ itself on `quality:change`.
 - `node src/terrain/tools/gen-height.mjs` — regenerate `height.gen.js` after editing `height.glsl.js` (the test fails
   if it is stale).
 - `node src/terrain/tools/map.mjs --out shots/map.png --size 800 --cx 0 --cz 0 --span 640` — shaded-relief map.
+
+## Measured budgets (software GL, `tools/shot.mjs`)
+
+| quality | pyramid | LOD range k | patches / triangles on the KHVN runway | trees (below ~900 m clearance) | draw calls |
+|---|---|---|---|---|---|
+| low | 256^2 x 13 | 81 | 153 / 0.31 M | off | 1 |
+| medium (test mode) | 512^2 x 13 | 160 | ~380 / 0.78 M | 88^2 cells, 0.23 M | 1 + 1 |
+| high | 1024^2 x 13 | 200 | 529 / 1.08 M | 104^2 cells, 0.32 M | 1 + 1 |
+| ultra | 1024^2 x 13 | 216 | 604 / 1.24 M | 128^2 cells, 0.49 M | 1 + 1 |
+
+Triangle counts fall quickly with altitude (medium: 0.63 M at 300 m, 0.23-0.47 M at 3 km, 0.35 M at 11 km, 0.29 M at
+25 km). GPU memory of the pyramid: 12 bytes per texel -> 10 MB / 41 MB / 163 MB (low / medium / high+ultra).
+Per-frame clipmap work while flying is the new L-shaped strips only (4-16 k texels per frame at Mach 2 low level);
+whole-level refills (boot, teleport, quality change) are rationed to 5 levels on the first frame and 2 per frame after
+that (in `test=1` mode: up to 4.2 M texels per frame, i.e. everything at once on medium, 4 levels per frame on high —
+give `quality=high` screenshots at least 4 frames).
+`heightAt`: 1.5-3.5 us on the plain, 1-2 us at sea, 4-7 us in the mountains, 5-9 us in the desert (node, one core).

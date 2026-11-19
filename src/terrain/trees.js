@@ -177,8 +177,8 @@ export function createTrees(ctx, { L, G, cell, uniforms }) {
         tCol = mix(tCol, vec3(0.036, 0.062, 0.020), tTropic * 0.5 * (1.0 - tConif));
         tCol *= 0.80 + 0.45 * tH3.x;
         float tUp = smoothstep(0.08, 0.95, tProf.x);
-        vTreeCol = tCol * mix(0.95, 2.5, tConif);
-        float tLow = mix(0.30, 0.52, tConif);
+        vTreeCol = tCol * mix(0.95, 1.35, tConif);
+        float tLow = mix(0.30, 0.46, tConif);
         vTreeLit = vec2(tShadow * mix(tLow, 1.0, tUp), mix(tLow + 0.05, 1.0, tUp));
       `)
       .replace('#include <begin_vertex>', 'vec3 transformed = tPos;');
@@ -187,9 +187,9 @@ export function createTrees(ctx, { L, G, cell, uniforms }) {
       .replace('#include <map_fragment>', 'diffuseColor.rgb = vTreeCol;')
       .replace('#include <aomap_fragment>', /* glsl */`
         reflectedLight.indirectDiffuse *= vTreeLit.y;
-        reflectedLight.indirectSpecular *= vTreeLit.y * vTreeLit.y;
+        reflectedLight.indirectSpecular *= vTreeLit.y * vTreeLit.y * 0.3;   // foliage: hardly any sky sheen
         reflectedLight.directDiffuse *= vTreeLit.x;
-        reflectedLight.directSpecular *= vTreeLit.x;
+        reflectedLight.directSpecular *= vTreeLit.x * 0.3;
       `);
   };
   mat.customProgramCacheKey = () => 'skyward-terrain-trees';
