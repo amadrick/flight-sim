@@ -76,6 +76,7 @@ export function createVisual(ctx, opts = {}) {
     coaming: atlas.swatch('coaming', { color: '#1e2022', rough: 0.85, metal: 0 }), bezel: atlas.swatch('bezel', { color: '#151617', rough: 0.55, metal: 0.1 }), grip: atlas.swatch('grip', { color: '#121212', rough: 0.7, metal: 0 }),
     mirror: atlas.swatch('mirror', { color: '#d8dcdf', rough: 0.04, metal: 1 }),
     dispenser: atlas.swatch('dispenser', { color: '#3d4144', rough: 0.6, metal: 0.2 }), radome: atlas.swatch('radome', paintF('#4a4f53')),
+    inner: atlas.swatch('inner', paintF('#5f6468')), bombBand: atlas.swatch('bombBand', paintF('#d4b21c')),
     exhaust: atlas.swatch('exhaust', F.exhaust), heat: atlas.swatch('heat', F.heatStained),
   };
 
@@ -146,12 +147,16 @@ export function createVisual(ctx, opts = {}) {
   const ZW = -4.45;
   const glassFixed = canLoft([-4.95, ZW], [0.25, 0.75], 0, [0, 0]);
   const glassMove = canLoft([ZW, -2.55], [0.25, 0.75], 0, [0, 0]);
-  stat.add(canLoft([-4.95, ZW], [0.25, 0.25 + ct], 0.006, U.frame)).add(canLoft([-4.95, ZW], [0.75 - ct, 0.75], 0.006, U.frame));
-  stat.add(canLoft([ZW - 0.08, ZW], [0.25, 0.75], 0.008, U.frame)).add(canLoft([-4.95, -4.89], [0.25, 0.75], 0.005, U.frame));
-  stat.add(canLoft([-4.95, ZW], [0.5 - ct * 0.4, 0.5 + ct * 0.4], 0.006, U.frame));           // windscreen centre post (flat armoured panel joint)
+  // frames are double-skinned so they also read from the seat (a single outward skin is culled from inside)
+  const frameLoft = (zr, tr, inf, uv) => { const m = canLoft(zr, tr, inf, uv); return m.add(canLoft(zr, tr, -0.0015, uv).flip()); };
+  // windscreen: flat armoured front panel between two corner posts, curved side panels, heavy arch at the canopy joint
+  const TW = 0.085;   // half-width of the flat front panel in ring parameter
+  stat.add(frameLoft([-4.95, ZW], [0.25, 0.25 + ct], 0.006, U.frame)).add(frameLoft([-4.95, ZW], [0.75 - ct, 0.75], 0.006, U.frame));
+  stat.add(frameLoft([ZW - 0.06, ZW], [0.25, 0.75], 0.008, U.frame)).add(frameLoft([-4.95, -4.89], [0.25, 0.75], 0.005, U.frame));
+  for (const tc of [0.5 - TW, 0.5 + TW]) stat.add(frameLoft([-4.95, ZW], [tc - ct * 0.3, tc + ct * 0.3], 0.007, U.frame));
   const frameMove = K.merge(
-    canLoft([ZW, -2.55], [0.25, 0.25 + ct * 0.7], 0.004, U.frame), canLoft([ZW, -2.55], [0.75 - ct * 0.7, 0.75], 0.004, U.frame),
-    canLoft([ZW, ZW + 0.04], [0.25, 0.75], 0.005, U.frame), canLoft([-2.68, -2.55], [0.25, 0.75], 0.005, U.frame));
+    frameLoft([ZW, -2.55], [0.25, 0.25 + ct * 0.7], 0.004, U.frame), frameLoft([ZW, -2.55], [0.75 - ct * 0.7, 0.75], 0.004, U.frame),
+    frameLoft([ZW, ZW + 0.04], [0.25, 0.75], 0.005, U.frame), frameLoft([-2.68, -2.55], [0.25, 0.75], 0.005, U.frame));
 
   // ---- cockpit: armoured tub, ACES II seat, pilot, HUD, glareshield, panel ---------------------------------------------------
   const eye = G.pilotEye;
@@ -250,7 +255,7 @@ export function createVisual(ctx, opts = {}) {
       { name: 'flapOut', type: 'flap', span: [3.0, 4.65], from: 'hte', nose: 1 },
       { name: 'aileron', type: 'split', span: [4.75, 8.15], from: 'hte' },
     ],
-    charts: { upper: side > 0 ? cWT.R : cWT.L, lower: side > 0 ? cWB.R : cWB.L }, innerUV: U.dark,
+    charts: { upper: side > 0 ? cWT.R : cWT.L, lower: side > 0 ? cWB.R : cWB.L }, innerUV: U.inner,
   });
   const W = { R: mkWing(1), L: mkWing(-1) };
   stat.add(W.R.mesh).add(W.L.mesh);
@@ -277,7 +282,7 @@ export function createVisual(ctx, opts = {}) {
     stations: [{ x: 0.1, y: TY, z: TLE, chord: TC, tc: 0.1 }, { x: FX, y: TY, z: TLE + 0.05, chord: TC - 0.1, tc: 0.09 }],
     lines: { eh: [[0.1, 0.62], [FX, 0.6]] },
     controls: [{ name: 'elevator', type: 'flap', span: [0.32, 2.66], from: 'eh', nose: 1 }],
-    charts: { upper: cST, lower: cSB }, innerUV: U.dark,
+    charts: { upper: cST, lower: cSB }, innerUV: U.inner,
   });
   const stab = { R: mkStab(1), L: mkStab(-1) };
   stat.add(stab.R.mesh).add(stab.L.mesh);
@@ -288,7 +293,7 @@ export function createVisual(ctx, opts = {}) {
     stations: FINST.map(([y, le, te]) => ({ x: sx * FX, y, z: le, chord: te - le, tc: 0.075 })),
     lines: { rh: [[-0.05, (RZ - 7.42) / 1.34], [0.05, (RZ - 7.0) / 1.87], [0.25, (RZ - 6.76) / 2.17], [1.5, (RZ - 6.86) / 2.09], [2.5, (RZ - 7.05) / 1.9], [2.7, (RZ - 7.25) / 1.65]] },
     controls: [{ name: 'rudder', type: 'flap', span: [0.12, 2.62], from: 'rh', nose: 1 }],   // full-height rudder, above and below the tailplane
-    charts: { upper: cFin.L, lower: cFin.R }, innerUV: U.dark,
+    charts: { upper: cFin.L, lower: cFin.R }, innerUV: U.inner,
   });
   const fins = { R: mkFin(1), L: mkFin(-1) };
   stat.add(fins.R.mesh).add(fins.L.mesh);
@@ -320,12 +325,8 @@ export function createVisual(ctx, opts = {}) {
       }
     }
     stat.add(m).add(n.core).add(n.plug);
-    // core exhaust: forced-mixer lobes inside the bypass exit, heat-blued core nozzle lip and the turbine face behind the plug
-    const zx = c[2] + 2.75, cr = 0.39;
-    for (let k = 0; k < 12; k++) {
-      const a = (k + 0.5) / 12 * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-      stat.add(K.tube([c[0] + ca * cr * 0.98, c[1] + sa * cr * 0.98, zx - 0.32], [c[0] + ca * cr * 0.93, c[1] + sa * cr * 0.93, zx + 0.06], 0.035, 0.022, { segments: 5, uv: U.exhaust }));
-    }
+    // core nozzle lip: heat-blued ring at the core exit (TF34 is a separate-flow engine: no mixer)
+    const zx = c[2] + 2.75;
     stat.add(K.lathe([[0.293, zx + 0.7], [0.3, zx + 0.735, 1], [0.27, zx + 0.74]], { segments: 28, uv: U.heat }).translate(c[0], c[1], 0));
     stat.add(K.fanBackdrop(0.49, n.fanZ + 0.35, U.black).translate(c[0], c[1], 0));
     // inlet: acoustic liner band, anti-ice lip ring, fan-case rub strip
@@ -347,7 +348,8 @@ export function createVisual(ctx, opts = {}) {
       return { y: y0 - depth, zf };
     };
     const mav = (x, y, z, roll = 45) => K.missile({ length: 2.49, radius: 0.152, canards: { z: 0.75, chord: 1.05, span: 0.17 }, wings: { z: 2.2, chord: 0.26, span: 0.18 }, uvBody: U.mav, uvNose: U.mavNose, uvFin: U.mav, roll }).translate(x, y, z);
-    const gbu12 = (x, y, z) => K.missile({ length: 3.27, radius: 0.137, canards: { z: 0.32, chord: 0.22, span: 0.09 }, wings: { z: 2.62, chord: 0.6, span: 0.3 }, uvBody: U.bomb, uvNose: U.bombNose, uvFin: U.bomb, roll: 45 }).translate(x, y, z);
+    const gbu12 = (x, y, z) => K.missile({ length: 3.27, radius: 0.137, canards: { z: 0.32, chord: 0.22, span: 0.09 }, wings: { z: 2.62, chord: 0.6, span: 0.3 }, uvBody: U.bomb, uvNose: U.bombNose, uvFin: U.bomb, roll: 45 })
+      .add(K.lathe([[0.139, 0.62], [0.139, 0.7]], { segments: 12, uv: U.bombBand })).translate(x, y, z);   // yellow HE band
     for (const sx of [-1, 1]) {
       // st 4 / 8 (between the fuselage and the gear pod): GBU-12
       { const p = pyl(sx * 1.55, 0.32); stat.add(gbu12(sx * 1.55, p.y - 0.15, p.zf - 0.85)); }
@@ -548,19 +550,18 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('strobe', [-L.strobe[0], L.strobe[1], L.strobe[2]], { color: [1, 1, 1], size: 0.075 });
   rig.lamp('beacon', L.beacon, { color: [1, 0.1, 0.05], size: 0.085, squash: [1, 0.7, 1] });
   rig.lamp('beacon', [0, fus.botAt(1.5) - 0.03, 1.5], { color: [1, 0.1, 0.05], size: 0.085, squash: [1, 0.7, 1] });
-  // NVG formation strip lights: fuselage sides under the canopy, aft fuselage, wingtips and fin outer faces (pale green)
+  // NVG formation strip lights, on the pale strips painted on the fuselage sides, aft fuselage, wingtips and fins
   {
-    const fc = [0.55, 1, 0.65];
-    const strip = (a, b) => { const m = K.tube(a, b, 0.016, 0.016, { segments: 6, caps: true }); rig.lamp('formation', a, { mesh: m, color: fc }); };
+    const fc = [0.12, 0.22, 0.14];
     for (const sx of [-1, 1]) {
-      const p0 = fus.at(-2.2, sx > 0 ? 0.36 : 0.64).p, p1 = fus.at(-1.55, sx > 0 ? 0.36 : 0.64).p;
-      strip([p0[0] + sx * 0.012, p0[1], p0[2]], [p1[0] + sx * 0.012, p1[1], p1[2]]);
-      const q0 = fus.at(5.6, sx > 0 ? 0.33 : 0.67).p, q1 = fus.at(6.2, sx > 0 ? 0.33 : 0.67).p;
-      strip([q0[0] + sx * 0.012, q0[1], q0[2]], [q1[0] + sx * 0.012, q1[1], q1[2]]);
-      const w0 = W.R.at(8.35, 0.25, 'upper'), w1 = W.R.at(8.35, 0.6, 'upper');
-      strip([sx * w0[0], w0[1] + 0.012, w0[2]], [sx * w1[0], w1[1] + 0.012, w1[2]]);
-      const f0 = fins.R.at(1.2, 0.18, 'lower'), f1 = fins.R.at(2.3, 0.2, 'lower');   // right fin's outboard (+X) face, mirrored for the left
-      strip([sx * (Math.abs(f0[0]) + 0.012), f0[1], f0[2]], [sx * (Math.abs(f1[0]) + 0.012), f1[1], f1[2]]);
+      for (const [z, y, len] of [[-1.2, 0.2, 0.32], [7.4, 0.5, 0.3]]) {
+        const t = fus.tAtY(z, y), q = fus.at(z, sx > 0 ? t : 1 - t), p = q.p, n = q.n;
+        rig.lamp('formation', [p[0] + n[0] * 0.006, p[1] + n[1] * 0.006, p[2]], { color: fc, size: len, squash: [0.045, 0.09, 1] });
+      }
+      const w = W.R.at(7.6, 0.3, 'upper');
+      rig.lamp('formation', [sx * w[0], w[1] + 0.008, w[2]], { color: fc, size: 0.25, squash: [1, 0.05, 0.12] });
+      const f = fins.R.at(2.25, 0.5, 'lower');
+      rig.lamp('formation', [sx * (Math.abs(f[0]) + 0.008), f[1], f[2]], { color: fc, size: 0.28, squash: [0.05, 0.11, 1] });
     }
   }
 
@@ -626,7 +627,7 @@ function paint(atlas, o) {
   // a block of stencil "text" lines (unreadable at chase distance, reads as maintenance stencilling)
   const stencil = (g, w, rows, col = 'rgba(28,30,33,0.75)') => { g.fillStyle = col; for (let r = 0; r < rows; r++) { const lw = w * (0.45 + ((r * 37) % 11) / 20); g.fillRect(-w / 2, -rows * 0.012 + r * 0.024, lw, 0.011); } };
   const touchUps = (Q, n, a0, a1, b0, b1, base, sz) => {   // fresh-paint touch-up patches (slightly darker / bluer than the faded paint)
-    for (let i = 0; i < n * wx; i++) { const a = a0 + rnd() * (a1 - a0), b = b0 + rnd() * (b1 - b0), w = sz * (0.4 + rnd()), h = sz * (0.25 + rnd() * 0.6); Q.fill([[a, b], [a + w, b], [a + w, b + h], [a, b + h]], paintF(touch(base, 0.9 + rnd() * 0.05)), { alpha: 0.55 }); }
+    for (let i = 0; i < n * wx; i++) { const a = a0 + rnd() * (a1 - a0), b = b0 + rnd() * (b1 - b0), w = sz * (0.4 + rnd()), h = sz * (0.25 + rnd() * 0.6); Q.fill([[a, b], [a + w, b], [a + w, b + h], [a, b + h]], paintF(touch(base, 0.92 + rnd() * 0.04)), { alpha: 0.4 }); }
   };
 
   // ================= fuselage (paint coords: z, t; t 0 = belly, 0.25 = right side, 0.5 = spine, 0.75 = left) =================
