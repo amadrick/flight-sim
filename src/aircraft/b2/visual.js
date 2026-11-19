@@ -32,7 +32,7 @@ export const LIVERIES = ['operational', 'weathered', 'test', 'rollout'];
 //   weather: kit skin weathering; patch: strength of the tonal patchwork; tape: strength of the taped seams
 const SCHEMES = {
   operational: {
-    name: 'Operational (509th BW)', skin: '#353a41', under: '#2e333b', le: '#4c5259', seam: '#40454d', patch: '#2d3137', tile: '#6f6b64', soot: '#2a2622',
+    name: 'Operational (509th BW)', skin: '#2f343a', under: '#2b3038', le: '#4c5259', seam: '#40454d', patch: '#2d3137', tile: '#6f6b64', soot: '#2a2622',
     rough: 0.56, metal: 0.07, weather: 0.42, patch: 1, tape: 1, noise: 0.03, chalk: 0, walk: '#272a2f',
     code: 'WM', serial: 'AF 91-0347', acName: 'SPIRIT OF CASCADIA', unit: '509 BW', mark: '#0f1012',
   },
@@ -42,12 +42,12 @@ const SCHEMES = {
     code: 'WM', serial: 'AF 93-1129', acName: 'SPIRIT OF THE HIGH PLAINS', unit: '509 BW', mark: '#1c1e22',
   },
   test: {
-    name: 'Test force (419th FLTS)', skin: '#383d44', under: '#31363e', le: '#50565d', seam: '#434850', patch: '#30343a', tile: '#74706a', soot: '#2a2622',
+    name: 'Test force (419th FLTS)', skin: '#32373e', under: '#2d323a', le: '#50565d', seam: '#434850', patch: '#30343a', tile: '#74706a', soot: '#2a2622',
     rough: 0.56, metal: 0.07, weather: 0.35, patch: 0.8, tape: 0.9, noise: 0.03, chalk: 0, walk: '#292c31', test: true,
     code: 'ED', serial: 'AF 82-1071', acName: 'SPIRIT OF ANTELOPE VALLEY', unit: '419 FLTS', mark: '#16181b', av: 'AV-6',
   },
   rollout: {
-    name: 'Factory rollout finish', skin: '#33373d', under: '#2f343b', le: '#454a51', seam: '#3a3e45', patch: '#30343a', tile: '#7b7770', soot: '#3a3631',
+    name: 'Factory rollout finish', skin: '#2e3238', under: '#2b3037', le: '#454a51', seam: '#3a3e45', patch: '#30343a', tile: '#7b7770', soot: '#3a3631',
     rough: 0.52, metal: 0.08, weather: 0.1, patch: 0.35, tape: 0.55, noise: 0.015, chalk: 0, walk: '#2a2d32', fresh: true,
     code: '', serial: 'AF 82-1072', acName: 'SPIRIT OF PALMDALE', unit: '', mark: '#17191c',
   },
@@ -545,7 +545,7 @@ export function createVisual(ctx, opts = {}) {
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 0.72, emissiveIntensity: 0.8 });
   // the AHSS coating's signature: a broad, soft, slightly cool sheen that rises towards grazing angles (no sparkle)
-  if (mat.isMeshPhysicalMaterial) { mat.sheen = SC.fresh ? 0.18 : 0.15; mat.sheenRoughness = 0.6; mat.sheenColor = new THREE.Color('#6c7480'); }
+  if (mat.isMeshPhysicalMaterial) { mat.sheen = SC.fresh ? 0.13 : 0.1; mat.sheenRoughness = 0.6; mat.sheenColor = new THREE.Color('#6c7480'); }
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
@@ -813,8 +813,8 @@ function paint(atlas, o) {
     // flush air-data ports round the beak (upper and lower), ringed by the edge treatment
     for (const [x, f] of [[0.45, 0.035], [0.9, 0.03], [1.4, 0.026], [1.95, 0.024], [2.5, 0.022]]) {
       const [, z] = at(x, f + 0.012);
-      P.fill(disc(x, z, 0.06), coat(SC.le), { alpha: 0.6 }); P.fill(disc(x, z, 0.032, 8), { color: '#141518', rough: 0.35, metal: 0.4 });
-      P.fill(disc(x, z, 0.012, 6), { color: '#050506', rough: 0.4, metal: 0 });
+      P.fill(disc(x, z, 0.05), coat(SC.le), { alpha: 0.45 }); P.fill(disc(x, z, 0.022, 8), { color: '#2a2d31', rough: 0.35, metal: 0.4 });
+      P.fill(disc(x, z, 0.008, 6), { color: '#0a0a0b', rough: 0.4, metal: 0 });
     }
     if (top) {
       // exhaust decks: heat-resistant tiles, lighter and metallic, sooty towards the trailing edge
