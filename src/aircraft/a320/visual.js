@@ -30,7 +30,7 @@ export const LIVERIES = ['meridia', 'orvanta', 'house'];
 const SCHEMES = {
   meridia: { name: 'Meridia', title: 'MERIDIA', reg: 'ZZ-MRD', body: '#f6f7f8', belly: '#cdd1d5', accent: '#a8123c', tail: '#a8123c', engine: '#f3f4f5', lipBand: '#a8123c', sharklet: '#a8123c', titleColor: '#a8123c', font: 'wide', style: 'cheat' },
   orvanta: { name: 'Orvanta', title: 'orvanta', reg: 'ZZ-ORV', body: '#f5f6f4', belly: '#0d4a57', accent: '#e8b23a', tail: '#0d4a57', engine: '#0d4a57', lipBand: '#e8b23a', sharklet: '#e8b23a', titleColor: '#0d4a57', font: 'round', style: 'sweep' },
-  house: { name: 'Skyward demonstrator', title: 'SKYWARD', reg: 'ZZ-NEO', body: '#f2f3f4', belly: '#9aa2a9', accent: '#2d6fd0', tail: '#f2f3f4', engine: '#f2f3f4', lipBand: '#2d6fd0', sharklet: '#2d6fd0', titleColor: '#1c2b3d', font: 'wide', style: 'house' },
+  house: { name: 'Skyward demonstrator', title: 'SKYWARD', reg: 'ZZ-NEO', body: '#f2f3f4', belly: '#9aa2a9', accent: '#2d6fd0', tail: '#f2f3f4', engine: '#f2f3f4', lipBand: '#2d6fd0', sharklet: '#2d6fd0', titleColor: '#1c2b3d', font: 'wide', style: 'house', logoGlow: '#b8bcc0' },
 };
 
 // ---- fuselage station table ---------------------------------------------------------------------------------------------
@@ -411,7 +411,7 @@ export function createVisual(ctx, opts = {}) {
   paintFuselage(A, { SC, fus, cFus, cFair, cPanel, cOver, cPed, WIN });
   paintSurfaces(B, { SC, W: W.R, fin, stab: stab.R, cWT, cWB, cSh, cSt, cFin, cNac, SPOILERS });
   lap('paint');
-  const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1 });
+  const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 });
   lap('textures');
   rig.material('paint', matA, { shared: true }); rig.material('wing', matB, { shared: true });
   rig.disposables.push(A, B);
@@ -569,6 +569,7 @@ export function createVisual(ctx, opts = {}) {
       sleeves[i].node.position.z = sleeves[i].node.userData.restZ + (e.reverser || 0) * sleeves[i].travel;
     }
     matA.emissiveIntensity = S.night * 2.4;
+    matB.emissiveIntensity = S.night * (S.lights && S.lights.nav ? 1.6 : 0);
   });
   for (const s of sleeves) s.node.userData.restZ = s.node.position.z;
   const visual = rig.build();
@@ -835,6 +836,8 @@ function paintSurfaces(B, o) {
       Q.fill([fa(1.9, 0), fa(3.3, 0), fa(3.3, 1), fa(1.9, 1)], F.gloss(SC.accent));
       Q.text('neo', c[0] + 0.4, c[1] + 0.6, 1.1, { color: SC.accent, font: K.FONT.round, weight: 700 });
     }
+    // floodlit by the logo lights at night (emissive layer, driven by the nav-light switch)
+    { const e = fa(4.4, 0.45); Q.fill((g) => g.ellipse(e[0], e[1], 2.3, 2.0, 0, 0, Math.PI * 2), { emissive: SC.logoGlow || SC.tail }, { alpha: 0.55, feather: 60 }); }
     Q.fill([fa(2.0, 0), fa(8.5, 0), fa(8.5, 0.03), fa(2.0, 0.03)], metal);
     Q.line([fa(2.15, 1), fa(2.15, 0.71), fa(8.35, 0.69), fa(8.35, 1)], gap);
     for (const y of [4.2, 6.2]) Q.line([fa(y, 0.7), fa(y, 1)], line);
