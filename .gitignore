@@ -4,3 +4,4 @@ shots
 *.log
 __pycache__
 .venv
+tools/neural/ground/data/
