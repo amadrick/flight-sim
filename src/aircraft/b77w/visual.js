@@ -102,6 +102,10 @@ export function createVisual(ctx, opts = {}) {
       if (layer === 'color') { bandB(g, 0, 1, '#2b2f33'); bandB(g, 0, 0.09, '#a3a8ad'); bandB(g, 0.09, 0.13, '#4e5358'); bandB(g, 0.9, 1, '#373b40'); }
       else if (layer === 'orm') { bandB(g, 0, 1, ormB(0.34, 0.3)); bandB(g, 0, 0.11, ormB(0.2, 0.95)); }
     }),
+    soot: B.strip('sleeveSoot', 3, (g, layer) => {
+      if (layer === 'color') { const gr = g.createLinearGradient(0, 0, 1, 0); gr.addColorStop(0, SC.engine); gr.addColorStop(0.55, SC.engine); gr.addColorStop(1, '#3a3936'); g.fillStyle = gr; g.fillRect(0, 0, 1, 1); }
+      else if (layer === 'orm') { bandB(g, 0, 0.5, ormB(0.22, 0)); bandB(g, 0.5, 1, ormB(0.5, 0)); }
+    }),
     core: B.strip('coreSoot', 6, (g, layer) => {
       if (layer === 'color') { const gr = g.createLinearGradient(0, 0, 1, 0); gr.addColorStop(0, '#c4c8cb'); gr.addColorStop(0.5, '#b8bcbf'); gr.addColorStop(0.72, '#9a9c9b'); gr.addColorStop(0.83, '#5f605e'); gr.addColorStop(0.9, '#8c877d'); gr.addColorStop(1, '#a39885'); g.fillStyle = gr; g.fillRect(0, 0, 1, 1); }
       else if (layer === 'orm') { bandB(g, 0, 0.6, ormB(0.42, 0)); bandB(g, 0.6, 0.86, ormB(0.6, 0.1)); bandB(g, 0.86, 1, ormB(0.42, 0.85)); }
@@ -287,6 +291,11 @@ export function createVisual(ctx, opts = {}) {
     // metallic core-nozzle ring
     { const z1 = NAC.len + 2.6; stB.add(K.lathe([[0.705, z1 - 0.58], [0.668, z1 + 0.01, 1], [0.645, z1 + 0.01, 1]], { segments: 40, uv: UB.coreMetal }).translate(c[0], c[1], c[2])); }
     stB.add(K.fanBackdrop(NAC.rFan, 0.55, UB.duct).translate(c[0], c[1], n.fanZ));
+    { // reverser sleeve: grey acoustic lining inside the fan nozzle, exhaust soot on the outer trailing edge (both move with it)
+      const L = NAC.len, zS = L * NAC.sleeve, seg = Math.max(36, Math.round(56 * detail / 4) * 4), rAtS = (z) => NAC.rMax - (NAC.rMax - NAC.rExit) * Math.pow(Math.max(0, (z - L * 0.4) / (L * 0.6)), 1.6);
+      n.sleeve.add(K.lathe([[NAC.rExit - 0.042, L - 0.03], [NAC.rFan + 0.024, zS + 0.02]], { segments: seg, uv: UB.acoustic }).occlude(0.4).translate(c[0], c[1], c[2]));
+      if (SB.soot) { const zz = [L - 0.6, L - 0.32, L - 0.1, L - 0.02]; n.sleeve.add(K.lathe(zz.map(z => [rAtS(z) + 0.006, z]), { segments: seg, uv: (k) => SB.soot.uv(k / 3) }).translate(c[0], c[1], c[2])); }
+    }
     // pylon: aft fairing on the core cowl, main strut, blended into the wing lower surface
     stB.add(K.pylon([{ y: c[1] + 0.92, z0: c[2] + 5.0, z1: c[2] + 9.1, x: c[0], tc: 0.12 }, { y: c[1] + 1.3, z0: c[2] + 1.9, z1: c[2] + 10.2, x: c[0], tc: 0.075 }, { y: c[1] + 1.52, z0: c[2] + 2.3, z1: c[2] + 10.8, x: c[0], tc: 0.07 }], { uv: UB.pylon }));
     stB.add(K.plate([c[0] - sx * 1.36, c[1] + 1.36, c[2] + 1.3], [c[0] - sx * 1.36, c[1] + 1.36, c[2] + 2.65], [c[0] - sx * 1.64, c[1] + 1.64, c[2] + 2.7], [c[0] - sx * 1.6, c[1] + 1.6, c[2] + 1.55], 0.015, UB.engine));   // inboard nacelle strake
@@ -715,7 +724,7 @@ function paintFuselage(A, o) {
     const k = (z) => Math.pow(Math.max(0, (z + 33.2) / 5.6), 1.3);
     P.band(-33.2, -27.58, (z) => -0.175 - 0.125 * k(z), (z) => -0.175 + 0.125 * k(z), accent, { step: 0.1 });
     P.band(-32.2, -27.58, (z) => -0.42 - 0.04 * k(z), (z) => -0.42 + 0.04 * k(z), F.gloss('#2a2e33'), { step: 0.1 });
-    P.textOn(SC.title, -14.5, 1.75, 'both', 1.05, { color: SC.titleColor, font, weight: 700, spacing: 0.14 });
+    P.textOn(SC.title, -14.0, 1.72, 'both', 1.3, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
     P.decalOn(-21.8, 1.75, 'both', (g, layer, side) => drawFalcon(g, 0.85, SC.accent, side === 'R'));
   } else if (SC.style === 'sweep') {     // navy belly sweeping up the aft fuselage into the tail, with a gold pin line
     const edge = (z) => (z < 8 ? -1.25 + (z + 36.3) * 0.006 : -0.98 + Math.pow((z - 8) / 22, 2.0) * 4.2);
