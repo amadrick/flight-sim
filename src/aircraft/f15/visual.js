@@ -79,7 +79,7 @@ export function createVisual(ctx, opts = {}) {
     L: atlas.chart('nacL', { type: 'unwrap', z: [-5.9, 2 * NSPLIT + 5.9], girth: 4.7, vScale: 0.8, strips: 2, density: 1.05 }),
   };
   const cCft = isE ? atlas.chart('cft', { type: 'unwrap', z: [-3.75, 3.75], girth: 2.4, vScale: 0.8, density: 0.8 }) : null;
-  const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [1.1, 6.6], z: [-3.0, 4.3], view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-6.6, -1.1], z: [-3.0, 4.3], view: 'top' }) };
+  const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [1.1, 6.6], z: [-3.0, 4.3], view: 'top', density: 1.1 }), L: atlas.chart('wingTopL', { type: 'plan', x: [-6.6, -1.1], z: [-3.0, 4.3], view: 'top', density: 1.1 }) };
   const cWB = { R: atlas.chart('wingBotR', { type: 'plan', x: [1.1, 6.6], z: [-3.0, 4.3], view: 'bottom', density: 0.6 }), L: atlas.chart('wingBotL', { type: 'plan', x: [-6.6, -1.1], z: [-3.0, 4.3], view: 'bottom', density: 0.6 }) };
   const cST = atlas.chart('stabTop', { type: 'plan', x: [1.85, 4.4], z: [3.6, 7.35], view: 'top', mirror: true, density: 0.85 });
   const cSB = atlas.chart('stabBot', { type: 'plan', x: [1.85, 4.4], z: [3.6, 7.35], view: 'bottom', mirror: true, density: 0.6 });
@@ -93,7 +93,7 @@ export function createVisual(ctx, opts = {}) {
     dark: atlas.swatch('dark', F.darkGrey), black: atlas.swatch('black', F.black),
     duct: atlas.swatch('duct', { color: '#cfd0cc', rough: 0.55, metal: 0 }), ductMid: atlas.swatch('ductMid', { color: '#a9aba7', rough: 0.6, metal: 0 }), ductDeep: atlas.swatch('ductDeep', { color: '#6f716f', rough: 0.65, metal: 0 }),
     exhaust: atlas.swatch('exhaust', F.exhaust), heat: atlas.swatch('heat', { color: '#7a726a', rough: 0.48, metal: 0.85 }),
-    heat2: atlas.swatch('heat2', { color: '#8d8478', rough: 0.55, metal: 0.6 }), soot: atlas.swatch('soot', { color: '#3a3532', rough: 0.7, metal: 0.4 }),
+    heat2: atlas.swatch('heat2', { color: '#6a6157', rough: 0.62, metal: 0.55 }), soot: atlas.swatch('soot', { color: '#3a3532', rough: 0.7, metal: 0.4 }),
     well: atlas.swatch('well', F.gearWhite), wellDark: atlas.swatch('wellDark', { color: '#b9bbb7', rough: 0.5, metal: 0 }),
     interior: atlas.swatch('interior', { color: '#43484b', rough: 0.75, metal: 0 }), console: atlas.swatch('console', { color: '#1c1e20', rough: 0.6, metal: 0 }),
     seat: atlas.swatch('seat', { color: '#2b2e2f', rough: 0.7, metal: 0 }), cushion: atlas.swatch('cushion', { color: '#525843', rough: 0.95, metal: 0 }),
@@ -291,10 +291,12 @@ export function createVisual(ctx, opts = {}) {
     for (const [x, z, w, h, d] of [[-0.22, -5.9, 0.3, 0.1, 0.42], [0.2, -5.75, 0.34, 0.08, 0.5], [0, -5.0, 0.6, 0.07, 0.4]]) stat.add(K.box(w, h, d, U.dark).translate(x, 0.87 + h / 2, z));
   }
   const glare = (z0, z1, y0, y1, hw) => { const gs = K.prism([[z0, y0], [z0, y1], [z1 - 0.05, y1 + 0.035], [z1, y1 + 0.01], [z1, y0]], -hw, hw, U.console); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * Math.min(1, (gs.p[i + 2] - z0) / (z1 - z0)); return gs; };
-  stat.add(glare(-8.2, -7.74, 0.7, 0.8, 0.44));
+  // glareshield coaming: a shallow curved hood over the instrument panel
+  stat.add(K.loft({ stations: [{ z: -8.22, y: 0.74, w: 0.36, top: 0.04, bot: 0.01, kTop: 0.7 }, { z: -7.95, y: 0.75, w: 0.43, top: 0.075, bot: 0.01, kTop: 0.7 }, { z: -7.73, y: 0.75, w: 0.44, top: 0.07, bot: 0.01, kTop: 0.7 }],
+    segments: 24, step: 0.1, tRange: [0.25, 0.75], uv: U.console, capEnd: 'flat', capUV: U.console }).mesh);
+  void glare;
   const panelQuad = (z, y0, y1, hw, b0, b1) => { const i0 = stat.vertexCount; for (const [x, y, b] of [[-hw, y0, b1], [hw, y0, b1], [hw, y1, b0], [-hw, y1, b0]]) { const uv = cPanel.uv(x + 0.45, b); stat.vert(x, y, z, 0, 0.25, 1, uv[0], uv[1]); } stat.quad(i0, i0 + 1, i0 + 2, i0 + 3); };
   panelQuad(-7.76, 0.36, 0.8, 0.43, 0.0, 0.44);
-  stat.add(K.box(0.24, 0.12, 0.05, U.console).translate(0, 0.86, -7.74));                 // up-front controls under the HUD
   stat.add(K.box(0.22, 0.32, 0.45, U.console).translate(0, 0.16, -7.5));                   // centre pedestal
   for (const sx of [-1, 1]) stat.add(K.box(0.15, 0.1, 1.2, U.console).translate(sx * 0.38, 0.52, -6.95));   // side consoles
   stat.add(K.stick({ base: [0, 0.32, -7.42], height: 0.32, uv: U.black, uvGrip: U.dark }));
@@ -484,7 +486,7 @@ export function createVisual(ctx, opts = {}) {
     }
     stat.add(K.probe(fus.at(-7.3, 0.12).p, [0.12, fus.botAt(-7.3) - 0.03, -7.42], 0.009, U.probe));        // total temperature probe
     // AN/APX-114 "bird slicer" IFF blades ahead of the windscreen
-    for (const x of [-0.15, -0.05, 0.05, 0.15]) stat.add(K.bladeAntenna({ pos: [x, fus.topAt(-9.0) - 0.006 - Math.abs(x) * 0.25, -9.0], height: 0.07, chord: 0.05, sweep: 0.02, thickness: 0.006, uv: U.dark }));
+    for (const x of [-0.15, -0.05, 0.05, 0.15]) stat.add(K.bladeAntenna({ pos: [x, fus.topAt(-9.0) - 0.006 - Math.abs(x) * 0.25, -9.0], height: 0.07, chord: 0.05, sweep: 0.02, thickness: 0.006, uv: U.darkPaint }));
     stat.add(K.bladeAntenna({ pos: [0, fus.topAt(-1.3) - 0.01, -1.3], height: 0.2, chord: 0.3, sweep: 0.16, uv: U.mid }));         // UHF
     stat.add(K.bladeAntenna({ pos: [0, fus.topAt(1.5) - 0.01, 1.5], height: 0.13, chord: 0.2, sweep: 0.1, uv: U.mid }));          // TACAN
     stat.add(K.bladeAntenna({ pos: [0, fus.botAt(-7.6) + 0.01, -7.6], height: 0.14, chord: 0.2, sweep: 0.09, down: true, uv: U.under }));
@@ -575,7 +577,7 @@ export function createVisual(ctx, opts = {}) {
     const c = gp[i].pos, edge = nac[key].edges, off = 0.2, ax = [c[0] - sx * off, c[1], c[2]], P0 = [sx * 1.2, -0.4, 0.62];
     const extra = new K.Mesh();
     // outboard leg door riding on the strut, hydraulic brake line
-    extra.add(K.plate([sx * 1.31, -0.5, 0.25], [sx * 1.31, -0.5, 0.95], [sx * 1.31, -1.05, 0.88], [sx * 1.31, -1.05, 0.32], 0.015, U.mid));
+    extra.add(K.plate([sx * 1.04, -0.47, 0.49], [sx * 1.33, -0.47, 0.49], [sx * 1.33, -0.86, 0.45], [sx * 1.04, -0.86, 0.45], 0.015, U.mid));
     extra.add(K.tube([sx * 1.25, -0.45, 0.68], [sx * 1.25, -1.15, 0.6], 0.01, 0.01, { segments: 5, uv: U.hyd }));
     const g = K.buildGear(rig, atlas, {
       name: 'main' + key, index: i, contact: ax, wheels: [sx * off], wheelRadius: gp[i].wheelRadius, wheelWidth: 0.24,
@@ -755,7 +757,7 @@ function paint(atlas, o) {
   P.noise({ alpha: 0.035 * wx, scale: 0.8, mode: 'light' });
   for (let i = 0; i < 26; i++) { const z = -6 + rnd() * 11.5, t = (rnd() < 0.5 ? 0.03 : 0.91) + rnd() * 0.06; P.streak(z, t, z + 0.5 + rnd() * 1.4, t + (rnd() - 0.5) * 0.01, 0.006 + rnd() * 0.01, { alpha: (0.08 + rnd() * 0.12) * wx }); }
   for (let i = 0; i < 8; i++) { const z = -8.6 + rnd() * 3.5, t = rnd() < 0.5 ? 0.12 + rnd() * 0.06 : 0.82 + rnd() * 0.06; P.streak(z, t, z + 0.9, t, 0.008, { alpha: 0.12 * wx }); }
-  P.fill((g) => g.rect(5.0, 0, 1.6, 1), { color: 'rgba(42,38,34,1)' }, { alpha: 0.28, feather: 14 });
+  P.fill((g) => g.rect(5.4, 0, 1.2, 1), { color: 'rgba(42,38,34,1)' }, { alpha: 0.2, feather: 6 });
   P.wear((g) => { g.moveTo(-6.0, 0.5); g.lineTo(-4.6, 0.5); }, 0.25, { color: tone(SC.light, 1.08), rough: 0.5, metal: 0 }, { alpha: 0.25 * wx });
 
   // ================= intake trunks / nacelles =================
@@ -775,11 +777,11 @@ function paint(atlas, o) {
     Q.ring(ZCAP, 0, 1, { px: 1.6, depth: 0.6, dark: 0.3 });
     Q.ring(ZCAP + 0.22, 0, 1, faint);
     // bare titanium engine bays: heat-blued and straw-tinted, fastener rows
-    const ti = { color: '#7f7a73', rough: 0.38, metal: 1 };
+    const ti = { color: '#a19a90', rough: 0.36, metal: 1 };
     Q.fill((g) => { g.moveTo(4.45, 0); g.lineTo(4.45, 1); g.lineTo(6.4, 1); g.lineTo(6.4, 0); }, ti, { feather: 2 });
     Q.fill((g) => g.rect(3.3, 0, 1.2, 0.16), ti); Q.fill((g) => g.rect(3.3, 0.84, 1.2, 0.16), ti);
-    for (let i = 0; i < 22; i++) { const z = 4.5 + rnd() * 1.8, t = rnd(); Q.fill((g) => { g.ellipse(z, t, 0.25 + rnd() * 0.4, 0.03 + rnd() * 0.05, 0, 0, Math.PI * 2); }, { color: ['#6f6a78', '#83765c', '#5f6370', '#8c8070', '#64584e'][i % 5], rough: 0.42, metal: 1 }, { alpha: 0.35, feather: 10 }); }
-    Q.fill((g) => g.rect(5.7, 0, 0.7, 1), { color: '#4d4642', rough: 0.55, metal: 0.8 }, { alpha: 0.45, feather: 10 });
+    for (let i = 0; i < 22; i++) { const z = 4.5 + rnd() * 1.8, t = rnd(); Q.fill((g) => { g.ellipse(z, t, 0.25 + rnd() * 0.4, 0.03 + rnd() * 0.05, 0, 0, Math.PI * 2); }, { color: ['#8a8590', '#9a8f78', '#848a98', '#9c9488', '#8c8274'][i % 5], rough: 0.4, metal: 1 }, { alpha: 0.3, feather: 5 }); }
+    Q.fill((g) => g.rect(5.8, 0, 0.6, 1), { color: '#5d554e', rough: 0.5, metal: 0.85 }, { alpha: 0.4, feather: 10 });
     for (const z of [4.45, 5.1, 5.75, 6.25]) { Q.ring(z, 0, 1, line); Q.rivets(z + 0.03, 0.02, z + 0.03, 0.98, 0.012, { px: 1.1, depth: 0.2, dark: 0.08 }); }
     for (const t of [0.16, 0.36, 0.64, 0.84]) Q.line([[3.3, t], [6.3, t]], line);
     // painted section: frames, longerons, doors
