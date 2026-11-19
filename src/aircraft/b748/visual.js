@@ -388,7 +388,7 @@ export function createVisual(ctx, opts = {}) {
     spinner: B.swatch('spinner', { color: '#26282c', rough: 0.3, metal: 0.5 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.semigloss('#8c9399')),
     pylon: B.swatch('pylon', F.gloss(SC.style === 'aurora' ? '#e8eaec' : SC.body)), tail: B.swatch('tail', F.gloss(SC.tail)), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }),
     wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', F.semigloss('#c3c7cb')), chevron: B.swatch('chevron', { color: '#8d9298', rough: 0.4, metal: 0.8 }), hot: B.swatch('hot', { color: '#5f5a55', rough: 0.5, metal: 0.9 }),
-    soot: B.swatch('soot', { color: '#3b3936', rough: 0.7, metal: 0.3 }),
+    soot: B.swatch('soot', { color: '#66635e', rough: 0.65, metal: 0.4 }),
   };
 
   // ---- main fuselage --------------------------------------------------------------------------------------------------------
