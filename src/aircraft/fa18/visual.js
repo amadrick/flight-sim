@@ -47,20 +47,6 @@ const SCHEMES = {
 /** Flat plate from a plan outline [[z, x], …], thickness t centred on y = 0. */
 function planPlate(outline, t, uv) { return K.prism(outline.map(([z, x]) => [z, -x]), -t / 2, t / 2, uv); }
 
-/** Navy TPS paint is a flat polyurethane: very rough, but it still brightens at grazing angles (dust, chalky salt film).
- *  Rebuild the atlas material as a MeshPhysicalMaterial with a faint grey sheen (falls back to the kit material). */
-function navyCoat(src, SC) {
-  if (!src || !src.isMeshStandardMaterial || src.isMeshPhysicalMaterial || src.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) return src;
-  const m = new THREE.MeshPhysicalMaterial({
-    map: src.map, normalMap: src.normalMap, roughnessMap: src.roughnessMap, metalnessMap: src.metalnessMap, roughness: src.roughness, metalness: src.metalness,
-    emissiveMap: src.emissiveMap, emissive: src.emissive, emissiveIntensity: src.emissiveIntensity, envMapIntensity: src.envMapIntensity,
-    sheen: SC.cag ? 0.12 : 0.2, sheenRoughness: 0.55, sheenColor: new THREE.Color('#a4a9ad'),
-  });
-  m.normalScale.copy(src.normalScale);
-  src.dispose();
-  return m;
-}
-
 export function createVisual(ctx, opts = {}) {
   const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'navy', SC = SCHEMES[livery];
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
@@ -71,7 +57,7 @@ export function createVisual(ctx, opts = {}) {
   const D = (p) => [p[0], p[1] - YB, p[2]];           // body frame → design frame
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
-  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.top) });
+  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.top), skin: { weathering: 0.25 + 0.5 * SC.weather, framePitch: 0.38 } });
   const cFus = atlas.chart('fus', { type: 'unwrap', z: [-9.5, 7.95], girth: 7.4, vScale: 0.9, strips: 2 });
   const WX = [0.9, 6.3], WZ = [-1.9, 3.25];
   const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: WX, z: WZ, view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-WX[1], -WX[0]], z: WZ, view: 'top' }) };
@@ -94,7 +80,7 @@ export function createVisual(ctx, opts = {}) {
   const sw = (k, f) => atlas.swatch(k, f);
   const U = {
     top: sw('top', paintF(SC.top)), under: sw('under', paintF(SC.under)),
-    duct: sw('duct', { color: '#a9aba7', rough: 0.5, metal: 0 }), ductMid: sw('ductMid', { color: '#5a5d5c', rough: 0.6, metal: 0 }), ductDeep: sw('ductDeep', { color: '#25282a', rough: 0.7, metal: 0 }),
+    duct: sw('duct', { color: '#8d8f8c', rough: 0.5, metal: 0 }), ductMid: sw('ductMid', { color: '#5a5d5c', rough: 0.6, metal: 0 }), ductDeep: sw('ductDeep', { color: '#25282a', rough: 0.7, metal: 0 }),
     lip: sw('lip', paintF(mixHex(SC.under, SC.top, 0.35))), dark: sw('dark', F.darkGrey), black: sw('black', F.black),
     exhaust: sw('exhaust', F.exhaust), heat: sw('heat', { color: '#7f776f', rough: 0.5, metal: 0.75 }), heat2: sw('heat2', { color: '#45403c', rough: 0.55, metal: 0.8 }),
     ceramic: sw('ceramic', { color: '#7e776d', rough: 0.62, metal: 0.3 }),
@@ -210,7 +196,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- cockpit -----------------------------------------------------------------------------------------------------------
   const eye = D(G.pilotEye), tubX = 0.44;
-  stat.add(K.tub({ x: tubX, y0: 0.05, y1: 0.66, z0: -6.1, z1: -3.3, uv: U.interior, taper: 0.94 }));
+  stat.add(K.tub({ x: tubX, y0: 0.05, y1: 0.66, z0: -6.1, z1: -3.3, uv: U.interior, taper: 0.94 }).occlude(0.45));
   stat.add(K.prism([[-4.6, 0.6], [-4.6, 0.9], [-3.25, 0.98], [-3.25, 0.6]], -0.3, 0.3, U.dark));        // avionics deck under the rear canopy
   stat.add(K.box(0.5, 0.02, 1.1, U.consoleTop).translate(0, 0.91, -3.95));
   {  // sill ledge between the skin cut-out and the tub
@@ -283,6 +269,7 @@ export function createVisual(ctx, opts = {}) {
   for (const sx of [1, -1]) {
     const L = K.loft({ stations: inSt, segments: Math.max(32, Math.round(64 * detail / 4) * 4), step: 0.14, capStart: 'flat', capUV: U.black,
       uvFn: (x, y, z, t, ring) => (ring.k < 0.7 ? U.ductDeep : ring.k < 1.5 ? U.ductMid : ring.k < 3.3 ? U.duct : ring.k < 6.2 ? U.lip : cIn[sx > 0 ? 'R' : 'L'].uv(z, y + IN.y)) });
+    L.mesh.occlude((x, y, z) => (Math.abs(x) < IN.w * 0.99 && Math.abs(y) < IN.h * 0.99 && z > IN.z + 0.01 ? Math.min(0.92, 0.25 + (z - IN.z) * 0.6) : 0));   // duct goes dark quickly
     const mesh = L.mesh.transform(inMat).translate(IN.x, IN.y, 0);
     // boundary-layer splitter: the inner wall carried forward of the lip as a thin plate, with the bleed gap behind it
     const zi = IN.z - IN.rakeX * IN.w, pl = new K.Mesh();
@@ -363,7 +350,7 @@ export function createVisual(ctx, opts = {}) {
     const cx = sx * ENG_X;
     stat.add(K.lathe(nacProf, { segments: Math.round(32 * detail), uv: (k, j, r, z) => cNac[sx > 0 ? 'R' : 'L'].uv(z - 1.6, j * 3.5) }).translate(cx, ENG_Y, 0));
     // jet pipe: heat-stained liner with cooling rings, flame holder rings and the turbine cone deep inside
-    stat.add(K.lathe([[0.5, 7.38], [0.47, 7.0], [0.455, 6.6], [0.45, 6.15], [0.3, 6.08], [0, 6.04]], { segments: 24, uv: U.exhaust }).translate(cx, ENG_Y, 0));
+    stat.add(K.lathe([[0.5, 7.38], [0.47, 7.0], [0.455, 6.6], [0.45, 6.15], [0.3, 6.08], [0, 6.04]], { segments: 24, uv: U.exhaust }).occlude(0.6).translate(cx, ENG_Y, 0));
     for (const zr of [6.9, 6.6]) stat.add(K.lathe([[0.46, zr - 0.02], [0.43, zr], [0.46, zr + 0.02]], { segments: 24, uv: U.heat2 }).translate(cx, ENG_Y, 0));
     for (const rr of [0.33, 0.2]) stat.add(K.lathe([[rr + 0.02, 6.28], [rr, 6.24], [rr - 0.02, 6.28]], { segments: 20, uv: U.steel }).translate(cx, ENG_Y, 0));
     for (let k = 0; k < 10; k++) stat.add(K.box(0.025, 0.42, 0.05, U.heat2).translate(0, 0.22, 0).rotateZ(k * Math.PI / 5).translate(cx, ENG_Y, 6.3));
@@ -474,7 +461,7 @@ export function createVisual(ctx, opts = {}) {
   paint(atlas, { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cNac, cIn, cPanel, cNoz, cTank, paintF, X_FOLD, X_TIP, zLE, zLEo, zTE, FN, T_SILL, upperAt,
     chY: K.pchip(FT.filter((r) => r[4]).map((r) => r[0]), FT.filter((r) => r[4]).map((r) => r[5])) });
   lap('paint');
-  const mat = navyCoat(atlas.material(ctx, { envMapIntensity: 1 }), SC);
+  const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
@@ -792,7 +779,7 @@ function paint(atlas, o) {
   for (let i = 0; i < 46 * wx; i++) { const z = -6 + rnd() * 12.5, t = rnd(); P.streak(z, t, z + 0.6 + rnd() * 1.6, t + (rnd() - 0.5) * 0.008, 0.006 + rnd() * 0.012, { alpha: 0.07 + rnd() * 0.12 }); }
   for (let i = 0; i < 30 * wx; i++) { const z = -4 + rnd() * 10, t = (rnd() < 0.5 ? 0.0 : 0.92) + rnd() * 0.08; P.streak(z, t, z + 0.8 + rnd() * 1.8, t, 0.008 + rnd() * 0.02, { alpha: 0.12 + rnd() * 0.2, color: '52,42,28', rough: 0.08 }); }
   for (const s of [1, -1]) for (const z of [1.4, 2.9, 4.2]) P.streak(z, tt(s, 0.12), z + 2.2, tt(s, 0.12), 0.06, { alpha: 0.3 * wx + 0.05, color: '46,36,24', rough: 0.12 });
-  P.fill((g) => g.rect(6.5, 0, 1.45, 1), { color: 'rgba(38,34,30,0.45)' }, { feather: 12 });       // exhaust soot on the beaver tail
+  P.fill((g) => g.rect(6.7, 0, 1.25, 1), { color: 'rgba(38,34,30,0.3)' }, { feather: 12 });       // exhaust soot on the beaver tail
   for (const tv of [0.0, 0.5]) P.streak(7.9, tv, 5.6, tv, 0.12, { alpha: 0.3 * wx + 0.1 });
   // formation light housings (the lamps are modelled; this is their surround)
   for (const [z, y] of [[-7.3, 0.24], [5.4, 0.12]]) P.decalOn(z, y, 'both', (g) => { g.fillStyle = '#3a3e3c'; g.fillRect(-0.27, -0.035, 0.54, 0.07); });
@@ -831,7 +818,7 @@ function paint(atlas, o) {
     Q.text('NAVY', 2.4, out - 0.05, 0.22, { color: markCol, rot, font: K.FONT.wide });
     Q.text(`BuNo ${SC.buno}`, 2.4, out + (key === 'R' ? 0.22 : -0.22), 0.05, { color: markCol, rot });
     Q.text('F/A-18E', 2.4, out + (key === 'R' ? 0.3 : -0.3), 0.04, { color: markCol, rot });
-    Q.fill((g) => g.rect(4.2, 0, 1.6, 3.5), { color: 'rgba(34,30,26,0.55)' }, { feather: 16 });       // heat / soot toward the nozzles
+    Q.fill((g) => g.rect(4.4, 0, 1.4, 3.5), { color: 'rgba(34,30,26,0.32)' }, { feather: 16 });       // heat / soot toward the nozzles
     Q.fill((g) => g.rect(5.3, 0, 0.5, 3.5), { color: '#5b5a55', rough: 0.5, metal: 0.4 }, { alpha: 0.5, feather: 6 });   // bare-metal heat shield ring
     Q.noise({ alpha: 0.08, scale: 1.0, stretch: [2, 1], rough: 0.08 });
     for (let i = 0; i < 14; i++) { const b = rnd() * 3.5, a = 2.8 + rnd() * 2; Q.streak(a, b, a + 1.2, b, 0.04, { alpha: 0.2 }); }
