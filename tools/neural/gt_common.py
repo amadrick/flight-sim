@@ -45,6 +45,9 @@ class Field:
         self.base = z['base8'].astype(np.float32) / 255.0         # cheap base density (light march / shadow map)
         self.ex = z['ex8'].astype(np.float32) / 127.5 - 0.5 if 'ex8' in z.files else None   # shape excess
         self.top2d = z['top2d'].astype(np.float32)               # info.y per column (local nominal cloud top, m)
+        # round four (harness exportDensity detail: 1): depth below the eroded surface (km) and the crease pattern
+        self.surf = z['surf8'].astype(np.float32) / 510.0 - 0.1 if 'surf8' in z.files else None
+        self.cav = z['cav8'].astype(np.float32) / 255.0 if 'cav8' in z.files else None
         meta = json.loads(str(z['meta']))
         self.meta = meta
         self.nx, self.ny, self.nz = meta['nx'], meta['ny'], meta['nz']
@@ -72,8 +75,9 @@ def convert_export(name):
         return np.ascontiguousarray(a.transpose(2, 1, 0))                                  # [a, b, c]
     top = np.frombuffer(base64.b64decode(d['top2d']), dtype=np.uint16).reshape(ny, nx).T
     meta = {k: d[k] for k in ('nx', 'ny', 'nz', 'dx', 'dz', 'x0', 'z0', 'base', 'top', 'sigma', 'erosion', 'pick', 'params')}
-    extra = {'ex8': grid('ex8')} if 'ex8' in d else {}
-    np.savez_compressed(os.path.join(DATA, name + '.npz'), full=grid('full'), base8=grid('base8'), top2d=top, **extra,
+    extra = {k: grid(k) for k in ('ex8', 'surf8', 'cav8') if d.get(k)}      # surf8 / cav8: round-four detail exports
+    base8 = grid('base8') if d.get('base8') else grid('full')
+    np.savez_compressed(os.path.join(DATA, name + '.npz'), full=grid('full'), base8=base8, top2d=top, **extra,
                         meta=json.dumps(meta))
 
 

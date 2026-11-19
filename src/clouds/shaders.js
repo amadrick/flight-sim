@@ -82,7 +82,8 @@ uniform vec4 uClCell;      // x = 1 / cell-field period (1/m), yz = tower lean (
 uniform vec4 uClCell2;     // x = smallest cell diameter (m), y = log2(largest / smallest), z = aspect (depth / diameter) of undeveloped cells, w = of developed cells
 uniform vec4 uClProf;      // cumulus width profile g(h) of shallow cells (LES fit, tools/neural/les_fit.py): x = width at the base, y = height of the widest point, z = rise exponent, w = dome exponent
 uniform vec4 uClDet;       // round four: x = detail cascade (0 = single round-three octave), y = detailed light samples near the camera, z = crease occlusion strength, w = surface refinement
-uniform vec4 uClDet3;      // x = debug shading (0 = off; 1 = direct sun only, 2 = crease pattern, 3 = depth below the surface, 4 = surface / sun cosine), y = strength of the surface-orientation term
+uniform vec4 uClDet3;      // x = debug shading (0 = off; 1 = direct sun only, 2 = crease pattern, 3 = depth below the surface, 4 = surface / sun cosine), y = strength of the surface-orientation term, z = 1: light samples fetch the weather map under an anvil, w = share of the horizon band in the sky ambient
+uniform vec4 uClDet4;      // x = decks: sky visibility from the column optical depth of the shadow map, y = quilted deck tops, z = pouches under the deck base
 uniform vec4 uClDet2;      // x = amplitude ratio between detail octaves, y = frequency ratio, z = sharpest density ramp (shape units), w = wisp warp
 uniform vec4 uClProf2;     // the same for developed cells (congestus); uClShape3.z = turret amplitude (x radius)
 
@@ -149,6 +150,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // noise peak (big cells are tall, small ones stay humilis) and the outline is a dome: r(h) ~ peak - k h^2.
   // Nothing is cut at a height-field: tops and flanks are always noise surfaces (cauliflower, not mountains).
   float bottom = clSat(hN * uClLayer.w / uClShape2.w);
+  float wb = n.g * 0.6 + n.b * 0.4;
 
   // ---- (1) cumulus: one cloud per cell of the cell field ------------------------------------------------------
   // Each cell is a cloud with a flat base at the common condensation level, a width profile fitted to the LES
@@ -167,20 +169,28 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // turrets: Worley fbm (round bulges, cauliflower) plus the Perlin-Worley lobes of the shape noise (towers / shoulders)
   // (inverted Worley is a cone around each feature point; sqrt(2w - w^2) turns the cones into spherical caps, so the
   //  turrets are round bubbles separated by sharp creases instead of soft pyramids)
-  float wb = n.g * 0.6 + n.b * 0.4;
   float bil = (sqrt(clSat(2.0 * wb - wb * wb)) - 0.8) * uClShape3.z + (n.r - 0.5) * uClShape3.w;
   float rS = rad * grow * (g + bil * mix(0.35, 1.0, clSat(hc * 1.6)));
   float d = rad * (1.0 - (2.0 * cl.r - 1.0));                    // distance from the cell centre (m)
   float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - max(hc - 1.0, 0.0) * H * 3e-3;   // turrets may overshoot the dome a little, never reach the lid
   exC = vig > 0.0 ? mix(exC, -1.0, layerW) : -1.0;
-  float decay = max(smoothstep(0.65, 0.92, cl.a), 0.6 * (1.0 - vig)) * (1.0 - uClShape.w);
+  // (close to the camera the life-cycle phase is read from a coarser mip of the cell field: where two cells have merged
+  //  a crisp growing cell and a soft decaying one would otherwise meet in a visible vertical seam)
+  float phase = cl.a;
+  if (uClDet.x > 0.5 && lod < 1.5) phase = mix(textureLod(tClCells, pc * uClCell.x, lod + 3.5).a, phase, clSat(lod * 2.0 - 2.0));
+  float decay = max(smoothstep(0.65, 0.92, phase), 0.6 * (1.0 - vig)) * (1.0 - uClShape.w);
   vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
 
   // ---- (2) layer clouds from the 3-D shape noise: stratus / nimbostratus deck, stratocumulus sheet, Cb core -----
   float prof = mix(hRel * hRel, smoothstep(0.65, 1.0, hRel) + 4.0 * max(hRel - 1.0, 0.0), uClShape.w);   // dome / flat deck
   prof *= mix(uClShape3.x, uClShape3.y, dev);
   // stratus decks keep a minimum threshold so the long base ramp turns the noise into an undulating, ragged base
-  float exL = s * bottom - max(1.0 - cov, 0.22 * uClShape.w) - prof;
+  // round four: closed-cell quilting of a deck's top (the Worley cells of the volume raise the top at their centres and
+  // sink it along their edges) and pouches hanging under its base (mammatus-like undulation of thick decks)
+  float capW = sqrt(clSat(2.0 * wb - wb * wb));
+  float bottomL = clSat((h + uClDet4.z * uClShape.w * 260.0 * (capW - 0.72)) / uClShape2.w);
+  float exL = s * mix(bottom, bottomL, uClShape.w) - max(1.0 - cov, 0.22 * uClShape.w) - prof
+            + uClDet4.y * uClShape.w * 0.3 * (capW - 0.78) * smoothstep(0.5, 0.95, hRel);
   vec4 infoL = vec4(clSat(hRel), uClLayer.x + min(topN * 1.15, 1.0) * uClLayer.w, n.g, 1.0);
   // stratocumulus: a sheet ~600 m deep at the base, cells and gaps from the same noise, flat top under the inversion
   float scTop = min(620.0 * uClLayer.z, 1.0), hs = hN / scTop;
@@ -219,7 +229,7 @@ float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
 // Side output clCav: where in the lobe / crease pattern the sample sits (for the lighting).
 #define CL_EROSION_BIAS 0.3
 #define CL_EROSION_MAXK 1.25        // largest size / decay factor of the erosion (keeps the march's hit test conservative)
-#define CL_EROSION_LO 0.42          // most negative erosion value (cascade included), in units of uClNoise.z * size factor
+#define CL_EROSION_LO (CL_EROSION_BIAS + 0.225 * uClDet2.x * (1.0 + uClDet2.x))   // most negative erosion value with the cascade, in units of uClNoise.z * size factor
 float clCap(float w) { return sqrt(clSat(2.0 * w - w * w)); }     // inverted Worley cone -> spherical cap (round lobes, sharp creases)
 float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
   float kD = uClNoise.y * clDetailK;
@@ -378,7 +388,7 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
   vec4 info;
   // round four: close to the camera the first segment (0 .. 62 m at 4 steps) is sampled twice WITH the detail
   // erosion: the shadow one lobe casts on the next, i.e. the dark creases of a cauliflower surface under side light
-  bool micro = uClDet.y > 0.5 && fp < 14.0;
+  bool micro = uClDet.y > 0.5 && fp > 0.0;
   for (int j = 0; j < CL_LIGHT_STEPS; j++) {
     float u = (float(j) + 1.0) / float(CL_LIGHT_STEPS);
     float d1 = 1000.0 * u * u;                                     // segment ends: 62, 250, 562, 1000 m (4 steps)
@@ -392,17 +402,26 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
       float dB = clDensityFull(pa + uClLightDir * s1, mix(ex0, ex2, s1 / s2), info, max(fp, 3.0), max(edge, 0.006)) * info.w;
       // How the surface faces the sun: (excess - erosion) is a rough signed depth below the surface (1 unit ~ 1 km),
       // so its decrease along the light direction is ~cos(normal, sun) x |gradient|; the gradient length is not
-      // known (that would take three more samples), hence the soft normalisation with a typical 1.5 / km.
+      // known (that would take three more samples), hence the soft normalisation.
       float g = 500.0 * ((surf0 - clSurf) / s1 + (surf0 - surf2) / s2);
-      clMu0 = g / sqrt(g * g + 2.25);
+      clMu0 = g / sqrt(g * g + 0.5);
       tau += (0.3 * dB + 0.7 * dA) * dl * 1.25;                    // 1.25: these are eroded densities (see the 0.8 below)
       d0 = d1; continue;
     }
-    vec3 pl = pa + uClLightDir * (d0 + dl * (0.25 + 0.5 * jit));    // half-cell jitter: hides the sample planes at half the variance
+    // half-cell jitter: hides the sample planes at half the variance. In layer clouds (anvil, decks) the sample planes
+    // cut a nearly horizontal slab: the gaps a half-cell jitter leaves between the samples' ranges turn into steps of
+    // the optical depth with the depth below the slab's top, i.e. contour bands on an anvil seen from above at low
+    // sun. There the jitter covers the whole cell (a different phase per sample).
+    float jw = (uClShape2.z + uClShape.w) * uClDet3.z > 0.0 ? 1.0 : 0.5;
+    vec3 pl = pa + uClLightDir * (d0 + dl * (0.5 + jw * (fract(jit + 0.382 * float(j)) - 0.5)));
     // (the weather map varies over kilometres: the sample's own fetch serves the whole 1 km light path, which pays
     //  for the cell-field fetch each light sample now makes)
     // the first segments at full-ish resolution: the shadow of one turret on the next (the dark creases) is ~100 m scale
-    float d = clDensityBase(pl, wx, lod + 0.5 + float(j) * 0.6, info);
+    // (under an anvil the lid and the anvil's extent come straight from the weather map: with the sample's own fetch
+    //  the light samples see the anvil exactly as deep as it is above the SAMPLE, the shading turns into a function of
+    //  the map alone and its iso-lines show as rings around the storm cores; there the light samples fetch their own)
+    vec4 wl = uClShape2.z * uClDet3.z > 0.0 ? clWeather(pl.xz, 1.0) : wx;
+    float d = clDensityBase(pl, wl, lod + 0.5 + float(j) * 0.6, info);
     tau += d * info.w * dl;
     d0 = d1;
   }
@@ -503,6 +522,16 @@ void main() {
       // values from ctx.pipeline.lighting when the pipeline provides them (uClAmbUp.w = 1)
       vec3 ambUp = (uClAmbUp.w > 0.5 ? uClAmbUp.rgb : atmAmbient(pm, vec3(0.0, 1.0, 0.0))) * uClLightSel.z;
       vec3 ambDn = (uClAmbUp.w > 0.5 ? uClAmbDn.rgb : atmAmbient(pm, vec3(0.0, -1.0, 0.0)) * uClLightSel.y) * uClLightSel.z;
+      // Sky light enters a cumulus mostly through its SIDES, i.e. from the horizon band, which the cosine-weighted
+      // irradiance of the probe (zenith-heavy: blue, and dim at low sun) under-represents; the lighting networks take
+      // "the mean radiance of the hemisphere". Round four: half of it from four directions 12 degrees above the horizon
+      // (towards / away from / across the sun). At sunset that is the warm band the inside of a cloud is lit by.
+      if (uClDet3.w > 0.0) {
+        vec2 sa = normalize(uSunDir.xz + vec2(1e-4, 0.0)) * 0.978;
+        vec3 side = 0.25 * (atmSkyRadiance(vec3(sa.x, 0.208, sa.y)) + atmSkyRadiance(vec3(-sa.x, 0.208, -sa.y))
+                          + atmSkyRadiance(vec3(-sa.y, 0.208, sa.x)) + atmSkyRadiance(vec3(sa.y, 0.208, -sa.x)));
+        ambUp = mix(ambUp, side * uClLightSel.z * uClLightSel.x + ambUp * (1.0 - uClLightSel.x), uClDet3.w);
+      }
       float cosT = dot(rd, uClLightDir);
       float voxel = 1.0 / (uClNoise.x * 128.0), voxelD = 1.0 / (uClNoise.y * 32.0);
 
@@ -610,13 +639,22 @@ void main() {
           float cav = mix(0.2, clCav, clSat(1.3 - clSurf / 0.04));
           float surfK = clSat(1.3 - clSurf / 0.04);
           clMu0 = 2.0;
-          float tauSun = clTauLight(pa, wx, lod, fract(blue2 + nDense * 0.618), fp, ex - exLo, edge);
+          // (detailed light samples: within ~10 low-res pixels per metre... i.e. where a pixel is under 10 m, and only in the
+          //  outer ~50 m of the cloud: deeper samples are in its shadow whatever the lobes do)
+          float tauSun = clTauLight(pa, wx, lod, fract(blue2 + nDense * 0.618), pix < 10.0 && surfK > 0.0 ? min(fp, 12.0) : -1.0, ex - exLo, edge);
           // Lobes read as lit spheres (round four): an optically thick surface returns light in proportion to the sun
           // flux through it, i.e. ~cos(incidence), which the scatter model cannot know from its optical depths.
-          float lam = clMu0 > 1.5 ? 1.0 : mix(1.0, 0.5 + 0.8 * max(clMu0, 0.0) + 0.15 * min(clMu0, 0.0), uClDet3.y * surfK * clSat(2.0 - fp / 7.0));
+          float lam = clMu0 > 1.5 ? 1.0 : mix(1.0, 0.55 + 0.9 * max(clMu0, 0.0) + 0.2 * min(clMu0, 0.0), uClDet3.y * surfK * clSat(2.0 - pix / 5.0));
           // optical depth to the cloud top: mostly a smooth height-based estimate (using only the local density
           // would print the density field onto the ambient term: an "x-ray" look in diffuse light)
           float tauUp = uClNoise.w * (0.3 + 0.2 * d) * max(info.y - h, 0.0);
+          // layer clouds (round four): the deck above a sample is as thick as it is, not as thick as the layer is
+          // nominally: the column optical depth from the shadow map (slant path converted to vertical) lets thin
+          // parts of an overcast glow and thick parts go dark when seen from below
+          if (uClShape.w * uClDet4.x > 0.0) {
+            float tCol = cloudShadowTau(pa.xz + uCloudShadowC.xy, h) / sqrt(1.0 + dot(uCloudShadowB.xy, uCloudShadowB.xy));
+            tauUp = mix(tauUp, tCol * 0.75, uClShape.w * uClDet4.x);
+          }
           // optical depth down to the cloud base (same smooth estimate): ambient from below, and the column-thickness
           // input of the 4-feature scatter model
           float tauDn = uClNoise.w * (0.3 + 0.2 * d) * max(h - uClLayer.x, 0.0);

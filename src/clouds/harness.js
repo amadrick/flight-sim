@@ -140,7 +140,8 @@ async function boot() {
   // shots expensive):  tour=weather:scattered,tod:12,cy:2000,yaw:0|tod:17.5,clCav:0|...  tiles=3x2  tourFrames=20
   // Keys: cx cy cz yaw pitch fov weather tod exp, anything else is set as a (per-frame) debug parameter for that view.
   const tour = raw.tour ? raw.tour.split('|').map((v) => Object.fromEntries(v.split(',').filter(Boolean).map((kv) => kv.split(':')))) : null;
-  let tourK = 0, tile2d = null, tw = 0, th = 0, cols = 1, rows = 1;
+  let tourK = 0, tile2d = null, tw = 0, th = 0, cols = 1, rows = 1, tourMs = 0;
+  sim.tour = [];
   const tourFrames = num('tourFrames', 20), raw0 = { ...raw };
   function tourStep(dt) {
     const vi = Math.floor(tourK / tourFrames);
@@ -170,8 +171,18 @@ async function boot() {
       }
       ctx.events.emit('weather:change', { preset: ctx.weather.preset, instant: true });
     }
+    const tf0 = performance.now();
     frame(dt);
+    if (tourK % tourFrames >= 2) tourMs += performance.now() - tf0;      // (the first frames re-bake the maps)
     if (tourK % tourFrames === tourFrames - 1) {
+      // cost of this view: wall time per frame and the march's own counter (loop iterations per ray, or lit samples
+      // per ray with clCount=1), read back from the aux target
+      const rt = ctx.clouds.debug.marchRT, buf = new Uint16Array(rt.width * rt.height * 4);
+      ctx.renderer.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, buf, undefined, 1);
+      let sum = 0, mx = 0;
+      for (let i = 3; i < buf.length; i += 4) { const v = THREE.DataUtils.fromHalfFloat(buf[i]); sum += v; mx = Math.max(mx, v); }
+      sim.tour.push({ view: raw.tour.split('|')[vi], msPerFrame: tourMs / (tourFrames - 2), count: sum / (rt.width * rt.height), max: mx });
+      tourMs = 0;
       const x = (vi % cols) * tw, y = Math.floor(vi / cols) * th;
       tile2d.drawImage(ctx.renderer.domElement, 0, 0, tw, th, x, y, tw, th);
       tile2d.font = '11px monospace'; tile2d.fillStyle = '#000'; tile2d.fillText(raw.tour.split('|')[vi].slice(0, Math.floor(tw / 7)), x + 5, y + 13);
@@ -198,15 +209,17 @@ boot().catch((err) => { console.error(err); sim.error = String(err?.stack || err
 // Returns JSON { nx, ny, nz, dx, dz, x0, z0, base, top, sigma, full, base8, top2d } in air-mass metres; `full` = uint8
 // density with detail erosion (lod 0, march edge width at ~1-3 km), `base8` = cheap base density at lod 1 (what the
 // light march sees, before its 0.8 factor), both already multiplied by info.w; `ex8` = shape excess (clShape, before erosion) as (ex + 0.5) * 127.5; `top2d` = info.y per column (uint16 m).
-function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0.03, fp } = {}) {
+// Round four: `depth` limits the box to base .. base + depth; `detail: 1` adds surf8 = (depth below the eroded surface (km) + 0.1) * 510
+// and cav8 = crease pattern * 255 (the side outputs of clDensityFull the lighting uses) and leaves out base8.
+function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0.03, fp, depth, detail = 0 } = {}) {
   const r = ctx.renderer, U = ctx.clouds.debug.U, P = ctx.clouds.params;
-  const L = U.uClLayer.value, base = L.x, top = L.y, th = L.w;
+  const L = U.uClLayer.value, base = L.x, th = Math.min(L.w, depth || 1e9), top = base + th;
   const nz = Math.ceil(th / (size / nxy));
   const frag = `precision highp float; precision highp int; precision highp sampler3D;
     in vec2 vUv; layout(location = 0) out vec4 o;
     ${CLOUD_DENSITY_GLSL}
     uniform vec4 uEx;   // xy = corner (air-mass m), z = extent (m), w = altitude (m) or < -1e5 for column mode
-    uniform float uEdge, uFp;
+    uniform float uEdge, uFp, uSide;
     void main() {
       vec2 xz = uEx.xy + vUv * uEx.z;
       if (uEx.w < -1e5) {           // column optical depth (base density) for picking a window
@@ -219,12 +232,12 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
       }
       vec3 pa = vec3(xz.x, uEx.w, xz.y); vec4 wx = clWeather(pa.xz, 0.0), info, info1;
       float ex = clShape(pa, wx, 0.0, info);
-      float d = ex + CL_EROSION_LO * CL_EROSION_MAXK * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, uFp, uEdge) * info.w : 0.0;
+      float d = (uSide > 0.5 || ex + CL_EROSION_LO * CL_EROSION_MAXK * uClNoise.z > 0.0) ? clDensityFull(pa, ex, info, uFp, uEdge) * info.w : 0.0;
       float db = clDensityBase(pa, wx, 1.0, info1) * info1.w;
-      o = vec4(d, db, info.y, ex);
+      o = uSide > 0.5 ? vec4(clSurf, clCav, clDecay, d) : vec4(d, db, info.y, ex);
     }`;
   const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
-    uniforms: { ...U, uEx: { value: new THREE.Vector4() }, uEdge: { value: edge }, uFp: { value: fp ?? size / nxy } }, vertexShader: FULLSCREEN_VERT, fragmentShader: frag });
+    uniforms: { ...U, uEx: { value: new THREE.Vector4() }, uEdge: { value: edge }, uFp: { value: fp ?? size / nxy }, uSide: { value: 0 } }, vertexShader: FULLSCREEN_VERT, fragmentShader: frag });
   const pass = new FullscreenPass(mat);
   const read = (n, ex) => {
     const rt = new THREE.WebGLRenderTarget(n, n, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
@@ -249,19 +262,29 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
     }
     x0 = camAir.x - ext / 2 + pick.i / n * ext; z0 = camAir.z - ext / 2 + pick.j / n * ext;
   }
-  const full = new Uint8Array(nxy * nxy * nz), b8 = new Uint8Array(nxy * nxy * nz), ex8 = new Uint8Array(nxy * nxy * nz), top2d = new Uint16Array(nxy * nxy);
+  const full = new Uint8Array(nxy * nxy * nz), b8 = new Uint8Array(detail ? 0 : nxy * nxy * nz), ex8 = new Uint8Array(nxy * nxy * nz), top2d = new Uint16Array(nxy * nxy);
+  const surf8 = new Uint8Array(detail ? nxy * nxy * nz : 0), cav8 = new Uint8Array(detail ? nxy * nxy * nz : 0);
   const dz = th / nz;
   for (let k = 0; k < nz; k++) {
     const px = read(nxy, new THREE.Vector4(x0, z0, size, base + (k + 0.5) * dz));
     for (let i = 0; i < nxy * nxy; i++) {
       full[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4] * 255));
-      b8[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4 + 1] * 255));
+      if (!detail) b8[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4 + 1] * 255));
       ex8[k * nxy * nxy + i] = Math.max(0, Math.min(255, Math.round((px[i * 4 + 3] + 0.5) * 127.5)));
       if (k === nz >> 1) top2d[i] = Math.round(px[i * 4 + 2]);
+    }
+    if (detail) {
+      mat.uniforms.uSide.value = 1;
+      const ps = read(nxy, new THREE.Vector4(x0, z0, size, base + (k + 0.5) * dz));
+      mat.uniforms.uSide.value = 0;
+      for (let i = 0; i < nxy * nxy; i++) {
+        surf8[k * nxy * nxy + i] = Math.max(0, Math.min(255, Math.round((ps[i * 4] + 0.1) * 510)));
+        cav8[k * nxy * nxy + i] = Math.max(0, Math.min(255, Math.round(ps[i * 4 + 1] * 255)));
+      }
     }
   }
   r.setRenderTarget(prev); pass.dispose();
   const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
   return { nx: nxy, ny: nxy, nz, dx: size / nxy, dz, x0, z0, base, top, sigma: U.uClNoise.value.w, erosion: U.uClNoise.value.z,
-    pick, params: { ...P }, full: b64(full), base8: b64(b8), ex8: b64(ex8), top2d: b64(new Uint8Array(top2d.buffer)) };
+    pick, params: { ...P }, full: b64(full), base8: b64(b8), ex8: b64(ex8), ...(detail ? { surf8: b64(surf8), cav8: b64(cav8) } : {}), top2d: b64(new Uint8Array(top2d.buffer)) };
 }
