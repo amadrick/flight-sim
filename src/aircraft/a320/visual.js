@@ -85,7 +85,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- fuselage ---------------------------------------------------------------------------------------------------------------
   const st = (z, top, bot, w, yc, extra) => ({ z, y: yc, w, top: Math.max(0, top - yc), bot: Math.max(0, yc - bot), ...extra });
   const FS = [
-    ...NOSE.map(([d, top, bot, w, yc]) => st(G.noseZ + d, top, bot, w, yc, d > 1.6 && d < 3.6 ? { kTop: [0.56, 0.6] } : {})),
+    ...NOSE.map(([d, top, bot, w, yc]) => st(G.noseZ + d, top, bot, w, yc, {})),
     ...TAIL.map(([z, top, bot, w, yc]) => st(z, top, bot, w, yc, z > 15 ? { kBot: 0.6 } : {})),
   ];
   const fseg = Math.max(32, Math.round(96 * detail / 4) * 4);
@@ -103,13 +103,13 @@ export function createVisual(ctx, opts = {}) {
   const tAtX = (z, x) => { let lo = 0.25, hi = 0.5; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (fus.at(z, m).p[0] > x) lo = m; else hi = m; } return (lo + hi) / 2; };
 
   // wing-to-body ("belly") fairing with the main-wheel wells cut into its flat bottom
-  const fairStations = [[-6.7, 1.0, 0.25, 0.45], [-5.5, 1.8, 0.55, 0.95], [-3.9, 2.18, 0.75, 1.14], [-1.0, 2.32, 0.8, 1.21], [2.4, 2.42, 0.8, 1.22], [4.2, 2.2, 0.72, 1.12], [5.9, 1.65, 0.48, 0.92], [7.4, 0.95, 0.25, 0.5]]
+  const fairStations = [[-6.7, 1.0, 0.25, 0.45], [-5.5, 1.8, 0.55, 0.95], [-3.9, 2.18, 0.75, 1.14], [-1.0, 2.32, 0.8, 1.21], [2.4, 2.5, 0.8, 1.22], [4.2, 2.24, 0.72, 1.14], [6.0, 1.8, 0.52, 1.0], [7.6, 1.15, 0.3, 0.62], [8.6, 0.6, 0.15, 0.3]]
     .map(r => ({ z: r[0], y: -0.95, w: r[1], top: r[2], bot: r[3], kTop: 0.66, kBot: [0.94, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(28, Math.round(44 * detail / 4) * 4), step: 0.7, uv: UA.fair };
   let fair = K.loft(fairOpts);
   const fAtX = (x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(1.14, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
-  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'bay', z: [0.44, 1.84], t: [fAtX(0.95), fAtX(2.5)], mirror: true }] });
-  stA.add(fair.mesh).add(K.well(fair.patches.bayR, 1.25, UA.well, [0, 1, 0])).add(K.well(fair.patches.bayL, 1.25, UA.well, [0, 1, 0]));
+  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'bay', z: [0.44, 1.84], t: [fAtX(0.85), fAtX(2.38)], mirror: true }] });
+  stA.add(fair.mesh).add(K.well(fair.patches.bayR, 1.2, UA.well, [0, 1, 0])).add(K.well(fair.patches.bayL, 1.2, UA.well, [0, 1, 0]));
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
   // windows on the right side in (z, t); the left side is the mirror (t → 1 − t)
@@ -225,7 +225,7 @@ export function createVisual(ctx, opts = {}) {
   const NAC = { len: 3.35, rHi: 1.0, rMax: 1.19, rThroat: 0.965, rFan: 0.985, zFan: 0.78, rExit: 0.9, sleeve: 0.5 };
   for (const [i, sx] of [[0, -1], [1, 1]]) {
     const c = [sx * 5.75, -1.5, -5.0];
-    const n = K.nacelle({ centre: c, length: NAC.len, rHi: NAC.rHi, rMax: NAC.rMax, rThroat: NAC.rThroat, rFan: NAC.rFan, zFan: NAC.zFan, rExit: NAC.rExit, flat: 0, droop: 0.03, sleeve: NAC.sleeve,
+    const n = K.nacelle({ centre: c, length: NAC.len, rHi: NAC.rHi, rMax: NAC.rMax, rThroat: NAC.rThroat, rFan: NAC.rFan, zFan: NAC.zFan, rExit: NAC.rExit, flat: 0, droop: 0, sleeve: NAC.sleeve,
       core: { r0: 0.66, r1: 0.43, length: 1.2 }, plug: { r: 0.25, length: 0.55 }, segments: Math.max(28, Math.round(44 * detail / 4) * 4),
       uv: UB.engine, uvLip: UB.lip, uvInner: UB.acoustic, uvSleeve: UB.engine, uvCore: UB.core, uvPlug: UB.plug, uvCascade: UB.cascade });
     stB.add(n.cowl).add(n.cascade).add(n.core).add(n.plug);
@@ -303,14 +303,21 @@ export function createVisual(ctx, opts = {}) {
     ],
     lamps: [{ kind: 'taxi', pos: [0, -1.95, -11.68], size: 0.06, color: [1, 0.96, 0.9] }, { kind: 'landing', pos: [0, -1.82, -11.66], size: 0.05, color: [1, 0.97, 0.92] }],
   });
+  const mains = [];
   for (const [i, sx, key] of [[1, -1, 'L'], [2, 1, 'R']]) {
-    const c = gp[i].pos, P = [sx * 3.65, -0.38, c[2]];
-    K.buildGear(rig, A, {
+    const c = gp[i].pos, P = [sx * 3.5, -0.4, c[2]], to = [sx * 1.45, -1.55, c[2]];
+    const sw = K.swing(P, [c[0], c[1] + gp[i].wheelRadius, c[2]], to);
+    mains.push({ sw, g: K.buildGear(rig, A, {
       name: 'main' + key, index: i, contact: c, wheels: [-0.46, 0.46], wheelRadius: gp[i].wheelRadius, wheelWidth: 0.36, pivot: P, stroke: 0.4, staticFrac: 0.4,
-      strutR: 0.11, links: 'rear', retract: { to: [sx * 1.55, -1.5, c[2]] }, window: [0.18, 0.92], brace: [sx * 2.45, -0.75, c[2] + 0.1], uv: gearUV, wheelSegments: 28,
+      strutR: 0.11, links: 'rear', retract: { to }, window: [0.18, 0.92], brace: [sx * 2.45, -0.75, c[2] + 0.1], uv: gearUV, wheelSegments: 28,
       doors: [{ name: 'mainDoor' + key, onLeg: true, mesh: K.box(0.04, 1.35, 0.7, UA.fair).translate(sx * 3.86, -1.25, c[2]) }],
-    });
+    }) });
   }
+  // the A320 has no main-wheel doors: keep the stowed legs (and their wheels) visible in the open belly wells
+  rig.onUpdate((S) => {
+    if (S.sf.gear > 0.012) return;
+    for (const m of mains) { m.g.leg.visible = true; m.g.leg.quaternion.setFromAxisAngle({ x: m.sw.axis[0], y: m.sw.axis[1], z: m.sw.axis[2] }, m.sw.angle * DEG); }
+  });
 
   // ---- lamps ------------------------------------------------------------------------------------------------------------------
   const L = G.lights;
@@ -364,8 +371,9 @@ function paintFuselage(A, o) {
   // --- livery ---
   if (SC.style === 'cheat') {            // grey belly, crimson cheat line under the windows fading out toward the nose
     P.band(Z0, Z1, -Infinity, (z) => -0.95 + Math.max(0, z - 10) * 0.12, belly, { step: 0.3, feather: 2 });
-    P.band(-12.0, 19.9, (z) => 0.12 + Math.max(0, z - 10) * 0.1, (z) => 0.2 + Math.max(0, z - 10) * 0.1 + Math.min(0.06, Math.max(0, z + 12) * 0.03), accent, { step: 0.25 });
-    for (let i = 0; i < 6; i++) { const z0 = -12.0 - i * 0.6; P.band(z0 - 0.45, z0, 0.12, 0.2, { ...accent }, { step: 0.1, alpha: 1 - (i + 1) / 7 }); }
+    P.band(-12.0, 19.9, (z) => 0.12 + Math.max(0, z - 10) * 0.1, (z) => 0.2 + Math.max(0, z - 10) * 0.1, accent, { step: 0.25 });
+    const k = (z) => Math.pow(Math.max(0, (z + 15.4) / 3.42), 1.4);                      // taper to a point toward the nose
+    P.band(-15.4, -11.98, (z) => 0.16 - 0.04 * k(z), (z) => 0.16 + 0.04 * k(z), accent, { step: 0.1 });
     P.textOn(SC.title, -6.6, 1.5, 'both', 0.62, { color: SC.titleColor, font, weight: 700, spacing: 0.1 });
   } else if (SC.style === 'sweep') {     // dark belly sweeping up the aft fuselage into the tail, with a gold pin line
     const edge = (z) => (z < 2 ? -0.75 + (z + 17.7) * 0.008 : -0.59 + Math.pow((z - 2) / 9, 2.0) * 3.1);
