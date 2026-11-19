@@ -31,7 +31,7 @@ export function createVisual(ctx, opts = {}) {
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
   const G = geometry, F = K.FINISH, lap = K.stopwatch();
   const ramF = (c) => ({ color: c, rough: 0.55, metal: 0.12 }), skinF = ramF(SC.skin);
-  const seg = Math.max(32, Math.round(72 * detail / 4) * 4);
+  const seg = Math.max(32, Math.round(88 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   const atlas = K.createAtlas({ size: atlasSize, base: skinF });
@@ -87,7 +87,7 @@ export function createVisual(ctx, opts = {}) {
   ].map(r => ({ z: r[0], y: r[1], w: r[2], top: r[3], bot: r[4], kTop: r[5], kBot: r[6], aTop: r[7], aBot: r[8] }));
   const T_SILL = 0.36, T_NG = 0.05, T_MLG = [0.07, 0.16];
   const fus = K.loft({
-    stations: FS, segments: seg, step: 0.11 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.exhaust,
+    stations: FS, segments: seg, step: 0.09 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.exhaust,
     cutouts: [
       { name: 'cockpit', z: [-6.45, -3.5], t: [T_SILL, 1 - T_SILL] },
       { name: 'ng', z: [-6.15, -4.75], t: [0, T_NG], mirror: true },
