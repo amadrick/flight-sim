@@ -161,6 +161,90 @@ export function createNoise2D(seed = 1337) {
   return { noise2D: dataTex(data, S, THREE.RGBAFormat), curl: dataTex(curl, C, THREE.RGBAFormat), blue, sample, size: S };
 }
 
+// ------------------------------------------------------------------------------------------------ cumulus cell field
+
+/**
+ * Tiling 2D field of individual convective cells (one cumulus per cell), generated on the CPU at boot (~30 ms).
+ * Cells are disks placed largest first by dart throwing, with a power-law number density n(D) ~ D^-slope between
+ * dMin and dMax (fields of shallow cumulus: Neggers et al. 2003, Wood & Field 2011), so one sky holds a few big
+ * congestus-size cells and many small humilis / fractus, with clear air between them.
+ * Texels (RGBA8, wrapping, mipmapped), for the cell whose scaled distance d / r is smallest (a power diagram):
+ *   R = 0.5 + 0.5 (1 - d / r)   (1 at the centre, 0.5 on the nominal rim, 0 at two radii: cells can grow into it)
+ *   G = log size: D = dMin * (dMax / dMin)^G
+ *   B = random id (coverage selects cells with id below a threshold)
+ *   A = random life-cycle phase (growing / mature / decaying)
+ * Options: size (texels), period (m), dMin, dMax (m), slope, fill (area fraction covered by the nominal disks).
+ */
+export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, fill = 0.55 } = {}) {
+  const rnd = mulberry(seed * 31 + 7);
+  const S = size, texel = period / S;
+  // sizes: inverse CDF of D^-slope on [dMin, dMax], sorted descending, until the disk area reaches `fill`
+  const a = 1 - slope, lo = Math.pow(dMin, a), hi = Math.pow(dMax, a);
+  const want = [];
+  let area = 0;
+  while (area < fill * period * period && want.length < 20000) {
+    const D = Math.pow(lo + (hi - lo) * rnd(), 1 / a);
+    want.push(D); area += Math.PI * D * D / 4;
+  }
+  want.sort((x, y) => y - x);
+  // dart throwing with a coarse grid for neighbour queries (toroidal)
+  const GC = 32, cellM = period / GC, grid = Array.from({ length: GC * GC }, () => []);
+  const placed = [];
+  const wrapD = (d) => d - period * Math.round(d / period);
+  for (const D of want) {
+    const r = D / 2;
+    for (let tries = 0; tries < 30; tries++) {
+      const x = rnd() * period, z = rnd() * period;
+      const gx = Math.floor(x / cellM), gz = Math.floor(z / cellM), reach = Math.ceil((r + dMax / 2) / cellM);
+      let ok = true;
+      for (let j = -reach; j <= reach && ok; j++) for (let i = -reach; i <= reach && ok; i++) {
+        for (const c of grid[((gz + j + GC) % GC) * GC + ((gx + i + GC) % GC)]) {
+          const dx = wrapD(c.x - x), dz = wrapD(c.z - z);
+          if (dx * dx + dz * dz < Math.pow(0.92 * (c.r + r), 2)) { ok = false; break; }
+        }
+      }
+      if (!ok) continue;
+      const c = { x, z, r, g: Math.log(D / dMin) / Math.log(dMax / dMin), id: rnd(), ph: rnd() };
+      placed.push(c); grid[gz * GC + gx].push(c);
+      break;
+    }
+  }
+  // rasterise each cell out to two radii, keeping the smallest scaled distance per texel
+  const best = new Float32Array(S * S).fill(2), owner = new Int32Array(S * S).fill(-1);
+  placed.forEach((c, k) => {
+    const R = 2 * c.r / texel, cx = c.x / texel - 0.5, cz = c.z / texel - 0.5;
+    const x0 = Math.floor(cx - R), x1 = Math.ceil(cx + R), z0 = Math.floor(cz - R), z1 = Math.ceil(cz + R);
+    const inv = texel / c.r;
+    for (let j = z0; j <= z1; j++) {
+      const row = ((j % S) + S) % S, dz = (j - cz) * inv;
+      for (let i = x0; i <= x1; i++) {
+        const dx = (i - cx) * inv, d = Math.sqrt(dx * dx + dz * dz);
+        if (d >= 2) continue;
+        const idx = row * S + (((i % S) + S) % S);
+        if (d < best[idx]) { best[idx] = d; owner[idx] = k; }
+      }
+    }
+  });
+  const data = new Uint8Array(S * S * 4);
+  for (let i = 0; i < S * S; i++) {
+    const c = placed[owner[i]];
+    data[i * 4] = Math.round(255 * Math.max(0, 0.5 + 0.5 * (1 - best[i])));
+    if (c) { data[i * 4 + 1] = Math.round(255 * c.g); data[i * 4 + 2] = Math.round(255 * c.id); data[i * 4 + 3] = Math.round(255 * c.ph); }
+    else { data[i * 4 + 2] = 255; }
+  }
+  // Bilinear wrapping CPU sampler (same as the GPU fetch at mip 0); u, v in tiles.
+  function sample(u, v, out) {
+    const x = u * S - 0.5, y = v * S - 0.5;
+    const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+    const xa = ((x0 % S) + S) % S, xb = (xa + 1) % S, ya = ((y0 % S) + S) % S, yb = (ya + 1) % S;
+    const i00 = (ya * S + xa) * 4, i10 = (ya * S + xb) * 4, i01 = (yb * S + xa) * 4, i11 = (yb * S + xb) * 4;
+    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy, k = 1 / 255;
+    for (let c = 0; c < 4; c++) out[c] = (data[i00 + c] * w00 + data[i10 + c] * w10 + data[i01 + c] * w01 + data[i11 + c] * w11) * k;
+    return out;
+  }
+  return { texture: dataTex(data, S, THREE.RGBAFormat), data, size: S, period, dMin, dMax, count: placed.length, sample };
+}
+
 // ------------------------------------------------------------------------------------------------ GPU 3D noise
 
 const NOISE_LIB = /* glsl */`

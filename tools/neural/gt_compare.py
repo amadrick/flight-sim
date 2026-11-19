@@ -77,6 +77,9 @@ def compare(field, case, models, W, H, ambients=None, label=''):
         if name == 'v2':
             import gt_train_light as tl
             mod, amb = tl.v2_models()
+        elif name == 'r2':          # the round-two networks (gt_data/light_nets_r2.npz), for round-three comparisons
+            import gt_train_light as tl
+            mod, amb = tl.v2_models(os.path.join(DATA, 'light_nets_r2.npz'))
         elif name == 'v2jOnly':
             import gt_train_light as tl
             mod, amb = tl.v2_models()[0], None

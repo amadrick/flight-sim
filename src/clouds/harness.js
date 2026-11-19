@@ -120,9 +120,9 @@ async function boot() {
     comp.material.uniforms.tClouds.value = ctx.clouds.texture; comp.render(ctx.renderer, null);
     if (viewPass) {
       const d = ctx.clouds.debug;
-      const t = view === 'weather' ? d.weatherRT.texture : view === 'shadow' ? d.shadowRT.texture : view === 'march' ? d.marchRT.textures[0] : ctx.clouds.texture;
+      const t = view === 'cirrus' ? d.cirrusRT.texture : view === 'weather' ? d.weatherRT.texture : view === 'shadow' ? d.shadowRT.texture : view === 'march' ? d.marchRT.textures[0] : ctx.clouds.texture;
       viewPass.material.uniforms.tex.value = t;
-      viewPass.material.uniforms.uMode.value = view === 'weather' ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail') ? 3 : 2;
+      viewPass.material.uniforms.uMode.value = (view === 'weather' || view === 'cirrus') ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail') ? 3 : 2;
       viewPass.material.uniforms.tex3.value = view === 'detail' ? d.noise3.detail : d.noise3.base;
       viewPass.render(ctx.renderer, null);
     }
@@ -169,7 +169,7 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
       }
       vec3 pa = vec3(xz.x, uEx.w, xz.y); vec4 wx = clWeather(pa.xz, 0.0), info, info1;
       float ex = clShape(pa, wx, 0.0, info);
-      float d = ex + CL_EROSION_BIAS * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, 0.0, 0.0, uEdge) * info.w : 0.0;
+      float d = ex + CL_EROSION_BIAS * CL_EROSION_MAXK * uClNoise.z > 0.0 ? clDensityFull(pa, ex, info, 0.0, 0.0, uEdge) * info.w : 0.0;
       float db = clDensityBase(pa, wx, 1.0, info1) * info1.w;
       o = vec4(d, db, info.y, ex);
     }`;

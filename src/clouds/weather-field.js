@@ -91,6 +91,7 @@ export function makeWeatherFieldJS(noise) {
  * Derive the cloud-model parameters from ctx.weather's (smoothed) numbers. Everything is a continuous function of
  * coverage / base / top / precipitation / lightning so preset transitions morph instead of popping.
  */
+const PROF_SHALLOW = [0.75, 0.3, 2, 1.0], PROF_DEEP = [0.75, 0.7, 4, 0.4];   // [gb, hp, k, p]
 export function deriveWeatherParams(w, out = {}) {
   const cov = saturate(w.cloudCoverage);
   const base = w.cloudBase, top = Math.max(w.cloudTop, base + 300), th = top - base;
@@ -114,6 +115,15 @@ export function deriveWeatherParams(w, out = {}) {
   out.baseRamp = lerp(90, 420, stratus);                 // metres over which the base fades in (flat cumulus bases, ragged stratus)
   out.sigma = lerp(0.028, 0.016, stratus) * (1 + 0.5 * convective);   // extinction (1/m) at density 1
   out.erosion = lerp(0.28, 0.14, stratus);       // surface displacement by the detail noise, in shape units
+  // cumulus cells (see clShape): depth / diameter of undeveloped and developed cells (humilis ~0.5, congestus ~1.5+),
+  // stratocumulus sheet at the base in broken skies, width profile fitted to the LES (tools/neural/les_stats.py)
+  out.aspectLo = lerp(1.0, 1.1, convective);
+  out.aspectHi = lerp(2.0, 3.0, convective);
+  out.sheet = smoothstep(0.5, 0.68, cov) * (1 - smoothstep(0.8, 0.92, cov)) * (1 - convective);
+  // g(h) = [gb + (1 - gb)(1 - (1 - h / hp)^k)] [1 - ((h - hp) / (1 - hp))^2]^p, fitted to the LES (results/profile_fit.json):
+  // shallow trade cumulus (BOMEX) and congestus; mixed by the local development in the shader
+  out.profShallow = PROF_SHALLOW; out.profDeep = PROF_DEEP;
+  out.turret = 2.6; out.lobes = 0.35;           // turret / lobe amplitude (x cell radius)
   out.precip = saturate(w.precipitation);
   out.streets = (1 - smoothstep(0.45, 0.7, cov)) * smoothstep(0.05, 0.2, cov);
   out.cirrus = saturate(w.cirrus);
@@ -122,10 +132,13 @@ export function deriveWeatherParams(w, out = {}) {
 }
 
 /**
- * CPU cloud density (0..1, before detail erosion) at an air-mass position. Mirrors clDensityBase() in shaders.js.
- * p = derived params, wf = weatherField sample, shape = base-noise R at that point, y = altitude.
+ * CPU cloud density (0..1, before detail erosion) at an air-mass position. Mirrors clDensityBase() in shaders.js
+ * (without the billow modulation of the layer shape and the anvil details).
+ * p = derived params, wf = weatherField sample, n = base-noise RGBA at that point, y = altitude,
+ * cl = cell-field RGBA at the leaned / warped position, cells = { dMin, dMax }.
  */
-export function densityFromField(p, wf, shape, y) {
+export function densityFromField(p, wf, n, y, cl, cells) {
+  const shape = n[0];
   const hN = (y - p.base) / p.thickness;
   if (hN <= 0 || hN >= 1) return 0;
   let cov = saturate(p.covBias + (wf.m - 0.5) * p.covAmp);
@@ -138,7 +151,31 @@ export function densityFromField(p, wf, shape, y) {
   const bottom = saturate((hN * p.thickness) / p.baseRamp);
   let prof = lerp(hRel * hRel, smoothstep(0.65, 1.0, hRel) + 4 * Math.max(hRel - 1, 0), p.stratus);
   prof *= lerp(p.taperLo, p.taperHi, dev);
-  let ex = shape * bottom - Math.max(1 - cov, 0.22 * p.stratus) - prof;
+  const exL = shape * bottom - Math.max(1 - cov, 0.22 * p.stratus) - prof;
+  // cumulus cell
+  const h = y - p.base;
+  const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, cl[1]);
+  const vig = saturate((cov * 1.45 - cl[2]) * 8), grow = lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0);
+  const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), 0.8 * lid * p.thickness);
+  const hc = h / Math.max(H, 1);
+  const pf = p.profShallow.map((v, i) => lerp(v, p.profDeep[i], dev));
+  const g = (pf[0] + (1 - pf[0]) * (1 - Math.pow(1 - Math.min(hc / pf[1], 1), pf[2])))
+          * Math.pow(saturate(1 - Math.pow(saturate((hc - pf[1]) / (1 - pf[1])), 2)), pf[3]);
+  const wb = n[1] * 0.6 + n[2] * 0.4, bil = (Math.sqrt(saturate(2 * wb - wb * wb)) - 0.8) * p.turret + (n[0] - 0.5) * p.lobes;
+  const rS = rad * grow * (g + bil * lerp(0.35, 1, saturate(hc * 1.6)));
+  const d = rad * (2 - 2 * cl[0]);
+  let ex = vig > 0 ? (rS - d) * 1e-3 - (cl[0] <= 0.002 ? 1 : 0) - (1 - bottom) * 0.4 - Math.max(hc - 1, 0) * H * 3e-3 : -1;
+  const layerW = Math.max(p.stratus, p.anvil);
+  ex = lerp(ex, -1, layerW);
+  if (p.sheet > 0) {
+    const hs = hN / Math.min(620 / p.thickness, 1);
+    const exS = shape * bottom - Math.max(1.05 - cov, 0.12) - (smoothstep(0.55, 1, hs) * 0.6 + 4 * Math.max(hs - 1, 0)) * 0.5;
+    if (exS * p.sheet > ex) ex = lerp(-0.4, exS, p.sheet);
+  }
+  if (layerW > 0) {
+    const exLw = lerp(-0.4, exL, layerW);
+    if (exLw > ex || p.stratus > 0.5) ex = lerp(ex, exL, p.stratus > 0.5 ? p.stratus : 1);
+  }
   ex = lerp(ex, shape - (1 - 0.95 * am), anvil) - 3 * saturate((hN - lid) * 14);
   return saturate(ex / 0.06);
 }
