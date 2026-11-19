@@ -45,8 +45,8 @@ const SCHEMES = {
 const NOSE = [
   [0.00, -0.60, -0.60, 0.00, -0.60], [0.12, -0.32, -0.86, 0.30, -0.60], [0.40, -0.02, -1.12, 0.60, -0.60], [0.90, 0.28, -1.42, 0.94, -0.60],
   [1.60, 0.55, -1.76, 1.32, -0.58], [2.40, 0.78, -2.06, 1.66, -0.55], [3.20, 0.95, -2.32, 1.95, -0.50], [3.90, 1.07, -2.50, 2.17, -0.45],
-  [4.45, 1.45, -2.62, 2.33, -0.40], [5.05, 1.88, -2.73, 2.48, -0.34], [5.80, 2.22, -2.84, 2.64, -0.27], [6.80, 2.55, -2.94, 2.80, -0.19],
-  [8.00, 2.84, -3.02, 2.94, -0.11], [9.50, 3.02, -3.07, 3.04, -0.05], [11.2, 3.09, -3.10, 3.095, -0.01], [13.0, 3.10, -3.10, 3.10, 0.00],
+  [4.45, 1.50, -2.62, 2.33, -0.40], [5.05, 1.98, -2.73, 2.48, -0.34], [5.80, 2.34, -2.84, 2.64, -0.27], [6.80, 2.63, -2.94, 2.80, -0.19],
+  [8.00, 2.88, -3.02, 2.94, -0.11], [9.50, 3.03, -3.07, 3.04, -0.05], [11.2, 3.09, -3.10, 3.095, -0.01], [13.0, 3.10, -3.10, 3.10, 0.00],
 ];
 //  z     top     keel    half-width  widest
 const TAIL = [
@@ -70,8 +70,8 @@ export function createVisual(ctx, opts = {}) {
   A.pack();
   const UA = {
     body: A.swatch('body', F.gloss(SC.body)), fair: A.swatch('fair', F.gloss(SC.belly)), dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black),
-    well: A.swatch('well', { color: '#7b8079', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#b3b2ab', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#5f605d', rough: 0.7, metal: 0 }),
-    floor: A.swatch('floor', { color: '#34373b', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#1e1f21', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#4f5357', rough: 0.75, metal: 0 }),
+    well: A.swatch('well', { color: '#7b8079', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#c4c3bc', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#8d8e8a', rough: 0.7, metal: 0 }),
+    floor: A.swatch('floor', { color: '#34373b', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2a2c2f', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#5c6166', rough: 0.75, metal: 0 }),
     seat: A.swatch('seat', { color: '#45484c', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#5b5346', rough: 1, metal: 0 }), yoke: A.swatch('yoke', { color: '#17181a', rough: 0.5, metal: 0 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9eaea')), lens: A.swatch('lens', F.lens),
     strut: A.swatch('gear.strut', F.gearWhite), chrome: A.swatch('gear.chrome', F.chrome), tyre: A.swatch('gear.tyre', F.rubber), hub: A.swatch('gear.hub', { color: '#c4c6c2', rough: 0.4, metal: 0.35 }),
@@ -124,10 +124,10 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
   const zd = (d) => G.noseZ + d, zy = (d, y) => [zd(d), fus.tAtY(zd(d), y)], zx = (d, x) => [zd(d), tAtX(zd(d), x)];
-  const WS = { IB: zx(3.98, 0.07), OB: zx(4.42, 1.36), OT: zx(5.12, 1.24), IT: zx(4.86, 0.07) };
-  const S1 = { bf: zy(4.58, 0.98), br: zy(5.5, 0.97), tr: zy(5.5, 1.76), tf: zy(5.22, 1.84) };
-  const S2 = { bf: zy(5.62, 0.97), br: zy(6.52, 0.98), tr: zy(6.52, 1.66), tf: zy(5.62, 1.75) };
-  const S3 = { bf: zy(6.64, 0.99), br: zy(7.2, 1.03), rt: zy(7.2, 1.4), nt: zy(7.02, 1.56), tf: zy(6.64, 1.63) };
+  const WS = { IB: zx(3.98, 0.07), OB: zx(4.42, 1.36), OT: zx(5.1, 1.3), IT: zx(4.84, 0.07) };
+  const S1 = { bf: zy(4.58, 0.98), br: zy(5.5, 0.97), tr: zy(5.5, 1.7), tf: zy(5.2, 1.77) };
+  const S2 = { bf: zy(5.62, 0.97), br: zy(6.52, 0.98), tr: zy(6.52, 1.6), tf: zy(5.62, 1.68) };
+  const S3 = { bf: zy(6.64, 0.99), br: zy(7.2, 1.03), rt: zy(7.2, 1.36), nt: zy(7.02, 1.5), tf: zy(6.64, 1.57) };
   const WIN = [[WS.IB, WS.OB, WS.OT, WS.IT], [S1.bf, S1.br, S1.tr, S1.tf], [S2.bf, S2.br, S2.tr, S2.tf], [S3.bf, S3.br, S3.rt, S3.nt, S3.tf]];
   const FLOOR = 0.25, zb = zd(7.9);
   {
@@ -253,7 +253,7 @@ export function createVisual(ctx, opts = {}) {
     { const L = NAC.len, rA = (z) => NAC.rHi + (NAC.rMax - NAC.rHi) * Math.sqrt(Math.min(1, z / (L * 0.3))) + 0.005;
       stB.add(K.lathe([[rA(0.16) - 0.005, 0.16], [rA(0.17), 0.17], [rA(0.5), 0.5], [rA(0.51) - 0.005, 0.51]], { segments: 56, uv: UB.band }).translate(c[0], c[1], c[2])); }
     // metallic core-nozzle ring
-    { const z1 = NAC.len + 2.6; stB.add(K.lathe([[0.676, z1 - 0.62], [0.648, z1 - 0.005]], { segments: 40, uv: UB.coreMetal }).translate(c[0], c[1], c[2])); }
+    { const z1 = NAC.len + 2.6; stB.add(K.lathe([[0.705, z1 - 0.58], [0.668, z1 + 0.01, 1], [0.645, z1 + 0.01, 1]], { segments: 40, uv: UB.coreMetal }).translate(c[0], c[1], c[2])); }
     stB.add(K.fanBackdrop(NAC.rFan, 0.55, UB.duct).translate(c[0], c[1], n.fanZ));
     // pylon: aft fairing on the core cowl, main strut, blended into the wing lower surface
     stB.add(K.pylon([{ y: c[1] + 0.92, z0: c[2] + 5.0, z1: c[2] + 9.1, x: c[0], tc: 0.12 }, { y: c[1] + 1.5, z0: c[2] + 1.9, z1: c[2] + 10.2, x: c[0], tc: 0.075 }, { y: c[1] + 1.85, z0: c[2] + 2.3, z1: c[2] + 11.0, x: c[0], tc: 0.07 }], { uv: UB.pylon }));
