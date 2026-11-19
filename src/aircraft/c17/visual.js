@@ -124,7 +124,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- main-gear sponsons (one loft per side; gear well cut into the flat bottom) ------------------------------------------
   const sponSt = (sx) => [[-8.75, 3.55, -1.75, 0.05, 0.05, 0.05], [-8.55, 3.6, -1.72, 0.75, 0.62, 0.62], [-8.0, 3.75, -1.66, 1.25, 1.05, 0.92], [-7.0, 3.95, -1.6, 1.62, 1.38, 1.1], [-5.4, 4.1, -1.55, 1.8, 1.55, 1.2],
     [5.6, 4.1, -1.55, 1.8, 1.55, 1.2], [7.6, 3.95, -1.5, 1.62, 1.42, 1.08], [9.6, 3.7, -1.38, 1.15, 1.08, 0.78], [11.0, 3.45, -1.22, 0.45, 0.5, 0.3], [11.5, 3.4, -1.15, 0.05, 0.06, 0.05]]
-    .map(([z, x, y, w, top, bot]) => ({ z, x: sx * x, y, w, top, bot, kTop: 0.55, kBot: [0.78, 0.95] }));
+    .map(([z, x, y, w, top, bot]) => ({ z, x: sx * x, y, w, top: top * 1.4, bot, kTop: 0.47, kBot: [0.78, 0.95] }));
   const sponOpts = (sx) => ({ stations: sponSt(sx), segments: Math.max(28, Math.round(44 * detail / 4) * 4), step: 0.8, chart: cSpon });
   const sp0 = K.loft(sponOpts(1));
   const tSp = (x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (sp0.at(1.0, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
@@ -182,7 +182,7 @@ export function createVisual(ctx, opts = {}) {
   const tipSt = wst(TIPX, 0.10, -3);
   for (const side of [1, -1]) {
     stB.add(K.wing({ side, airfoil: K.naca4('0010'), chordPts: 9, spanAxis: 'u', tip: 'round', tipLength: 0.5, charts: { upper: cWl, lower: cWl }, edgeUV: UB.grey,
-      stations: [tipSt, ...K.blendedWinglet(tipSt, { height: 3.0, cant: 25, radius: 0.32, sweep: 38, tipChord: 1.0, tc: 0.085, n: 3, dihedral: -2.5 })] }).mesh);
+      stations: [tipSt, ...K.blendedWinglet(tipSt, { height: 3.0, cant: 25, radius: 0.32, sweep: 40, tipChord: 1.2, tc: 0.085, n: 3, dihedral: -2.5 })] }).mesh);
   }
   // flap-track fairings ("canoes"): front part fixed under the wing, rear part rides on the main flap
   const canoeAt = (x, len, side) => {
