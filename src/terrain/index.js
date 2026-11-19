@@ -15,6 +15,8 @@ import { createClipmap, SNAP, EDGE } from './clipmap.js';
 import { createLodSelector } from './lod.js';
 import { createTerrainMaterial, clipmapGLSL, TILE_SCALES } from './material.js';
 import { createNoiseTextures } from './noisetex.js';
+import { setGroundMode } from './surface.glsl.js';
+import { createGroundDetail } from './ground-detail.js';
 import { createTrees } from './trees.js';
 
 export { heightAt };
@@ -49,6 +51,11 @@ function configFor(ctx) {
 
 export async function createTerrain(ctx) {
   const renderer = ctx.renderer;
+  // ground: learned land cover + layered materials (default) or the previous hand-tuned shader (?ground=classic).
+  // Must be chosen before any material that includes COVER_GLSL is built (the terrain and the 3D trees).
+  const groundMode = setGroundMode((ctx.params.raw || {}).ground === 'classic' ? 'classic' : 'neural');
+  const groundQ = () => ({ low: 0, medium: 1 }[ctx.quality.level] ?? 2);
+  const detail = groundMode === 'neural' ? createGroundDetail(renderer, { size: ctx.quality.level === 'low' ? 256 : 512, anisotropy: ctx.quality.anisotropy ?? 4 }) : null;
   let cfg = configFor(ctx);
   let clip = createClipmap(renderer, { N: cfg.N, L, t0: cfg.t0 });
   let sel = createLodSelector({ P, s0: S0, L, k: cfg.k, maxInstances: 4096, heightAt });
@@ -64,6 +71,7 @@ export async function createTerrain(ctx) {
     uTerrLod: { value: new THREE.Vector4(cfg.k * S0, L - 1, L - 1, cfg.m0) },
     uTerrTile: { value: TILE_SCALES.map(() => new THREE.Vector2()) },
     uTerrRw: { value: RUNWAYS.map(() => new THREE.Vector4()) }, uTerrRwL: { value: RUNWAYS.map((r) => r.half) },
+    tTerrMat: { value: detail ? detail.texture : null }, uTerrWet: { value: 0 },
     uTerrShadowOn: { value: 1 }, uTerrTree: { value: new THREE.Vector4(0, 300, 400, 0) },
     uTerrWin: { value: 1 }, uTerrOrg: { value: new THREE.Vector3() }, uTerrCurv: { value: 1 },
     uOrigin: F.uOrigin, uSunDir: F.uSunDir,
@@ -92,7 +100,7 @@ export async function createTerrain(ctx) {
   bindInstances();
   geo.instanceCount = 0;
 
-  let material = createTerrainMaterial(ctx, { L, shadowSteps: cfg.shadowSteps, uniforms });
+  let material = createTerrainMaterial(ctx, { L, shadowSteps: cfg.shadowSteps, uniforms, quality: groundQ() });
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'terrain'; mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
   mesh.matrixAutoUpdate = false;
@@ -120,10 +128,11 @@ export async function createTerrain(ctx) {
     bindInstances();
     uniforms.tTerrH.value = clip.textureH; uniforms.tTerrD.value = clip.textureD;
     material.dispose();
-    material = createTerrainMaterial(ctx, { L, shadowSteps: cfg.shadowSteps, uniforms });
+    material = createTerrainMaterial(ctx, { L, shadowSteps: cfg.shadowSteps, uniforms, quality: groundQ() });
     mesh.material = material;
     noiseTex.noise.anisotropy = noiseTex.norm.anisotropy = ctx.quality.anisotropy ?? 4;
     noiseTex.noise.needsUpdate = noiseTex.norm.needsUpdate = true;
+    if (detail) detail.texture.anisotropy = ctx.quality.anisotropy ?? 4;
     makeTrees();
     frameNo = 0;
   }
@@ -204,6 +213,9 @@ export async function createTerrain(ctx) {
     if (raw.terrHideWater && ctx.water?.object3D) ctx.water.object3D.visible = false;
     uniforms.uTerrWin.value = (N / 2 - SNAP - EDGE - 1) * cfg.t0;
     uniforms.uTerrOrg.value.copy(org);
+    // rain soaks the ground in about a minute and dries over several
+    const rain = Math.min(1, Math.max(0, ctx.weather?.precipitation ?? 0)), wet = uniforms.uTerrWet.value, dtw = ctx.time?.dt ?? 0;
+    uniforms.uTerrWet.value = ctx.params.test ? rain : wet + (rain - wet) * Math.min(1, dtw / (rain > wet ? 60 : 400));
     if (trees) trees.update(wx, wz, org, Hd, minLevel);
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
     stats.drawCalls = stats.treeTriangles ? 2 : 1;
@@ -234,7 +246,7 @@ float terrainHeight(vec2 worldXZ) {
 
   // ---- debug helpers (tests / tooling) ------------------------------------------------------------------------
   const debug = {
-    get config() { return { ...cfg, P, L, S0 }; },
+    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0 }; },
     /** Compare the GPU-generated heights of one clipmap level with the CPU function. Returns max/mean abs error (m). */
     parity(level = 0, step = 7) {
       const N = cfg.N, lv = clip.levels[level];

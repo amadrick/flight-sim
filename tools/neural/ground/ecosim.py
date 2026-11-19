@@ -219,7 +219,7 @@ def simulate(H, arid, spec, x0, z0, cell=16.0, seed=0, verbose=False):
     ins_e = insolation(H, nx, ny, nz, cell, 0.0)                 # equinox (spring melt, growing season average)
     skyview = np.clip(0.5 * (1.0 + ny) - 1.2 * np.maximum(c2, 0.0) - 1.5 * np.maximum(c3, 0.0), 0.2, 1.0)
     ins = 0.5 * (0.8 * ins_s + 0.2 * skyview) + 0.5 * (0.8 * ins_e + 0.2 * skyview)
-    PET = 0.55 * (0.3 + 0.9 * ins) * np.maximum(Ts, 0.0) / 20.0 * (1.0 + 0.6 * arid)
+    PET = 0.55 * (0.3 + 0.9 * ins) * np.maximum(Ts, 0.0) / 20.0 * (1.0 + 1.3 * arid)
     m_base = P / (P + PET + 1e-6)
 
     # ---- hydrology ----------------------------------------------------------------------------------------
@@ -301,7 +301,7 @@ def simulate(H, arid, spec, x0, z0, cell=16.0, seed=0, verbose=False):
              * (1.0 - 0.6 * ss(13.0, 19.0, Ts) * ss(0.3, 0.6, m)) * (1.0 - 0.9 * tropic),
         'B': ss(11.0, 15.0, Ts) * ss(0.15, 0.70, sdepth) * snowbed * hold * (1.0 - 0.85 * expo),
     }
-    cap = {'G': ss(0.07, 0.30, m), 'S': ss(0.04, 0.30, m) ** 1.3, 'T': ss(0.36, 0.56, m)}
+    cap = {'G': ss(0.07, 0.30, m), 'S': ss(0.02, 0.30, m) ** 1.3, 'T': ss(0.36, 0.56, m)}
     rate = {'G': 0.8, 'S': 0.35, 'B': 0.22, 'C': 0.18}
     mort = {'G': 0.08, 'S': 0.05, 'B': 0.020, 'C': 0.015}
     d_aval = ss(1.0, 6.0, aval)
