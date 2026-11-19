@@ -73,7 +73,10 @@ export function createLodSelector({ P, s0, L, k, maxInstances, heightAt }) {
     const x0 = ix * size, z0 = iz * size;
     if (level <= minLevel || !hitsDisc(x0, z0, size, rho2[level - 1])) { emit(x0, z0, size, level, level, 0); return; }
     const half = size / 2;
-    for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+    // nearest child first: roughly front-to-back draw order, so early-z rejects hidden fragments of the costly shader
+    const ni = camX + orgX > x0 + half ? 1 : 0, nj = camZ + orgZ > z0 + half ? 1 : 0;
+    for (let q = 0; q < 4; q++) {
+      const i = q & 1 ? 1 - ni : ni, j = q & 2 ? 1 - nj : nj;
       const cx = x0 + i * half, cz = z0 + j * half;
       if (hitsDisc(cx, cz, half, rho2[level - 1])) select(level - 1, ix * 2 + i, iz * 2 + j);
       else if (visible(level - 1, ix * 2 + i, iz * 2 + j, half)) emit(cx, cz, half, level - 1, level, 1);

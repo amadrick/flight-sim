@@ -307,7 +307,7 @@ TerrSurf terrSurface(vec3 rp) {
   float dh = abs(dFdx(h)) + abs(dFdy(h)) + 0.001;     // metres of height per pixel: strata must fade before they alias
   // bedding: beds of irregular thickness (1D noise along height, bent a little by the macro noise); mip-filtered
   // by the height covered per pixel so the layers fade to their mean instead of aliasing
-  float strata = (textureLod(tTerrNoise, vec2(0.37 + 0.04 * n1.r, h / 900.0 + 0.03 * n2.r), log2(max(dh / 3.5, 1.0))).r - 0.5) * 2.0;
+  float strata = (textureLod(tTerrNoise, vec2(0.37 + 0.04 * n1.r, h / 2800.0 + 0.012 * n2.r), log2(max(dh / 11.0, 1.0)) + 0.8).r - 0.5) * 2.0;
   vec3 granite = mix(vec3(0.150, 0.146, 0.142), vec3(0.275, 0.262, 0.245), ss(0.2, 0.8, n2.r * 0.6 + n4.g * 0.4));
   granite *= 0.90 + 0.22 * strata;
   granite = mix(granite, granite * vec3(0.62, 0.60, 0.58), ss(0.55, 0.85, n3.a) * 0.6);   // dark seepage / lichen
