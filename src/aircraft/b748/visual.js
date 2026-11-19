@@ -915,7 +915,6 @@ function paintSurfaces(B, o) {
       for (let i = 0; i < 16; i++) { const x = 4 + i * 1.6, a = at(x, 0.66); Q.streak(a[0], a[1], a[0], a[1] + 1.6, 0.07, { alpha: 0.1 }); }
       for (const x of [14, 18, 22, 26]) { const p = at(x, 0.4); Q.panel(p[0] - 0.3, p[1] - 0.22, p[0] + 0.3, p[1] + 0.22, { r: 0.05, px: 1, depth: 0.3, dark: 0.1 }); }
       for (const x of [11.5, 23.5]) { const p = at(x, 0.55); Q.streak(p[0] - 0.4, p[1], p[0] - 0.4, p[1] + 3.5, 1.4, { alpha: 0.14 }); Q.streak(p[0] + 0.4, p[1], p[0] + 0.4, p[1] + 3.5, 1.4, { alpha: 0.14 }); }   // exhaust / reverser soot
-      const r = at(26, 0.4); Q.text(SC.reg, r[0], r[1], 1.0, { color: '#2a2e33', font: K.FONT.sans, weight: 700, rot: 90 });
     }
     Q.noise({ alpha: 0.045, scale: 3, stretch: [1, 2.5], rough: 0.04 });
   }
