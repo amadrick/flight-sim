@@ -114,12 +114,12 @@ export function createVisual(ctx, opts = {}) {
   stA.add(K.lathe([[0.16, -0.25], [0.17, 0.12, 1], [0.13, 0.12, 1], [0.11, -0.3]], { segments: 16, uv: UA.exhaust, sx: 0.8 }).rotateY(-16 * DEG).translate(-0.16, 0.6, 37.2));
 
   // wing-to-body fairing with the main-gear bays cut into its flat bottom
-  const fairStations = [[-13.5, 2.0, 0.4, 0.8], [-11.0, 2.45, 0.65, 1.04], [-8.4, 3.1, 0.88, 1.17], [-4.8, 3.55, 1.02, 1.23], [1.0, 3.78, 1.05, 1.26], [4.6, 3.72, 1.0, 1.26], [7.0, 3.3, 0.85, 1.16], [9.4, 2.6, 0.55, 0.98], [11.6, 1.9, 0.3, 0.72]]
-    .map(r => ({ z: r[0], y: -2.1, w: r[1], top: r[2], bot: r[3], kTop: 0.62, kBot: [0.95, 0.5523] }));
+  const fairStations = [[-15.0, 2.05, 0.3, 0.75], [-12.5, 2.5, 0.6, 1.0], [-9.5, 3.05, 0.85, 1.15], [-6.0, 3.42, 0.98, 1.22], [-1.0, 3.6, 1.02, 1.25], [4.8, 3.62, 1.0, 1.26], [7.5, 3.3, 0.85, 1.15], [10.0, 2.75, 0.55, 0.98], [12.8, 2.1, 0.3, 0.74]]
+    .map(r => ({ z: r[0], y: -2.1, w: r[1], top: r[2], bot: r[3], kTop: 0.7, kBot: [0.95, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(32, Math.round(48 * detail / 4) * 4), step: 0.8, uv: UA.fair };
   let fair = K.loft(fairOpts);
   const fAtX = (z, x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(z, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
-  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'mlg', z: [0.3, 4.9], t: [fAtX(2.6, 1.85), fAtX(2.6, 3.62)], mirror: true }] });
+  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'mlg', z: [0.3, 4.9], t: [fAtX(2.6, 1.85), fAtX(2.6, 3.5)], mirror: true }] });
   stA.add(fair.mesh).add(K.well(fair.patches.mlgR, 1.5, UA.well, [0, 1, 0])).add(K.well(fair.patches.mlgL, 1.5, UA.well, [0, 1, 0]));
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
