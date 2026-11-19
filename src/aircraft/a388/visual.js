@@ -5,8 +5,8 @@
 //   length 72.72 m (nose z -37.5 … APU exhaust z 35.22), span 79.75 m over the tip fences, height 24.09 m (fin tip y 18.39).
 //   Fuselage: full-length double deck, an ovoid 7.14 m wide × 8.5 m tall (crown y 4.3, keel y -4.2, widest at y -0.2; the
 //   upper deck lobe is visibly narrower than the main deck). Blunt nose on y -1.0, the flight deck set between the decks:
-//   windshield bottom d 3.55 (y 1.80), top d 5.0 (y 2.65), with the upper-deck "forehead" rising behind it to the crown at
-//   d ≈ 13. Constant section d 15 … 50, aft taper from d 54, upswept tail cone ending in the APU exhaust (y 0.6).
+//   windshield bottom d 2.85 (y 1.25), top d 4.4 (y 2.05), below the upper-deck window line, with the tall upper-deck
+//   "forehead" rising behind it to the crown at d ≈ 12. Constant section d 15 … 50, aft taper from d 54, upswept tail cone ending in the APU exhaust (y 0.6).
 //   Windows: main deck y -0.85, upper deck y 2.3; doors M1–M5 at d 8.5 / 18.5 / 33 / 52 / 62, U1–U3 at d 12 / 36 / 58.
 //   Wing (right): root LE z -11.5 at x 3.6 (chord 17.5), Yehudi kink x 14.5 (LE z -3.9, chord 11.8), tip x 39.88 (LE z 12.4,
 //   chord 4.0); LE sweep 35° / 33°; two trailing-edge kinks (x 11.5, x 25); dihedral 10.8° inboard (gull), 5.8° outboard from the
@@ -40,9 +40,9 @@ const D = (d) => d + NZ;
 // ---- fuselage station tables ------------------------------------------------------------------------------------------------
 //  d (from the nose)  y of the crown  y of the keel  half-width  y of the widest point
 const NOSE = [
-  [0.00, -1.00, -1.00, 0.00, -1.00], [0.06, -0.62, -1.38, 0.38, -1.00], [0.22, -0.30, -1.72, 0.72, -1.00], [0.55, 0.06, -2.08, 1.06, -0.99], [1.00, 0.38, -2.40, 1.40, -0.97],
-  [1.80, 0.90, -2.82, 1.86, -0.94], [2.70, 1.40, -3.20, 2.28, -0.89], [3.60, 1.85, -3.50, 2.62, -0.82], [4.40, 2.30, -3.72, 2.88, -0.74],
-  [5.20, 2.84, -3.88, 3.10, -0.65], [6.20, 3.42, -4.00, 3.28, -0.55], [7.40, 3.86, -4.08, 3.42, -0.45], [9.00, 4.12, -4.14, 3.52, -0.35],
+  [0.00, -1.00, -1.00, 0.00, -1.00], [0.06, -0.64, -1.38, 0.38, -1.00], [0.22, -0.34, -1.72, 0.72, -1.00], [0.55, 0.0, -2.08, 1.06, -0.99], [1.00, 0.30, -2.40, 1.40, -0.97],
+  [1.80, 0.78, -2.82, 1.86, -0.94], [2.70, 1.20, -3.20, 2.28, -0.89], [3.60, 1.62, -3.50, 2.62, -0.82], [4.40, 2.06, -3.72, 2.88, -0.74],
+  [5.20, 2.62, -3.88, 3.10, -0.65], [6.20, 3.28, -4.00, 3.28, -0.55], [7.40, 3.80, -4.08, 3.42, -0.45], [9.00, 4.10, -4.14, 3.52, -0.35],
   [11.0, 4.24, -4.18, 3.56, -0.27], [13.5, 4.28, -4.20, 3.57, -0.22], [15.5, 4.30, -4.20, 3.57, -0.20],
 ];
 //  z      crown   keel   half-width  widest
@@ -148,11 +148,11 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
   const zd = D, zy = (d, y) => [zd(d), fus.tAtY(zd(d), y)], zx = (d, x) => [zd(d), tAtX(zd(d), x)];
-  const WS = { IB: zx(3.55, 0.08), OB: zy(3.95, 1.80), OT: zy(5.25, 2.62), IT: zx(4.96, 0.08) };
-  const S1 = { bf: zy(4.08, 1.80), br: zy(5.75, 1.83), tr: zy(5.75, 2.55), tf: zy(5.36, 2.57) };
-  const S2 = { bf: zy(5.86, 1.84), br: zy(6.75, 1.87), rt: zy(6.75, 2.28), nt: zy(6.52, 2.5), tf: zy(5.86, 2.55) };
+  const WS = { IB: zx(2.85, 0.08), OB: zy(3.25, 1.22), OT: zy(4.55, 2.0), IT: zx(4.35, 0.08) };
+  const S1 = { bf: zy(3.38, 1.22), br: zy(4.95, 1.25), tr: zy(4.95, 1.98), tf: zy(4.66, 2.0) };
+  const S2 = { bf: zy(5.05, 1.26), br: zy(5.9, 1.29), rt: zy(5.9, 1.72), nt: zy(5.68, 1.92), tf: zy(5.05, 1.97) };
   const WIN = [[WS.IB, WS.OB, WS.OT, WS.IT], [S1.bf, S1.br, S1.tr, S1.tf], [S2.bf, S2.br, S2.rt, S2.nt, S2.tf]];
-  const FLOOR = 1.05, zb = zd(7.6), eye = G.pilotEye;
+  const FLOOR = 0.5, zb = zd(6.9), eye = G.pilotEye;
   {
     const L = (c, uv, nu = 3, nv = 3) => stA.add(K.liner(fus, c, { uv, nu, nv, mirror: true, inset: 0.05 }));
     const lo = (z) => [z, fus.tAtY(z, FLOOR + 0.04)], hi = (z) => [z, 0.5];
@@ -171,7 +171,7 @@ export function createVisual(ctx, opts = {}) {
     L([S2.tf, S2.nt, hi(S2.nt[0]), hi(S2.tf[0])], UA.liner, 2, 3);
     L([S2.nt, S2.rt, hi(S2.br[0]), hi(S2.nt[0])], UA.liner, 2, 3);
     L([lo(S2.br[0]), lo(zb), hi(zb), hi(S2.br[0])], UA.liner, 3, 6);
-    const fy = FLOOR, zP = zd(4.05);
+    const fy = FLOOR, zP = zd(3.3);
     stA.add(K.deck(fus, WS.IB[0] - 0.02, zb, fy, { uv: UA.floor, n: 8 }));
     stA.add(K.bulkhead(fus, zb, { uv: UA.liner, facing: -1 }));
     stA.add(K.bulkhead(fus, WS.IB[0] - 0.02, { uv: UA.shield, facing: 1 }));
@@ -183,7 +183,7 @@ export function createVisual(ctx, opts = {}) {
       const i0 = stA.vertexCount; for (const [a, b] of [[0, 0], [0.4, 0], [0.4, 0.9], [0, 0.9]]) { const uv = cPed.uv(a, b); stA.vert(a - 0.2, fy + 0.45 + (0.9 - b) * 0.12, zP + 0.1 + b * 1.0, 0, 1, 0.1, uv[0], uv[1]); } stA.quad(i0, i0 + 3, i0 + 2, i0 + 1);
       for (const sx of [-1, 1]) stA.add(K.box(0.035, 0.12, 0.05, UA.stick).rotateX(-0.35).translate(sx * 0.06, fy + 0.62, zP + 0.35));
     }
-    { const i0 = stA.vertexCount, y = eye[1] + 0.45; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.4, y + b * 0.16, zP + 1.0 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    { const i0 = stA.vertexCount, y = eye[1] + 0.36; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.4, y + b * 0.22, zP + 1.5 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
       stA.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.cushion } }));
