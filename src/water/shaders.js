@@ -40,7 +40,56 @@ uniform float uShoreFade;       // depth (m) at which waves reach full amplitude
 uniform float uDispScale;
 uniform float uMoonK;           // moon visibility factor (elevation × night)
 uniform vec4 uShore;            // x = breaker height (m), y = period (s), z = top of the wet beach (m), w = run-up (m)
+uniform vec2 uWaveDir;
+uniform vec4 uOriginWrap;
+uniform sampler2D tNoise;
 out vec3 vPos; out vec2 vXZ; out vec3 vSunE; out float vHeight; out float vFade; out vec3 vMoonE;
+out vec4 vShoreA;               // x = bore phase, y = surf-zone weight, z = breaking (dissipation), w = arriving height
+out vec4 vShoreB;               // x = along-shore segment, y = shelter, z = local height, w = swash level (m)
+
+// Surf (per vertex: the coast varies over tens of metres, and the bores need real height to read at grazing angles)
+void shore(vec2 wAbs, vec2 wq, float th, out vec4 A, out vec4 B, out float eta) {
+  A = vec4(0.0); B = vec4(0.0, 0.0, 0.0, -10.0); eta = 0.0;
+  // seabed slope and the seaward direction from two extra height taps
+  // (central differences over 40 m: the regional slope, not the small relief)
+  float e = 20.0;
+  vec2 g = vec2(terrainHeight(wAbs + vec2(e, 0.0)) - terrainHeight(wAbs - vec2(e, 0.0)),
+                terrainHeight(wAbs + vec2(0.0, e)) - terrainHeight(wAbs - vec2(0.0, e))) / (2.0 * e);
+  float m = length(g);
+  vec2 sea = m > 1e-5 ? -g / m : -uWaveDir;              // toward deeper water
+  // shelter: the shallowest seabed between here and the open sea limits the waves that reach this point
+  float th45 = terrainHeight(wAbs + sea * 45.0);
+  m = clamp(max(m, (th - th45) / 45.0), 0.006, 0.25);
+  float up = max(max(th45, terrainHeight(wAbs + sea * 140.0)), terrainHeight(wAbs + sea * 420.0));
+  float Hin = uShore.x * mix(0.55, 1.0, smoothstep(-0.4, 0.6, dot(-sea, uWaveDir)));
+  float Harr = min(Hin, 0.78 * max(-up, 0.0) + 0.06);          // what arrives from the open sea
+  float dd = max(-th, 0.0);
+  float Hloc = min(Harr, 0.78 * dd + 0.03);                    // depth-limited height here
+  float Hsea = min(Harr, 0.78 * max(-th45, 0.0) + 0.03);        // ... and 45 m seaward
+  // breaking = energy lost between there and here (strong on reef edges and bars, nil on the flat behind them)
+  float diss = clamp((Hsea - Hloc) / max(0.2 * Hin, 0.05), 0.0, 1.0);
+  // along-shore variation: breaking happens in segments (peaks and gaps), offsets bend the crest lines
+  vec4 nm = textureLod(tNoise, wq / 4096.0, 0.0), nm2 = textureLod(tNoise, wq / 1024.0 + vec2(0.31, 0.17), 0.0);
+  vec4 an = textureLod(tNoise, vec2(dot(wq, vec2(-sea.y, sea.x)) / 512.0, dot(wq, sea) / 4096.0) + nm.ba * 0.15, 0.0);
+  float seg = smoothstep(0.25, 0.65, an.r * 0.7 + nm2.g * 0.3);
+  // travel time to the shore over a uniform slope with the shallow-water celerity: tau = 2 sqrt(d / g) / m
+  float tau = 2.0 * sqrt(dd / 9.81) / m;
+  float ph = (tau + uTime) / uShore.y + 0.35 * an.g + 0.6 * an.b;
+  float u = fract(ph);
+  float zone = smoothstep(1.5 * Harr + 0.2, 0.8 * Harr, dd) * smoothstep(-0.05, 0.25, dd + 0.2);
+  float strength = smoothstep(0.05, 0.4, Harr) * (0.55 + 0.45 * seg);
+  // swash: run-up on the beach — fast uprush, slow backwash, in phase with the bores arriving at the shoreline
+  float us = fract(uTime / uShore.y + 0.35 * an.g + 0.6 * an.b);
+  float rise = us < 0.22 ? sin(us / 0.22 * 1.5708) : pow(cos((us - 0.22) / 0.78 * 1.5708), 1.6);
+  float R = uShore.w * (Hloc / max(uShore.x, 1e-3)) * (0.7 + 0.3 * seg) + 0.05;
+  A = vec4(ph, zone * strength, diss, Harr);
+  B = vec4(seg, 1.0 - Harr / max(Hin, 1e-3), Hloc, R * rise - 0.08);
+  // surface elevation: steepening swell lines outside the break point, a bore (steep shoreward face) inside it
+  float shoal = smoothstep(2.6 * Harr + 0.6, 1.3 * Harr, dd) * (1.0 - zone);
+  float boreH = smoothstep(0.0, 0.05, u) * exp(-u * 4.5) * zone * strength * clamp(diss * 1.6, 0.0, 1.0);
+  float cr = 0.5 + 0.5 * cos(6.2832 * ph);
+  eta = 0.5 * Harr * strength * shoal * (cr * cr * 1.6 - 0.55) + 0.6 * Hloc * boreH;
+}
 
 vec3 dispAt(sampler2D t, vec4 c, vec2 xz, float spacing) {
   vec2 uv = (xz + c.xy) * c.z + 0.5 / c.w;
@@ -63,6 +112,11 @@ void main() {
     d = dispAt(tDisp0, uCasc[0], xz, spacing) + dispAt(tDisp1, uCasc[1], xz, spacing) + dispAt(tDisp2, uCasc[2], xz, spacing);
     d *= fade * uDispScale;
   }
+  vec4 sA = vec4(0.0), sB = vec4(0.0, 0.0, 0.0, -10.0);
+  float eta = 0.0;
+  if (th > -14.0 && th < uShore.z + 0.5 && spacing < 30.0) shore(xz + uOrigin.xz, xz + uOriginWrap.xy, th, sA, sB, eta);
+  vShoreA = sA; vShoreB = sB;
+  d.y += eta * uDispScale;
   vec3 p = vec3(xz.x + d.x, d.y, xz.y + d.z);
   float dc = length(p.xz - uCameraPos.xz);
   // drape the grid over the beach up to the top of the wet zone (the fragment shader decides what is water, wet sand
@@ -169,6 +223,7 @@ uniform vec4 uWash;             // xy = aircraft render xz, z = strength, w = he
 uniform vec4 uWashV;            // xy = unit ground track, z = trail length (m), w = half width (m)
 uniform int uDebug;
 in vec3 vPos; in vec2 vXZ; in vec3 vSunE; in float vHeight; in float vFade; in vec3 vMoonE;
+in vec4 vShoreA; in vec4 vShoreB;
 layout(location = 0) out vec4 outColor;
 
 ${WATER_BRDF_GLSL}
@@ -285,51 +340,20 @@ void main() {
   var = mix(var * 0.8, var, smoothstep(0.0, 1.5, depth));
 
   float pxm = length(fwidth(xz));                         // metres per pixel
-  float surfF = 0.0, boreF = 0.0, swashLvl = -10.0, susp = 0.0, Hloc = 0.0;
-  float sheltered = 0.0;
-  if (th > -14.0 && th < uShore.z + 0.5 && pxm < 25.0) {
-    // seabed slope and the seaward direction from two extra height taps
-    float e = max(3.0, pxm * 2.0);
-    vec2 g = vec2(terrainHeight(wAbs + vec2(e, 0.0)) - th, terrainHeight(wAbs + vec2(0.0, e)) - th) / e;
-    float m = length(g);
-    vec2 sea = m > 1e-5 ? -g / m : -uWaveDir;              // toward deeper water
-    m = clamp(m, 0.004, 0.25);
-    // shelter: the shallowest seabed between here and the open sea limits the waves that reach this point
-    float th45 = terrainHeight(wAbs + sea * 45.0);
-    float up = max(max(th45, terrainHeight(wAbs + sea * 140.0)), terrainHeight(wAbs + sea * 420.0));
-    float Hin = uShore.x * mix(0.55, 1.0, smoothstep(-0.4, 0.6, dot(-sea, uWaveDir)));
-    float Harr = min(Hin, 0.78 * max(-up, 0.0) + 0.06);          // what arrives from the open sea
-    sheltered = 1.0 - Harr / max(Hin, 1e-3);
-    float dd0 = max(depth, 0.0);
-    Hloc = min(Harr, 0.78 * dd0 + 0.03);                           // depth-limited height here
-    float Hsea = min(Harr, 0.78 * max(-th45, 0.0) + 0.03);          // ... and 45 m seaward
-    // breaking = energy lost between there and here (strong on reef edges and bars, nil on the flat behind them)
-    float diss = clamp((Hsea - Hloc) / max(0.2 * Hin, 0.05), 0.0, 1.0);
-    // along-shore variation: breaking happens in segments (peaks and gaps), offsets bend the crest lines
-    vec2 alongD = vec2(-sea.y, sea.x);
-    float sAlong = dot(wq, alongD);
-    vec4 an = texture(tNoise, vec2(sAlong / 512.0, dot(wq, sea) / 4096.0) + nm.ba * 0.15);
-    float seg = smoothstep(0.25, 0.65, an.r * 0.7 + nm2.g * 0.3);
-    // travel time to the shore over a uniform slope with the shallow-water celerity: tau = 2 sqrt(d / g) / m
-    float dd = max(depth, 0.0);
-    float tau = 2.0 * sqrt(dd / 9.81) / m;
-    float ph = (tau + uTime) / uShore.y + 0.35 * an.g + 0.6 * an.b;
-    float dph = fwidth(ph);
-    float u = fract(ph);
-    // breaking zone: depth below ~1.3 breaker heights; bores (fronts at u = 0) leave foam that decays behind them
-    float hb = max(Hloc, 0.02);
-    float zone = smoothstep(1.5 * Harr + 0.2, 0.8 * Harr, dd) * smoothstep(-0.05, 0.25, dd + 0.2);
+  float surfF = 0.0, boreF = 0.0, swashLvl = vShoreB.w, susp = 0.0, Hloc = vShoreB.z;
+  float sheltered = vShoreB.y;
+  if (vShoreA.y > 0.0) {
+    float u = fract(vShoreA.x), dph = fwidth(vShoreA.x);
+    float diss = vShoreA.z;
+    // bores (fronts at u = 0) leave foam that decays behind them; filtered when the bands get sub-pixel
     float front = smoothstep(0.0, 0.025, u) * exp(-u * 4.0) + 0.3 * exp(-(1.0 - u) * 40.0);
-    float bore = mix(front, 0.5, smoothstep(0.3, 0.9, dph));            // filtered when the bands are sub-pixel
-    float strength = smoothstep(0.05, 0.4, Harr) * (0.55 + 0.45 * seg);
-    boreF = bore * zone * strength * clamp(diss * 1.6, 0.0, 1.0);
-    surfF = zone * strength * (0.35 + 0.65 * diss);         // general aerated surf-zone water
-    susp = zone * smoothstep(0.1, 0.7, Hloc);               // sand stirred up by the breakers
-    // swash: run-up on the beach — fast uprush, slow backwash; the level is the same along a crest's phase
-    float us = fract(uTime / uShore.y + 0.35 * an.g + 0.6 * an.b);
-    float rise = us < 0.22 ? sin(us / 0.22 * 1.5708) : pow(cos((us - 0.22) / 0.78 * 1.5708), 1.6);
-    float R = uShore.w * (Hloc / max(uShore.x, 1e-3)) * (0.7 + 0.3 * seg) + 0.05;
-    swashLvl = R * rise - 0.08;
+    float bore = mix(front, 0.5, smoothstep(0.3, 0.9, dph));
+    boreF = bore * vShoreA.y * clamp(diss * 1.6, 0.0, 1.0);
+    surfF = vShoreA.y * (0.35 + 0.65 * diss);               // general aerated surf-zone water
+    susp = vShoreA.y * smoothstep(0.1, 0.7, Hloc);          // sand stirred up by the breakers
+    // the bore / swell-line relief is geometry: take its slope from the displaced surface itself
+    vec3 ng = cross(dFdx(P), dFdy(P));
+    if (abs(ng.y) > 1e-6) grad += clamp(-ng.xz / ng.y, -1.0, 1.0) * clamp(vShoreA.y * 3.0, 0.0, 1.0) * (1.0 - smoothstep(1.0, 6.0, pxm));
   }
 
   // ---- normal ---------------------------------------------------------------------------------------------------
@@ -380,7 +404,7 @@ void main() {
   vec3 rhoAer = vec3(0.012, 0.04, 0.042) * clamp(cov * 2.5, 0.0, 1.0);
 
   // water column above the bed (the swash film rides above the beach)
-  float level = max(vHeight * vFade, swashLvl);
+  float level = max(vHeight, swashLvl);
   float dW = level - th;
   float covW = smoothstep(0.0, 0.035, dW);
   // down (refracted sun) + up (refracted view) path lengths per metre of depth
