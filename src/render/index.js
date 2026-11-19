@@ -21,6 +21,7 @@ import { SKY_GLSL } from './sky-glsl.js';
 import { createEnvironment } from './environment.js';
 import { KeyLight, fitShadows, installSunShadowChunk, SUN_SHADOW_API_GLSL } from './shadows.js';
 import { createPostPasses } from './post.js';
+import { createAO, AO_COMPOSITE_GLSL } from './ao.js';
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -43,7 +44,7 @@ in vec2 vUv; out vec4 outColor;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 `;
 
-const COMPOSITE_FRAG = (cloudShadowGLSL) => HEAD + FRAME_UNIFORMS_GLSL + DEPTH_GLSL + ATMOSPHERE_GLSL + SKY_GLSL + /* glsl */`
+const COMPOSITE_FRAG = (cloudShadowGLSL) => HEAD + FRAME_UNIFORMS_GLSL + DEPTH_GLSL + ATMOSPHERE_GLSL + SKY_GLSL + AO_COMPOSITE_GLSL + /* glsl */`
 uniform sampler2D tScene; uniform sampler2D tClouds; uniform float uHasClouds;
 uniform vec4 uCloudK;      // x: share of direct light in the scene lighting, y: cloud shadow at the player, z: same share for in-scatter, w: debug cloud shadow (<0 = off)
 uniform vec4 uFlash;       // rgb: lightning colour * envelope, a: envelope
@@ -65,6 +66,8 @@ void main() {
     col = texture(tScene, vUv).rgb;
     if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
     col = max(col, 0.0);
+    // contact shading (SSAO, ambient share only)
+    col *= aoFactor(vUv, length(P - uCameraPos));
     // Cloud shadows in screen space: the main pass lit this pixel with the cloud occlusion measured at the player
     // (key light dimmed, ambient boosted to compensate); re-weight to the occlusion at THIS point.
     float s = uCloudK.w >= 0.0 ? uCloudK.w : clamp(cloudShadow(P), 0.0, 1.0);
@@ -85,9 +88,13 @@ void main() {
   gl_FragDepth = d;     // depth copy: LAYERS.POST objects test against this while still being able to SAMPLE tSceneDepth
 }`;
 
-// 4x1 light probe: [0] metering, [1] sky irradiance/π, [2] sun visibility + cloud shadow, [3] mean sky radiance.
+// 6x1 light probe: [0] metering, [1] sky irradiance/π, [2] sun visibility + cloud shadow, [3] mean sky radiance,
+// [4] / [5] mean radiance of the ground seen in this frame near / far from the player (rgb, a = sample count) — the real
+// terrain and runway colour under the aircraft for the reflection environment.
 const PROBE_FRAG = (cloudShadowGLSL) => HEAD + FRAME_UNIFORMS_GLSL + DEPTH_GLSL + ATMOSPHERE_GLSL + /* glsl */`
 uniform sampler2D tMeter; uniform sampler2D tClouds; uniform float uHasClouds;
+uniform sampler2D tProbeScene;
+uniform vec4 uProbeGround;   // x: player clearance radius (m), y: ground height under the player, z: near/far split (m), w: 1 = measure
 uniform vec4 uProbeSun;      // xy: sun uv, z: 1 if in front of the camera, w: tap radius in uv.y
 uniform vec4 uProbeFocus;    // xyz: render-space player position, w: aspect
 ${cloudShadowGLSL}
@@ -129,6 +136,25 @@ void main() {
       cs += clamp(cloudShadow(p), 0.0, 1.0);
     }
     o = vec4(n > 0.0 ? vis / n * uProbeSun.z : 0.0, cs / 5.0, clamp(cloudShadow(uCameraPos), 0.0, 1.0), 1.0);
+  } else if (px >= 4) {
+    vec3 acc = vec3(0.0); float n = 0.0;
+    if (uProbeGround.w > 0.5) {
+      bool wantNear = px == 4;
+      for (int j = 0; j < 10; j++) for (int i = 0; i < 16; i++) {
+        vec2 uv = (vec2(float(i), float(j)) + 0.5) / vec2(16.0, 10.0);
+        float d = sceneDepthRaw(uv);
+        if (depthIsSky(d)) continue;
+        vec3 P = renderPosFromDepth(uv, d);
+        vec3 rel = P - uProbeFocus.xyz;
+        if (length(rel) < uProbeGround.x) continue;                // the aircraft itself
+        float hd = length(rel.xz);
+        bool isNear = hd < uProbeGround.z;
+        if (isNear != wantNear) continue;
+        if (isNear ? P.y > uProbeGround.y + 1.5 : P.y > uCameraPos.y) continue;   // walls, hangars, hills above us
+        acc += clamp(texture(tProbeScene, uv).rgb, 0.0, 64.0); n += 1.0;
+      }
+    }
+    o = vec4(acc / max(n, 1.0), n);
   } else {
     vec3 acc = vec3(0.0);
     for (int i = 0; i < 32; i++) {
@@ -172,7 +198,8 @@ export async function createPipeline(ctx) {
   const ldrTarget = mkRT(caps.hdrType);
   const bloomDown = [], bloomUp = [];
   const probeType = caps.float32 ? THREE.FloatType : caps.hdrType;
-  const probeRT = new THREE.WebGLRenderTarget(4, 1, { type: probeType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+  const PROBE_W = 6;
+  const probeRT = new THREE.WebGLRenderTarget(PROBE_W, 1, { type: probeType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
   F.tSceneDepth.value = depthTexture;
 
   // ------------------------------------------------------------------------------------------------ modules
@@ -219,7 +246,7 @@ export async function createPipeline(ctx) {
     keyIsMoon: false, keyDir, keyColor: keyE, sunIrradiance: sunE, moonIrradiance: moonE, cloudOcclusion: 1, directShare: 0.8,
     ambientRaw: ambRaw, sceneLuminance: 0.2, sunVisibility: 0,
   };
-  const envSnap = { dir: new THREE.Vector3(), alt: -1e9, mie: -1, occl: -1, deck: -1, night: -1 };
+  const envSnap = { dir: new THREE.Vector3(), alt: -1e9, mie: -1, occl: -1, deck: -1, night: -1, ground: -1, agl: -1 };
 
   const projSaved = new THREE.Matrix4(), projInvSaved = new THREE.Matrix4(), curVP = new THREE.Matrix4();
   const objCur = new THREE.Matrix4(), objPrevPos = new THREE.Vector3(), objPrevQuat = new THREE.Quaternion(), objPos = new THREE.Vector3(), objQuat = new THREE.Quaternion(), objScale = new THREE.Vector3(1, 1, 1);
@@ -238,8 +265,14 @@ export async function createPipeline(ctx) {
     const area = Math.PI * ATM.SUN_RADIUS * ATM.SUN_RADIUS, u = atmosphere.sunLimb;
     compositeUniforms.uSkySunDisc.value.set(SUN_ILLUMINANCE / area / (1 - u[0] / 3), SUN_ILLUMINANCE / area / (1 - u[1] / 3), SUN_ILLUMINANCE / area / (1 - u[2] / 3));
   }
-  const probeUniforms = { tMeter: { value: null }, tClouds: compositeUniforms.tClouds, uHasClouds: compositeUniforms.uHasClouds, uProbeSun: { value: new THREE.Vector4() }, uProbeFocus: { value: new THREE.Vector4(0, 0, 0, 1.777) } };
-  const probeBufF = new Float32Array(16), probeBufH = new Uint16Array(16), probeVals = new Float32Array(16);
+  const ao = createAO(ctx, shadowUniforms);
+  Object.assign(compositeUniforms, ao.compositeUniforms);
+  const probeUniforms = { tMeter: { value: null }, tClouds: compositeUniforms.tClouds, uHasClouds: compositeUniforms.uHasClouds, uProbeSun: { value: new THREE.Vector4() }, uProbeFocus: { value: new THREE.Vector4(0, 0, 0, 1.777) },
+    tProbeScene: { value: sceneTarget.texture }, uProbeGround: { value: new THREE.Vector4(10, 0, 60, 0) } };
+  const probeBufF = new Float32Array(24), probeBufH = new Uint16Array(24), probeVals = new Float32Array(24);
+  // measured ground radiance (near / far) for the reflection environment; null until a frame showed enough ground
+  const groundNear = new THREE.Vector3(), groundFar = new THREE.Vector3(); let groundValid = 0, groundAgl = 2;
+  const envGround = dbg.envground !== '0';   // ?envground=0: generic ground in the reflections (previous behaviour)
 
   function buildLazy() {
     const clouds = ctx.clouds;
@@ -286,13 +319,16 @@ export async function createPipeline(ctx) {
   function updateDRS() {
     const now = performance.now(), ft = now - lastFrameT; lastFrameT = now;
     if (!ctx.quality.dynamicResolution || ctx.params.test || dbg.nodrs === '1') { if (drs !== 1) { drs = 1; allocate(); } return; }
+    // the menu's showcase (slow orbit, glass UI on top) favours resolution over frame rate: never below 0.84
+    const floor = ctx.cameraRig?.mode === 'showcase' ? 0.84 : 0.5;
+    if (drs < floor) { drs = floor; allocate(); }
     if (ft <= 0 || ft > 250 || (typeof document !== 'undefined' && document.hidden)) return;
     drsAcc += ft; drsN++;
     if (drsN < 20) return;
     const avg = drsAcc / drsN; drsAcc = 0; drsN = 0;
     if (drsHold > 0) { drsHold--; return; }
-    if (avg > 20.5 && drs > 0.5) {
-      drs = Math.max(0.5, drs - (avg > 30 ? 0.16 : 0.08)); drsGood = 0; drsWait = Math.min(drsWait * 2, 48); drsHold = 2; allocate();
+    if (avg > 20.5 && drs > floor) {
+      drs = Math.max(floor, drs - (avg > 30 ? 0.16 : 0.08)); drsGood = 0; drsWait = Math.min(drsWait * 2, 48); drsHold = 2; allocate();
     } else if (avg < 17.4 && drs < 1) {
       if (++drsGood >= drsWait) { drs = Math.min(1, drs + 0.08); drsGood = 0; drsHold = 2; allocate(); }
     } else drsGood = 0;
@@ -407,6 +443,14 @@ export async function createPipeline(ctx) {
     // cloud tops seen from above: bright diffuse reflector of sun + sky
     tmpV2.copy(sunE).multiplyScalar(Math.max(ctx.env.sunDir.y, 0) / Math.PI).addScaledVector(moonE, Math.max(ctx.env.moonDir.y, 0) / Math.PI).add(ambRaw).multiplyScalar(0.7);
     env.uniforms.uEnvCloudDeck.value.copy(tmpV2);
+    const eg = env.uniforms;
+    if (groundValid) {
+      eg.uEnvGroundNear.value.copy(groundValid & 1 ? groundNear : groundFar);
+      eg.uEnvGroundFar.value.copy(groundValid & 2 ? groundFar : groundNear);
+    }
+    const gp = ctx.player?.def?.geometry;
+    eg.uEnvGround.value.set(groundAgl, gp ? Math.max(40, 1.5 * Math.max(gp.length || 16, gp.span || 12)) : 60, groundValid ? 1 : 0, 0);
+    const gLum = lum3(eg.uEnvGroundNear.value) + lum3(eg.uEnvGroundFar.value);
     if (!env.texture) { env.allocate(); snapEnv(deck); return; }
     if (discontinuity) { env.full(); snapEnv(deck); return; }
     if (env.busy) { env.tick(); return; }
@@ -414,11 +458,13 @@ export async function createPipeline(ctx) {
     const moved = s.dir.dot(keyDir) < 0.99997                      // ~0.45 deg
       || Math.abs(camAlt - s.alt) > 40 + 0.04 * Math.abs(s.alt)
       || Math.abs(atmosphere.mie.ext - s.mie) > 0.02 * s.mie
-      || Math.abs(occl - s.occl) > 0.03 || Math.abs(deck - s.deck) > 0.04 || Math.abs(ctx.env.nightFactor - s.night) > 0.02;
+      || Math.abs(occl - s.occl) > 0.03 || Math.abs(deck - s.deck) > 0.04 || Math.abs(ctx.env.nightFactor - s.night) > 0.02
+      || Math.abs(gLum - s.ground) > 0.08 * Math.max(s.ground, 1e-4) || Math.abs(groundAgl - s.agl) > 0.3 * Math.max(s.agl, 2);
     if ((moved && real - env.lastStart > 0.35) || real - env.lastStart > 6) { snapEnv(deck); env.request(); env.tick(); }
   }
   function snapEnv(deck) {
     envSnap.dir.copy(keyDir); envSnap.alt = F.uCameraPos.value.y; envSnap.mie = atmosphere.mie.ext; envSnap.occl = occl; envSnap.deck = deck; envSnap.night = ctx.env.nightFactor;
+    envSnap.ground = lum3(env.uniforms.uEnvGroundNear.value) + lum3(env.uniforms.uEnvGroundFar.value); envSnap.agl = groundAgl;
   }
 
   // ------------------------------------------------------------------------------------------------ probe / exposure
@@ -432,7 +478,7 @@ export async function createPipeline(ctx) {
     return clamp(e * (0.95 + 0.45 * day), 0.22, 40);
   }
   function applyProbe(v, early) {
-    for (let i = 0; i < 16; i++) if (!Number.isFinite(v[i])) return;
+    for (let i = 0; i < 24; i++) if (!Number.isFinite(v[i])) return;
     if (!early) {
       const l = clamp(Math.exp(v[0]), 1e-5, 40);
       logLum = Math.log(l); meterValid = true; lighting.sceneLuminance = l;
@@ -443,28 +489,44 @@ export async function createPipeline(ctx) {
     if (dbgShadow >= 0) occlTarget = dbgShadow;
     occlCam = clamp(v[10], 0, 1);
     skyMean.set(Math.max(v[12], 0), Math.max(v[13], 0), Math.max(v[14], 0));
+    if (!early && envGround) {
+      // smoothed (~1 s); a side keeps its last value while the camera does not see it
+      const k = groundValid ? 0.12 : 1;
+      if (v[19] >= 6) { groundNear.x += (v[16] - groundNear.x) * k; groundNear.y += (v[17] - groundNear.y) * k; groundNear.z += (v[18] - groundNear.z) * k; groundValid |= 1; }
+      if (v[23] >= 6) { groundFar.x += (v[20] - groundFar.x) * k; groundFar.y += (v[21] - groundFar.y) * k; groundFar.z += (v[22] - groundFar.z) * k; groundValid |= 2; }
+    }
     probeValid = true;
   }
   function decodeProbe(early) {
     if (probeType === THREE.FloatType) probeVals.set(probeBufF);
-    else for (let i = 0; i < 16; i++) probeVals[i] = THREE.DataUtils.fromHalfFloat(probeBufH[i]);
+    else for (let i = 0; i < 24; i++) probeVals[i] = THREE.DataUtils.fromHalfFloat(probeBufH[i]);
     applyProbe(probeVals, early);
   }
   function runProbe(early) {
     if (!caps.float || !probe) return;
     const p = ctx.player, u = probeUniforms;
-    if (p) u.uProbeFocus.value.set(p.visual.object3D.position.x, p.visual.object3D.position.y, p.visual.object3D.position.z, size.w / size.h);
-    else u.uProbeFocus.value.set(F.uCameraPos.value.x, F.uCameraPos.value.y, F.uCameraPos.value.z, size.w / size.h);
+    if (p) {
+      const o = p.visual.object3D.position, g = p.def?.geometry || {};
+      u.uProbeFocus.value.set(o.x, o.y, o.z, size.w / size.h);
+      const gh = ctx.world.groundHeightAt(p.state.position.x, p.state.position.z);
+      groundAgl = Math.max(0.5, p.state.position.y - gh);
+      u.uProbeGround.value.set(0.5 * Math.max(g.length || 16, g.span || 12) + 1, gh, Math.max(40, 1.5 * Math.max(g.length || 16, g.span || 12)), envGround && !early ? 1 : 0);
+    } else {
+      u.uProbeFocus.value.set(F.uCameraPos.value.x, F.uCameraPos.value.y, F.uCameraPos.value.z, size.w / size.h);
+      const gh = ctx.world.groundHeightAt(camWorld.x, camWorld.z);
+      groundAgl = Math.max(0.5, camWorld.y - gh);
+      u.uProbeGround.value.set(2, gh, 60, envGround && !early ? 1 : 0);
+    }
     u.tMeter.value = early ? null : bloomDown[Math.min(3, bloomDown.length - 1)].texture;
     probe.render(renderer, probeRT);
     const buf = probeType === THREE.FloatType ? probeBufF : probeBufH;
     const sync = early || ctx.params.test || !probeValid || !meterValid || snapFrames > 0 || probeFails > 3 || typeof renderer.readRenderTargetPixelsAsync !== 'function';
     if (sync) {
-      renderer.readRenderTargetPixels(probeRT, 0, 0, 4, 1, buf);
+      renderer.readRenderTargetPixels(probeRT, 0, 0, PROBE_W, 1, buf);
       decodeProbe(early);
     } else if (!probePending && frameNo % 3 === 0) {
       probePending = true;
-      renderer.readRenderTargetPixelsAsync(probeRT, 0, 0, 4, 1, buf)
+      renderer.readRenderTargetPixelsAsync(probeRT, 0, 0, PROBE_W, 1, buf)
         .then(() => { probePending = false; decodeProbe(false); })
         .catch(() => { probePending = false; probeFails++; });
     }
@@ -520,6 +582,7 @@ export async function createPipeline(ctx) {
   }
 
   // ------------------------------------------------------------------------------------------------ frame helpers
+  const taaClassic = dbg.taa === 'classic';   // ?taa=classic: previous TAA (fixed filter, no motion sharpening)
   function taaOn() { return !!ctx.quality.taa && caps.float && dbg.notaa !== '1'; }
   function applyJitter(on) {
     projSaved.copy(camera.projectionMatrix); projInvSaved.copy(camera.projectionMatrixInverse);
@@ -607,6 +670,7 @@ export async function createPipeline(ctx) {
     renderer.clear(true, true, false);
     renderer.render(scene, camera);
     publishShadowUniforms();
+    ao.render(renderer, size.w, size.h, camera, keyDir, kDirect * keyFade);
 
     // --- clouds --------------------------------------------------------------------------------------------
     const clouds = ctx.clouds;
@@ -637,7 +701,7 @@ export async function createPipeline(ctx) {
       const u = post.taa.material.uniforms, dst = history[histIdx], src = history[1 - histIdx];
       updateTaaObject();
       u.tCurrent.value = hdrTarget.texture; u.tHistory.value = src.texture; u.uTaaCurVP.value.copy(curVP);
-      u.uTaaParams.value.set(0.9, taaReset ? 1 : 0, 1.25, 0);
+      u.uTaaParams.value.set(0.9, taaReset ? 1 : 0, 1.25, taaClassic ? 0 : 1);
       post.taa.render(renderer, dst);
       hdr = dst; histIdx = 1 - histIdx; taaReset = false;
     } else taaReset = true;
@@ -696,6 +760,7 @@ export async function createPipeline(ctx) {
       u.uGrade.value.set(1.5, 1.3, caps.float ? 0 : 1 / 255, frameNo % 64);
       u.uDebug.value = dbg.rdebug === 'notonemap' ? 1 : 0;
       u.uNightGrade.value = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));
+      u.uAlphaMotion.value = useTaa ? 1 : 0;
       post.tonemap.render(renderer, ldrTarget);
     }
 
@@ -704,6 +769,7 @@ export async function createPipeline(ctx) {
       const u = post.final.material.uniforms;
       u.tLDR.value = ldrTarget.texture; u.uSrcTexel.value.set(1 / size.w, 1 / size.h);
       u.uFinal.value.set(useTaa ? 2 : 1, 0.55, frameNo % 64, 1 / 255);
+      u.uFinal2.value.set(!taaClassic && size.w < size.outW - 1 ? 1 : 0, taaClassic ? 0 : 0.35, 0, 0);
       post.final.render(renderer, null);
     }
 

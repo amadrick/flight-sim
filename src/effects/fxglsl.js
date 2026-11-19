@@ -21,6 +21,7 @@ export function createSharedUniforms(ctx, tex) {
     uFxLightPos: { value: new THREE.Vector3() },   // render space; the dynamic fx point light (AB / fire)
     uFxLightColor: { value: new THREE.Color(0, 0, 0) }, // radiant intensity (irradiance at 1 m)
     uFxNight: { value: 0 },
+    uFxExposure: { value: 1 },                   // ctx.env.exposure (exposure-aware soft limits)
     uFxAnchor: { value: new THREE.Vector3() }, // anchor world pos − origin (render offset of anchored data)
     uFxWind: { value: new THREE.Vector3() },   // world wind m/s at the player's altitude
   };
@@ -45,7 +46,7 @@ ${atmGlsl}
 ${shadowGlsl}
 uniform highp sampler3D tFxNoise3D; uniform sampler2D tFxPuff;
 uniform float uFxApOn; uniform float uFxPreviewTM; uniform float uFxPreviewExposure;
-uniform vec3 uFxLightPos; uniform vec3 uFxLightColor; uniform float uFxNight;
+uniform vec3 uFxLightPos; uniform vec3 uFxLightColor; uniform float uFxNight; uniform float uFxExposure;
 uniform vec3 uFxAnchor; uniform vec3 uFxWind;
 #define FX_PI 3.14159265
 float fxHash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
