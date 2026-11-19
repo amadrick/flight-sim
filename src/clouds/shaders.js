@@ -246,7 +246,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
     // with Q_ext = 2 and r_e from LWC and N has sigma = 0.119 (N / 150)^(1/3) LWC^(2/3) 1/m (LWC in g m^-3).
     // The anvil is ice (r_e ~ 40 um): sigma = 1.5 IWC / (rho_ice r_e) = 0.041 IWC, IWC ~0.3 g m^-3 near the core, 0.04 at the rim.
     float fad = mix(0.8, 0.3, info.x) * mix(1.0, 0.45, decay);
-    float lwc = min(uClPhys.x * max(h, 0.0) * fad, isCell ? 3.0 : mix(uClPhys.z, 2.5, uClShape2.z * dev)) * mix(0.8, 1.2, wx.a) * (isCell ? lgW : 1.0);
+    float lwc = min(uClPhys.x * max(h, 0.0) * fad, isCell ? 3.0 : mix(uClPhys.z, 2.5, uClShape2.z * dev)) * mix(0.8, 1.2, wx.a) * (isCell ? lgW : mix(0.5, 1.5, clSat(s)));   // (decks: thick and thin patches -> textured base)
     float sigW = 0.119 * uClPhys.y * pow(max(lwc, 1e-4), 0.6667);
     float sigI = 0.041 * mix(0.04, 0.3, am * am) * mix(0.8, 1.2, wx.a);
     info.w = mix(sigW, sigI, anvil) / uClNoise.w;

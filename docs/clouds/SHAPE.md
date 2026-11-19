@@ -8,7 +8,7 @@ can be compared side by side; all round-four switches still work.
 
 | piece | model | switch |
 | --- | --- | --- |
-| liquid water | `LWC = Gamma_ad * (z - z_base) * f_ad`, Gamma_ad = 2 g m^-3 per km [1.3], adiabatic fraction 0.8 at the base falling to 0.3 at the cloud's own top, x0.45 in dissolving cells; capped at 3 g m^-3 (cumulus) and 0.6 g m^-3 for decks (2.5 in Cb cores) | `clLwc` (g m^-3 per km), `clLwcCap`, `clPhys=0` = round four |
+| liquid water | `LWC = Gamma_ad * (z - z_base) * f_ad`, Gamma_ad = 2 g m^-3 per km [1.3], adiabatic fraction 0.8 at the base falling to 0.3 at the cloud's own top, x0.45 in dissolving cells; capped at 3 g m^-3 (cumulus) and 0.45 g m^-3 for decks (2.5 in Cb cores); decks x0.5..1.5 with the shape noise (thick and thin patches) | `clLwc` (g m^-3 per km), `clLwcCap`, `clPhys=0` = round four |
 | extinction | `sigma = 0.119 (N/150)^(1/3) LWC^(2/3)` 1/m: Q_ext = 2, r_e from LWC and N [1.1, 1.5]. N = 150 cm^-3 (cumulus), 250 (stratus), 400 (convective) | `clN` |
 | ice (anvil) | `sigma = 0.041 IWC`, r_e 40 um, IWC 0.04 (rim) .. 0.3 (core) g m^-3 [1.4] | with `clPhys` |
 | base | shared flat condensation level, 30 m density ramp (was 90 m) [4.1]; still no billow erosion in the lowest 8 % | `P.baseRamp` |
