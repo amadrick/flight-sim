@@ -500,6 +500,11 @@ function paint(atlas, o) {
   P.noise({ alpha: 0.05, scale: 0.8, mode: 'light' });
   for (let i = 0; i < 40 * wx; i++) { const z = -6 + rnd() * 12.5, t = rnd(); P.streak(z, t, z + 0.6 + rnd() * 1.4, t + (rnd() - 0.5) * 0.01, 0.006 + rnd() * 0.014, { alpha: 0.08 + rnd() * 0.14 }); }
   for (let i = 0; i < 26 * wx; i++) { const z = -4 + rnd() * 10, t = (rnd() < 0.5 ? 0.0 : 0.93) + rnd() * 0.07; P.streak(z, t, z + 0.8 + rnd() * 1.5, t, 0.01 + rnd() * 0.02, { alpha: 0.12 + rnd() * 0.2, color: '42,36,28' }); }
+  if (wx > 0.7) {   // carrier grime: dark maintenance smudges around the LERX / spine access panels, hydraulic weeps on the belly
+    for (let i = 0; i < 30; i++) { const z = -3.5 + rnd() * 9, t = 0.3 + rnd() * 0.4; P.fill((g) => { g.ellipse(z, t, 0.15 + rnd() * 0.35, 0.006 + rnd() * 0.012, 0, 0, Math.PI * 2); }, { color: 'rgba(30,30,28,0.16)' }, { feather: 6 }); }
+    for (let i = 0; i < 16; i++) { const z = -2 + rnd() * 7, t = rnd() < 0.5 ? rnd() * 0.08 : 0.92 + rnd() * 0.08; P.streak(z, t, z + 1.5 + rnd() * 2, t, 0.03, { alpha: 0.25, color: '58,46,30', rough: 0.1 }); }
+    P.noise({ alpha: 0.06, scale: 3.5, stretch: [2, 1], mode: 'light' });
+  }
   P.fill((g) => g.rect(6.6, 0, 1.35, 1), { color: 'rgba(38,34,30,0.4)' }, { feather: 10 });
   for (const tv of [0.0, 0.5]) P.streak(7.9, tv, 5.8, tv, 0.12, { alpha: 0.3 * wx + 0.1 });
   P.streak(-7.9, 0.53, -6.2, 0.53, 0.05, { alpha: 0.35 * wx });          // gun gas soot
