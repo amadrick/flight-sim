@@ -79,6 +79,7 @@ def train(net, X, Y, Wt, loss_grad, epochs=200, batch=512, lr=3e-3, rng=None, lo
     n = len(X)
     steps = epochs * max(1, n // batch)
     st = 0
+    best = (float('inf'), None)
     for ep in range(epochs):
         perm = rng.permutation(n)
         tot = 0.0
@@ -90,10 +91,16 @@ def train(net, X, Y, Wt, loss_grad, epochs=200, batch=512, lr=3e-3, rng=None, lo
             cur = lr * (0.02 + 0.98 * 0.5 * (1 + np.cos(np.pi * st / steps)))
             net.adam(net.backward(g), cur)
             st += 1
+        if Xv is not None and (ep % 5 == 0 or ep == epochs - 1):
+            lv, _ = loss_grad(net.forward(Xv), Yv, Wv)
+            if lv < best[0]:
+                best = (lv, [p.copy() for p in net.params()])
         if log and (ep % 20 == 0 or ep == epochs - 1):
             msg = f'epoch {ep} train {tot / max(1, n // batch):.5f}'
             if Xv is not None:
-                lv, _ = loss_grad(net.forward(Xv), Yv, Wv)
-                msg += f' val {lv:.5f}'
+                msg += f' val {lv:.5f} (best {best[0]:.5f})'
             log(msg)
+    if best[1] is not None:          # early stopping: keep the weights with the best held-out loss
+        for p, b in zip(net.params(), best[1]):
+            p[...] = b
     return net

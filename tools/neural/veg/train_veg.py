@@ -67,9 +67,11 @@ def main():
         base += len(z['X']) // PER_STAND
     X, Y, CX, CY, SID = map(np.concatenate, (X, Y, CX, CY, SID))
     X, Y, CX, CY = (a.astype(np.float64) for a in (X, Y, CX, CY))
-    val = (SID % 7) == 3
+    val = (SID % 7) == 3              # early-stopping set
+    test = (SID % 7) == 5             # held-out test set (reported)
+    trn = ~(val | test)
     log = lambda m: print(m, flush=True)
-    log(f'canopy rows {len(X)} ({base} stands, {val.sum()} held out); crown rows {len(CX)}')
+    log(f'canopy rows {len(X)} ({base} stands, {val.sum()} early-stop, {test.sum()} test); crown rows {len(CX)}')
     res = {}
     t0 = time.time()
 
@@ -77,9 +79,10 @@ def main():
     E = enc_canopy(X)
     net1 = MLP([7, 32, 32, 5], rng)
     W = np.ones(len(X))
-    train(net1, E[~val], Y[~val], W[~val], loss_canopy, epochs=260, batch=256, lr=4e-3, rng=rng, log=log,
+    train(net1, E[trn], Y[trn], W[trn], loss_canopy, epochs=200, batch=256, lr=4e-3, rng=rng, log=log,
           Xv=E[val], Yv=Y[val], Wv=W[val])
     net1.round_f32()
+    val = test                        # everything below reports the untouched test stands
     P = net1.forward(E[val])
     brf_p = np.exp(P[:, :3]) - E_BRF
     brf_t = Y[val, :3]

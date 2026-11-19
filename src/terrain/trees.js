@@ -98,6 +98,7 @@ export function createTrees(ctx, { L, uniforms }) {
     let s = ''; for (let i = 0; i < out.length; i += 8192) s += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
     return JSON.stringify({ w, h, b64: btoa(s) });
   };
+  stats.readGrass = () => grass ? grass.read() : null;
   const vtexBytes = meshes.texture.image.data.byteLength;
   stats.textureMB = +((imp.bytes + 1024 * 1024 * 4 * 4 / 3 + vtexBytes + G * G * 8 + (tier.grass ? tier.grass ** 2 * 8 : 0) + nn.textureBytes) / 1048576).toFixed(1);
   let lastTime = -1;

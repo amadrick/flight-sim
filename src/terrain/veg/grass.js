@@ -79,7 +79,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         float hgt = mix(0.35, 0.75, n3.g) * (1.0 - 0.5 * alpine);
         float kind = 0.0;
         float turf = C.pad * (1.0 - desertAmt);
-        if (turf > 0.5) { hgt = mix(0.10, 0.20, n4.r) * mix(1.0, 1.6, ss(150.0, 400.0, pave)); kind = 1.0; dens = (1.0 - desertAmt) * ss(3.0, 8.0, pave); }
+        if (turf > 0.5) { hgt = mix(0.16, 0.30, n4.r) * mix(1.0, 1.8, ss(120.0, 400.0, pave)); kind = 1.0; dens = (1.0 - desertAmt) * ss(3.0, 8.0, pave) * (0.75 + 0.25 * n3.r); }
         float reedP = ss(0.03, 0.15, water) * (1.0 - ss(0.45, 0.6, water)) * (1.0 - C.pad);
         vec2 hh = vegHash(cellI + 5000.0);
         if (reedP > hh.y * 0.8) { hgt = mix(1.3, 2.1, n4.b); kind = 2.0; dens = reedP; }
@@ -113,7 +113,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
       .replace('#include <common>', `#include <common>
         ${vegVertexCommon(L)}
         uniform sampler2D tVegGrass; uniform vec4 uVegGrassWin; uniform vec2 uVegGrassOrg; uniform float uVegGrassOn;
-        varying vec2 vGUv; varying vec4 vGM; varying vec2 vGFade; varying vec3 vVegWorld;`)
+        varying vec2 vGUv; varying vec4 vGM; varying vec2 vGFade; varying vec3 vVegWorld; varying float vGVar;`)
       .replace('#include <beginnormal_vertex>', /* glsl */`
         float gG = uVegGrassWin.z;
         vec2 gij = vec2(float(gl_InstanceID % int(gG)), float(gl_InstanceID / int(gG)));
@@ -123,9 +123,9 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         vec2 gBase = (gCell - uVegGrassOrg) * uVegGrassWin.w + (0.15 + 0.7 * gh) * uVegGrassWin.w - mod(uOrigin.xz, uVegGrassWin.w);
         float gDist = distance(gBase, uTerrCam.xz);
         float gR = gG * uVegGrassWin.w * 0.5;
-        float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.75, 1.25, gh2.x);
+        float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x);
         float gAng = gh2.y * 6.2831853, gc = cos(gAng), gs = sin(gAng);
-        float gW = gM.g > 1.5 ? 0.7 : mix(0.8, 1.3, gh.y);
+        float gW = gM.g > 1.5 ? 0.6 : mix(0.45, 0.85, gh.y) * (0.6 + 0.6 * min(gM.r / 0.5, 1.0));
         vec3 gl = vec3(position.x * gW, position.y * gH, position.z * gW);
         gl.xz = vec2(gc * gl.x - gs * gl.z, gs * gl.x + gc * gl.z);
         vec3 vegPos = vec3(gBase.x, vegGround(gBase) - 0.03, gBase.y) + gl;
@@ -136,7 +136,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         float gTile = gM.g > 1.5 ? 1.0 : 0.0;
         vGUv = vec2(mix(${g9x.toFixed(4)}, ${r10x.toFixed(4)}, gTile) + (uv.x * (gM.g > 0.5 && gM.g < 1.5 ? 0.35 : 0.9) + 0.05 * gh.x) * ${gts.toFixed(4)},
                     mix(${g9y.toFixed(4)}, ${r10y.toFixed(4)}, gTile) + (1.0 - uv.y * 0.98) * ${gts.toFixed(4)});
-        vGM = gM; vGFade = vec2(gDist / gR, uv.y);
+        vGM = gM; vGM.w = gh2.x; vGFade = vec2(gDist / gR, uv.y);
         vVegWorld = vegPos;`)
       .replace('#include <begin_vertex>', 'vec3 transformed = vegPos;');
     sh.fragmentShader = sh.fragmentShader
@@ -153,7 +153,8 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
         if (vGM.g > 0.5 && vGM.g < 1.5) gc = vec3(0.070, 0.112, 0.036) * (0.9 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);
-        gc *= (0.55 + 0.9 * fo.r) * mix(vec3(1.0), vec3(1.6, 1.3, 0.7), fo.g * 0.5) * mix(0.55, 1.15, vGFade.y);
+        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.35, 1.05, vGFade.y);
+        gc *= 0.8 + 0.4 * vGM.w;      // per-tuft variation
         diffuseColor.rgb = gc;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
   };
@@ -182,6 +183,14 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
   }
   return {
     mesh, uniforms: GU, Gg,
+    /** debug: grass map as base64 RGBA8 (height*255, kind*80, dry*255, 255) */
+    read() {
+      const buf = new Uint16Array(Gg * Gg * 4); ctx.renderer.readRenderTargetPixels(rt, 0, 0, Gg, Gg, buf);
+      const out = new Uint8Array(Gg * Gg * 4);
+      for (let i = 0; i < Gg * Gg; i++) { out[i * 4] = Math.min(255, THREE.DataUtils.fromHalfFloat(buf[i * 4]) * 255); out[i * 4 + 1] = THREE.DataUtils.fromHalfFloat(buf[i * 4 + 1]) * 80; out[i * 4 + 2] = THREE.DataUtils.fromHalfFloat(buf[i * 4 + 2]) * 255; out[i * 4 + 3] = 255; }
+      let str = ''; for (let i = 0; i < out.length; i += 8192) str += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
+      return JSON.stringify({ w: Gg, h: Gg, b64: btoa(str), visible: mesh.visible, rects: near.length });
+    },
     update(camWX, camWZ, org, agl) {
       const on = agl < 150;
       mesh.visible = on;

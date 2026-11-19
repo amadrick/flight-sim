@@ -28,8 +28,8 @@ export const SPECIES_INDEX = Object.fromEntries(SPECIES.map((s, i) => [s.id, i])
 export const NSPECIES = SPECIES.length;
 // leaf optics of the two groups (path tracer values): rho = reflectance, tau = transmittance
 export const LEAF_OPTICS = {
-  broad:   { rho: [0.075, 0.165, 0.048], tau: [0.055, 0.150, 0.028] },
-  conifer: { rho: [0.052, 0.100, 0.036], tau: [0.022, 0.060, 0.014] },
+  broad:   { rho: [0.080, 0.135, 0.050], tau: [0.055, 0.105, 0.030] },
+  conifer: { rho: [0.058, 0.088, 0.040], tau: [0.024, 0.044, 0.018] },
 };
 export const TREE_CELL = 6.5;   // placement grid (m): at most one tree per cell, jittered inside it
 

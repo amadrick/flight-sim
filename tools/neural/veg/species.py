@@ -19,8 +19,8 @@ import numpy as np
 # leaf reflectance / transmittance (one side), linear RGB.  Broadleaf: PROSPECT-like visible bands; needles are
 # darker and nearly opaque.  Forest floor: litter + understory.
 LEAF = {
-    'broad':   {'rho': np.array([0.075, 0.165, 0.048]), 'tau': np.array([0.055, 0.150, 0.028])},
-    'conifer': {'rho': np.array([0.052, 0.100, 0.036]), 'tau': np.array([0.022, 0.060, 0.014])},
+    'broad':   {'rho': np.array([0.080, 0.135, 0.050]), 'tau': np.array([0.055, 0.105, 0.030])},
+    'conifer': {'rho': np.array([0.058, 0.088, 0.040]), 'tau': np.array([0.024, 0.044, 0.018])},
 }
 FLOOR = np.array([0.070, 0.072, 0.045])
 
