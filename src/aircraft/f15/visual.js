@@ -25,7 +25,7 @@ import geometry from './geometry.js';
 import * as K from '../kit/index.js';
 
 const DEG = Math.PI / 180;
-export const LIVERIES = ['eagle', 'ghost', 'guard', 'strike'];
+export const LIVERIES = ['strike', 'eagle', 'ghost', 'guard'];   // the hangar lists this aircraft as the F-15E, so the E is the default
 
 // Colours are the FS 595 greys as they read under the sim's tone mapping (a touch lighter than the chips).
 const SCHEMES = {
@@ -65,7 +65,7 @@ const STE = 7.2, XDT = 2.75, ZP = 5.6;
 const sty = (x) => 0.1 - (x - 1.95) * Math.tan(3 * DEG);
 
 export function createVisual(ctx, opts = {}) {
-  const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'eagle', SC = SCHEMES[livery], isE = SC.variant === 'E';
+  const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'strike', SC = SCHEMES[livery], isE = SC.variant === 'E';
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
   const G = geometry, F = K.FINISH, lap = K.stopwatch();
   const paintF = (c) => ({ color: c, rough: 0.6, metal: 0.03 });

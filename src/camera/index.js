@@ -401,7 +401,7 @@ export async function createCameraRig(ctx) {
       // wide layouts: the hangar menu has panels left and right, the aircraft must fit the gap between them
       // (about half of the width, centred, above the screen centre); narrow layouts have a bottom sheet over the lower 58 %
       const wide = aspect > 1.25;
-      const baseD = framingDistance(0.58 * big, vfov, wide ? aspect * 0.5 : aspect * 0.92);
+      const baseD = framingDistance(0.58 * big, vfov, wide ? aspect * 0.5 : aspect * 0.8);
       const dT = baseD * (1 + 0.07 * Math.sin(t * 0.09 + 2));
       this.dist = this.fresh ? dT : damp(this.dist, dT, 1.2, dt);
       const az = 0.75 + 0.6 * Math.sin(t * 0.068);               // swings between near-front and 3/4 front
@@ -416,7 +416,7 @@ export async function createCameraRig(ctx) {
       if (out.pos.y < gy) out.pos.y = gy;
       // shift framing so the aircraft sits right/centre (menu is left and bottom)
       const hf = Math.tan(vfov * DEG / 2);
-      const sx = 0.0, sy = wide ? -0.24 : -0.56;   // wide: clear of the name and spec card; narrow: above the bottom sheet
+      const sx = 0.0, sy = wide ? -0.24 : -0.5;   // wide: clear of the name and spec card; narrow: above the bottom sheet
       lookQuat(tq, out.pos, t2, Y_UP);
       t3.set(1, 0, 0).applyQuaternion(tq); t4.set(0, 1, 0).applyQuaternion(tq);
       t2.addScaledVector(t3, -sx * this.dist * hf * aspect).addScaledVector(t4, sy * this.dist * hf);
