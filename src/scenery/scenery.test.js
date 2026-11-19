@@ -152,6 +152,13 @@ test('light plan: PAPI settings, colours by direction, ALSF flashers sequence to
     assert.ok(thrDist(g[0]) > thrDist(g[g.length - 1]), 'sequence runs toward the threshold');
   }
   // edge lights: yellow toward the pilot in the last 600 m only on instrument runways
-  const yellow = lights.filter((l) => l[3] === 1 && Math.abs(l[4] - 0.6) < 1e-6 && Math.abs(l[5] - 0.1) < 1e-6 && l[10] === 0);
+  const yellow = lights.filter((l) => l[3] === 1 && Math.abs(l[4] - 0.6) < 1e-6 && Math.abs(l[5] - 0.1) < 1e-6 && Math.abs(l[10] - 0.97) < 1e-6);
   assert.ok(yellow.length > 0);
+  // edge-light beams are aimed along the runway (toed in a few degrees), not omnidirectional
+  const rd = L.runways[0].ends[0].dir;
+  for (const l of yellow) {
+    const n = Math.hypot(l[7], l[8], l[9]);
+    const along = Math.abs(l[7] * rd.x + l[9] * rd.z) / n;
+    assert.ok(along > 0.99 && along < 0.9995, 'edge light toe-in ' + along);
+  }
 });

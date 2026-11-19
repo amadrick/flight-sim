@@ -55,8 +55,10 @@ export function buildLightPlan(L, heightFn = () => 0) {
           const p = P(u, sg * (W / 2 + 1.2));
           const c0 = full && Lr - u <= 600 ? COLORS.yellow : COLORS.white;   // seen by a pilot using end 0
           const c1 = full && u <= 600 ? COLORS.yellow : COLORS.white;        // seen by a pilot using end 1
-          push(p.x, 0.36, p.z, c0, 1, toward0, 0.0, 0, 0, 0, 0.22, 0);
-          push(p.x, 0.36, p.z, c1, 1, toward1, 0.0, 0, 0, 0, 0.22, 0);
+          // main beam aimed along the runway, toed in 3.5° toward the centreline, ±14° wide (plus the omni leak)
+          const ti = -sg * 0.061;
+          push(p.x, 0.36, p.z, c0, 1, [toward0[0] + rt.x * ti, 0.06, toward0[2] + rt.z * ti], 0.97, 0, 0, 0, 0.22, 0);
+          push(p.x, 0.36, p.z, c1, 1, [toward1[0] + rt.x * ti, 0.06, toward1[2] + rt.z * ti], 0.97, 0, 0, 0, 0.22, 0);
         }
       }
       tally('edge');
