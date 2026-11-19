@@ -419,7 +419,6 @@ export function createVisual(ctx, opts = {}) {
   const visual = rig.build();
   lap('rig'); visual.stats.phases = lap.out;
   visual.livery = livery; visual.liveries = LIVERIES;
-  visual.debug = { T_SILL, sill: [-6.1, -5.6, -5.0, -4.4, -3.8, -3.3].map((z) => fus.at(z, T_SILL).p.map((v) => +v.toFixed(3))), top: [-6.1, -5.0, -3.3].map((z) => +fus.topAt(z).toFixed(3)) };
   return visual;
 }
 
