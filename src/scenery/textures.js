@@ -8,12 +8,21 @@ function hash2(ix, iy, seed) {
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+// value noise on a periodic lattice; lattice values are cached per (period, seed) so each sample is 4 table reads
+const _lat = new Map();
+function lattice(period, seed) {
+  const k = period * 4096 + seed;
+  let t = _lat.get(k);
+  if (!t) { t = new Float32Array(period * period); for (let y = 0; y < period; y++) for (let x = 0; x < period; x++) t[y * period + x] = hash2(x, y, seed); _lat.set(k, t); }
+  return t;
+}
 function tileNoise(x, y, period, seed) {
   const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
   const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
-  const m = (a) => ((a % period) + period) % period;
-  const a = hash2(m(xi), m(yi), seed), b = hash2(m(xi + 1), m(yi), seed);
-  const c = hash2(m(xi), m(yi + 1), seed), d = hash2(m(xi + 1), m(yi + 1), seed);
+  const T = lattice(period, seed);
+  const x0 = ((xi % period) + period) % period, y0 = ((yi % period) + period) % period;
+  const x1 = x0 + 1 === period ? 0 : x0 + 1, y1 = y0 + 1 === period ? 0 : y0 + 1;
+  const a = T[y0 * period + x0], b = T[y0 * period + x1], c = T[y1 * period + x0], d = T[y1 * period + x1];
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 function fbm(x, y, period, oct, seed) {

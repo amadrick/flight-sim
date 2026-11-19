@@ -71,8 +71,9 @@ export function buildStructures(L, B, signIndex, poles) {
       const a = f.pts[i], b = f.pts[i + 1];
       const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
       const ux = dx / len, uz = dz / len;
-      const n = Math.max(1, Math.round(len / (f.perimeter ? 6 : 3)));
-      for (let k = 0; k <= n; k++) B.box('plain', a.x + ux * len * k / n, 0, a.z + uz * len * k / n, 0, 0.08, 0.08, 2.5, C.grey);
+      const n = Math.max(1, Math.round(len / (f.perimeter ? 9 : 3)));
+      const hd = Math.atan2(ux, -uz) / DEG, pk = { pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' };   // posts: no caps
+      for (let k = 0; k <= n; k++) B.box(pk, a.x + ux * len * k / n, 0, a.z + uz * len * k / n, hd, 0.08, 0.08, 2.5, C.grey);
       const nx = -uz, nz = ux;
       B.quad('fence', [a.x, 0.05, a.z], [b.x, 0.05, b.z], [a.x, 2.4, a.z], [b.x, 2.4, b.z], [nx, 0, nz], C.white, [0, 0, len, 2.35]);
     }

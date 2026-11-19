@@ -21,6 +21,7 @@ import { makeAirliner, makeWidebody, makeTanker, makeTurboprop, makeFighter, mak
 
 const DEG = Math.PI / 180;
 const RANGE = { pavement: 70000, buildings: 26000, props: 9000, lights: 110000 };
+const DETAIL_BUILD_RANGE = 40000;   // m: an airport's buildings/aircraft/GSE are built when the camera first comes this close
 
 /** Inject the earth-curvature drop into a built-in material (keeps far scenery seated on the curved terrain). */
 export function addCurvature(mat) {
@@ -163,122 +164,126 @@ export async function createScenery(ctx) {
       const orng = mulberry(ap.id.charCodeAt(0) * 131 + ap.id.charCodeAt(3) * 7 + 17);
       for (const st of L.stands) st.occupied = orng() < (st.bridge ? 0.88 : st.size === 'light' ? 0.65 : ap.kind === 'regional' || ap.kind === 'island' ? 0.85 : 0.72);
     }
-    // structures
-    const B = new MultiBuilder(tiles);
-    buildStructures(L, B, signs.index, plans[i].poles);
-    const geos = B.build();
-    const nearKeys = new Set(['fence', 'sign', 'leaf']);
-    for (const [k, g] of Object.entries(geos)) {
-      const m = new THREE.Mesh(g, M[k] || M.plain);
-      m.castShadow = k !== 'fence'; m.receiveShadow = true;
-      (nearKeys.has(k) ? near : mid).add(m);
-    }
-    // cars in the car parks
-    const bays = L.parkingLots.flatMap((p) => p.bays || []);
-    const rnd = mulberry(ap.id.charCodeAt(1) * 97 + ap.id.charCodeAt(2));
-    const carList = bays.filter(() => rnd() < 0.72);
-    if (carList.length) {
-      const cars = new THREE.InstancedMesh(carGeo, carMat, carList.length);
-      const palette = [0xf2f2f2, 0x1a1a1a, 0x8a8f95, 0x2f4f7f, 0x8b1e1e, 0xc0c4c8, 0x3c3c3c, 0x5d6b3a, 0xd8d0b8, 0x234a6e];
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
-      carList.forEach((b, k) => {
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (90 - b.hdg) * DEG + (rnd() - 0.5) * 0.08);
-        m4.compose(new THREE.Vector3(b.x, 0.02, b.z), q, new THREE.Vector3(1, 1, 0.9 + rnd() * 0.25));
-        cars.setMatrixAt(k, m4);
-        cars.setColorAt(k, col.set(palette[Math.floor(rnd() * palette.length)]));
-      });
-      cars.castShadow = true; cars.receiveShadow = true;
-      cars.computeBoundingSphere();
-      near.add(cars);
-    }
-    // parked aircraft on the occupied stands (types by airport role), ground support equipment around airline gates
-    {
-      const occ = L.stands.filter((st) => st.occupied);
-      const lists = { narrow: [], wide: [], tanker: [], prop: [], fighter: [], light: [] };
-      const veh = { tug: [], belt: [], fuel: [], cart: [], stairs: [], bus: [], catering: [], gpu: [], follow: [], arff: [], cone: [], chock: [] };
-      const vcol = { tug: 0xe9e6dc, belt: 0xf0c020, fuel: 0xdcdcd6, cart: 0x6a7a8a, stairs: 0xe9e6dc, bus: 0xe6e8ea, catering: 0xe8e8e2, gpu: 0xf0c020, follow: 0xf0c020, arff: 0xd8d4c8, cone: 0xffffff, chock: 0xffffff };
-      const mil = ap.kind === 'military';
-      if (mil) { vcol.tug = vcol.belt = vcol.gpu = 0x9a9a7a; vcol.fuel = 0x8a8f7a; vcol.follow = 0x8a8f7a; vcol.arff = 0xd8d0b0; }
-      const vadd = (k, p, hdg) => veh[k].push({ x: p.x, z: p.z, hdg, color: vcol[k] });
-      for (const st of occ) {
-        const h = st.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
-        const at = (fwd, right) => ({ x: st.x + dx * fwd + rx * right, z: st.z + dz * fwd + rz * right });
-        if (st.size === 'heavy' || st.size === 'medium') {
-          let type = st.size === 'heavy' ? 'wide' : 'narrow';
-          if (mil) type = 'tanker';
-          else if (ap.kind === 'regional') type = 'prop';
-          else if (ap.kind === 'island') type = rnd() < 0.5 ? 'prop' : 'narrow';
-          const liv = st.cargo ? [[0x5a3417, 0x5a3417], [0xf2a900, 0x3a3a3a], [0x1d1d1b, 0xd9dcdf]][Math.floor(rnd() * 3)] : LIVERY[Math.floor(rnd() * LIVERY.length)];
-          const sc = type === 'narrow' ? (rnd() < 0.3 ? 0.88 : 1) : 1;
-          lists[type].push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: mil ? 0xffffff : liv[0], color2: mil ? 0x7d858c : liv[1] });
-          const k = type === 'wide' ? 1.7 : type === 'prop' ? 0.72 : sc;
-          // chocks at the nose gear, cones at the wingtips and engines (safety zone)
-          vadd('chock', at(0, 0), st.hdg + 90);
-          const span = type === 'wide' ? 31 : type === 'prop' ? 13.6 : type === 'tanker' ? 20 : 17.5 * sc;
-          for (const sg of [-1, 1]) { vadd('cone', at(-(type === 'wide' ? 34 : 15 * k), sg * (span + 1.5)), 0); vadd('cone', at(-3 * k, sg * 6 * k), 0); }
-          vadd('cone', at(-36 * k, 0), 0);
-          if (mil) { if (rnd() < 0.5) vadd('fuel', at(-14, 12), st.hdg + 90); continue; }
-          if (rnd() < 0.85) vadd('gpu', at(3.5, 2.5), st.hdg + 90);
-          if (st.bridge || rnd() < 0.6) {
-            if (rnd() < 0.55) vadd('tug', at(6.5, 0), st.hdg + 180);
-            vadd('belt', at(-6 * k, 3.6 * k), st.hdg - 25);
-            if (rnd() < 0.7) vadd('belt', at(-22 * k, 3.6 * k), st.hdg + 25);
-            if (rnd() < 0.6) vadd('catering', at(-26 * k, 4.8 * k), st.hdg + 90);
-            if (rnd() < 0.5) vadd('fuel', at(-13 * k, 11 * k), st.hdg + 180);
-            const nc = 2 + Math.floor(rnd() * 3);
-            for (let c = 0; c < nc; c++) vadd('cart', at(-10 * k - c * 3.5, 9 * k + c * 0.3), st.hdg + 180);
-          }
-          if (!st.bridge && type !== 'prop') {
-            vadd('stairs', at(-3.5 * k, -4.2 * k), st.hdg + 180);
-            if (rnd() < 0.6) vadd('bus', at(-3 * k, -16 * k), st.hdg);
-          }
-        } else if (st.size === 'fighter') {
-          lists.fighter.push({ x: st.x, z: st.z, hdg: st.hdg, color: 0xffffff, color2: 0x7d858c });
-          vadd('chock', at(0, 0), st.hdg + 90);
-          if (rnd() < 0.35) vadd('gpu', at(-2, -3.5), st.hdg + 90);
-        } else if (st.size === 'light') {
-          const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
-          lists.light.push({ x: st.x, z: st.z, hdg: st.hdg, color: liv[0], color2: 0xf2f2f2 });
-        }
-      }
-      // a follow-me car near the apron entrance, crash tenders at the fire station
-      if (L.aprons[0]) { const a0 = L.aprons[0], p = L.frame.P(a0.a - a0.len / 2 + 30, a0.cIn + a0.side * 12); vadd('follow', p, L.frame.H + 90); }
-      for (const b of L.buildings) if (b.type === 'firestation') {
-        const d = { x: Math.sin(b.hdg * DEG), z: -Math.cos(b.hdg * DEG) }, r = { x: Math.cos(b.hdg * DEG), z: Math.sin(b.hdg * DEG) };
-        const n = ap.kind === 'international' || mil ? 3 : 1;
-        for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * 6; vadd('arff', { x: b.x + d.x * off - r.x * (b.wid / 2 + 9), z: b.z + d.z * off - r.z * (b.wid / 2 + 9) }, b.hdg + 90); }
-      }
-      for (const [k, list] of Object.entries(lists)) if (list.length) (k === 'light' ? near : mid).add(aircraftInstances(GEO[k], parkedMat, list));
-      // GSE is static: bake every vehicle into one merged mesh per airport (one draw call instead of one per type)
-      const gse = bakeStatic(Object.entries(veh).filter(([k, l]) => l.length && GEO.veh[k]).map(([k, l]) => [GEO.veh[k], l]));
-      if (gse) { const m = new THREE.Mesh(gse, vehMat); m.castShadow = true; m.receiveShadow = true; near.add(m); }
-    }
-    // trees (landside planting; conifers at the alpine strip)
-    for (const kind of ['broad', 'conifer']) {
-      const list = L.trees.filter((t) => t.kind === kind).map((t, k) => ({ x: t.x, z: t.z, hdg: (k * 137.5) % 360, scale: t.s * (kind === 'conifer' ? 1.6 : 1.2), color: new THREE.Color().setHSL(0.2 + 0.06 * Math.sin(k * 1.7), 0.3, 0.8 + 0.12 * Math.sin(k * 2.3)).getHex() }));
-      if (list.length) { const m = instances(treeGeo[kind], treeMat, list); m.userData.scnLowOff = true; mid.add(m); }
-    }
-    // windsocks (animated)
+    // Detail (buildings, aircraft, GSE, cars, trees, furniture) is built for the start airport at boot and for the
+    // others when the camera first comes within DETAIL_BUILD_RANGE (one airport per frame), which keeps boot short.
     const socks = [];
-    for (const p of L.props) if (p.type === 'windsock') {
-      const s = new THREE.Mesh(sockGeo, sockMat);
-      s.position.set(p.x, 5.75, p.z); s.rotation.order = 'YZX'; s.castShadow = true;
-      near.add(s); socks.push(s);
-    }
-    // lights
-    // elevated edge-light fixtures (runway + taxiway), visible by day
-    {
-      const d = plans[i].data, seen = new Set(), list = [];
-      for (let k = 0; k < plans[i].count; k++) {
-        const o = k * 16, y = d[o + 1];
-        if (d[o + 11] !== 0 || y < 0.3 || y > 0.4) continue;
-        const key = Math.round(d[o] * 10) + ',' + Math.round(d[o + 2] * 10);
-        if (seen.has(key)) continue; seen.add(key);
-        const blue = d[o + 5] > d[o + 3];
-        list.push({ x: d[o], z: d[o + 2], hdg: 0, color: blue ? 0x3050ff : 0xfff2c0 });
+    const buildDetail = () => {
+      // structures
+      const B = new MultiBuilder(tiles);
+      buildStructures(L, B, signs.index, plans[i].poles);
+      const geos = B.build();
+      const nearKeys = new Set(['fence', 'sign', 'leaf']);
+      for (const [k, g] of Object.entries(geos)) {
+        const m = new THREE.Mesh(g, M[k] || M.plain);
+        m.castShadow = k !== 'fence'; m.receiveShadow = true;
+        (nearKeys.has(k) ? near : mid).add(m);
       }
-      if (list.length) near.add(instances(fixtureGeo, fixtureMat, list));
-    }
+      // cars in the car parks
+      const bays = L.parkingLots.flatMap((p) => p.bays || []);
+      const rnd = mulberry(ap.id.charCodeAt(1) * 97 + ap.id.charCodeAt(2));
+      const carList = bays.filter(() => rnd() < 0.72);
+      if (carList.length) {
+        const cars = new THREE.InstancedMesh(carGeo, carMat, carList.length);
+        const palette = [0xf2f2f2, 0x1a1a1a, 0x8a8f95, 0x2f4f7f, 0x8b1e1e, 0xc0c4c8, 0x3c3c3c, 0x5d6b3a, 0xd8d0b8, 0x234a6e];
+        const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+        carList.forEach((b, k) => {
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (90 - b.hdg) * DEG + (rnd() - 0.5) * 0.08);
+          m4.compose(new THREE.Vector3(b.x, 0.02, b.z), q, new THREE.Vector3(1, 1, 0.9 + rnd() * 0.25));
+          cars.setMatrixAt(k, m4);
+          cars.setColorAt(k, col.set(palette[Math.floor(rnd() * palette.length)]));
+        });
+        cars.castShadow = true; cars.receiveShadow = true;
+        cars.computeBoundingSphere();
+        near.add(cars);
+      }
+      // parked aircraft on the occupied stands (types by airport role), ground support equipment around airline gates
+      {
+        const occ = L.stands.filter((st) => st.occupied);
+        const lists = { narrow: [], wide: [], tanker: [], prop: [], fighter: [], light: [] };
+        const veh = { tug: [], belt: [], fuel: [], cart: [], stairs: [], bus: [], catering: [], gpu: [], follow: [], arff: [], cone: [], chock: [] };
+        const vcol = { tug: 0xe9e6dc, belt: 0xf0c020, fuel: 0xdcdcd6, cart: 0x6a7a8a, stairs: 0xe9e6dc, bus: 0xe6e8ea, catering: 0xe8e8e2, gpu: 0xf0c020, follow: 0xf0c020, arff: 0xd8d4c8, cone: 0xffffff, chock: 0xffffff };
+        const mil = ap.kind === 'military';
+        if (mil) { vcol.tug = vcol.belt = vcol.gpu = 0x9a9a7a; vcol.fuel = 0x8a8f7a; vcol.follow = 0x8a8f7a; vcol.arff = 0xd8d0b0; }
+        const vadd = (k, p, hdg) => veh[k].push({ x: p.x, z: p.z, hdg, color: vcol[k] });
+        for (const st of occ) {
+          const h = st.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+          const at = (fwd, right) => ({ x: st.x + dx * fwd + rx * right, z: st.z + dz * fwd + rz * right });
+          if (st.size === 'heavy' || st.size === 'medium') {
+            let type = st.size === 'heavy' ? 'wide' : 'narrow';
+            if (mil) type = 'tanker';
+            else if (ap.kind === 'regional') type = 'prop';
+            else if (ap.kind === 'island') type = rnd() < 0.5 ? 'prop' : 'narrow';
+            const liv = st.cargo ? [[0x5a3417, 0x5a3417], [0xf2a900, 0x3a3a3a], [0x1d1d1b, 0xd9dcdf]][Math.floor(rnd() * 3)] : LIVERY[Math.floor(rnd() * LIVERY.length)];
+            const sc = type === 'narrow' ? (rnd() < 0.3 ? 0.88 : 1) : 1;
+            lists[type].push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: mil ? 0xffffff : liv[0], color2: mil ? 0x7d858c : liv[1] });
+            const k = type === 'wide' ? 1.7 : type === 'prop' ? 0.72 : sc;
+            // chocks at the nose gear, cones at the wingtips and engines (safety zone)
+            vadd('chock', at(0, 0), st.hdg + 90);
+            const span = type === 'wide' ? 31 : type === 'prop' ? 13.6 : type === 'tanker' ? 20 : 17.5 * sc;
+            for (const sg of [-1, 1]) { vadd('cone', at(-(type === 'wide' ? 34 : 15 * k), sg * (span + 1.5)), 0); vadd('cone', at(-3 * k, sg * 6 * k), 0); }
+            vadd('cone', at(-36 * k, 0), 0);
+            if (mil) { if (rnd() < 0.5) vadd('fuel', at(-14, 12), st.hdg + 90); continue; }
+            if (rnd() < 0.85) vadd('gpu', at(3.5, 2.5), st.hdg + 90);
+            if (st.bridge || rnd() < 0.6) {
+              if (rnd() < 0.55) vadd('tug', at(6.5, 0), st.hdg + 180);
+              vadd('belt', at(-6 * k, 3.6 * k), st.hdg - 25);
+              if (rnd() < 0.7) vadd('belt', at(-22 * k, 3.6 * k), st.hdg + 25);
+              if (rnd() < 0.6) vadd('catering', at(-26 * k, 4.8 * k), st.hdg + 90);
+              if (rnd() < 0.5) vadd('fuel', at(-13 * k, 11 * k), st.hdg + 180);
+              const nc = 2 + Math.floor(rnd() * 3);
+              for (let c = 0; c < nc; c++) vadd('cart', at(-10 * k - c * 3.5, 9 * k + c * 0.3), st.hdg + 180);
+            }
+            if (!st.bridge && type !== 'prop') {
+              vadd('stairs', at(-3.5 * k, -4.2 * k), st.hdg + 180);
+              if (rnd() < 0.6) vadd('bus', at(-3 * k, -16 * k), st.hdg);
+            }
+          } else if (st.size === 'fighter') {
+            lists.fighter.push({ x: st.x, z: st.z, hdg: st.hdg, color: 0xffffff, color2: 0x7d858c });
+            vadd('chock', at(0, 0), st.hdg + 90);
+            if (rnd() < 0.35) vadd('gpu', at(-2, -3.5), st.hdg + 90);
+          } else if (st.size === 'light') {
+            const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
+            lists.light.push({ x: st.x, z: st.z, hdg: st.hdg, color: liv[0], color2: 0xf2f2f2 });
+          }
+        }
+        // a follow-me car near the apron entrance, crash tenders at the fire station
+        if (L.aprons[0]) { const a0 = L.aprons[0], p = L.frame.P(a0.a - a0.len / 2 + 30, a0.cIn + a0.side * 12); vadd('follow', p, L.frame.H + 90); }
+        for (const b of L.buildings) if (b.type === 'firestation') {
+          const d = { x: Math.sin(b.hdg * DEG), z: -Math.cos(b.hdg * DEG) }, r = { x: Math.cos(b.hdg * DEG), z: Math.sin(b.hdg * DEG) };
+          const n = ap.kind === 'international' || mil ? 3 : 1;
+          for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * 6; vadd('arff', { x: b.x + d.x * off - r.x * (b.wid / 2 + 9), z: b.z + d.z * off - r.z * (b.wid / 2 + 9) }, b.hdg + 90); }
+        }
+        for (const [k, list] of Object.entries(lists)) if (list.length) (k === 'light' ? near : mid).add(aircraftInstances(GEO[k], parkedMat, list));
+        // GSE is static: bake every vehicle into one merged mesh per airport (one draw call instead of one per type)
+        const gse = bakeStatic(Object.entries(veh).filter(([k, l]) => l.length && GEO.veh[k]).map(([k, l]) => [GEO.veh[k], l]));
+        if (gse) { const m = new THREE.Mesh(gse, vehMat); m.castShadow = true; m.receiveShadow = true; near.add(m); }
+      }
+      // trees (landside planting; conifers at the alpine strip)
+      for (const kind of ['broad', 'conifer']) {
+        const list = L.trees.filter((t) => t.kind === kind).map((t, k) => ({ x: t.x, z: t.z, hdg: (k * 137.5) % 360, scale: t.s * (kind === 'conifer' ? 1.6 : 1.2), color: new THREE.Color().setHSL(0.2 + 0.06 * Math.sin(k * 1.7), 0.3, 0.8 + 0.12 * Math.sin(k * 2.3)).getHex() }));
+        if (list.length) { const m = instances(treeGeo[kind], treeMat, list); m.userData.scnLowOff = true; mid.add(m); }
+      }
+      // windsocks (animated)
+      for (const p of L.props) if (p.type === 'windsock') {
+        const s = new THREE.Mesh(sockGeo, sockMat);
+        s.position.set(p.x, 5.75, p.z); s.rotation.order = 'YZX'; s.castShadow = true;
+        near.add(s); socks.push(s);
+      }
+      // lights
+      // elevated edge-light fixtures (runway + taxiway), visible by day
+      {
+        const d = plans[i].data, seen = new Set(), list = [];
+        for (let k = 0; k < plans[i].count; k++) {
+          const o = k * 16, y = d[o + 1];
+          if (d[o + 11] !== 0 || y < 0.3 || y > 0.4) continue;
+          const key = Math.round(d[o] * 10) + ',' + Math.round(d[o + 2] * 10);
+          if (seen.has(key)) continue; seen.add(key);
+          const blue = d[o + 5] > d[o + 3];
+          list.push({ x: d[o], z: d[o + 2], hdg: 0, color: blue ? 0x3050ff : 0xfff2c0 });
+        }
+        if (list.length) near.add(instances(fixtureGeo, fixtureMat, list));
+      }
+    };
     const lightMesh = lights.build(plans[i]);
     root.add(lightMesh);
     if (ctx.params.raw?.shide?.includes('lights')) lightMesh.layers.set(5);
@@ -287,27 +292,41 @@ export async function createScenery(ctx) {
     const towerPosition = L.tower ? new THREE.Vector3(ap.position.x + L.tower.x, ap.elevation + L.tower.h + 1.7, ap.position.z + L.tower.z) : null;
     const parking = L.stands.map((s) => ({
       position: new THREE.Vector3(ap.position.x + s.x, ap.elevation, ap.position.z + s.z),
-      heading: s.hdg, size: s.size, number: s.number ?? null,
+      heading: s.hdg, size: s.size, number: s.number ?? null, occupied: !!s.occupied,
     }));
     airports.push({
       id: ap.id, name: ap.name, kind: ap.kind, data: ap, layout: L, root, far, mid, near, lightMesh, socks,
-      towerPosition, towerHeading: F.H, parking, plan: plans[i], paveMat, pools,
+      towerPosition, towerHeading: F.H, parking, plan: plans[i], paveMat, pools, buildDetail, detail: false,
     });
     stats.lights += plans[i].count;
   });
 
   lap('airports');
+  const startId = ctx.params.raw?.sap || ctx.params.airport || AIRPORTS[0].id;
+  const ensureDetail = (A) => {
+    if (A.detail) return;
+    A.detail = true; A.buildDetail();
+    A.root.traverse((o) => { if (o.isMesh && o.castShadow && o.userData.scnCaster === undefined) o.userData.scnCaster = true; });
+    applyQualityTo(A);
+  };
+  for (const A of airports) if (A.id === startId || ctx.params.raw?.sbuildall === '1') ensureDetail(A);
+  lap('detail');
   // ---- physics surface
   const surfaceAt = createSurfaceProvider(AIRPORTS, layouts, () => Math.min(1, (ctx.weather.precipitation || 0) * 1.6));
   ctx.world.addSurfaceProvider(surfaceAt);
 
   // quality: shadow casting from scenery only when the preset has shadows
   let rangeK = 1;
+  function applyQualityTo(A) {
+    const sh = ctx.quality.shadows !== false, low = ctx.quality.level === 'low';
+    A.root.traverse((o) => {
+      if (o.userData.scnLowOff) o.visible = !low;
+      if (o.isMesh && o.userData.scnCaster) o.castShadow = sh;
+    });
+  }
   const applyQuality = () => {
     rangeK = { low: 0.35, medium: 0.7, high: 1, ultra: 1.25 }[ctx.quality.level] ?? 1;
-    const sh = ctx.quality.shadows !== false;
-    for (const A of airports) A.root.traverse((o) => { if (o.userData.scnLowOff) o.visible = ctx.quality.level !== 'low'; });
-    for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.userData.scnCaster) o.castShadow = sh; });
+    for (const A of airports) applyQualityTo(A);
   };
   for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.castShadow) o.userData.scnCaster = true; });
   applyQuality();
@@ -343,10 +362,12 @@ export async function createScenery(ctx) {
       objPools.uObjPoolCount.value = n;
       objPools.uObjNight.value = on;
     }
+    let built = false;
     for (const A of airports) {
       A.root.visible = !hideAll;
       const dx = camW.x - A.data.position.x, dz = camW.z - A.data.position.z;
       const dist = Math.hypot(dx, dz);
+      if (!A.detail && !built && dist < DETAIL_BUILD_RANGE) { ensureDetail(A); built = true; stats = computeStats(airports, stats); Object.assign(info, stats); }
       A.far.visible = dist < RANGE.pavement;
       A.mid.visible = dist < RANGE.buildings * Math.max(0.5, rangeK);
       A.near.visible = dist < RANGE.props * rangeK;
