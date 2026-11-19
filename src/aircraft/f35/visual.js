@@ -8,8 +8,11 @@
 //   Wing: root (x 0.95) LE z -2.05, chord 5.5; tip (x 5.35) LE z 0.81, chord 1.5 → LE sweep 33°, TE sweep -14.5°,
 //         ~5 % thick, mid-set at y ≈ 0. LE flaps full span, one flaperon per side (x 1.45 … 4.3).
 //   Stabilators: root x 1.15 LE z 3.45 chord 2.95, tip x 3.05 LE z 4.78 chord 1.0, pivot z 4.95, y 0.08.
-//   Fins: canted 20° out, root x ±1.05 y 0.3 LE z 2.45 chord 3.3, tip y 2.78 LE z 4.28 chord 1.15; rudders 32 % chord.
-//   Intakes: DSI bump on the cheek, lip at z ≈ -3.45 (outer corner swept forward to ≈ -3.8), aperture ≈ 0.55 × 0.72 m.
+//   Fins: canted 20° out, root x ±1.05 y 0.36 (on the flat chined booms) LE z 2.3 chord 3.35, tip y 2.78 chord 1.25; rudders.
+//   Forebody: narrow core + chine blade (loft `chine`), so below the chine the body is a near-vertical wall with a short
+//         shelf under the chine edge: the DSI bump sits on that wall and the inlet cowl continues it aft.
+//   Intakes: raked DSI aperture x 0.79…1.35, y -0.5…0.27, lip z -3.3 (top inboard) … -3.85 (bottom outboard); grid skin
+//         duct → sharp lip → cowl, the cowl rows drape onto the fuselage skin by z ≈ -1.5 (no separate surface).
 //   Nozzle: single axisymmetric, hinge ring z 5.0 (r 0.6), exit z 5.75, exit r 0.44 closed … 0.55 open, 15 serrated petals.
 //   Gear: nose [0, -1.6, -5.1] r 0.2 (single wheel, retracts forward); mains [±1.6, -1.6, 0.5] r 0.33 (forward + inward,
 //         wheel turned flat). Canopy hinged at the front (z -6.45), eye [0, 0.85, -5.35].
@@ -51,8 +54,8 @@ export function createVisual(ctx, opts = {}) {
   const U = {
     skin: atlas.swatch('skin', skinF), tape: atlas.swatch('tape', ramF(SC.tape)), duct: atlas.swatch('duct', { color: '#a4a6a3', rough: 0.6, metal: 0 }), ductMid: atlas.swatch('ductMid', { color: '#717371', rough: 0.7, metal: 0 }), ductDeep: atlas.swatch('ductDeep', { color: '#353736', rough: 0.8, metal: 0 }),
     dark: atlas.swatch('dark', F.darkGrey), black: atlas.swatch('black', F.black), exhaust: atlas.swatch('exhaust', F.exhaust),
-    heat: atlas.swatch('heat', { color: '#7a746e', rough: 0.5, metal: 0.75 }), heat2: atlas.swatch('heat2', { color: '#3e3a37', rough: 0.55, metal: 0.8 }), petalIn: atlas.swatch('petalIn', { color: '#8c8379', rough: 0.62, metal: 0.35 }),
-    liner: atlas.swatch('liner', { color: '#8a7f73', rough: 0.68, metal: 0.12 }), liner2: atlas.swatch('liner2', { color: '#5e574f', rough: 0.7, metal: 0.15 }),
+    heat: atlas.swatch('heat', { color: '#7a746e', rough: 0.5, metal: 0.75 }), heat2: atlas.swatch('heat2', { color: '#3e3a37', rough: 0.55, metal: 0.8 }), petalIn: atlas.swatch('petalIn', { color: '#8a857e', rough: 0.62, metal: 0.3 }),
+    liner: atlas.swatch('liner', { color: '#78736d', rough: 0.68, metal: 0.12 }), liner2: atlas.swatch('liner2', { color: '#5e574f', rough: 0.7, metal: 0.15 }),
     ceramic: atlas.swatch('ceramic', { color: '#b9b2a6', rough: 0.6, metal: 0.1 }),
     well: atlas.swatch('well', F.gearWhite), interior: atlas.swatch('interior', { color: '#34383b', rough: 0.75, metal: 0 }), console: atlas.swatch('console', { color: '#1b1d1f', rough: 0.6, metal: 0 }),
     seat: atlas.swatch('seat', { color: '#232628', rough: 0.7, metal: 0 }), cushion: atlas.swatch('cushion', { color: '#2e3130', rough: 0.95, metal: 0 }), accent: atlas.swatch('accent', { color: '#d6b21e', rough: 0.5, metal: 0 }),
