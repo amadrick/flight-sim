@@ -48,7 +48,7 @@ const NOSE = [
 //  z      crown   keel   half-width  widest
 const TAIL = [
   [12.5, 4.30, -4.20, 3.57, -0.20], [16.5, 4.27, -4.08, 3.55, -0.14], [20.5, 4.17, -3.74, 3.44, -0.02], [24.5, 3.97, -3.14, 3.08, 0.18],
-  [28.5, 3.60, -2.38, 2.45, 0.40], [31.8, 3.08, -1.60, 1.70, 0.55], [34.2, 2.40, -1.02, 0.92, 0.62], [35.22, 1.95, -0.78, 0.42, 0.58],
+  [28.5, 3.60, -2.38, 2.45, 0.40], [31.8, 2.92, -1.38, 1.62, 0.68], [33.8, 2.18, -0.58, 0.98, 0.82], [34.8, 1.58, -0.06, 0.58, 0.78], [35.22, 1.12, 0.32, 0.37, 0.72],
 ];
 
 // ---- wing planform (right wing) ---------------------------------------------------------------------------------------------
@@ -102,8 +102,8 @@ export function createVisual(ctx, opts = {}) {
     link: A.swatch('gear.link', F.anodised),
   };
   const B = K.createAtlas({ size: atlasSize, base: F.semigloss('#babfc4') });
-  const cWT = { i: B.chart('wingTopIn', { type: 'plan', x: [0.9, 14.8], z: [-13.6, 8.4], view: 'top', mirror: true }), o: B.chart('wingTopOut', { type: 'plan', x: [14.2, 40.1], z: [-4.6, 16.8], view: 'top', mirror: true }) };
-  const cWB = { i: B.chart('wingBotIn', { type: 'plan', x: [0.9, 14.8], z: [-13.6, 8.4], view: 'bottom', mirror: true, density: 0.7 }), o: B.chart('wingBotOut', { type: 'plan', x: [14.2, 40.1], z: [-4.6, 16.8], view: 'bottom', mirror: true, density: 0.7 }) };
+  const cWT = { i: B.chart('wingTopIn', { type: 'plan', x: [0.9, 14.8], z: [-13.6, 8.4], view: 'top', mirror: true, density: 1.2 }), o: B.chart('wingTopOut', { type: 'plan', x: [14.2, 40.1], z: [-4.6, 16.8], view: 'top', mirror: true, density: 1.2 }) };
+  const cWB = { i: B.chart('wingBotIn', { type: 'plan', x: [0.9, 14.8], z: [-13.6, 8.4], view: 'bottom', mirror: true, density: 0.85 }), o: B.chart('wingBotOut', { type: 'plan', x: [14.2, 40.1], z: [-4.6, 16.8], view: 'bottom', mirror: true, density: 0.85 }) };
   const cSt = B.chart('stab', { type: 'plan', x: [0.5, 15.6], z: [19.8, 35.5], view: 'top', mirror: true, density: 0.8 });
   const cFin = { L: B.chart('finL', { type: 'side', z: [12.6, 34.0], y: [2.4, 18.6], view: 'left', density: 0.95 }), R: B.chart('finR', { type: 'side', z: [12.6, 34.0], y: [2.4, 18.6], view: 'right', density: 0.95 }) };
   B.pack();
@@ -133,7 +133,7 @@ export function createVisual(ctx, opts = {}) {
   stA.add(K.well(K.merge(fus.patches.ngwR, fus.patches.ngwL), 1.2, UA.well, [0, 1, 0]));
   const tAtX = (z, x) => { let lo = 0.25, hi = 0.5; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (fus.at(z, m).p[0] > x) lo = m; else hi = m; } return (lo + hi) / 2; };
   // APU exhaust in the tail cone
-  stA.add(K.lathe([[0.22, G.tailZ - 0.3], [0.25, G.tailZ + 0.05, 1], [0.2, G.tailZ + 0.05, 1], [0.17, G.tailZ - 0.35]], { segments: 18, uv: UA.exhaust }).translate(0, 0.58, 0));
+  stA.add(K.lathe([[0.25, G.tailZ - 0.3], [0.28, G.tailZ + 0.06, 1], [0.22, G.tailZ + 0.06, 1], [0.18, G.tailZ - 0.35]], { segments: 18, uv: UA.exhaust }).translate(0, 0.72, 0));
 
   // wing-to-body ("belly") fairing, long and deep, with the wing- and body-gear bays cut into its flat bottom
   const fairStations = [[-14.8, 1.2, 0.35, 0.55], [-13.0, 2.4, 0.8, 1.0], [-10.5, 3.4, 1.2, 1.2], [-7.5, 4.0, 1.45, 1.3], [-3.0, 4.3, 1.55, 1.33], [3.0, 4.35, 1.55, 1.33],
@@ -503,7 +503,7 @@ function paintFuselage(A, o) {
     P.textOn(SC.title, -13.0, 3.25, 'both', 0.95, { color: SC.titleColor, font, weight: 700, spacing: 0.16 });
     P.textOn('A380', 13.5, 3.15, 'both', 0.95, { color: SC.cheat, font: K.FONT.wide, weight: 700, spacing: 0.08 });
   }
-  P.textOn(SC.reg, 24.0, 0.5, 'both', 0.5, { color: SC.style === 'sweep' ? '#ffffff' : SC.style === 'cheat' ? '#ffffff' : '#1d2126', font: K.FONT.sans, weight: 700 });
+  P.textOn(SC.reg, 24.0, 0.5, 'both', 0.5, { color: SC.style === 'sweep' ? '#ffffff' : SC.style === 'cheat' ? SC.cheat : '#1d2126', font: K.FONT.sans, weight: 700 });
   // radome joint and nose access panels
   P.ring(D(2.9), 0, 1, { px: 1.4, depth: 0.5, dark: 0.28 });
   P.ring(D(0.9), 0, 1, { px: 1, depth: 0.3, dark: 0.1 });
@@ -607,9 +607,10 @@ function paintSurfaces(B, o) {
   for (const key of ['L', 'R']) {
     const Q = B.pen(cFin[key]); Q.fill('all', F.gloss(SC.tail));
     const fa = (y, f) => { const p = fin.at(y, f); return [p[2], p[1]]; };
-    const c = fa(11.0, 0.42);
+    const c = fa(11.0, 0.42), flip = key === 'R' ? -1 : 1;
     if (SC.style === 'cheat') {            // large white swoosh with a gold pinstripe, crossed by a stylised star
       Q.decal(c[0], c[1], (g) => {
+        g.scale(flip, 1);                  // the swoosh follows the leading edge on both sides
         g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(-5.2, 5.6); g.bezierCurveTo(-1.5, 2.2, 1.0, 1.2, 5.4, -4.8); g.bezierCurveTo(1.8, -0.6, -1.2, 1.6, -5.2, 6.6); g.closePath(); g.fill();
         g.strokeStyle = SC.accent; g.lineWidth = 0.18; g.beginPath(); g.moveTo(-5.0, 7.2); g.bezierCurveTo(-1.0, 2.6, 1.8, 0.8, 5.6, -3.8); g.stroke();
         g.fillStyle = SC.accent; g.beginPath();
@@ -617,7 +618,8 @@ function paintSurfaces(B, o) {
         g.closePath(); g.fill();
       });
     } else if (SC.style === 'sweep') {     // coral leaf with white veins
-      Q.decal(c[0] + 0.4, c[1], (g) => {
+      Q.decal(c[0] + 0.4 * flip, c[1], (g) => {
+        g.scale(flip, 1);
         g.fillStyle = SC.accent; g.beginPath(); g.moveTo(-3.4, 3.6); g.bezierCurveTo(-3.6, -0.6, -0.6, -3.6, 3.6, -4.2); g.bezierCurveTo(3.2, 0.2, 0.4, 3.4, -3.4, 3.6); g.closePath(); g.fill();
         g.strokeStyle = '#ffffff'; g.lineWidth = 0.16; g.lineCap = 'round'; g.beginPath(); g.moveTo(-3.0, 3.2); g.quadraticCurveTo(0, 0.4, 3.2, -3.8); g.stroke();
         for (const t of [0.25, 0.45, 0.65]) { const x = -3 + 6.2 * t, y = 3.2 - 7 * t + 0.6; g.beginPath(); g.moveTo(x, y - 0.4); g.lineTo(x + 1.1, y - 0.2); g.stroke(); g.beginPath(); g.moveTo(x, y - 0.4); g.lineTo(x - 0.2, y - 1.4); g.stroke(); }
