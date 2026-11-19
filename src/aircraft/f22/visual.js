@@ -271,7 +271,7 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.tub({ x: 0.42, y0: 0.02, y1: 0.66, z0: -6.95, z1: -3.8, uv: U.interior, taper: 0.8 }));
   {
     // instrument panel (kit: big tactical displays, up-front display, standby, cautions) with its glareshield, top at ≈ 0.83
-    stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.52, drop: 0.48, height: 0.42, width: 0.74, mfd: 0.16, pages: ['mfdSA', 'mfdRadar'], uv: U.console, uvPad: U.black }));
+    stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.52, drop: 0.48, height: 0.42, width: 0.74, mfd: 0.16, centreDisplay: 'mfdTsd', pages: ['mfdSA', 'mfdRadar'], uv: U.console, uvPad: U.black }));
     // side consoles, side-stick (right) and twin throttles (left)
     for (const sx of [-1, 1]) {
       stat.add(K.box(0.15, 0.1, 1.7, U.console).translate(sx * 0.335, 0.49, -5.35));
