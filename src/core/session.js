@@ -36,7 +36,7 @@ export function createSession(ctx) {
         const x = rwy.threshold.x + rwy.dir.x * 80, z = rwy.threshold.z + rwy.dir.z * 80;
         init.position.set(x, ctx.world.groundHeightAt(x, z) + def.geometry.cgHeight, z);
       }
-      const visual = def.createVisual(ctx);
+      const visual = def.createVisual(ctx, { livery: opts.livery ?? ctx.params.raw?.livery });
       ctx.scene.add(visual.object3D);
       const sim = createSim(ctx, def, init);
       ctx.player = { id: def.id, def, sim, state: sim.state, visual, airport, runway: rwy };
