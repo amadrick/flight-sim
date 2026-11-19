@@ -183,6 +183,13 @@ def render(shot, W=160, H=90, spp=4, nA=48, nB=16, net=None):
         y = M.predict(net, D)
         S_new = y[:, 0:1] * E[None] + y[:, 1:2] * sky[None] + y[:, 2:3] * gnd[None]
         out['new'] = L_ss + acc(S_new)
+    # round two: the round-one net (descriptor v1) fed true-field taps (as trained) and base taps (as in the game)
+    v1p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', 'model_v1.json')
+    if net is not None and net['desc'].get('version') == 2 and os.path.exists(v1p):
+        v1 = M.load_final(v1p)
+        for k, tsc in (('v1_full_taps', sc), ('v1_base_taps', M.tap_scene(sc, net['desc']))):
+            y = M.predict(v1, M.descriptor(tsc, P, rd, Ls, taus[ri, si], ts_, v1['desc']))
+            out[k] = L_ss + acc(y[:, 0:1] * E[None] + y[:, 1:2] * sky[None] + y[:, 2:3] * gnd[None])
     # ---- shipped / classic
     sig_p = F.local_sigma(sc, P)
     top, bot = S.column_extent(sc.sig, sc.h, sc.o[1])

@@ -1,7 +1,7 @@
 """Round-two before/after on identical held-out points, per regime.
 
     OMP_NUM_THREADS=1 $VENV tools/neural/clouds/compare.py <set>[@width] ... [--steps N] [--seeds K] [--out name]
-Rows: the deployed v1 net (data/model_v1.json) fed the TRUE-field taps it was trained on and fed the shader's
+Rows: the deployed v1 net (results/model_v1.json) fed the TRUE-field taps it was trained on and fed the shader's
 BASE-density taps (what it sees in the game), the round-3 shipped nets and the analytic baselines, and each candidate
 (trained here on the round-one + round-two training scenes, mean and spread over seeds).
 """
@@ -41,11 +41,16 @@ def main():
     tr = ~d['val']
     out = {}
     if opt.get('baselines', '1') == '1':
-        v1 = MD.load_final(os.path.join(T.DATA, 'model_v1.json'))
+        v1 = MD.load_final(os.path.join(T.HERE, 'results', 'model_v1.json'))
         idx = [T.DIR[k] for k in v1['desc']['dirs']]
         for tag, key in (('v1 deployed, true-field taps (round-one eval)', 'tap_e3'), ('v1 deployed, base taps (in game)', 'tapb_e3')):
             X = MD.encode(d['mt'][:, 0, -1], d['tau_cam'], d['mu_s'], d['cos_t'], d[key][:, idx, :], v1['desc'])
             out[tag] = rows_for(d, M, MD.predict(v1, X))
+        v2 = MD.load_final()
+        if v2['desc'].get('version') == 2:
+            for tag, key in (('v2 exported (model_final.json), base taps', 'tapb_e3'), ('v2 exported, fed true-field taps (misuse)', 'tap_e3')):
+                X = MD.encode(d['mt'][:, 0, -1], d['tau_cam'], d['mu_s'], d['cos_t'], d[key][:, [T.DIR[k] for k in v2['desc']['dirs']], :], v2['desc'])
+                out[tag] = rows_for(d, M, MD.predict(v2, X))
         rows, _ = T.baselines_table(d, M)
         for k in M:
             for n, o in rows[k].items():

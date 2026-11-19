@@ -1,0 +1,45 @@
+{
+ "shot": "field_low_sun",
+ "columns": [
+  "reference",
+  "new",
+  "shipped",
+  "classic"
+ ],
+ "stats": {
+  "_ref_noise_rel": 0.04020121327904415,
+  "new": {
+   "rmse_rel": 0.17459617679282516,
+   "rmse_rel_denoised": 0.16990493636608756,
+   "brightness_ratio": 0.9950383785743709
+  },
+  "v1_full_taps": {
+   "rmse_rel": 0.20557243086410076,
+   "rmse_rel_denoised": 0.20160329060377039,
+   "brightness_ratio": 0.9968837853896297
+  },
+  "v1_base_taps": {
+   "rmse_rel": 0.19444655796233679,
+   "rmse_rel_denoised": 0.19024543714447714,
+   "brightness_ratio": 0.9904029921658615
+  },
+  "shipped": {
+   "rmse_rel": 0.20661408572813056,
+   "rmse_rel_denoised": 0.20266534699391528,
+   "brightness_ratio": 0.9421234326831555
+  },
+  "classic": {
+   "rmse_rel": 0.4190337445969038,
+   "rmse_rel_denoised": 0.4171008769611927,
+   "brightness_ratio": 0.5800910767343053
+  },
+  "_ref_mc_seconds": 67.08479523658752
+ },
+ "res": [
+  192,
+  108
+ ],
+ "spp": 12,
+ "nA": 48,
+ "nB": 16
+}

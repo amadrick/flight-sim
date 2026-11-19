@@ -9,9 +9,19 @@
  "stats": {
   "_ref_noise_rel": 0.042414253011915384,
   "new": {
+   "rmse_rel": 0.2158752871977553,
+   "rmse_rel_denoised": 0.2116675949789069,
+   "brightness_ratio": 1.0045940749652953
+  },
+  "v1_full_taps": {
    "rmse_rel": 0.20837593033713986,
    "rmse_rel_denoised": 0.2040136257344342,
    "brightness_ratio": 0.9917467914657546
+  },
+  "v1_base_taps": {
+   "rmse_rel": 0.2085211151549982,
+   "rmse_rel_denoised": 0.20416191272351766,
+   "brightness_ratio": 0.9800979402945482
   },
   "shipped": {
    "rmse_rel": 0.2873028882482746,
@@ -23,7 +33,7 @@
    "rmse_rel_denoised": 0.40574925402648654,
    "brightness_ratio": 0.7077632731370836
   },
-  "_ref_mc_seconds": 60.86273241043091
+  "_ref_mc_seconds": 90.23457837104797
  },
  "res": [
   192,
