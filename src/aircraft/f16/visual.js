@@ -18,7 +18,7 @@ const SCHEMES = {
 export function createVisual(ctx, opts = {}) {
   const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'usaf', SC = SCHEMES[livery];
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
-  const G = geometry, F = K.FINISH, paintF = F[SC.finish];
+  const G = geometry, F = K.FINISH, paintF = F[SC.finish], lap = K.stopwatch();
   const seg = Math.max(24, Math.round(64 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
@@ -217,7 +217,6 @@ export function createVisual(ctx, opts = {}) {
   for (let i = 0; i < 4; i++) stat.add(K.bladeAntenna({ pos: [(i - 1.5) * 0.11, fus.topAt(-6.0) - 0.02, -6.0], height: 0.075, chord: 0.05, sweep: 0.03, thickness: 0.006, uv: U.dark }));   // IFF "bird slicers"
   stat.add(K.bladeAntenna({ pos: [0, fus.topAt(-1.4) - 0.02, -1.4], height: 0.22, chord: 0.3, sweep: 0.18, uv: U.top }));
   stat.add(K.bladeAntenna({ pos: [0, -0.74, -2.2], height: 0.2, chord: 0.26, sweep: 0.14, down: true, uv: U.under }));
-  stat.add(K.ellipsoid(0.03, 0.03, 0.05, { segments: 8, rings: 5, uv: U.lens }).translate(0, 3.36, 5.55));
 
   // ---- gear wells -------------------------------------------------------------------------------------------------------
   const P = fus.patches, IP = intake.patches;
@@ -226,8 +225,11 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.well(ngPatch, 0.2, U.well, [0, 1, 0]));
 
   // ---- materials ---------------------------------------------------------------------------------------------------------
+  lap('geometry');
   paint(atlas, { SC, livery, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cPanel, paintF });
+  lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
+  lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
   rig.glass('canopy', K.glassMaterial(ctx, SC.demo ? K.GLASS.smoke : K.GLASS.gold));
@@ -308,6 +310,7 @@ export function createVisual(ctx, opts = {}) {
     pilotNode.visible = !rig.cameraInCockpit;
   });
   const visual = rig.build();
+  lap('rig'); visual.stats.phases = lap.out;
   visual.livery = livery; visual.liveries = LIVERIES;
   return visual;
 }

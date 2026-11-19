@@ -141,9 +141,9 @@ export function createAtlas(o = {}) {
         if (c.bUp) { s.sy = -s.rect.h / (s.b1 - s.b0); s.ty = s.rect.y + s.rect.h - s.b0 * s.sy; }
         else { s.sy = s.rect.h / (s.b1 - s.b0); s.ty = s.rect.y - s.b0 * s.sy; }
       }
-      const mkLayer = (scale, fill) => { const c = document.createElement('canvas'); c.width = c.height = size * scale; const g = c.getContext('2d', { willReadFrequently: false }); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale }; };
+      const mkLayer = (scale, fill, read = false) => { const c = document.createElement('canvas'); c.width = c.height = size * scale; const g = c.getContext('2d', { willReadFrequently: read }); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale }; };
       layers.color = mkLayer(1, base.color);
-      layers.height = mkLayer(1, '#808080');
+      layers.height = mkLayer(o.heightScale ?? 0.5, '#808080', true);
       layers.orm = mkLayer(0.5, ormStyle(base.rough, base.metal));
       packed = true;
       return atlas;
@@ -174,7 +174,7 @@ export function createAtlas(o = {}) {
       const setup = (t, srgb) => { t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = aniso; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true; return t; };
       const map = setup(new THREE.CanvasTexture(layers.color.canvas), true);
       const ormMap = setup(new THREE.CanvasTexture(layers.orm.canvas), false);
-      const normalMap = setup(heightToNormal(layers.height, opts.normalStrength ?? 2.2), false);
+      const normalMap = setup(heightToNormal(layers.height, (opts.normalStrength ?? 2.2) * layers.height.scale), false);
       const emissiveMap = layers.emis ? setup(new THREE.CanvasTexture(layers.emis.canvas), true) : null;
       atlas.tex = { map, ormMap, normalMap, emissiveMap };
       return atlas.tex;

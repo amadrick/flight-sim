@@ -16,3 +16,10 @@ export function detailFor(ctx) {
   const level = ctx?.quality?.level || 'high';
   return { low: { detail: 0.6, atlas: 1024 }, medium: { detail: 0.85, atlas: 2048 }, high: { detail: 1, atlas: 2048 }, ultra: { detail: 1.2, atlas: 2048 } }[level] || { detail: 1, atlas: 2048 };
 }
+
+/** Phase timer for build budgets: const lap = stopwatch(); … lap('geometry'); … lap('paint'); → lap.out = { geometry: ms, paint: ms } */
+export function stopwatch() {
+  let t = performance.now(); const out = {};
+  const lap = (name) => { const n = performance.now(); out[name] = Math.round((out[name] || 0) + n - t); t = n; };
+  lap.out = out; return lap;
+}

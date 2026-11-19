@@ -18,7 +18,7 @@ const SCHEMES = {
 export function createVisual(ctx, opts = {}) {
   const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'aerolume', SC = SCHEMES[livery];
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
-  const G = geometry, F = K.FINISH;
+  const G = geometry, F = K.FINISH, lap = K.stopwatch();
   const rig = K.createRig(ctx, { geometry: G, name: 'b738', glassLayer: opts.glassLayer, cockpitRadius: 1.4 });
 
   // ---- atlases: A = fuselage + belly + gear + flight deck, B = wings, tail, nacelles ------------------------------------------
@@ -79,14 +79,14 @@ export function createVisual(ctx, opts = {}) {
   // ---- flight deck (windows are painted; the lining leaves them open for the pilot's view) -----------------------------------
   // right-hand window polygons in (z, t) on the fuselage skin: windshield, sliding side window, aft side window
   const WIN = [
-    [[-16.92, 0.4915], [-16.55, 0.365], [-16.2, 0.392], [-16.38, 0.4915]],
+    [[-16.92, 0.4945], [-16.55, 0.365], [-16.2, 0.392], [-16.38, 0.4945]],
     [[-16.47, 0.355], [-15.72, 0.318], [-15.72, 0.365], [-16.12, 0.384]],
     [[-15.62, 0.316], [-15.05, 0.305], [-15.2, 0.34], [-15.62, 0.362]],
   ];
   {
     const L = (c, uv, nu = 3, nv = 3) => stA.add(K.liner(fus, c, { uv, nu, nv, mirror: true, inset: 0.05 }));
     const lo = 0.2, hi = 0.392, zb = -14.75;
-    L([[-16.95, 0.5], [-16.95, 0.4915], [-16.38, 0.4915], [-16.38, 0.5]], UA.post, 1, 4);                       // centre post
+    L([[-16.95, 0.5], [-16.95, 0.4945], [-16.38, 0.4945], [-16.38, 0.5]], UA.post, 1, 4);                       // centre post
     L([[-16.38, 0.5], [-16.2, 0.392], [zb, 0.392], [zb, 0.5]], UA.liner, 5, 5);                                 // roof
     L([[-16.2, 0.392], [-16.12, 0.384], [-15.72, 0.365], [-15.72, 0.392]], UA.liner);                           // above the side windows
     L([[-15.72, 0.392], [-15.72, 0.365], [-15.62, 0.362], [-15.62, 0.392]], UA.liner, 1, 2);
@@ -94,7 +94,7 @@ export function createVisual(ctx, opts = {}) {
     L([[-15.2, 0.392], [-15.2, 0.34], [-15.05, 0.305], [zb, 0.392]], UA.liner);
     L([[-16.55, 0.365], [-16.47, 0.355], [-16.12, 0.384], [-16.2, 0.392]], UA.post, 1, 4);                      // posts
     L([[-15.72, 0.318], [-15.62, 0.316], [-15.62, 0.362], [-15.72, 0.365]], UA.post, 1, 3);
-    L([[-16.95, lo], [-16.55, lo], [-16.55, 0.365], [-16.92, 0.4915]], UA.liner, 3, 6);                         // sills and side walls
+    L([[-16.95, lo], [-16.55, lo], [-16.55, 0.365], [-16.92, 0.4945]], UA.liner, 3, 6);                         // sills and side walls
     L([[-16.55, lo], [-16.47, lo], [-16.47, 0.355], [-16.55, 0.365]], UA.liner, 1, 4);
     L([[-16.47, lo], [-15.72, lo], [-15.72, 0.318], [-16.47, 0.355]], UA.liner, 4, 4);
     L([[-15.72, lo], [-15.62, lo], [-15.62, 0.316], [-15.72, 0.318]], UA.liner, 1, 4);
@@ -105,7 +105,7 @@ export function createVisual(ctx, opts = {}) {
     stA.add(K.bulkhead(fus, zb, { uv: UA.liner, facing: -1 }));                                                 // flight-deck door wall
     stA.add(K.bulkhead(fus, -16.94, { uv: UA.shield, facing: 1 }));                                             // forward bulkhead under the windshield
     // glareshield, main panel, pedestal, overhead panel
-    { const gs = K.prism([[-16.93, 0.98], [-16.4, 1.07], [-16.37, 1.045], [-16.4, 1.0], [-16.93, 0.92]], -1.15, 1.15, UA.shield); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.2 + 0.8 * (gs.p[i + 2] + 16.93) / 0.56; stA.add(gs); }
+    { const gs = K.prism([[-16.93, 0.98], [-16.4, 1.07], [-16.37, 1.045], [-16.4, 1.0], [-16.93, 0.92]], -1.15, 1.15, UA.shield); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.5 + 0.5 * (gs.p[i + 2] + 16.93) / 0.56; stA.add(gs); }
     { const z = -16.41, i0 = stA.vertexCount; for (const [a, b] of [[0, 0.55], [1.9, 0.55], [1.9, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 0.95, 0.47 + (0.55 - b), z + (0.55 - b) * 0.08, 0, 0.1, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     stA.add(K.box(0.42, 0.42, 1.0, UA.shield).translate(0, 0.33, -15.95));
     { const i0 = stA.vertexCount, y = 1.98; for (const [a, b] of [[0, 0], [0.6, 0], [0.6, 0.9], [0, 0.9]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.3, y + b * 0.22, -16.25 + b, 0, -1, -0.2, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
@@ -196,10 +196,13 @@ export function createVisual(ctx, opts = {}) {
   for (const sx of [-1, 1]) for (const yy of [0.25, 0.5]) { const p = fus.at(-17.25, 0.25 + (sx > 0 ? 0 : 0.5) + (sx > 0 ? 1 : -1) * yy * 0.06).p; stA.add(K.probe(p, [p[0] + sx * 0.12, p[1], p[2] - 0.2], 0.012, UA.steel)); }   // pitot probes
   { const wicks = []; for (const sx of [-1, 1]) { for (const x of [13, 14.2, 15.4, 16.5]) { const p = W.R.at(x, 1, 'mid'); wicks.push([sx * p[0], p[1], p[2]]); } for (const x of [4.5, 5.8, 6.9]) { const p = stab.R.at(x, 1, 'mid'); wicks.push([sx * p[0], p[1], p[2]]); } } stB.add(K.staticWicks(wicks, 0.2, UB.wick)); }
 
+  lap('geometry');
   // ---- paint + materials ------------------------------------------------------------------------------------------------------
   paintFuselage(A, { SC, fus, cFus, cPanel, cOver, WIN });
   paintSurfaces(B, { SC, W: W.R, fin, stab: stab.R, cWT, cWB, cWl, cSt, cFin });
+  lap('paint');
   const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1 });
+  lap('textures');
   rig.material('paint', matA, { shared: true }); rig.material('wing', matB, { shared: true });
   rig.disposables.push(A, B);
   rig.addStatic(stA, 'paint'); rig.addStatic(stB, 'wing');
@@ -285,6 +288,7 @@ export function createVisual(ctx, opts = {}) {
   });
   for (const s of sleeves) s.node.userData.restZ = s.node.position.z;
   const visual = rig.build();
+  lap('rig'); visual.stats.phases = lap.out;
   visual.livery = livery; visual.liveries = LIVERIES;
   return visual;
 }

@@ -163,8 +163,8 @@ export function bulkhead(body, z, o = {}) {
   for (let i = 0; i < n; i++) { const s = body.at(z, i / n); pts.push([s.p[0] - s.n[0] * inset, s.p[1] - s.n[1] * inset]); cx += pts[i][0] / n; cy += pts[i][1] / n; }
   const c = m.vert(cx, cy, z, 0, 0, f, uv[0], uv[1]);
   const ids = pts.map(p => m.vert(p[0], p[1], z, 0, 0, f, uv[0], uv[1]));
-  // ring parameter t runs bottom → right (+X) → top → left: counter-clockwise seen from the nose (-Z)
-  for (let i = 0; i < n; i++) { const a = ids[i], b = ids[(i + 1) % n]; if (f < 0) m.tri(c, a, b); else m.tri(c, b, a); }
+  // ring parameter t runs bottom → right (+X) → top → left: clockwise when seen from the nose
+  for (let i = 0; i < n; i++) { const a = ids[i], b = ids[(i + 1) % n]; if (f < 0) m.tri(c, b, a); else m.tri(c, a, b); }
   return m;
 }
 
