@@ -105,7 +105,7 @@ export async function createClouds(ctx) {
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
     uClLightDir: { value: new THREE.Vector3(0, 1, 0) }, uClLightSel: v4(1, 1, 1, 0), uClMoonE: { value: new THREE.Vector3() },
     uClFlash: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uClCirrus: v4(10000, 0, 0, 0), uClDebug: v4(), uClAmbUp: v4(), uClAmbDn: v4(),
-    uClTemporal: v4(), uClWindVel: v4(), uClFlashColor: { value: new THREE.Vector3(18, 21, 26) }, uClN: { value: 2 },
+    uClTemporal: v4(), uClTemporal2: v4(1, 0, 0, 0), uClWindVel: v4(), uClFlashColor: { value: new THREE.Vector3(18, 21, 26) }, uClN: { value: 2 },
     tClMarch: { value: null }, tClMarchAux: { value: null }, tClHist: { value: null }, tClHistAux: { value: null },
     uClBakeA: v4(1, 0, 0, 0), uClBakeB: v4(), uClBakeWx: v4(0, 0, WEATHER_MAP_SIZE_M, 0),
     uClBakeShadowA: v4(0, 0, SHADOW_MAP_SIZE_M, 0), uClBakeShadowB: v4(0, 0, 1, 0),
@@ -368,6 +368,7 @@ export async function createClouds(ctx) {
     const nn = jitterSeq.length, sub = jitterIdx % nn, cycle = Math.floor(jitterIdx / nn);
     U.uClJitter.value.set(j[0], j[1], (cycle * GOLDEN + sub / nn) % 1, volumetricOn() ? 1 : 0);
     U.uClWindVel.value.set(wind.x * (frame.dt || 0), 0, wind.z * (frame.dt || 0), focalPx);
+    U.uClTemporal2.value.x = dbg('clYoung', 1);
   }
 
   const volumetricOn = () => P.coverage > 0.012;

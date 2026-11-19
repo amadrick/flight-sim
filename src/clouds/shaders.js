@@ -151,7 +151,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // whose amplitude scales with the cell (billows on billows). Towers lean downwind with the shear.
   // coverage switches cells on by their random id (and grows them past their nominal rim when it is high)
   float sel = cov * 1.45;
-  float vig = clSat((sel - cl.b) * 3.0);
+  float vig = clSat((sel - cl.b) * 8.0);
   float grow = mix(0.55, 1.0, vig) + 1.4 * max(cov - 0.62, 0.0);
   float H = min(2.0 * rad * mix(uClCell2.z, uClCell2.w, dev) * mix(0.75, 1.25, cl.a) * (0.6 + 0.4 * vig), lid * uClLayer.w);
   float hc = h / max(H, 1.0);
@@ -167,7 +167,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float d = rad * (1.0 - (2.0 * cl.r - 1.0));                    // distance from the cell centre (m)
   float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - step(1.0, hc) * 0.3 * (hc - 1.0);
   exC = vig > 0.0 ? mix(exC, -1.0, layerW) : -1.0;
-  float decay = max(smoothstep(0.62, 0.92, cl.a), 1.0 - vig) * (1.0 - uClShape.w);
+  float decay = max(smoothstep(0.65, 0.92, cl.a), 0.6 * (1.0 - vig)) * (1.0 - uClShape.w);
   vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
 
   // ---- (2) layer clouds from the 3-D shape noise: stratus / nimbostratus deck, stratocumulus sheet, Cb core -----
@@ -609,6 +609,7 @@ uniform sampler2D tClMarch, tClMarchAux, tClHist, tClHistAux;
 uniform vec4 uClJitter;      // xy = this frame's sub-pixel offset (full-res px)
 uniform vec4 uClTemporal;    // x = history valid, y = alpha (interpolated pixels), z = alpha (freshly marched pixel), w = camera translation this frame (m)
 uniform vec4 uClWindVel;     // xyz = cloud drift this frame (m, render space), w = focal length in pixels
+uniform vec4 uClTemporal2;   // x = strength of the young-history spatial filter (0 = off)
 void main() {
   ivec2 P = ivec2(gl_FragCoord.xy);
   ivec2 lowSize = textureSize(tClMarch, 0);
@@ -640,7 +641,7 @@ void main() {
   // Young history (first frames after a cut, a disocclusion or boot): the running mean of a handful of jittered
   // samples still shows the per-pixel step jitter as dots in thin cloud. Widen the spatial reconstruction to a
   // depth-aware Gaussian over 4x4 low-res samples until ~6 samples have accumulated.
-  float young = ok ? clamp(1.0 - ha.z / 6.0, 0.0, 1.0) : 1.0;
+  float young = (ok ? clamp(1.0 - ha.z / 6.0, 0.0, 1.0) : 1.0) * uClTemporal2.x;
   if (young > 0.0) {
     vec4 wS = vec4(0.0); float wW = 0.0;
     for (int k = 0; k < 16; k++) {

@@ -155,7 +155,7 @@ export function densityFromField(p, wf, n, y, cl, cells) {
   // cumulus cell
   const h = y - p.base;
   const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, cl[1]);
-  const vig = saturate((cov * 1.45 - cl[2]) * 3), grow = lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0);
+  const vig = saturate((cov * 1.45 - cl[2]) * 8), grow = lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0);
   const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), lid * p.thickness);
   const hc = h / Math.max(H, 1);
   const pf = p.profShallow.map((v, i) => lerp(v, p.profDeep[i], dev));
