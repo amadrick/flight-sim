@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Mesh, ellipsoid } from './mesh.js';
 import { lampMaterial } from './materials.js';
-import { displayTexture } from './displays.js';
+import { displayTexture, createLiveDisplays, liveTileAt } from './displays.js';
 import { bakeContactAO } from './occlusion.js';
 import { LAYERS } from '../../core/constants.js';
 
@@ -54,29 +54,61 @@ function fixHalos(root) {
   });
 }
 
-// kit-owned materials for sidecar geometry (Mesh.sidecar): cockpit displays, panel legends + flood, HUD symbology
-function kitMaterial(kind) {
-  const tex = displayTexture();
+// kit-owned materials for sidecar geometry (Mesh.sidecar): cockpit displays, panel legends + flood, HUD symbology, visor
+// `live` is the rig's live display canvas (displays.js): its pages answer UV v in (1, 2] and the materials sample it there.
+const LIVE_GLSL = `
+	vec2 kUv = KUV; float kLive = step(1.0, kUv.y);
+	vec4 kS = texture2D(KMAP, vec2(kUv.x, min(kUv.y, 0.99995)));
+	vec4 kL = texture2D(uKitLive, vec2(kUv.x, max(kUv.y - 1.0, 0.00005)));
+	vec4 kTex = mix(kS, kL, kLive);`;
+function kitMaterial(kind, live) {
+  const tex = displayTexture(), liveTex = live ? live.texture : tex;
   if (kind === 'display') {
-    const m = new THREE.MeshStandardMaterial({ color: 0x050607, roughness: 0.18, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.35 });
+    // glass-fronted LCD: black, glossy (reflects the cockpit / sky a little), the page in the emissive term only
+    const m = new THREE.MeshStandardMaterial({ color: 0x030405, roughness: 0.1, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.35, envMapIntensity: 0.55 });
+    const u = { uKitLive: { value: liveTex } };
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, u);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uKitLive;')
+        .replace('#include <emissivemap_fragment>', '#ifdef USE_EMISSIVEMAP' + LIVE_GLSL.replace('KUV', 'vEmissiveMapUv').replace('KMAP', 'emissiveMap') + '\n\ttotalEmissiveRadiance *= kTex.rgb;\n#endif');
+    };
+    m.customProgramCacheKey = () => 'kit-display';
     return { mat: m, shadow: false };
   }
   if (kind === 'panel') {
-    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex, roughness: 0.72, metalness: 0, emissive: 0xfff0d8, emissiveMap: tex, emissiveIntensity: 0 });
-    const u = { uKitFlood: { value: new THREE.Color(0, 0, 0) } };
-    m.userData.flood = u.uKitFlood.value;
-    // flood light: reflected artificial light keeps its colour at night, so it is added through the emissive term
+    // painted panel face / gauge dial: lit like any surface by day; at night only the white lettering glows (edge-lit legends,
+    // integral gauge lighting: luminance mask of the texel, keeps the ink colour) plus a dim flood. Both levels come from the rig.
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex, roughness: 0.66, metalness: 0 });
+    const u = { uKitFlood: { value: new THREE.Color(0, 0, 0) }, uKitGlow: { value: 0 } };
+    m.userData.flood = u.uKitFlood.value; m.userData.glow = u.uKitGlow;
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uKitFlood;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * uKitFlood;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uKitFlood;\nuniform float uKitGlow;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+	float kLum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+	totalEmissiveRadiance += diffuseColor.rgb / max(kLum, 1e-3) * smoothstep(0.22, 0.55, kLum) * uKitGlow;
+	totalEmissiveRadiance += diffuseColor.rgb * uKitFlood;`)
+        // the panel sits deep under the glareshield: most of the sky the scene's ambient / IBL assumes is hidden by the coaming
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n\treflectedLight.indirectDiffuse *= 0.3;\n\treflectedLight.indirectSpecular *= 0.35;');
     };
     m.customProgramCacheKey = () => 'kit-panel';
     return { mat: m, shadow: true };
   }
   if (kind === 'hud') {
     const m = new THREE.MeshBasicMaterial({ color: 0x000000, map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide, toneMapped: true });
+    const u = { uKitLive: { value: liveTex } };
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, u);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uKitLive;')
+        .replace('#include <map_fragment>', '#ifdef USE_MAP' + LIVE_GLSL.replace('KUV', 'vMapUv').replace('KMAP', 'map') + '\n\tdiffuseColor *= kTex;\n#endif');
+    };
+    m.customProgramCacheKey = () => 'kit-hud';
     return { mat: m, shadow: false, layer: LAYERS.POST, renderOrder: 7, cockpitOnly: true };
+  }
+  if (kind === 'visor') {
+    // helmet visor: dark smoked polycarbonate with a mirror-like reflection of the sky and the canopy frame
+    const m = new THREE.MeshPhysicalMaterial({ color: 0x15171c, roughness: 0.06, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.4 });
+    return { mat: m, shadow: true };
   }
   return null;
 }
@@ -102,10 +134,16 @@ export function createRig(ctx, o = {}) {
   const _v = new THREE.Vector3(), _inv = new THREE.Matrix4();
   const eye = new THREE.Vector3().fromArray(geometry.pilotEye || [0, 0, 0]);
   const kitMats = new Map(), cockpitOnly = [];
+  let live = null, liveUsed = null;                                     // live display canvas (created with the first screen / HUD)
   const kitKey = (kind) => {                                            // register the kit material for a sidecar kind (once)
     const key = 'kit:' + kind;
-    if (!mats.has(key)) { const k = kitMaterial(kind); if (!k) return null; kitMats.set(kind, k.mat); mats.set(key, { mat: k.mat, shadow: k.shadow, layer: k.layer, renderOrder: k.renderOrder, cockpitOnly: k.cockpitOnly }); owned.push(k.mat); }
+    if ((kind === 'display' || kind === 'hud') && !live && !globalThis.__kitNoLive) { live = createLiveDisplays(); if (live) { liveUsed = new Set(); owned.push(live); } }
+    if (!mats.has(key)) { const k = kitMaterial(kind, live); if (!k) return null; kitMats.set(kind, k.mat); mats.set(key, { mat: k.mat, shadow: k.shadow, layer: k.layer, renderOrder: k.renderOrder, cockpitOnly: k.cockpitOnly }); owned.push(k.mat); }
     return key;
+  };
+  const noteLive = (kind, sm) => {                                      // which live pages this rig's screens show (only those are redrawn)
+    if (!liveUsed || (kind !== 'display' && kind !== 'hud')) return;
+    const uv = sm.uv; for (let i = 0; i < uv.length; i += 2) if (uv[i + 1] > 1) { const n = liveTileAt(uv[i], uv[i + 1]); if (n) liveUsed.add(n); }
   };
 
   const setupMesh = (obj, info) => {
@@ -136,7 +174,7 @@ export function createRig(ctx, o = {}) {
       m.add(mesh);
       if (m.side) {                                                     // sidecar geometry → the kit's own materials
         const side = m.side; m.side = null;
-        for (const kind in side) { const k = kitKey(kind); if (!k || !side[kind].triCount) continue; let s2 = statics.get(k); if (!s2) statics.set(k, s2 = new Mesh()); s2.add(side[kind]); }
+        for (const kind in side) { const k = kitKey(kind); if (!k || !side[kind].triCount) continue; noteLive(kind, side[kind]); let s2 = statics.get(k); if (!s2) statics.set(k, s2 = new Mesh()); s2.add(side[kind]); }
       }
       return rig;
     },
@@ -151,8 +189,9 @@ export function createRig(ctx, o = {}) {
       if (m.p2) obj.morphTargetInfluences = [0];
       attach(obj, name, opt.parent, pivot);
       if (m.side) for (const kind in m.side) {                          // sidecar geometry moves with the part
-        const k = kitKey(kind), sm = m.side[kind]; if (!k || !sm.triCount) continue;
+        const k = kitKey(kind), sm = m.side[kind]; if (!k || !sm.triCount) continue; noteLive(kind, sm);
         const info2 = mats.get(k), child = setupMesh(new THREE.Mesh(sm.toGeometry(), info2.mat), info2); child.name = name + ':' + kind;
+        if (sm.p2 && obj.morphTargetInfluences) child.morphTargetInfluences = obj.morphTargetInfluences;   // the visor turns with the head
         obj.add(child); tris += sm.triCount; if (info2.cockpitOnly) cockpitOnly.push(child);
       }
       if (mesh.onPart) mesh.onPart(obj, rig);                         // kit parts that animate themselves (pilot head, …)
@@ -188,6 +227,7 @@ export function createRig(ctx, o = {}) {
     build() {
       if (built) throw new Error('rig: build() called twice'); built = true;
       let firstStatic = null;
+      if (live && liveUsed) { for (const n of [...live.used]) if (!liveUsed.has(n)) live.used.delete(n); }
       for (const [key, m] of statics) {
         if (m.morphOptional) m.p2 = null;                               // only an optional morph (a merged pilot's head turn): static keeps still
         const info = mats.get(key), obj = setupMesh(new THREE.Mesh(m.toGeometry(), info.mat), info);
@@ -232,7 +272,7 @@ export function createRig(ctx, o = {}) {
       }
       occluders.length = 0;
       const tB = performance.now();
-      let packed = false, halosFixed = false;
+      let packed = false, halosFixed = false, liveDrawn = false;
       const pack = () => { packed = true; const t = performance.now(); for (const d of rig.disposables) d?.bake?.(); stats.packMs = Math.round(performance.now() - t); };
       let draws = 0; root.traverse(n => { if (n.isMesh) draws++; });
       const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0, occlusionMs: Math.round(tB - tA), packMs: 0 };
@@ -244,13 +284,17 @@ export function createRig(ctx, o = {}) {
           readState(S, state, dt, ctx);
           if (!halosFixed) { fixHalos(root); halosFixed = true; }
           for (let i = 0; i < updaters.length; i++) updaters[i](S, dt);
-          // kit cockpit lighting: displays dim at night, backlit legends and a dim flood come on, HUD symbology only in the cockpit
+          // kit cockpit lighting. By day screens run at full brightness and panels are plain painted surfaces. At night the crew
+          // dims everything to what dark-adapted eyes want: the levels are set against the camera exposure (ctx.env.exposure,
+          // up to 40× at night) so that, after exposure, screens peak around 0.5, lit legends around 0.2 and the flood leaves the
+          // panel paint a few percent — dark panels, crisp dim lettering, bright but not blooming screens.
           if (kitMats.size) {
-            const n = S.night, d = kitMats.get('display'), p = kitMats.get('panel'), h = kitMats.get('hud');
-            if (d) d.emissiveIntensity = 0.35 + (0.03 - 0.35) * n;
-            if (p) { p.emissiveIntensity = 0.012 * n; p.userData.flood.setRGB(1, 0.86, 0.66).multiplyScalar(0.06 * n); }
-            if (h) { const I = 2.2 + (0.12 - 2.2) * n; h.color.setRGB(0.35 * I, 1.0 * I, 0.5 * I); }
+            const n = S.night, E = Math.max(1, num(ctx?.env?.exposure, 1 / (1 - n + n * 0.03))), d = kitMats.get('display'), p = kitMats.get('panel'), h = kitMats.get('hud');
+            if (d) d.emissiveIntensity = 0.35 + (0.5 / E - 0.35) * n;
+            if (p) { p.userData.glow.value = n * 0.2 / E; p.userData.flood.setRGB(1, 0.84, 0.62).multiplyScalar(n * 0.06 / E); }
+            if (h) { const I = 2.2 + (0.9 / E - 2.2) * n; h.color.setRGB(0.35 * I, 1.0 * I, 0.5 * I); }
             for (let i = 0; i < cockpitOnly.length; i++) cockpitOnly[i].visible = rig.cameraInCockpit;
+            if (live && live.used.size && (rig.cameraInCockpit || !liveDrawn)) { liveState(live.state, S, geometry); live.step(liveDrawn ? dt : 1); liveDrawn = true; }
           }
           // lamps
           const night = S.night, lt = S.lights, t = S.tLamp;
@@ -278,6 +322,36 @@ export function createRig(ctx, o = {}) {
     disposables: [],
   };
   return rig;
+}
+
+const KT = 1.943844, FT = 3.28084, R2D = 180 / Math.PI;
+/** Cockpit page state (displays.js units) from the state view: attitude, air data, heading, engines. Missing fields keep defaults. */
+function liveState(L, S, geometry) {
+  const s = S.raw || {}, e = S.eng;
+  if (typeof s.pitch === 'number') L.pitch = s.pitch * R2D;
+  if (typeof s.roll === 'number') L.roll = s.roll * R2D;
+  if (typeof s.ias === 'number' && (s.ias > 0 || S.onGround)) { const v = s.ias * KT; L.trend = (v - L.ias) / Math.max(S.dt, 1e-3) * 10 * 0.2 + (L.trend || 0) * 0.8; L.ias = v; }
+  if (typeof s.tas === 'number' && s.tas > 0) L.tas = s.tas * KT;
+  if (typeof s.groundSpeed === 'number') L.gs = s.groundSpeed * KT;
+  if (typeof s.mach === 'number') L.mach = s.mach;
+  if (typeof s.altitude === 'number' && (s.altitude !== 0 || s.position)) L.alt = s.altitude * FT;
+  else if (s.position && typeof s.position.y === 'number') L.alt = s.position.y * FT;
+  if (typeof s.verticalSpeed === 'number') L.vs = s.verticalSpeed * FT * 60;
+  if (typeof s.heading === 'number') L.hdg = s.heading * R2D;
+  if (typeof s.aoa === 'number') L.aoa = s.aoa * R2D;
+  if (typeof s.beta === 'number') L.beta = s.beta * R2D;
+  if (typeof s.gLoad === 'number') L.g = s.gLoad;
+  if (typeof s.fuel === 'number' && s.fuel > 0) L.fuel = s.fuel;
+  L.engines = Math.max(1, e.length || 2); L.onGround = S.onGround; L.flaps = S.sf.flaps; L.gear = S.sf.gear; L.t = S.t;
+  for (let i = 0; i < Math.min(4, e.length); i++) {
+    if (e[i].n1 > 0 || !e[i].running) L.n1[i] = e[i].n1 * 100;
+    if (e[i].n2 > 0) L.n2[i] = e[i].n2 * 100;
+    if (e[i].egt > 0) L.egt[i] = e[i].egt;
+    const ff = s.engines && s.engines[i] && s.engines[i].fuelFlow; if (typeof ff === 'number' && ff > 0) L.ff[i] = ff * 3.6;
+  }
+  const ap = s.ap; if (ap && ap.engaged) { if (ap.altitude) L.altSel = ap.altitude * FT; if (ap.speed) L.spdSel = ap.speed * KT; if (typeof ap.heading === 'number') L.hdgSel = ap.heading * R2D; }
+  else { L.altSel = Math.round(L.alt / 1000) * 1000; L.hdgSel = Math.round(L.hdg / 5) * 5; L.spdSel = Math.round(L.ias / 5) * 5; }
+  void geometry;
 }
 
 /** Tolerant, allocation-free view of AircraftState handed to animation callbacks. */
