@@ -142,7 +142,7 @@ export function createVisual(ctx, opts = {}) {
   stA.add(fus.mesh);
 
   // wing-to-body fairing (bulged, flat-bottomed) with the main-gear bays cut into its bottom
-  const fairStations = [[-7.0, 1.0, 0.25, 0.4], [-5.8, 1.75, 0.45, 0.56], [-4.3, 2.12, 0.6, 0.62], [-1.0, 2.2, 0.64, 0.63], [2.4, 2.2, 0.64, 0.63], [4.3, 2.0, 0.55, 0.6], [5.9, 1.55, 0.4, 0.55], [7.2, 1.0, 0.25, 0.4]]
+  const fairStations = [[-6.9, 0.3, 0.12, 0.16], [-6.0, 1.05, 0.34, 0.4], [-4.9, 1.7, 0.5, 0.56], [-3.6, 2.08, 0.6, 0.62], [-1.0, 2.2, 0.64, 0.63], [2.4, 2.2, 0.64, 0.63], [4.3, 2.0, 0.55, 0.6], [5.9, 1.45, 0.4, 0.52], [7.0, 0.8, 0.26, 0.36], [7.7, 0.3, 0.12, 0.16]]
     .map(r => ({ z: r[0], y: -0.96, w: r[1], top: r[2], bot: r[3], kTop: 0.66, kBot: [0.93, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(24, Math.round(44 * detail / 4) * 4), step: 0.7, chart: cFair };
   let fair = K.loft(fairOpts);
@@ -600,7 +600,7 @@ function paintFuselage(A, o) {
     const m = (p) => [p[0], s > 0 ? p[1] : 1 - p[1]];
     for (const w of WIN) {
       const pts = w.map(m), path = (g) => { pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); };
-      P.stroke(path, 0, { color: '#2a2d31', rough: 0.4, metal: 0 }, { join: 'round', px: 10 });
+      P.stroke(path, 0, { color: '#2a2d31', rough: 0.4, metal: 0 }, { join: 'round', px: 7 });
       P.fill(pts, F.paintedGlass);
       P.groove(path, { px: 1.2, depth: 0.5, dark: 0.2 });
     }
@@ -803,7 +803,7 @@ function paintNacelle(B, o) {
   Q.line([[sOut(0.7), 0], [sOut(0.7), 1]], ln);
   Q.line([[sOut(0.72), 0.0], [NS.cowlMax, 0.0]], ln); Q.line([[sOut(0.72), 0.5], [NS.cowlMax, 0.5]], { px: 1, depth: 0.3, dark: 0.12 });
   for (const t of [0.012, 0.988]) for (const z of [0.9, 1.1, 1.3]) { const s = sOut(z); Q.fill((g) => g.rect(s - 0.05, t - 0.006, 0.1, 0.012), { color: '#33363a', rough: 0.5, metal: 0.3 }); }   // latches
-  for (const t of [0.3, 0.7]) { const s = sOut(1.0); Q.panel(s - 0.16, t - 0.03, s + 0.16, t + 0.03, { px: 1, depth: 0.3, dark: 0.12 }); }
+  for (const t of [0.16, 0.84]) { const s = sOut(1.35); Q.panel(s - 0.14, t - 0.025, s + 0.14, t + 0.025, { px: 1, depth: 0.3, dark: 0.12 }); }
   const sideMark = (t, rot) => {
     const s = sOut(0.95);
     if (SC.style === 'star') Q.decalT(s, t, { girth: 6.6, rot }, (g) => drawStar(g, 0.32, '#ffffff'));
