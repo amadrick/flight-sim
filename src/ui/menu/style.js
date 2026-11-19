@@ -155,6 +155,8 @@ export const CSS = /* css */`
 
 /* runway designators — styled like taxiway location signs: yellow on black, yellow border */
 .menu-rwys { display: flex; flex-wrap: wrap; gap: 6px; }
+.menu-livsec { margin-bottom: 18px; }
+.menu-liveries .menu-chip { min-height: 32px; padding: 0 12px; }
 .menu-rwy {
   min-width: 52px; height: 34px; padding: 0 9px; display: inline-grid; place-items: center;
   font-family: var(--font-mono, ui-monospace, monospace); font-weight: 700; font-size: 16px; letter-spacing: 0.06em;
