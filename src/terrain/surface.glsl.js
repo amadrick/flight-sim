@@ -129,7 +129,7 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   // ---- farmland: arable land (deep soil, gentle, moist enough, warm enough) in the districts that are farmed ----
   // (in the mountains every scrap of level valley floor is meadow or pasture)
   float farmed = max(ss(0.42, 0.48, macro2 * 0.75 + n0.a * 0.25), ss(500.0, 900.0, h));
-  C.crop = ss(0.30, 0.55, E.c.z) * farmed * ss(0.020, 0.008, slope) * ss(6.0, 12.0, h) * (1.0 - ss(0.35, 0.55, arid)) * open;
+  C.crop = ss(0.30, 0.38, E.c.z + 0.12 * (n2.g - 0.5)) * farmed * ss(0.020, 0.010, slope) * ss(6.0, 12.0, h) * (1.0 - ss(0.35, 0.55, arid)) * open;
   C.hedge = 0.0;
   C.fld = TerrField(0.0, 0.0, vec2(1.0), vec2(0.0), vec2(0.0), vec4(0.0), vec2(0.0), 0.0);
   if (C.crop > 0.001) {
@@ -152,8 +152,8 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   // woods that survive in farmed country: wet hollows and stream lines, the cores of the old stands, and whole
   // parcels left as woodlots (straight edges along the field boundaries)
   float lot = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * ss(1.0, 6.0, C.fld.edge + 9.0 * (n3.g - 0.5));
-  float core = ss(fthr + 0.07, fthr + 0.12, fnoise) * ss(0.25, 0.5, dens);
-  float keep = max(max(ss(0.70, 0.84, E.b.w + 0.10 * (n2.r - 0.5)), max(lot, core)), 1.0 - C.crop);
+  float core = ss(0.74, 0.80, fnoise) * ss(0.25, 0.5, dens);
+  float keep = max(max(ss(0.86, 0.93, E.b.w + 0.06 * (n2.r - 0.5)), max(lot, core)), 1.0 - C.crop);
   C.woods = stand * keep;
   C.forest = max(C.woods, C.hedge * 0.9);
   C.conifer = clamp(E.a.y + 0.35 * (n2.r - 0.5) * E.a.y * (1.0 - E.a.y) * 4.0, 0.0, 1.0);
@@ -372,7 +372,7 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- bare ground: soil of the humid country, desert earths -------------------------------------------------
   float damp = clamp(wet * 1.25 - 0.15 + 0.3 * (n3.g - 0.5), 0.0, 1.0);
-  vec3 earth = mix(vec3(0.185, 0.140, 0.098), vec3(0.092, 0.070, 0.052), damp);
+  vec3 earth = mix(vec3(0.165, 0.130, 0.095), vec3(0.088, 0.069, 0.052), damp);
   earth = mix(earth, vec3(0.185, 0.180, 0.172) * (0.8 + 0.4 * n3.g), alpine * 0.9);   // above the trees bare ground is frost-shattered rubble
   vec3 sand = mix(vec3(0.285, 0.210, 0.138), vec3(0.395, 0.318, 0.215), ss(0.3, 0.7, n1.g * 0.45 + n2.r * 0.35 + n4.g * 0.2));
   vec3 redEarth = vec3(0.315, 0.170, 0.100);
@@ -412,6 +412,8 @@ TerrSurf terrSurface(vec3 rp) {
   // so the open ground between the stands carries the rest
   float openFrac = max(1.0 - 0.95 * eForest, 0.06);
   float herb = clamp((eGrass + eShrub) / openFrac, 0.0, 1.0);
+  // below the tree line in a humid climate, ground that carries soil is never bare for long
+  herb = max(herb, 0.88 * ss(0.30, 0.50, wet) * ss(0.12, 0.35, eSoil) * (1.0 - alpine));
   float grassAmt = terrPatch(herb, bk, 0.11, eps);
   grassAmt *= 1.0 - washAmt * 0.8;
   col = mix(col, grass, grassAmt);
@@ -528,8 +530,8 @@ TerrSurf terrSurface(vec3 rp) {
   // steepest pixels, and drifts sit in the small hollows first
   float snowF = clamp(eSnow * 1.25 + 0.9 * clamp(conc, -0.06, 0.12) * ss(0.02, 0.3, eSnow), 0.0, 1.0);
   // drifts linger in the hollows and gullies first; a little broad noise so the edges are not contour lines
-  float bkS = 0.5 + 2.2 * clamp(conc, -0.12, 0.2) + 1.4 * clamp(curv, -0.08, 0.1) + 0.45 * (n2.r - 0.5) + 0.25 * (n3.g - 0.5);
-  float snow = terrPatch(snowF, bkS, 0.14, eps + 0.03) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
+  float bkS = 0.5 + 1.0 * clamp(conc, -0.10, 0.10) + 0.8 * clamp(curv, -0.06, 0.06) + 0.55 * (n2.r - 0.5) + 0.30 * (n3.g - 0.5);
+  float snow = terrPatch(snowF, bkS, 0.12, eps + 0.03) * ss(0.04, 0.14, eSnow) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
   snow *= 1.0 - 0.8 * paint * ss(0.9, 0.5, eSnow);
   vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.95 + 0.07 * n3.r);
   // old firn / glacier ice shows through in the big hollows; dust and debris bands near the snow margin
