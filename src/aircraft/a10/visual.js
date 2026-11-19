@@ -542,10 +542,10 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps ---------------------------------------------------------------------------------------------------------------
   const L = G.lights;
-  rig.lamp('nav', L.navLeft, { color: [1, 0.04, 0.02], size: 0.075, squash: [0.75, 0.75, 1.6] });
-  rig.lamp('nav', L.navRight, { color: [0.02, 1, 0.25], size: 0.075, squash: [0.75, 0.75, 1.6] });
-  rig.lamp('nav', [L.navLeft[0] + 0.02, L.navLeft[1] - 0.02, L.navLeft[2] + 1.05], { color: [1, 0.04, 0.02], size: 0.05 });      // aft-facing position lamps
-  rig.lamp('nav', [L.navRight[0] - 0.02, L.navRight[1] - 0.02, L.navRight[2] + 1.05], { color: [0.02, 1, 0.25], size: 0.05 });
+  rig.lamp('nav', L.navLeft, { color: [0.62, 0.025, 0.012], size: 0.09, squash: [0.75, 0.75, 1.6] });     // dimmer, saturated colours keep their hue after tone mapping
+  rig.lamp('nav', L.navRight, { color: [0.012, 0.62, 0.16], size: 0.09, squash: [0.75, 0.75, 1.6] });
+  rig.lamp('nav', [L.navLeft[0] + 0.02, L.navLeft[1] - 0.02, L.navLeft[2] + 1.05], { color: [0.62, 0.025, 0.012], size: 0.06 });      // aft-facing position lamps
+  rig.lamp('nav', [L.navRight[0] - 0.02, L.navRight[1] - 0.02, L.navRight[2] + 1.05], { color: [0.012, 0.62, 0.16], size: 0.06 });
   rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.065 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.075 });
   rig.lamp('strobe', [-L.strobe[0], L.strobe[1], L.strobe[2]], { color: [1, 1, 1], size: 0.075 });
