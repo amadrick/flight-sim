@@ -220,6 +220,8 @@ def main():
     preds[k_net] = jss + p_main
     preds[k_lut] = jss + p_lut
     extra_info = {}
+    if have('main_thick'):
+        preds['NEURAL, thick-column prior variant (opts.prior = 1), direct'] = jss + predict_ms(*load_net('main_thick')[:2], feat)
     if have('main_noup'):
         preds['Ablation: NEURAL without tauUp (tauSun, cosTheta only)'] = jss + predict_ms(*load_net('main_noup')[:2], feat)
     if have('main4'):
@@ -247,6 +249,10 @@ def main():
         'forward (theta<10deg)': c > math.cos(math.radians(10)),
         'side/back (theta>30deg)': c < math.cos(math.radians(30)),
     }
+    tv = tu + td
+    subsets['thin column (tauUp+tauDown<2)'] = tv < 2
+    subsets['medium column (2..16)'] = (tv >= 2) & (tv < 16)
+    subsets['thick column (>=16)'] = tv >= 16
     for i, k in enumerate(KINDS):
         subsets['family: ' + k] = te['kind'] == i
     res = {name: {s: M.metrics(p, jss, ja, jb, ref, m, noise) for s, m in subsets.items()} for name, p in preds.items()}
@@ -271,9 +277,51 @@ def main():
             name, a['disp_rmse'], a['rel_rmse'], a['energy'], a['log_rmse'], a['med_abs'], a['med_abs_all'],
             100 * a['within25'], 100 * a['within25_all'], 100 * a['fac2'], 100 * a['fac2_all']))
     lines.append('')
+    # the same headline metrics with the test population re-weighted toward optically thick columns
+    pw = M.column_prior_weight(feat, 'thick').astype(np.float64)
+    wres = {}
+    lines.append('Population-weighted (thick-column prior, weight = clip(tauUp+tauDown, 1, 64)) noise-debiased errors:')
+    lines.append('')
+    lines.append('| model | display-rel. RMSE | rel. RMSE |')
+    lines.append('|---|---|---|')
+    for name, p in preds.items():
+        num = (p - jss - ja) * (p - jss - jb)
+        wres[name] = dict(disp_rmse=float(math.sqrt(max(np.mean(pw * num / (ref + M.J_FLOOR) ** 2), 0.0))),
+                          rel_rmse=float(math.sqrt(max(np.mean(pw * num / ref ** 2), 0.0))))
+        lines.append('| %s | %.3f | %.3f |' % (name, wres[name]['disp_rmse'], wres[name]['rel_rmse']))
+    lines.append('')
+    # brightness bias by column optical thickness: what a 3-feature model cannot know (REPORT.md, "The prior")
+    yms = 0.5 * (ja + jb)
+    bias_cols = [(k, lab) for k, lab in ((names_k, lab_k) for names_k, lab_k in (
+        ('Octaves, (a,b,c,gain) FITTED to our training set', 'octaves fitted'), (k_lut, 'NEURAL (LUT)'),
+        ('NEURAL, thick-column prior variant (opts.prior = 1), direct', 'NEURAL, thick prior'),
+        ('Stretch: NEURAL 4-feature, as deployed (2 textures)', 'NEURAL-4'))) if k in preds]
+    side_cam = (te['stype'] == 0) & (c < math.cos(math.radians(30)))
+    lines.append('Brightness bias by column optical thickness tau_v = tauUp + tauDown (camera samples, theta > 30 deg): '
+                 'sum of predicted J_ms / sum of path-traced J_ms.')
+    lines.append('')
+    lines.append('| tau_v | n | mean path-traced J_ms | ' + ' | '.join(lab for _, lab in bias_cols) + ' |')
+    lines.append('|---|---|---|' + '---|' * len(bias_cols))
+    bias_tab = []
+    for lo, hi in ((0, 1), (1, 2), (2, 4), (4, 8), (8, 16), (16, 32), (32, 64), (64, 1e9)):
+        m = side_cam & (tv >= lo) & (tv < hi)
+        row = dict(lo=lo, hi=hi, n=int(m.sum()), mean=float(yms[m].mean()))
+        for k, lab in bias_cols:
+            row[lab] = float((preds[k][m] - jss[m]).sum() / yms[m].sum())
+        bias_tab.append(row)
+        lines.append('| %g - %s | %d | %.4f | ' % (lo, '%g' % hi if hi < 1e8 else 'inf', row['n'], row['mean'])
+                     + ' | '.join('%.2f' % row[lab] for _, lab in bias_cols) + ' |')
+    lines.append('')
     names = list(preds.keys())
-    cols = [names[0], names[3], names[4], k_lut] + [n for n in names if n.startswith('Stretch') and 'deployed' in n]
-    short = ['single', 'octaves stock', 'octaves fitted', 'NEURAL (LUT)', 'NEURAL-4 (stretch)'][:len(cols)]
+    cols = [names[0], names[3], names[4], k_lut]
+    short = ['single', 'octaves stock', 'octaves fitted', 'NEURAL (LUT)']
+    for n in names:
+        if 'thick-column prior' in n:
+            cols.append(n)
+            short.append('NEURAL, thick prior')
+        elif n.startswith('Stretch') and 'deployed' in n:
+            cols.append(n)
+            short.append('NEURAL-4 (stretch)')
     for metric, title in (('disp_rmse', 'display-relative RMSE'), ('rel_rmse', 'relative RMSE'), ('fac2_all', 'fraction within a factor 2 (all samples)')):
         lines.append('Per-subset %s:' % title)
         lines.append('')
@@ -291,7 +339,7 @@ def main():
                        paths_per_sample=int(te['paths']), mc_noise_rel_rms=noise_rms,
                        mc_noise_median=float(np.median(noise)), zero_half_fraction=zero_frac, ms_fraction=ms_frac,
                        lut_vs_mlp_rel_rms=lut_vs_mlp, lut_vs_mlp_median=lut_med, tuned_octaves=tuned,
-                       key_net=k_net, key_lut=k_lut, results=res, **extra_info), f, indent=1)
+                       key_net=k_net, key_lut=k_lut, results=res, thick_prior_results=wres, bias_by_column=bias_tab, **extra_info), f, indent=1)
 
 
 if __name__ == '__main__':

@@ -36,6 +36,7 @@ class SkyNet(nn.Module):
 
 
 def enc(tau_up, tau_down):
+    tau_up, tau_down = np.broadcast_arrays(tau_up, tau_down)
     return np.stack([2 * np.log1p(np.clip(tau_up, 0, M.TAU_MAX)) / M.LOG_TAU - 1,
                      2 * np.log1p(np.clip(tau_down, 0, M.TAU_MAX)) / M.LOG_TAU - 1], axis=-1)
 

@@ -25,12 +25,24 @@ const CLOUD_SCATTER_MODEL = WEIGHTS.CLOUD_SCATTER_MODEL;
 export const CLOUD_SCATTER_LUT_SIZE = 32;
 const LN_MIN = -30, LN_MAX = 12;
 
-let _net = null;
-/** The decoded network (cached). */
-export function getCloudScatterNet() {
-  if (!_net) _net = decodeModel(CLOUD_SCATTER_MODEL);
-  return _net;
+const _nets = {};
+/**
+ * The decoded network (cached).
+ * @param {'dataset'|'thick'} [prior='dataset'] which cloud-population prior the weights were trained with:
+ *   'dataset' (default) the training population as generated (median column optical thickness ~5): lowest error
+ *             on the held-out clouds, but biased ~40 % dark at the sun-lit tops of optically thick clouds;
+ *   'thick'   samples re-weighted by column optical thickness (clip(tauUp + tauDown, 1, 64)): nearly unbiased for
+ *             thick cumulus / stratocumulus decks, but over-brightens thin veils and cloud edges (2.5-3.4x).
+ * Three features cannot tell a veil from the top of a thick cloud, so one of the two has to be assumed: see
+ * REPORT.md, "The prior".  The 4-feature model (createNeuralCloudScatter4) removes the ambiguity.
+ */
+export function getCloudScatterNet(prior = 'dataset') {
+  const key = prior === 'thick' && WEIGHTS.CLOUD_SCATTER_MODEL_THICK_PRIOR ? 'thick' : 'dataset';
+  if (!_nets[key]) _nets[key] = decodeModel(key === 'thick' ? WEIGHTS.CLOUD_SCATTER_MODEL_THICK_PRIOR : CLOUD_SCATTER_MODEL);
+  return _nets[key];
 }
+/** True if the thick-column-prior variant of the 3-feature network is embedded. */
+export function hasThickPriorNet() { return !!WEIGHTS.CLOUD_SCATTER_MODEL_THICK_PRIOR; }
 
 /** LUT axis values: optical depths and cos(theta) at the n grid nodes (inverse of the feature encoding). */
 export function lutAxes(n, enc) {
@@ -200,15 +212,25 @@ export function createAnalyticCloudScatter(opts = {}) {
  * @param {number} [opts.phaseMax=Infinity] optional clamp (sr^-1) of the single-scattering forward peak (~587 sr^-1
  *                                         within ~1 degree of the sun) if the aureole overwhelms bloom
  * @param {string} [opts.functionName='cloudSunScatter']
+ * @param {'dataset'|'thick'|number} [opts.prior='dataset'] cloud-population prior of the network (see
+ *        getCloudScatterNet); a number t in [0,1] blends ln J_ms of the two trained networks at bake time
+ *        (0 = dataset, 1 = thick), e.g. 0.5 if cloud tops read too dark against the rest of the scene
  * @returns {{ glsl: string, uniforms: { tCloudScatterLUT: { value: THREE.Data3DTexture } }, texture: THREE.Data3DTexture,
  *            info: object, sample: (tauSun:number, tauUp:number, cosTheta:number) => number, dispose: () => void }}
  */
 export function createNeuralCloudScatter(opts = {}) {
   const n = opts.lutSize || CLOUD_SCATTER_LUT_SIZE;
-  const net = getCloudScatterNet();
   const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
   const t0 = now();
+  const blend = !hasThickPriorNet() ? 0
+    : typeof opts.prior === 'number' ? Math.min(1, Math.max(0, opts.prior)) : (opts.prior === 'thick' ? 1 : 0);
+  const net = getCloudScatterNet(blend === 1 ? 'thick' : 'dataset');
   const lut = bakeScatterLUT(net, n);
+  if (blend > 0 && blend < 1) {
+    const other = bakeScatterLUT(getCloudScatterNet('thick'), n);
+    for (let i = 0; i < lut.data.length; i++) lut.data[i] += blend * (other.data[i] - lut.data[i]);
+    lut.ms += other.ms;
+  }
   const half = new Uint16Array(lut.data.length);
   for (let i = 0; i < half.length; i++) half[i] = THREE.DataUtils.toHalfFloat(lut.data[i]);
   const texture = new THREE.Data3DTexture(half, n, n, n);
@@ -255,12 +277,13 @@ export function createNeuralCloudScatter(opts = {}) {
     info: {
       kind: 'neural-lut',
       params: net.params,
+      prior: blend === 0 ? 'dataset' : blend === 1 ? 'thick' : blend,
       lutSize: n,
       bakeMs: lut.ms,
       buildMs,
       phase: CLOUD_SCATTER_MODEL.phase,
       encoding: enc,
-      meta: CLOUD_SCATTER_MODEL.meta,
+      meta: (blend === 1 ? WEIGHTS.CLOUD_SCATTER_MODEL_THICK_PRIOR : CLOUD_SCATTER_MODEL).meta,
     },
     sample,
     sampleMulti,

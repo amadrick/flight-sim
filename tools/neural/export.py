@@ -102,7 +102,7 @@ def main():
     lut_samples = [[int(i), int(j), int(k), float(lut[i, j, k])] for i, j, k in pick]
 
     meta = dict(trained=datetime.date.today().isoformat(), params=int(ck['params']), arch='factorised MLP',
-                hidden=list(ck['hidden']), rank=int(ck['rank']), **run_meta('main'))
+                hidden=list(ck['hidden']), rank=int(ck['rank']), prior=ck.get('prior', 'dataset'), **run_meta('main'))
     for split in ('train', 'val', 'test'):
         ds = [json.load(open(p)) for p in sorted(glob.glob('data/%s.json' % split) + glob.glob('data/%s_*.json' % split))]
         if ds:
@@ -134,6 +134,22 @@ def main():
                    lnJms=ln_jms.tolist(), J=j_tot.tolist(), lutSize=LUT_N, lutSamples=lut_samples,
                    lutMean=float(lut.mean()))
 
+    # ---- the same architecture trained with the thick-column population prior: createNeuralCloudScatter({ prior: 'thick' })
+    if os.path.exists('runs/main_thick.pt'):
+        netd, _, ckd = load_net('main_thick')
+        flatd, std, biasd = pack(netd)
+        assert ckd['arch'] == 'factor' and len(flatd) == ckd['params'] and ckd.get('prior') == 'thick'
+        lnd = np_forward(std[0], std[1], biasd, ts, tu, c)
+        metad = dict(trained=meta['trained'], params=int(ckd['params']), arch='factorised MLP', hidden=list(ckd['hidden']),
+                     rank=int(ckd['rank']), prior='thick', **run_meta('main_thick'))
+        if 'testMetrics' in meta:
+            metad['testMetrics'] = {k: v for k, v in meta['testMetrics'].items() if 'thick-column prior' in k}
+        modeld = dict(version=1, hidden=list(ckd['hidden']), rank=int(ckd['rank']), bodyExtra=0, enc=enc, phase=phase,
+                      octaves=model['octaves'], meta=metad, b64=base64.b64encode(flatd.tobytes()).decode('ascii'))
+        js += ('\n// Same network trained with the thick-column population prior (createNeuralCloudScatter({ prior: "thick" })).\n'
+               'export const CLOUD_SCATTER_MODEL_THICK_PRIOR = %s;\n' % json.dumps(modeld, indent=2))
+        vectors['lnJmsThickPrior'] = lnd.tolist()
+
     # ---- optional 4-feature model (adds tauDown)
     if os.path.exists('runs/main4.pt'):
         net4, _, ck4 = load_net('main4')
@@ -145,7 +161,7 @@ def main():
             tt = net4(torch.from_numpy(x.astype(np.float32))).numpy()
         assert np.abs(tt - ln4).max() < 2e-3, np.abs(tt - ln4).max()
         meta4 = dict(trained=meta['trained'], params=int(ck4['params']), arch='factorised MLP (+tauDown)',
-                     hidden=list(ck4['hidden']), rank=int(ck4['rank']), **run_meta('main4'))
+                     hidden=list(ck4['hidden']), rank=int(ck4['rank']), prior=ck4.get('prior', 'dataset'), **run_meta('main4'))
         if 'testMetrics' in meta:
             meta4['testMetrics'] = {k: v for k, v in meta['testMetrics'].items() if 'Stretch' in k}
         model4 = dict(version=1, hidden=list(ck4['hidden']), rank=int(ck4['rank']), bodyExtra=1, enc=enc, phase=phase,

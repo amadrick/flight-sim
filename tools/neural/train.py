@@ -9,6 +9,9 @@ Loss: relative MSE on J_ms with *noise-free* weights,
 where J_ref is the network's own earlier prediction (no gradient; updated per epoch, then frozen).  Because the weight depends only on the
 inputs, the minimiser is the conditional MEAN of the path-traced J_ms given the features - i.e. the fit is
 energy-preserving and is not biased by the Monte Carlo noise (a log-space loss would be biased low).
+--prior thick additionally re-weights the cloud population toward optically thick columns (see
+model.column_prior_weight; the reported train/val relRMSE then use the same weights):
+  .venv/bin/python train.py --name main_thick --epochs 24 --prior thick   # the optional thick-prior variant
 The first epochs use a log-space loss as a robust warm start.
 """
 import argparse
@@ -39,6 +42,8 @@ def main():
     ap.add_argument('--lr', type=float, default=3e-3)
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--drop-up', action='store_true', help='ablation: hide tauUp from the network')
+    ap.add_argument('--prior', default='dataset', choices=['dataset', 'thick'],
+                    help="cloud-population prior: 'thick' re-weights samples by column optical thickness (model.column_prior_weight)")
     ap.add_argument('--threads', type=int, default=2)
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
@@ -73,6 +78,10 @@ def main():
     jss_t = torch.from_numpy(M.j_single(tr['feat']).astype(np.float32))
     xv = torch.from_numpy(fx(va['feat']))
     jss_v = M.j_single(va['feat'])
+    pw_t = torch.from_numpy(M.column_prior_weight(tr['feat'], a.prior))    # population prior (mean 1)
+    pw_tn = pw_t.numpy().astype(np.float64)
+    pw_v = M.column_prior_weight(va['feat'], a.prior).astype(np.float64)
+    print('prior %s: effective sample fraction %.3f' % (a.prior, 1.0 / float(np.mean(pw_tn ** 2))))
     n = len(yt)
     ref = torch.full((n,), 0.08)                     # J_ms reference for the weights (updated every epoch)
     steps_per_epoch = n // a.batch
@@ -98,9 +107,9 @@ def main():
             out = torch.clamp(net(xt[idx]), -25.0, 9.0)
             y = yt[idx]
             if ep < warm:
-                loss = ((out - torch.log(torch.clamp(y, min=1e-4))) ** 2).mean()
+                loss = (pw_t[idx] * (out - torch.log(torch.clamp(y, min=1e-4))) ** 2).mean()
             else:
-                w = 1.0 / (jss_t[idx] + ref[idx]) ** 2
+                w = pw_t[idx] / (jss_t[idx] + ref[idx]) ** 2
                 loss = (w * (torch.exp(out) - y) ** 2).mean()
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -117,8 +126,8 @@ def main():
             ref_v = np.maximum(pv, 1e-4)
         # noise-debiased relative RMSE of total J with the current (frozen after `freeze`) weights
         ptn = pt.numpy().astype(np.float64)
-        v = float(np.mean((pv - ja_v) * (pv - jb_v) / (jss_v + ref_v) ** 2))
-        t = float(np.mean((ptn - ja_t) * (ptn - jb_t) / (jss_tn + ref.numpy().astype(np.float64)) ** 2))
+        v = float(np.mean(pw_v * (pv - ja_v) * (pv - jb_v) / (jss_v + ref_v) ** 2))
+        t = float(np.mean(pw_tn * (ptn - ja_t) * (ptn - jb_t) / (jss_tn + ref.numpy().astype(np.float64)) ** 2))
         rec = dict(epoch=ep + 1, train_loss=run / steps_per_epoch, train_rel_rmse=math.sqrt(max(t, 0)),
                    val_rel_rmse=math.sqrt(max(v, 0)), lr=sched.get_last_lr()[0], seconds=time.time() - t0,
                    weights_frozen=bool(ep >= freeze))
@@ -130,9 +139,9 @@ def main():
             best = (v, {k: t_.clone() for k, t_ in net.state_dict().items()})
     net.load_state_dict(best[1])
     torch.save(dict(state=net.state_dict(), arch=a.arch, hidden=list(getattr(net, 'hidden', hidden)),
-                    rank=a.rank, params=M.n_params(net), extra=a.extra, drop_up=a.drop_up), 'runs/%s.pt' % a.name)
+                    rank=a.rank, params=M.n_params(net), extra=a.extra, drop_up=a.drop_up, prior=a.prior), 'runs/%s.pt' % a.name)
     with open('runs/%s.json' % a.name, 'w') as f:
-        json.dump(dict(name=a.name, arch=a.arch, params=M.n_params(net), epochs=a.epochs, batch=a.batch, lr=a.lr,
+        json.dump(dict(name=a.name, arch=a.arch, params=M.n_params(net), epochs=a.epochs, batch=a.batch, lr=a.lr, prior=a.prior,
                        train_samples=int(n), val_samples=int(len(xv)), best_val_rel_rmse=math.sqrt(max(best[0], 0)),
                        seconds=time.time() - t0, log=log), f, indent=1)
     print('best val relRMSE %.4f, saved runs/%s.pt (%.0f s)' % (math.sqrt(max(best[0], 0)), a.name, time.time() - t0))

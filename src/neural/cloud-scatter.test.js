@@ -9,7 +9,7 @@ import { decodeModel, logJms, scatterJ, cloudPhase, encodeFeatures } from './mlp
 import {
   createNeuralCloudScatter, createAnalyticCloudScatter, bakeScatterLUT, getCloudScatterNet, lutAxes,
   neuralScatterGLSL, analyticScatterGLSL, analyticScatterJ, CLOUD_SCATTER_LUT_SIZE,
-  hasCloudScatter4, getCloudScatterNet4, createNeuralCloudScatter4,
+  hasCloudScatter4, getCloudScatterNet4, createNeuralCloudScatter4, hasThickPriorNet,
 } from './cloud-scatter.js';
 
 const vec = JSON.parse(readFileSync(fileURLToPath(new URL('./test-vectors.json', import.meta.url)), 'utf8'));
@@ -220,4 +220,31 @@ test('4-feature model: factor textures, GLSL, CPU twin close to the network, bui
   assert.ok(p99 < 0.30, `99th percentile factor-LUT error ${p99}`);
   assert.ok(Number.isFinite(s.sample(1e6, 1e6, 0.3, 1e6)) && Number.isFinite(s.sample(-1, -1, 2, -1)));
   s.dispose();
+});
+
+test('prior option: thick-prior network reproduces Python; it is brighter at thick-cloud tops; numeric prior blends', () => {
+  if (!hasThickPriorNet()) { console.log('  (thick-prior network not embedded - skipped)'); return; }
+  const netT = getCloudScatterNet('thick');
+  assert.notEqual(netT, getCloudScatterNet());
+  assert.equal(getCloudScatterNet('dataset'), getCloudScatterNet());
+  let maxLn = 0;
+  for (let i = 0; i < vec.lnJmsThickPrior.length; i++) {
+    maxLn = Math.max(maxLn, Math.abs(logJms(netT, vec.tauSun[i], vec.tauUp[i], vec.cosTheta[i]) - vec.lnJmsThickPrior[i]));
+  }
+  assert.ok(maxLn < 1e-4, `thick-prior ln J_ms mismatch ${maxLn}`);
+  const data = createNeuralCloudScatter(), thick = createNeuralCloudScatter({ prior: 'thick' }), mid = createNeuralCloudScatter({ prior: 0.5 });
+  assert.equal(data.info.prior, 'dataset');
+  assert.equal(thick.info.prior, 'thick');
+  assert.equal(mid.info.prior, 0.5);
+  assert.equal(data.info.meta.prior, 'dataset');
+  assert.equal(thick.info.meta.prior, 'thick');
+  // just below the sun-lit top, looking back from the sun side: the two priors must differ in the expected direction
+  const a = thick.sampleMulti(0.5, 0.4, -0.7), b = data.sampleMulti(0.5, 0.4, -0.7), m = mid.sampleMulti(0.5, 0.4, -0.7);
+  console.log(`  J_ms just below a sun-lit top (tauSun 0.5, tauUp 0.4, back-scatter): dataset prior ${b.toFixed(4)}, thick prior ${a.toFixed(4)}, blend 0.5 ${m.toFixed(4)}; max |JS - Python| = ${maxLn.toExponential(2)}`);
+  assert.ok(a > 1.3 * b, 'thick-column prior should be clearly brighter near the top surface');
+  assert.ok(Math.abs(m - Math.sqrt(a * b)) < 0.02 * m, 'numeric prior blends ln J_ms');
+  // deep inside (tauUp large) the population prior hardly matters
+  const da = thick.sampleMulti(40, 30, -0.2), db = data.sampleMulti(40, 30, -0.2);
+  assert.ok(Math.abs(Math.log(da / db)) < 0.7, `deep interior should not depend strongly on the prior: ${da} vs ${db}`);
+  thick.dispose(); data.dispose(); mid.dispose();
 });

@@ -100,6 +100,21 @@ def load_split(split):
     return out
 
 
+def column_prior_weight(feat, mode='thick'):
+    """Per-sample weight that re-weights the cloud population by the optical thickness of the vertical column
+    through the sample, tau_v = tauUp + tauDown (a dataset column; NOT an input of the deployed 3-feature net).
+
+    The raw dataset is dominated by thin columns (median tau_v ~ 5: cloud edges, veils, thin stratus), but a
+    three-feature model cannot tell a thin veil from the top of a thick cloud, so it has to commit to a prior.
+    'thick' weights each sample by clip(tau_v, 1, 64) (normalised to mean 1): the population the flight simulator
+    mostly draws, cumulus and stratocumulus decks with tau_v of 10-100.  'dataset' leaves the samples unweighted.
+    """
+    if mode in (None, '', 'dataset'):
+        return np.ones(len(feat), dtype=np.float32)
+    tv = np.clip(feat[:, 1].astype(np.float64) + feat[:, 3].astype(np.float64), 1.0, 64.0)
+    return (tv / tv.mean()).astype(np.float32)
+
+
 def n_params(m):
     return sum(p.numel() for p in m.parameters())
 

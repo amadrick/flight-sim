@@ -36,6 +36,9 @@ def main():
                                                                  n=tuned['n'], gain=tuned['gain']),
         'NEURAL (LUT)': lambda ts, tu, c, td: M.baseline_single(ts, tu, c) + sample_lut(lut, ts, tu, c),
     }
+    if os.path.exists('runs/main_thick.pt'):
+        lut1 = bake_lut(load_net('main_thick')[0])
+        models['NEURAL, thick prior'] = lambda ts, tu, c, td: M.baseline_single(ts, tu, c) + sample_lut(lut1, ts, tu, c)
     if have4:
         models['NEURAL-4 (+tauDown)'] = lambda ts, tu, c, td: M.baseline_single(ts, tu, c) + sample_factor4(B, A, bias4, ts, tu, c, td)
     rows = []

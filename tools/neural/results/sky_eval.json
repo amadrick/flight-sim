@@ -1,0 +1,223 @@
+{
+ "results": {
+  "Beer from above: exp(-tauUp)": {
+   "all": 0.34178695007594667,
+   "cumulus": 0.35051105547775147,
+   "stratus": 0.3240158821713406,
+   "slab": 0.28264941597215093,
+   "shape": 0.3466425664473727
+  },
+  "Constant 0.5": {
+   "all": 0.14603178265850525,
+   "cumulus": 0.14595203361793385,
+   "stratus": 0.17408242081195913,
+   "slab": 0.1691922891641265,
+   "shape": 0.1067702318888215
+  },
+  "Unscattered sky light only: E2(tauUp)/2  [no multiple scattering]": {
+   "all": 0.4142917949049539,
+   "cumulus": 0.4220243626152457,
+   "stratus": 0.38657413485264935,
+   "slab": 0.35244187376772007,
+   "shape": 0.4311380364582545
+  },
+  "Diffusion / two-stream slab formula (analytic fallback)": {
+   "all": 0.04493598790571695,
+   "cumulus": 0.050782565355568916,
+   "stratus": 0.03515822166571011,
+   "slab": 0.03098849216081547,
+   "shape": 0.03483630161792985
+  },
+  "NEURAL sky visibility (337 params), direct": {
+   "all": 0.04090464230750719,
+   "cumulus": 0.04517116240950167,
+   "stratus": 0.03879150086100734,
+   "slab": 0.03431480976507542,
+   "shape": 0.028095155400380177
+  },
+  "NEURAL sky visibility, as deployed (32x32 half-float LUT)": {
+   "all": 0.04091101583413376,
+   "cumulus": 0.04517215714006413,
+   "stratus": 0.03882114651514701,
+   "slab": 0.034348616384945775,
+   "shape": 0.02809201495917241
+  }
+ },
+ "noise": 0.02985559021966224,
+ "log": [
+  {
+   "epoch": 1,
+   "train_loss": 0.018291544009714503,
+   "test_rmse": 0.07597104426941663
+  },
+  {
+   "epoch": 2,
+   "train_loss": 0.005947514982536844,
+   "test_rmse": 0.044661383269557126
+  },
+  {
+   "epoch": 3,
+   "train_loss": 0.005441929334902192,
+   "test_rmse": 0.04172658312310011
+  },
+  {
+   "epoch": 4,
+   "train_loss": 0.0053965385161238175,
+   "test_rmse": 0.04142240794395288
+  },
+  {
+   "epoch": 5,
+   "train_loss": 0.005381573425376252,
+   "test_rmse": 0.041358583453961165
+  },
+  {
+   "epoch": 6,
+   "train_loss": 0.005369514871184549,
+   "test_rmse": 0.041121904761890725
+  },
+  {
+   "epoch": 7,
+   "train_loss": 0.005364092376261746,
+   "test_rmse": 0.04114278961468806
+  },
+  {
+   "epoch": 8,
+   "train_loss": 0.005364553556356528,
+   "test_rmse": 0.04108593120411639
+  },
+  {
+   "epoch": 9,
+   "train_loss": 0.005358237533970443,
+   "test_rmse": 0.041000259738029274
+  },
+  {
+   "epoch": 10,
+   "train_loss": 0.005354296827484688,
+   "test_rmse": 0.04096447777212844
+  },
+  {
+   "epoch": 11,
+   "train_loss": 0.0053526521469019865,
+   "test_rmse": 0.04124516667846252
+  },
+  {
+   "epoch": 12,
+   "train_loss": 0.005350371044486353,
+   "test_rmse": 0.040947183304193675
+  },
+  {
+   "epoch": 13,
+   "train_loss": 0.005351310720258992,
+   "test_rmse": 0.04097728100000107
+  },
+  {
+   "epoch": 14,
+   "train_loss": 0.00534618099551801,
+   "test_rmse": 0.040926089574814854
+  },
+  {
+   "epoch": 15,
+   "train_loss": 0.005344052157964404,
+   "test_rmse": 0.04091506729953675
+  },
+  {
+   "epoch": 16,
+   "train_loss": 0.00534575395222294,
+   "test_rmse": 0.04090915653538206
+  },
+  {
+   "epoch": 17,
+   "train_loss": 0.005344884533894389,
+   "test_rmse": 0.0408497061237787
+  },
+  {
+   "epoch": 18,
+   "train_loss": 0.005342571498596505,
+   "test_rmse": 0.04103997009105754
+  },
+  {
+   "epoch": 19,
+   "train_loss": 0.005341598579073197,
+   "test_rmse": 0.040896439677107876
+  },
+  {
+   "epoch": 20,
+   "train_loss": 0.005341036334531765,
+   "test_rmse": 0.0412010404150919
+  },
+  {
+   "epoch": 21,
+   "train_loss": 0.0053408935965893614,
+   "test_rmse": 0.04094035002467936
+  },
+  {
+   "epoch": 22,
+   "train_loss": 0.005342380411616743,
+   "test_rmse": 0.041324633718207174
+  },
+  {
+   "epoch": 23,
+   "train_loss": 0.005343066640070652,
+   "test_rmse": 0.04096922949020756
+  },
+  {
+   "epoch": 24,
+   "train_loss": 0.005340039583356822,
+   "test_rmse": 0.040954477370344605
+  },
+  {
+   "epoch": 25,
+   "train_loss": 0.005338833861895008,
+   "test_rmse": 0.040926962653874015
+  },
+  {
+   "epoch": 26,
+   "train_loss": 0.005339032629096549,
+   "test_rmse": 0.040901567466471896
+  },
+  {
+   "epoch": 27,
+   "train_loss": 0.005337833299314323,
+   "test_rmse": 0.04092111852322068
+  },
+  {
+   "epoch": 28,
+   "train_loss": 0.0053376555729861535,
+   "test_rmse": 0.04091067442671797
+  },
+  {
+   "epoch": 29,
+   "train_loss": 0.005337396158186132,
+   "test_rmse": 0.040895934621679425
+  },
+  {
+   "epoch": 30,
+   "train_loss": 0.0053376275408145496,
+   "test_rmse": 0.04090464227598499
+  }
+ ],
+ "meta": {
+  "trained": "2026-11-19",
+  "params": 337,
+  "hidden": [
+   16,
+   16
+  ],
+  "trainSamples": 600000,
+  "trainClouds": 300,
+  "trainPaths": 64,
+  "testSamples": 120000,
+  "testClouds": 60,
+  "testPaths": 256,
+  "testRmse": {
+   "Beer from above: exp(-tauUp)": 0.3418,
+   "Constant 0.5": 0.146,
+   "Unscattered sky light only: E2(tauUp)/2  [no multiple scattering]": 0.4143,
+   "Diffusion / two-stream slab formula (analytic fallback)": 0.0449,
+   "NEURAL sky visibility (337 params), direct": 0.0409,
+   "NEURAL sky visibility, as deployed (32x32 half-float LUT)": 0.0409
+  },
+  "mcNoiseRms": 0.0299,
+  "trainSeconds": 9
+ }
+}
