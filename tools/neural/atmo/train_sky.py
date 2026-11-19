@@ -57,6 +57,14 @@ def load(split):
     return out, len(files)
 
 
+def load_aureole(split):
+    files = sorted(f for f in glob.glob(os.path.join(HERE, 'data', 'aur%s_*.npz' % split)) if not f.endswith('.tmp.npz'))
+    if not files:
+        return None
+    parts = [np.load(f) for f in files]
+    return {k: np.concatenate([p[k] for p in parts]) for k in ('sun', 'el', 'az', 'h', 'ef', 'mie', 'Cm')}
+
+
 def cosg_of(d):
     s = np.stack([np.cos(d['sun']), np.sin(d['sun']), np.zeros_like(d['sun'])], 1)
     v = np.stack([np.cos(d['el']) * np.cos(d['az']), np.sin(d['el']), np.cos(d['el']) * np.sin(d['az'])], 1)
@@ -106,11 +114,33 @@ def main():
     wr = lambda d: np.clip((np.degrees(d['sun']) + 13.0) / 1.5, 0, 1)
     W = np.concatenate([np.repeat(wr(tr)[:, None], 3, 1), np.repeat(wc[:, None], 3, 1)], 1)
     Wt = np.concatenate([np.repeat(wr(te)[:, None], 3, 1), np.repeat(wct[:, None], 3, 1)], 1)
+    # dedicated near-sun column samples (gen_aureole.py): column targets only
+    for split, store in (('train', 'tr'), ('test', 'te')):
+        a = load_aureole(split)
+        if a is None:
+            continue
+        xa = encode(a['sun'], a['ef'], a['az'], a['h'], a['mie'], cosg_of(a))
+        ya = np.concatenate([np.zeros((len(xa), 3)), np.log(np.maximum(a['Cm'], C_FLOOR))], 1)
+        Wa = np.concatenate([np.zeros((len(xa), 3)), np.repeat(np.where(a['sun'] > math.radians(-1), 1.0, 0.2)[:, None], 3, 1)], 1)
+        if store == 'tr':
+            x, y, W = np.concatenate([x, xa]), np.concatenate([y, ya]), np.concatenate([W, Wa])
+        else:
+            aur_test = (xa, ya, a)
+            xt, yt, Wt = np.concatenate([xt, xa]), np.concatenate([yt, ya]), np.concatenate([Wt, Wa])
+        print('aureole %s: %d samples' % (split, len(xa)))
     net = nn.MLP([6, *hidden, 6], np.random.default_rng(1), out_bias=y.mean(0))
     hist = train_elementwise(net, x, y, W, xt, yt, Wt, epochs=int(os.environ.get('EPOCHS', 80)))
     net.to_f32()
-    p = net.forward(xt)
-    res = evaluate(te, p, yt)
+    nte_main = len(te['sun'])
+    p = net.forward(xt[:nte_main])
+    res = evaluate(te, p, yt[:nte_main])
+    if 'aur_test' in locals():
+        xa, ya, a = aur_test
+        pa = net.forward(xa)
+        m = a['sun'] > math.radians(-1)
+        e = (pa[:, 3:] - ya[:, 3:])[m]
+        res['aureole column (within 25 deg of the sun, sun > -1 deg)'] = dict(
+            n=int(m.sum()), rms_ln_Cm=float(np.sqrt((e ** 2).mean())), p99_abs_ln_Cm=float(np.percentile(np.abs(e), 99)))
     meta = dict(params=net.n_params(), hidden=hidden, train_samples=int(len(y)), test_samples=int(len(yt)),
                 secs=round(time.time() - t0), history=hist[-5:], eval=res)
     print(json.dumps(res, indent=1))
