@@ -23,8 +23,8 @@ export default {
       cla:   [1.00,   1.04,   1.10,   1.15,   1.22,   1.30,   1.32,   1.30,   1.22,   1.12,   0.98,   0.86,   0.77,   0.70,   0.64,   0.59],
       clMax: [1.00,   1.00,   0.95,   0.90,   0.84,   0.78,   0.76,   0.75,   0.76,   0.76,   0.74,   0.70,   0.66,   0.62,   0.58,   0.55],
       cd0:   [0.0215, 0.0215, 0.0217, 0.0222, 0.0240, 0.0291, 0.0420, 0.0607, 0.0764, 0.0836, 0.0848, 0.0804, 0.0759, 0.0737, 0.0715, 0.0693],
-      k:     [0.060,  0.060,  0.061,  0.063,  0.066,  0.072,  0.078,  0.085,  0.095,  0.105,  0.125,  0.145,  0.165,  0.185,  0.205,  0.225],
-      xac:   [0,      0,      0,      0,      0.01,   0.03,   0.05,   0.08,   0.11,   0.12,   0.13,   0.13,   0.13,   0.13,   0.13,   0.13],
+      k:     [0.085,  0.085,  0.086,  0.088,  0.091,  0.096,  0.100,  0.105,  0.095,  0.105,  0.125,  0.145,  0.165,  0.185,  0.205,  0.225],
+      xac:   [0,      0,      0,      0,      0,      0.02,   0.05,   0.08,   0.11,   0.12,   0.13,   0.13,   0.13,   0.13,   0.13,   0.13],
       ctrl:  [1,      1,      1,      0.99,   0.97,   0.93,   0.90,   0.86,   0.82,   0.78,   0.72,   0.66,   0.60,   0.55,   0.51,   0.48],
     },
     // Variable sweep 20° (pos 0) .. 68° (pos 1), CADC Mach sweep programme; full travel ~7 s
@@ -34,7 +34,7 @@ export default {
       effects: { cla: 0.62, clMax: 0.75, cd0: 0.002, wave: 0.45, k: 1.9, xac: 0.06, damp: 0.65, span: 0.596 },
     },
     drag: { clMinDrag: 0.03, gear: 0.025, speedbrake: 0.05, spoiler: 0.10, beta: 1.2, elevator: 0.08 },
-    pitch: { cm0: 0.0, staticMargin: 0.09, cmq: -12.0, cmde: 1.6, clde: 0.40, cmPostStall: -0.80, cmGear: -0.006, cmSpoiler: 0.01 },
+    pitch: { cm0: 0.0, staticMargin: 0.09, cmq: -12.0, cmde: 1.6, clde: 0.40, cmPostStall: -1.4, cmGear: -0.006, cmSpoiler: 0.01 },
     side: { cyb: -1.0, cydr: 0.18 },
     roll: { clb: -0.08, clbCl: -0.08, clp: -0.40, clr: 0.04, clrCl: 0.18, clda: 0.0, cldt: 0.050, cldr: 0.010, clSpoiler: 0.060 },
     yaw: { cnb: 0.16, cnp: -0.015, cnpCl: -0.06, cnr: -0.30, cnda: 0.004, cndaCl: 0.008, cndr: 0.075, cnSpoiler: 0.006,
@@ -49,7 +49,8 @@ export default {
       ],
       time: 5, slatTime: 3, takeoff: 2, landing: 2,
     },
-    slat: { dAlphaStall: 6, dcd0: 0.003 },
+    // CADC manoeuvre slats: scheduled with AoA below M 0.85 (retracted supersonic), full with the gear down
+    slat: { dAlphaStall: 6, dcd0: 0.003, auto: { alpha: [7, 14], machFade: [0.8, 0.9], gearDown: 1 } },
   },
   controls: {
     elevator: { max: 33, rate: 40, tau: 0.06 },          // stabilators (real travel 33° TE up / 11.5° TE down; symmetric in the engine)
@@ -57,7 +58,7 @@ export default {
     rudder: { max: 30, rate: 60, tau: 0.06 },
     diffTail: { max: 10 },                                // differential stabilator ±10°
     spoilers: { flightMax: 0.0, rollGain: 1.25, rollDeadband: 0.2, rollMax: 1.0, time: 0.4, autoGround: true },
-    trim: { max: 10, rate: 0.06, authority: 1 },
+    trim: { max: 10, rate: 0.06, authority: 0.7 },
     speedbrake: { time: 2 },
   },
   hook: true,
@@ -75,8 +76,8 @@ export default {
   limits: { vmo: 411.5, mmo: 2.34 },
   fcs: {
     type: 'conventional',
-    feelQ: 2900, feelMin: 0.06, rollFeelQ: 20000, trimFollowUp: 0.25,
-    yawDamper: 1, sasAuthority: 0.6, betaGain: 2, ari: 0.5, stickShape: 0.6,
+    feelQ: 4800, feelMin: 0.06, rollFeelQ: 20000, trimFollowUp: 0,
+    yawDamper: 1, sasAuthority: 0.6, betaGain: 2, ari: 0.5, stickShape: 0.8,
   },
   autopilot: { bankMax: 25, accelMax: 0.15 },
   targets: {
@@ -89,7 +90,7 @@ export default {
     maxSpeedAlt: [2.34, 0.06], maxSpeedAltitude: 12200,
     ceiling: 16150, ceilingMach: 1.3,
     rollRate: [60, 0.3], rollSpeed: 75,
-    sustainedTurn: [14, 0.15], sustainedTurnSpeed: 205, sustainedTurnAltitude: 4572,
+    sustainedTurn: [14, 0.15], sustainedTurnSpeed: 210, sustainedTurnAltitude: 3000,
     instantTurn: [20, 0.15], instantTurnSpeed: 180,
     maxG: [7.5, 0.1], maxGSpeed: 200,
     glideRatio: [13, 0.2], glideSpeed: 120,
