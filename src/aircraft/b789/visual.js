@@ -122,7 +122,6 @@ export function createVisual(ctx, opts = {}) {
   const skinA = { weathering: 0.22, waviness: 0.12, framePitch: 0.5, orangePeel: 0.6, clearcoat: 0.85 };
   const A = K.createAtlas({ size: atlasSize, base: F.gloss(SC.body), swatchRows: 3, skin: skinA });
   const cFus = A.chart('fus', { type: 'unwrap', z: [-29.95, 33.0], girth: 18.6, vScale: 0.8, strips: 2 });
-  const cPanel = A.chart('panel', { type: 'rect', w: 2.2, h: 0.75, density: 2.2, ao: false });
   const cPed = A.chart('pedestal', { type: 'rect', w: 0.5, h: 1.1, density: 1.6, ao: false });
   const cOver = A.chart('overhead', { type: 'rect', w: 0.7, h: 1.0, density: 1.6, ao: false });
   A.pack();
@@ -259,12 +258,11 @@ export function createVisual(ctx, opts = {}) {
     stA.add(K.bulkhead(fus, z1, { uv: UA.liner, facing: -1 }));                                                 // flight-deck door wall
     stA.add(K.bulkhead(fus, z0 + 0.03, { uv: UA.shield, facing: 1 }));                                          // forward wall in the nose
     const zp = eye[2] - 0.82;                                                                                   // main instrument panel plane
-    // glareshield: a dark hood across the panel, its top below the sight line over the nose; the MCP on its aft face
-    { const gy = EY0 - 0.34; stA.add(K.prism([[zp - 0.36, gy - 0.04], [zp + 0.13, gy], [zp + 0.17, gy - 0.03], [zp + 0.15, gy - 0.12], [zp - 0.36, gy - 0.16]], -1.1, 1.1, UA.shield));
-      const i0 = stA.vertexCount; for (const [a, b] of [[0.62, 0.74], [1.58, 0.74], [1.58, 0.63], [0.62, 0.63]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.1, gy - 0.02 - (b - 0.63) * 0.86, zp + 0.162, 0, 0, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
-    // main panel: five large displays
-    { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.2, 0.6], [2.2, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.1, EY0 - 0.43 - b, zp + 0.12 + b * 0.1, 0, 0.12, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
-    stA.add(K.box(2.24, 0.62, 0.05, UA.shield).translate(0, EY0 - 0.73, zp + 0.1));                              // panel body behind the displays
+    // main instrument panel (kit: PFD outboard + ND inboard per pilot, EICAS + standby in the centre, lit by day) under the MCP
+    // glareshield, whose top stays below the sight line over the nose; narrowed toward the nose to stay inside the skin
+    const eL = [-Math.abs(eye[0]), eye[1], eye[2]], eR = [Math.abs(eye[0]), eye[1], eye[2]];
+    const panelMesh = fitInside(K.instrumentPanel({ eyes: [eL, eR], kind: 'airline', dist: 0.68, drop: 0.69, height: 0.58, width: 2.2, mfd: 0.23, uv: UA.shield }), fus, 1.13);
+    stA.add(panelMesh);
     // centre pedestal: thrust levers, flap and speedbrake handles, two control-display units
     { const pz0 = zp + 0.22, pz1 = pz0 + 1.1, top = FY + 0.72;
       stA.add(K.box(0.52, top - FY, pz1 - pz0, UA.shield).translate(0, (top + FY) / 2, (pz0 + pz1) / 2));
@@ -278,6 +276,7 @@ export function createVisual(ctx, opts = {}) {
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
       stA.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.sheep } }));
+      stA.add(K.pilot({ eye: e, kind: 'airline', recline: 8, stick: [0.18, -0.49, -0.45], throttle: [-0.18, -0.49, -0.45], uv: { suit: UA.seat, helmet: UA.seat, dark: UA.seat } }));   // hands on the yoke horns
       stA.add(K.yoke({ base: [e[0], FY, e[2] - 0.56], top: [e[0], e[1] - 0.55, e[2] - 0.46], width: 0.36, uv: UA.yoke }));
       stA.add(K.box(0.34, 0.5, 1.15, UA.shield).translate(sx * 1.2, FY + 0.25, e[2] - 0.1));                        // side console (tiller, oxygen mask box)
       stA.add(K.box(0.24, 0.05, 0.3, UA.post).translate(sx * 1.2, FY + 0.52, e[2] - 0.45));
@@ -413,7 +412,7 @@ export function createVisual(ctx, opts = {}) {
 
   lap('geometry');
   // ---- paint + materials ------------------------------------------------------------------------------------------------------
-  paintFuselage(A, { SC, fus, cFus, cPanel, cOver, cPed, WIN });
+  paintFuselage(A, { SC, fus, cFus, cOver, cPed, WIN });
   paintSurfaces(B, { SC, W: W.R, fin, stab: stab.R, cWT, cWB, cSt, cFin, SPOIL, cNac, cSlv, NS });
   lap('paint');
   const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1 });
@@ -609,12 +608,12 @@ export function createVisual(ctx, opts = {}) {
       b.set(b.v);
     }
     matA.emissiveIntensity = S.night * 2.4;
-    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0, tipDy = bend(XT) * flex;
+    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), tipDy = bend(XT) * flex;
     HALO.forEach((h, i) => {
       let on = 0;
       if (h.k === 'nav') on = lt.nav ? 1 : 0;
-      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
-      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else if (h.k === 'strobe') on = lt.strobe ? K.lampFlash('strobe', S.tLamp) : 0;
+      else if (h.k === 'beacon') on = lt.beacon ? K.lampFlash('beacon', S.tLamp) : 0;
       else on = lt[h.k] && (!h.gear || sf.gear > 0.98) ? 1 : 0;
       const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
       if (h.tip) haloPos.setY(i, h.p[1] + tipDy);
@@ -632,7 +631,7 @@ export function createVisual(ctx, opts = {}) {
 
 // ---- paint: fuselage atlas ---------------------------------------------------------------------------------------------------
 function paintFuselage(A, o) {
-  const { SC, fus, cFus, cPanel, cOver, cPed, WIN } = o, F = K.FINISH;
+  const { SC, fus, cFus, cOver, cPed, WIN } = o, F = K.FINISH;
   const P = A.pen(cFus), body = F.gloss(SC.body), belly = F.gloss(SC.belly), cheat = F.gloss(SC.cheat), tail = F.gloss(SC.tail);
   const font = SC.font === 'serif' ? K.FONT.serif : SC.font === 'round' ? K.FONT.round : K.FONT.wide;
   const Z0 = -29.95, Z1 = 33.0;
@@ -716,41 +715,7 @@ function paintFuselage(A, o) {
   const rnd = (() => { let a = 13; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
   for (let i = 0; i < 30; i++) { const z = -14 + rnd() * 40, t = rnd() < 0.5 ? rnd() * 0.06 : 1 - rnd() * 0.06; P.streak(z, t, z + 1 + rnd() * 3, t, 0.005 + rnd() * 0.01, { alpha: 0.04 + rnd() * 0.06 }); }
   P.noise({ alpha: 0.025, scale: 4, stretch: [2, 1] });
-  // --- flight-deck panels: five large displays, MCP, pedestal, overhead ---
-  {
-    const Q = A.pen(cPanel); Q.fill('all', { color: '#4c4e50', rough: 0.72, metal: 0 });
-    const E = (col) => ({ color: col, rough: 0.12, metal: 0, emissive: col });
-    const scr = (a, b, w, h) => { Q.fill((g) => g.rect(a - 0.012, b - 0.012, w + 0.024, h + 0.024), { color: '#1e1f21', rough: 0.5, metal: 0 }); Q.fill((g) => g.rect(a, b, w, h), E('#05080a')); };
-    const pfd = (a, b, w, h) => {                     // attitude ball, speed and altitude tapes
-      scr(a, b, w, h); const cx = a + w * 0.45, cy = b + h * 0.45;
-      Q.fill((g) => g.rect(cx - w * 0.22, cy - h * 0.32, w * 0.44, h * 0.32), E('#1f5aa6')); Q.fill((g) => g.rect(cx - w * 0.22, cy, w * 0.44, h * 0.3), E('#6a4424'));
-      Q.fill((g) => g.rect(cx - w * 0.22, cy - 0.003, w * 0.44, 0.006), E('#e8e8e8'));
-      for (const x of [a + w * 0.08, a + w * 0.78]) Q.fill((g) => g.rect(x, b + h * 0.12, w * 0.12, h * 0.66), E('#2a2f36'));
-      Q.fill((g) => g.rect(cx - 0.05, cy - 0.004, 0.1, 0.008), E('#f2c33a'));
-      Q.fill((g) => g.rect(a + w * 0.2, b + h * 0.82, w * 0.5, h * 0.1), E('#1b2a22'));
-    };
-    const nd = (a, b, w, h) => {                      // map: compass arc, magenta route, waypoints
-      scr(a, b, w, h); const cx = a + w * 0.5, cy = b + h * 0.82;
-      Q.stroke((g) => { g.arc(cx, cy, h * 0.6, Math.PI * 1.15, Math.PI * 1.85); }, 0.006, E('#e6e6e6'));
-      Q.stroke((g) => { g.moveTo(cx, cy); g.lineTo(cx + w * 0.08, cy - h * 0.35); g.lineTo(cx - w * 0.12, cy - h * 0.62); }, 0.006, E('#e04ad8'));
-      for (const [dx, dy] of [[0.08, -0.35], [-0.12, -0.62]]) Q.fill((g) => g.rect(cx + w * dx - 0.008, cy + h * dy - 0.008, 0.016, 0.016), E('#5ce0e6'));
-      Q.fill((g) => g.rect(cx - 0.01, cy - 0.02, 0.02, 0.03), E('#e8e8e8'));
-      Q.fill((g) => g.rect(a + w * 0.05, b + h * 0.05, w * 0.3, h * 0.06), E('#3fcf5a'));
-    };
-    const eicas = (a, b, w, h) => {                   // engine dials and the crew-alert list
-      scr(a, b, w, h);
-      for (const [fx, fy] of [[0.28, 0.25], [0.62, 0.25], [0.28, 0.52], [0.62, 0.52]]) Q.stroke((g) => { g.arc(a + w * fx, b + h * fy, h * 0.1, Math.PI * 0.8, Math.PI * 2.1); }, 0.005, E('#e6e6e6'));
-      for (let i = 0; i < 4; i++) Q.fill((g) => g.rect(a + w * 0.12, b + h * (0.72 + i * 0.05), w * (0.4 - i * 0.06), h * 0.025), E(i ? '#e6e6e6' : '#e8b02a'));
-    };
-    pfd(0.06, 0.13, 0.36, 0.3); nd(0.46, 0.13, 0.36, 0.3); eicas(0.92, 0.1, 0.36, 0.3); nd(1.38, 0.13, 0.36, 0.3); pfd(1.78, 0.13, 0.36, 0.3);
-    Q.fill((g) => g.rect(0.3, 0.005, 1.6, 0.07), { color: '#2f3032', rough: 0.6, metal: 0 });                      // annunciators below the glareshield
-    for (let i = 0; i < 11; i++) Q.fill((g) => g.rect(0.38 + i * 0.135, 0.02, 0.08, 0.035), { color: '#0a0a0a', rough: 0.2, metal: 0, emissive: i % 3 ? '#000000' : '#2a1f06' });
-    for (const a0 of [0.06, 1.78]) Q.fill((g) => g.rect(a0 + 0.08, 0.47, 0.2, 0.09), { color: '#2b2c2e', rough: 0.5, metal: 0 });          // clocks / standby
-    Q.fill((g) => g.rect(0.98, 0.45, 0.24, 0.12), { color: '#2b2c2e', rough: 0.5, metal: 0 }); Q.fill((g) => g.rect(1.02, 0.47, 0.16, 0.08), E('#0c1420'));
-    // MCP on the glareshield (strip a 0.62..1.58, b 0.63..0.74)
-    Q.fill((g) => g.rect(0.62, 0.63, 0.96, 0.11), { color: '#3a3c3e', rough: 0.6, metal: 0 });
-    for (let i = 0; i < 6; i++) { const a0 = 0.66 + i * 0.15; Q.fill((g) => g.rect(a0, 0.645, 0.08, 0.028), { color: '#0a0a0a', rough: 0.2, metal: 0, emissive: '#3a2604' }); Q.fill((g) => g.arc(a0 + 0.04, 0.705, 0.016, 0, TAU), { color: '#151617', rough: 0.4, metal: 0.2 }); }
-  }
+  // --- flight-deck panels: pedestal, overhead ---
   {
     const Q = A.pen(cPed); Q.fill('all', { color: '#3e4042', rough: 0.72, metal: 0 });
     for (const a0 of [0.03, 0.27]) { Q.fill((g) => g.rect(a0, 0.62, 0.2, 0.32), { color: '#232426', rough: 0.5, metal: 0 }); Q.fill((g) => g.rect(a0 + 0.02, 0.64, 0.16, 0.12), { color: '#0a1016', rough: 0.15, metal: 0, emissive: '#0d1a20' });
@@ -861,4 +826,18 @@ function paintSurfaces(B, o) {
     Q.noise({ alpha: 0.025, scale: 2, rough: 0.04 });
   }
 
+}
+
+/** Narrow a cockpit part toward the nose so it stays inside the skin: every vertex's x is scaled by
+ *  (inner half-width of `body` at its own z and height − margin) / hwRef wherever that is below 1 (the kit glareshield is a
+ *  straight-sided hood; airliner noses taper under it). Returns the mesh. */
+function fitInside(m, body, hwRef, margin = 0.08) {
+  const p = m.p;
+  for (let i = 0; i < p.length; i += 3) {
+    const y = p[i + 1], z = p[i + 2];
+    if (z < body.zRange[0] || y >= body.topAt(z) || y <= body.botAt(z)) continue;
+    const k = (body.at(z, body.tAtY(z, y)).p[0] - margin) / hwRef;
+    if (k < 1) p[i] *= Math.max(0.15, k);
+  }
+  return m;
 }
