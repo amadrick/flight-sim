@@ -122,8 +122,8 @@ export function createVisual(ctx, opts = {}) {
   stA.add(hump.mesh);
 
   // ---- main-gear sponsons (one loft per side; gear well cut into the flat bottom) ------------------------------------------
-  const sponSt = (sx) => [[-9.4, 3.3, -1.7, 0.05, 0.05, 0.05], [-8.0, 3.45, -1.7, 1.0, 0.85, 0.9], [-6.2, 3.85, -1.6, 1.55, 1.3, 1.08], [-3.8, 4.1, -1.55, 1.8, 1.55, 1.2],
-    [5.6, 4.1, -1.55, 1.8, 1.55, 1.2], [7.8, 3.92, -1.5, 1.58, 1.4, 1.05], [9.8, 3.62, -1.35, 1.05, 1.0, 0.72], [11.3, 3.38, -1.2, 0.06, 0.08, 0.08]]
+  const sponSt = (sx) => [[-8.75, 3.55, -1.75, 0.05, 0.05, 0.05], [-8.55, 3.6, -1.72, 0.75, 0.62, 0.62], [-8.0, 3.75, -1.66, 1.25, 1.05, 0.92], [-7.0, 3.95, -1.6, 1.62, 1.38, 1.1], [-5.4, 4.1, -1.55, 1.8, 1.55, 1.2],
+    [5.6, 4.1, -1.55, 1.8, 1.55, 1.2], [7.6, 3.95, -1.5, 1.62, 1.42, 1.08], [9.6, 3.7, -1.38, 1.15, 1.08, 0.78], [11.0, 3.45, -1.22, 0.45, 0.5, 0.3], [11.5, 3.4, -1.15, 0.05, 0.06, 0.05]]
     .map(([z, x, y, w, top, bot]) => ({ z, x: sx * x, y, w, top, bot, kTop: 0.55, kBot: [0.78, 0.95] }));
   const sponOpts = (sx) => ({ stations: sponSt(sx), segments: Math.max(28, Math.round(44 * detail / 4) * 4), step: 0.8, chart: cSpon });
   const sp0 = K.loft(sponOpts(1));
@@ -187,7 +187,7 @@ export function createVisual(ctx, opts = {}) {
   // flap-track fairings ("canoes"): front part fixed under the wing, rear part rides on the main flap
   const canoeAt = (x, len, side) => {
     const zf = W.R.at(x, 0.7, 'lower'), z0 = zf[2] - len * 0.4, y = zf[1] - 0.06;
-    const st = [[0, 0.01, 0.01], [0.12, 0.15, 0.18], [0.35, 0.22, 0.36], [0.62, 0.22, 0.38], [0.86, 0.14, 0.24], [1, 0.015, 0.03]].map(r => ({ z: z0 + r[0] * len, x: side * x, y: y - r[2] * 0.5 + (r[0] > 0.6 ? (r[0] - 0.6) * 0.3 : 0), w: r[1], top: r[2] * 0.6, bot: r[2] }));
+    const st = [[0, 0.01, 0.01], [0.12, 0.1, 0.12], [0.35, 0.14, 0.24], [0.62, 0.14, 0.25], [0.86, 0.09, 0.16], [1, 0.012, 0.02]].map(r => ({ z: z0 + r[0] * len, x: side * x, y: y - r[2] * 0.5 + (r[0] > 0.6 ? (r[0] - 0.6) * 0.3 : 0), w: r[1], top: r[2] * 0.6, bot: r[2] }));
     const split = zf[2] + 0.15;
     return { front: K.loft({ stations: st, segments: 12, step: 0.45, uv: UB.canoe, zRange: [z0, split] }).mesh, rear: K.loft({ stations: st, segments: 12, step: 0.45, uv: UB.canoe, zRange: [split, z0 + len], capStart: 'flat' }).mesh };
   };
@@ -271,7 +271,7 @@ export function createVisual(ctx, opts = {}) {
     const C = W[key].controls, a = {};
     for (const [nm, xs] of [['In', [5.6, 9.9]], ['Out', [13.0, 16.6]]]) {
       const main = C['flap' + nm], aft = C['aft' + nm], mesh = main.mesh.clone();
-      for (const x of xs) { const cn = canoeAt(x, nm === 'In' ? 4.6 : 4.0, sx); stB.add(cn.front); mesh.add(cn.rear); }
+      for (const x of xs) { const cn = canoeAt(x, nm === 'In' ? 3.4 : 2.9, sx); stB.add(cn.front); mesh.add(cn.rear); }
       // double-slotted flap: the aft vane rides on the main flap and folds a further 20° down as a morph target
       const aftM = aft.mesh.clone().enableMorph(), al = drop(aft, 0.25);
       rotateMorph(aftM, al.a, al.b, aft.ref, DOWN, 20 * DEG);
@@ -413,7 +413,7 @@ function paintFuselage(A, o) {
   P.noise({ alpha: 0.04, scale: 3, stretch: [2, 1], rough: 0.05 }); P.noise({ alpha: 0.03, scale: 12, stretch: [2, 1] });
   // sponsons: gear-door outline, panel lines, landing-light window
   if (SC.style === 'camo') camo(S, [-9.5, 11.4], [0, 1], SC.alt, 3, 0.9);
-  for (const z of [-6.0, -3.6, 5.6, 7.8]) S.ring(z, 0, 1, { px: 1, depth: 0.3, dark: 0.08 });
+  for (const z of [-7.0, -5.4, 5.6, 7.6]) S.ring(z, 0, 1, { px: 1, depth: 0.3, dark: 0.08 });
   S.decalOn(-8.0, -1.55, 'both', (g) => { g.fillStyle = '#d8dcd8'; g.beginPath(); g.ellipse(0, 0, 0.22, 0.16, 0, 0, TAU); g.fill(); });
   S.noise({ alpha: 0.04, scale: 3, stretch: [2, 1], rough: 0.05 });
   // instrument panel: five large multifunction displays
@@ -449,7 +449,7 @@ function paintSurfaces(B, o) {
   for (const [chart, top] of [[cWT, true], [cWB, false]]) {
     const Q = B.pen(chart); Q.fill('all', body);
     if (SC.style === 'camo') camo(Q, [0.5, 26], [-7, 8.4], SC.alt, top ? 11 : 12, 0.9);
-    Q.fill([at(0.6, 0), at(TIPX, 0), at(TIPX, 0.02), at(0.6, 0.02)], { color: '#8b9094', rough: 0.4, metal: 0.6 });   // LE erosion strip
+    Q.fill([at(0.6, 0), at(TIPX, 0), at(TIPX, 0.02), at(0.6, 0.02)], { color: '#73787c', rough: 0.55, metal: 0.25 });   // LE erosion strip
     const seg = (name, xs, op) => Q.line(xs.map(x => at(x, Ln(name, x))), op);
     for (const [a, b] of [[3.55, 10.95], [11.15, 18.1]]) { seg('flap', [a, b], gap); seg('aft', [a, b], gap); Q.line([at(a, Ln('flap', a)), at(a, 1)], gap); Q.line([at(b, Ln('flap', b)), at(b, 1)], gap); }
     Q.line([at(18.3, 1), at(18.3, 0.7), at(23.85, 0.7), at(23.85, 1)], gap);
@@ -475,7 +475,7 @@ function paintSurfaces(B, o) {
     const Q = B.pen(cSt); Q.fill('all', body);
     if (SC.style === 'camo') camo(Q, [0, 10.4], [20.8, 28.9], SC.alt, 21, 0.7);
     const sa = (x, f) => { const p = stab.at(x, f); return [p[0], p[2]]; };
-    Q.fill([sa(0, 0), sa(9.9, 0), sa(9.9, 0.04), sa(0, 0.04)], { color: '#8b9094', rough: 0.4, metal: 0.6 });
+    Q.fill([sa(0, 0), sa(9.9, 0), sa(9.9, 0.04), sa(0, 0.04)], { color: '#73787c', rough: 0.55, metal: 0.25 });
     Q.line([sa(0.75, 1), sa(0.75, 0.68), sa(9.6, 0.68), sa(9.6, 1)], gap);
     for (const f of [0.22, 0.46]) Q.line([sa(0.3, f), sa(9.7, f)], line);
     for (const x of [2.5, 4.5, 6.5, 8.5]) Q.line([sa(x, 0.05), sa(x, 0.67)], line);
@@ -494,7 +494,7 @@ function paintSurfaces(B, o) {
     { const c = fa(9.0, 0.22); Q.decal(c[0], c[1], (g) => { g.strokeStyle = SC.mark; g.lineWidth = 0.03; g.strokeRect(-0.55, -0.3, 1.1, 0.6); for (let i = 1; i < 7; i++) { g.beginPath(); g.moveTo(-0.08, -0.3 + i * 0.086); g.lineTo(0.55, -0.3 + i * 0.086); g.stroke(); } g.strokeRect(-0.55, -0.3, 0.47, 0.32); }); }
     { const c = fa(7.2, 0.33); Q.text(`AF ${SC.serial.slice(0, 2)}`, c[0] - 0.9, c[1] + 0.2, 0.3, { color: SC.mark, font: K.FONT.sans, weight: 700 }); Q.text(SC.serial.replace('-', '').slice(1), c[0] + 0.5, c[1] - 0.2, 0.7, { color: SC.mark, font: K.FONT.sans, weight: 700 }); }
     { const c = fa(5.0, 0.35); Q.decal(c[0], c[1], (g) => { g.strokeStyle = SC.mark; g.lineWidth = 0.035; g.beginPath(); g.moveTo(-0.45, -0.5); g.lineTo(0.45, -0.5); g.lineTo(0.45, 0.1); g.quadraticCurveTo(0.4, 0.45, 0, 0.62); g.quadraticCurveTo(-0.4, 0.45, -0.45, 0.1); g.closePath(); g.stroke(); g.beginPath(); g.moveTo(-0.3, 0.1); g.lineTo(0, -0.3); g.lineTo(0.3, 0.1); g.moveTo(-0.2, 0.25); g.lineTo(0.2, 0.25); g.stroke(); }); }
-    Q.fill([fa(2.6, 0), fa(12.6, 0), fa(12.6, 0.025), fa(2.6, 0.025)], { color: '#8b9094', rough: 0.4, metal: 0.6 });
+    Q.fill([fa(2.6, 0), fa(12.6, 0), fa(12.6, 0.025), fa(2.6, 0.025)], { color: '#73787c', rough: 0.55, metal: 0.25 });
     const fg = { px: 1.6, depth: 0.5, dark: 0.3 };
     Q.line([fa(3.3, 1), fa(3.3, 0.7), fa(7.75, 0.69), fa(7.75, 1)], fg); Q.line([fa(7.85, 1), fa(7.85, 0.69), fa(12.15, 0.68), fa(12.15, 1)], fg);
     const fl = { px: 1, depth: 0.18, dark: 0.07 };
