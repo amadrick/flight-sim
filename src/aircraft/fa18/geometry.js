@@ -12,9 +12,9 @@ export default {
     { name: 'right', pos: [1.7, -1.55, 0.55], wheelRadius: 0.36, steerable: false, braked: true },
   ],
   engines: [
-    { nozzle: [-0.8, 0.05, 8.5], intake: [-1.1, -0.2, -3.8], nozzleRadius: 0.5 },
-    { nozzle: [0.8, 0.05, 8.5], intake: [1.1, -0.2, -3.8], nozzleRadius: 0.5 },
+    { nozzle: [-0.72, 0.05, 8.55], intake: [-1.08, -0.1, -3.8], nozzleRadius: 0.45 },
+    { nozzle: [0.72, 0.05, 8.55], intake: [1.08, -0.1, -3.8], nozzleRadius: 0.45 },
   ],
-  wingtips: [[-6.81, 0.2, 0.8], [6.81, 0.2, 0.8]],
-  lights: { navLeft: [-6.8, 0.2, 0.8], navRight: [6.8, 0.2, 0.8], tail: [0, 3, 8.4], strobe: [0, 3.1, 8], beacon: [0, 0.7, 3.5], landing: [0, -0.7, -5.1] },
+  wingtips: [[-6.25, 0.18, 1.2], [6.25, 0.18, 1.2]],
+  lights: { navLeft: [-6.12, 0.18, 0.03], navRight: [6.12, 0.18, 0.03], tail: [0, 0.08, 7.97], strobe: [-2.17, 3.2, 6.05], beacon: [0, 0.83, 1.4], landing: [0, -0.72, -4.86] },
 };
