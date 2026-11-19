@@ -5,16 +5,16 @@ export default {
   length: 18.92, span: 13.56, height: 5.08, wingArea: 78.04,
   noseZ: -10.9, tailZ: 8.02,
   cgHeight: 1.7,
-  pilotEye: [0, 0.85, -6],
+  pilotEye: [0, 1.02, -5.9],
   gear: [
     { name: 'nose', pos: [0, -1.7, -5.5], wheelRadius: 0.25, steerable: true, braked: false },
     { name: 'left', pos: [-2.15, -1.7, 0.6], wheelRadius: 0.4, steerable: false, braked: true },
     { name: 'right', pos: [2.15, -1.7, 0.6], wheelRadius: 0.4, steerable: false, braked: true },
   ],
   engines: [
-    { nozzle: [-1.15, 0.1, 8], intake: [-1.4, -0.1, -4.3], nozzleRadius: 0.55 },
-    { nozzle: [1.15, 0.1, 8], intake: [1.4, -0.1, -4.3], nozzleRadius: 0.55 },
+    { nozzle: [-1.15, 0.1, 8], intake: [-1.36, -0.46, -3.9], nozzleRadius: 0.55 },
+    { nozzle: [1.15, 0.1, 8], intake: [1.36, -0.46, -3.9], nozzleRadius: 0.55 },
   ],
-  wingtips: [[-6.78, 0, 2.5], [6.78, 0, 2.5]],
-  lights: { navLeft: [-6.7, 0, 2.5], navRight: [6.7, 0, 2.5], tail: [0, 2.6, 7.4], strobe: [0, 2.9, 7.4], beacon: [0, 0.65, 2], landing: [0, -0.8, -6.2] },
+  wingtips: [[-6.78, -0.34, 2.66], [6.78, -0.34, 2.66]],
+  lights: { navLeft: [-6.8, -0.34, 2.45], navRight: [6.8, -0.34, 2.45], tail: [0, 0.0, 7.76], strobe: [0, 0.66, -1.6], beacon: [0, -0.84, 1.8], landing: [-0.08, -1.12, -5.66] },
 };

@@ -65,6 +65,7 @@ export async function createMenu(ctx) {
     aircraft: pick(params.aircraft, acIds, pick(saved.aircraft, acIds, acIds[0])),
     airport: pick(params.airport, aptIds, pick(saved.airport, aptIds, aptIds[0])),
     runway: 0, end: 0,
+    liveries: (saved.liveries && typeof saved.liveries === 'object') ? { ...saved.liveries } : {},   // aircraft id → chosen livery
     start: pick(params.autostart ? params.start : (saved.start || params.start), ['runway', 'air', 'approach'], 'runway'),
     tod: ctx.time.timeOfDay,
     weather: ctx.weather.preset,
@@ -80,7 +81,7 @@ export async function createMenu(ctx) {
   const rwyEnd = () => { const a = apt(); const r = a.runways[sel.runway] || a.runways[0]; return runwayEnd(r, sel.end); };
   const save = () => {
     if (!persist) return;
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ aircraft: sel.aircraft, airport: sel.airport, runway: sel.runway, end: sel.end, start: sel.start, quality: ctx.quality.level, volume: sel.volume })); } catch {}
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ aircraft: sel.aircraft, airport: sel.airport, runway: sel.runway, end: sel.end, start: sel.start, liveries: sel.liveries, quality: ctx.quality.level, volume: sel.volume })); } catch {}
   };
 
   // ---- runtime state ------------------------------------------------------------------------
@@ -165,10 +166,12 @@ export async function createMenu(ctx) {
   const acMeta = h('div', { class: 'menu-acmeta' });
   const acLore = h('p', { class: 'menu-lore' });
   const acSpecs = h('div', { class: 'menu-specs' });
+  const livGroup = navGroup(h('div', { class: 'menu-rwys menu-liveries', 'aria-label': 'Livery' }), 'radiogroup');
+  const livSec = h('div', { class: 'menu-livsec', hidden: true }, h('div', { class: 'menu-h' }, h('span', { text: 'Livery' })), livGroup);
   const panelAc = h('section', { class: 'menu-panel menu-panel-ac', 'aria-label': 'Aircraft selection' },
     h('div', { class: 'menu-sec', style: 'padding-bottom:10px;flex:none' }, h('div', { class: 'menu-h', style: 'margin:0' }, h('span', { class: 'menu-h-n', text: 'A' }), h('span', { text: 'Aircraft' }), h('span', { class: 'menu-h-aside', text: String(AIRCRAFT.length).padStart(2, '0') + ' types' }))),
     h('div', { class: 'menu-scroll menu-aclist', style: 'padding:0 16px' }, acList),
-    h('div', { class: 'menu-scroll menu-acinfo' }, h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Type data' })), acName, acMeta, acLore, acSpecs)));
+    h('div', { class: 'menu-scroll menu-acinfo' }, h('div', { class: 'menu-sec' }, livSec, h('div', { class: 'menu-h' }, h('span', { text: 'Type data' })), acName, acMeta, acLore, acSpecs)));
 
   // ---- MAIN: flight plan panel ----------------------------------------------------------------
   const aptList = navGroup(h('div', { class: 'menu-list', 'aria-label': 'Departure airport' }), 'listbox');
@@ -402,12 +405,29 @@ export async function createMenu(ctx) {
 
   // ---- actions ----------------------------------------------------------------------------------
   function selectAircraft(id) { if (sel.aircraft === id) return; sel.aircraft = id; save(); sync(); scheduleSpawn(); }
+  const LIVERY_LABEL = { lowvis: 'Low vis', usaf: 'USAF', raaf: 'RAAF', cag: 'CAG', house: 'House colours' };
+  const liveryLabel = id => LIVERY_LABEL[id] || id.charAt(0).toUpperCase() + id.slice(1);
+  /** Rebuild the livery chips from the aircraft that is actually on the ramp (its visual lists what it can paint). */
+  function syncLiveries() {
+    const p = ctx.player;
+    if (p && p.id !== sel.aircraft) return;      // a re-spawn is pending: keep the row until the new aircraft arrives
+    const list = p?.visual?.liveries || [];
+    livSec.hidden = list.length < 2;
+    const key = sel.aircraft + ':' + list.join(',');
+    if (livGroup.dataset.key !== key) {
+      livGroup.dataset.key = key; livGroup.textContent = '';
+      for (const id of list) livGroup.append(item(h('button', { class: 'menu-chip', type: 'button', id: 'menu-livery-' + id, 'data-id': id, onclick: () => selectLivery(id) }, liveryLabel(id)), 'radio', false));
+    }
+    const cur = p?.visual?.livery;
+    setChecked(livGroup, it => it.dataset.id === cur);
+  }
+  function selectLivery(id) { if (sel.liveries[sel.aircraft] === id && ctx.player?.visual?.livery === id) return; sel.liveries[sel.aircraft] = id; save(); scheduleSpawn(); setChecked(livGroup, it => it.dataset.id === id); }
   function selectAirport(id) { if (sel.airport === id) return; sel.airport = id; sel.runway = 0; sel.end = 0; save(); sync(); scheduleSpawn(); }
   function selectRunway(i, e) { if (sel.runway === i && sel.end === e) return; sel.runway = i; sel.end = e; save(); sync(); scheduleSpawn(); }
   function setTod(hr) { sel.tod = hr; ctx.time.setTimeOfDay(hr); syncClock(); }
   function setWeather(k) { sel.weather = k; ctx.weather.setPreset(k, true); syncClock(); }
   function scheduleSpawn() { if (inHangar) spawnTimer = SPAWN_DEBOUNCE; }
-  function opts(start) { return { aircraft: sel.aircraft, airport: sel.airport, runway: sel.runway, end: sel.end, start }; }
+  function opts(start) { return { aircraft: sel.aircraft, airport: sel.airport, runway: sel.runway, end: sel.end, start, livery: sel.liveries[sel.aircraft] }; }
   function setPaused(p) { if (!!ctx.time.paused !== p) { ctx.time.paused = p; ev.emit('pause', p); } }
   function spawnHangar() {
     spawnTimer = -1;
@@ -540,7 +560,7 @@ export async function createMenu(ctx) {
     } else if (name === 'hudToggle') { hudOn = !hudOn; sync(); }
   });
   ev.on('crash', (p) => { if (inHangar || crashTimer > 0 || !crash.hidden) return; crashInfo = p || null; crashTimer = CRASH_DELAY; });
-  ev.on('session:start', () => { hideCrash(); updateCorner(); });
+  ev.on('session:start', () => { hideCrash(); updateCorner(); syncLiveries(); });
   ev.on('session:end', () => { updateCorner(); });
   ev.on('time:change', (hr) => { if (Number.isFinite(hr)) { sel.tod = hr; if (menu.isOpen) syncClock(); } });
   ev.on('weather:change', ({ preset } = {}) => { if (preset && preset !== sel.weather) { sel.weather = preset; if (menu.isOpen) syncClock(); } });
