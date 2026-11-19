@@ -9,7 +9,7 @@
 // hazard stripes, headbox fabric…) are kit swatches made on the same atlas (found through the UV's `.atlas` tag) and can be
 // overridden through additional optional `uv` keys.
 import { Mesh, ellipsoid, tube, box, boxBetween, lathe, prism, shell, rbox, limb } from './mesh.js';
-import { displayUV } from './displays.js';
+import { displayUV, subUV, plateRect, plateParts, faceUV, MCP } from './displays.js';
 
 const DEG = Math.PI / 180;
 const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -135,8 +135,14 @@ export function pilot(o) {
   // ---- arms -----------------------------------------------------------------------------------------------------------------
   const hands = { side: [0.3, -0.5, -0.3], centre: [0.04, -0.52, -0.38], yoke: [0.16, -0.36, -0.52] };
   const rh = Array.isArray(o.stick) ? o.stick : hands[o.stick || 'centre'], lh = o.throttle || (o.stick === 'yoke' ? [-0.16, -0.36, -0.52] : [-0.3, -0.5, -0.36]);
+  const reach = { right: true, left: true, ok: true, right_: 0, left_: 0 };
   for (const [sx, hd] of [[1, rh], [-1, lh]]) {
     const sh = tp(sx * 0.2, -0.085, 0.0), el = elbow(sh, hd, 0.3, 0.29, [sx * 0.55, -0.75, 0.4]);
+    const dR = Math.hypot(hd[0] - sh[0], hd[1] - sh[1], hd[2] - sh[2]) / (0.3 + 0.29 + 0.05);   // > 1: the hand target is out of reach
+    reach[sx > 0 ? 'right' : 'left'] = dR <= 1.0; reach[sx > 0 ? 'right_' : 'left_'] = dR;
+    // shoulder: trapezius slope from the collar, deltoid cap over the joint (blends the arm into the torso)
+    m.add(limb([tp(sx * 0.05, 0.0, 0.012), tp(sx * 0.13, -0.035, 0.012), [sh[0] + sx * 0.004, sh[1] + 0.012, sh[2] + 0.004]], [[0.045, 0.04], [0.055, 0.05], [0.06, 0.058]], { segments: 8, sub: 2, uv: airline ? U.shirt : U.suit }));
+    m.add(ellipsoid(0.066, 0.064, 0.07, { segments: 8, rings: 5, uv: airline ? U.shirt : U.suit }).translate(sh[0] + sx * 0.004, sh[1], sh[2]));
     const fd = [hd[0] - el[0], hd[1] - el[1], hd[2] - el[2]], fl = Math.hypot(...fd) || 1, wr = [hd[0] - fd[0] / fl * 0.05, hd[1] - fd[1] / fl * 0.05, hd[2] - fd[2] / fl * 0.05];
     if (airline) {                                                    // short sleeves
       const mid = [sh[0] + (el[0] - sh[0]) * 0.62, sh[1] + (el[1] - sh[1]) * 0.62, sh[2] + (el[2] - sh[2]) * 0.62];
@@ -145,8 +151,7 @@ export function pilot(o) {
     } else m.add(limb([sh, el, wr], [0.056, 0.047, 0.037], { segments: 8, sub: 3, uv: U.suit }));
     const hu = airline ? U.skin : U.glove;
     if (!airline) m.add(limb([[wr[0] - fd[0] / fl * 0.06, wr[1] - fd[1] / fl * 0.06, wr[2] - fd[2] / fl * 0.06], wr], [0.044, 0.041], { segments: 8, sub: 1, caps: 'flat', uv: hu }));   // gauntlet cuff
-    m.add(ellipsoid(0.04, 0.036, 0.05, { segments: 8, rings: 5, uv: hu }).aim(fd).translate(hd[0], hd[1], hd[2]));
-    m.add(limb([[hd[0] - sx * 0.022, hd[1] + 0.012, hd[2]], [hd[0] - sx * 0.036, hd[1] + 0.04, hd[2] - 0.022]], [0.013, 0.011], { segments: 5, sub: 1, uv: hu }));                           // thumb
+    m.add(fist(hd, fd, sx, hu));
   }
 
   // ---- legs: thighs follow the seat pan, shins run down to the pedals -----------------------------------------------------
@@ -175,9 +180,10 @@ export function pilot(o) {
       const x = lat * q * Math.sin(a), z = -dep * q * Math.cos(a), nx = x / (lat * lat), ny = (y - cy) / (vert * vert), nz = z / (dep * dep), l = Math.hypot(nx, ny, nz) || 1;
       g.vert(H[0] + x, H[1] + y, H[2] + z, nx / l, ny / l, nz / l, uv[0], uv[1]);
     }
-    for (let j = 0; j < nv; j++) for (let i = 0; i < na; i++) { const q = j * (na + 1) + i; g.quad(q, q + na + 1, q + na + 2, q + 1); }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < na; i++) { const q = j * (na + 1) + i; g.quad(q, q + 1, q + na + 2, q + na + 1); }   // outward
     return g;
   };
+  let visor = null;
   if (!airline) {
     // helmet shell
     const HR = [[-0.105, 0.085, 0.078, 0.012], [-0.085, 0.098, 0.092, 0.01], [-0.045, 0.118, 0.106, 0.006], [0, 0.13, 0.112, 0], [0.045, 0.128, 0.11, 0], [0.085, 0.108, 0.094, 0.002], [0.11, 0.075, 0.066, 0.004], [0.124, 0.035, 0.03, 0.004]];
@@ -186,15 +192,21 @@ export function pilot(o) {
     hr.push({ c: hp(0, 0.128, 0.004), u: Z, v: X, rx: 0, ry: 0, uv: U.helmet });
     m.add(shell(hr, { segments: 16 }));
     const full = o.mask === false;                                    // pressure helmet: the visor covers the whole face
-    m.add(patch(0.1145, 0.123, 0.1345, -82, 82, 0.06, full ? (a) => -0.085 + 0.03 * (a / 82) * (a / 82) : (a) => -0.05 + 0.04 * (a / 82) * (a / 82), 12, 4, U.visor));
-    m.add(limb([-82, -41, 0, 41, 82].map((a) => { const q = Math.sqrt(1 - 0.062 * 0.062 / (0.123 * 0.123)); return hp(0.117 * q * Math.sin(a * DEG), 0.062, -0.137 * q * Math.cos(a * DEG)); }), 0.006, { segments: 5, sub: 2, uv: U.edge }));   // visor edge roll
+    // visor: a separate shell standing off the face, on the kit 'visor' material (smoked, mirror-like); the aircraft's visor colour
+    // stays as the backing so the head never shows through the edges
+    m.add(patch(0.1135, 0.122, 0.133, -80, 80, 0.058, full ? (a) => -0.083 + 0.03 * (a / 80) * (a / 80) : (a) => -0.052 + 0.04 * (a / 80) * (a / 80), 12, 4, U.visor));
+    visor = patch(0.1185, 0.127, 0.1395, -84, 84, 0.064, full ? (a) => -0.088 + 0.03 * (a / 84) * (a / 84) : (a) => -0.06 + 0.042 * (a / 84) * (a / 84), 16, 6, [0, 0]);
+    m.add(patch(0.1215, 0.1325, 0.142, -88, 88, 0.105, 0.062, 16, 2, U.helmet));                                             // visor cover (raised housing over the brow)
+    m.add(box(0.034, 0.03, 0.016, U.edge).translate(...hp(0, 0.084, -0.132)));                                                // NVG mount
+    m.add(limb([hp(-0.1, 0.0, 0.1), hp(-0.06, -0.06, 0.128), hp(0, -0.075, 0.136), hp(0.06, -0.06, 0.128), hp(0.1, 0.0, 0.1)], 0.014, { segments: 6, sub: 2, uv: U.edge }));   // nape pad
+    m.add(limb([-88, -44, 0, 44, 88].map((a) => { const q = Math.sqrt(1 - 0.064 * 0.064 / (0.1325 * 0.1325)); return hp(0.1215 * q * Math.sin(a * DEG), 0.064, -0.142 * q * Math.cos(a * DEG)); }), 0.005, { segments: 5, sub: 2, uv: U.edge }));   // visor cover edge
     for (const sx of [-1, 1]) {
       m.add(ellipsoid(0.012, 0.022, 0.022, { segments: 8, rings: 4, uv: U.edge }).translate(...hp(sx * 0.112, 0.03, -0.012)));                 // visor pivot knobs
       m.add(ellipsoid(0.02, 0.05, 0.045, { segments: 8, rings: 5, uv: U.helmet }).translate(...hp(sx * 0.1, -0.04, 0.02)));                    // ear cups
     }
     if (!full) {
-      const w = [0, -Math.sin(12 * DEG), -Math.cos(12 * DEG)], v = [0, -Math.cos(12 * DEG), Math.sin(12 * DEG)], c0 = hp(0, -0.06, -0.082);
-      const mr = [[0, 0.05, 0.054], [0.03, 0.047, 0.051], [0.056, 0.037, 0.041], [0.072, 0.025, 0.028], [0.078, 0, 0]].map(([t, rx, ry]) => ({ c: [c0[0], c0[1] + w[1] * t, c0[2] + w[2] * t], u: X, v, rx, ry, n: 2.5 }));
+      const w = [0, -Math.sin(14 * DEG), -Math.cos(14 * DEG)], v = [0, -Math.cos(14 * DEG), Math.sin(14 * DEG)], c0 = hp(0, -0.064, -0.08);
+      const mr = [[0, 0.056, 0.062], [0.024, 0.055, 0.061], [0.05, 0.047, 0.052], [0.072, 0.033, 0.036], [0.086, 0.016, 0.017], [0.09, 0, 0]].map(([t, rx, ry], i) => ({ c: [c0[0], c0[1] + w[1] * t - (i > 2 ? 0.004 * (i - 2) : 0), c0[2] + w[2] * t], u: X, v, rx, ry, n: 2.3 }));
       m.add(shell(mr, { segments: 10, uv: U.mask }));
       const vc = (t, d) => [c0[0], c0[1] + w[1] * t + v[1] * d, c0[2] + w[2] * t + v[2] * d];
       m.add(tube(vc(0.062, 0.016), vc(0.09, 0.02), 0.015, 0.013, { segments: 8, uv: U.hose }));                                                 // exhalation valve
@@ -223,6 +235,7 @@ export function pilot(o) {
       const x = m.p[i * 3], y = m.p[i * 3 + 1], z = m.p[i * 3 + 2], w = i < head1 ? 1 : clamp((y - yLo) / (yHi - yLo), 0, 1) ** 2;
       m.setMorph(i, x + (z - pz) * w, y, z - (x - px) * w);
     }
+    if (visor) { visor.enableMorph(); visor.morphOptional = true; for (let i = 0; i < visor.vertexCount; i++) { const x = visor.p[i * 3], y = visor.p[i * 3 + 1], z = visor.p[i * 3 + 2]; visor.setMorph(i, x + (z - pz), y, z - (x - px)); } }
     m.onPart = (node, rig) => {
       let yaw = 0; const ph = Math.random() * 6;
       rig.onUpdate((S, dt) => {
@@ -234,8 +247,27 @@ export function pilot(o) {
       });
     };
   }
+  if (visor) m.sidecar('visor').add(visor);
   if (k !== 1) m.scale(k);
+  reach.ok = reach.left && reach.right; m.reach = reach;
   return m.translate(e[0], e[1], e[2]);
+}
+
+/** A closed hand around a grip at `hd`, forearm along `fd`: palm, four curled fingers, thumb over them. sx = +1 right hand. */
+function fist(hd, fd, sx, uv) {
+  const g = new Mesh(), L = Math.hypot(...fd) || 1, a = fd.map(q => q / L);
+  let up = [-a[0] * a[1], 1 - a[1] * a[1], -a[2] * a[1]]; const ul = Math.hypot(...up) || 1; up = up.map(q => q / ul);
+  const sd = [a[1] * up[2] - a[2] * up[1], a[2] * up[0] - a[0] * up[2], a[0] * up[1] - a[1] * up[0]];        // a × up (right of the hand)
+  const P = (f, s, u) => [hd[0] + a[0] * f + sd[0] * s + up[0] * u, hd[1] + a[1] * f + sd[1] * s + up[1] * u, hd[2] + a[2] * f + sd[2] * s + up[2] * u];
+  g.add(shell([{ c: P(-0.045, 0, 0.004), u: sd, v: up, rx: 0, ry: 0 }, { c: P(-0.04, 0, 0.004), u: sd, v: up, rx: 0.032, ry: 0.02 }, { c: P(-0.01, 0, 0.006), u: sd, v: up, rx: 0.042, ry: 0.024, n: 3 },
+    { c: P(0.022, 0, 0.004), u: sd, v: up, rx: 0.043, ry: 0.022, n: 3 }, { c: P(0.034, 0, 0.002), u: sd, v: up, rx: 0.038, ry: 0.016, n: 3 }, { c: P(0.038, 0, 0.002), u: sd, v: up, rx: 0, ry: 0 }], { segments: 10, uv }));
+  for (let i = 0; i < 4; i++) {                                         // fingers curl down and back under the palm (around the grip)
+    const s = (i - 1.5) * 0.0185, r = 0.0098 - Math.abs(i - 1.2) * 0.0007, l = 1 - Math.abs(i - 1.3) * 0.12;
+    g.add(limb([P(0.028, s, 0.006), P(0.05 * l, s, -0.004), P(0.056 * l, s, -0.026), P(0.04 * l, s, -0.04)], [r, r * 0.95, r * 0.9, r * 0.85], { segments: 5, sub: 1, uv }));
+  }
+  const ts = -sx * 0.026;                                               // thumb lies over the index finger on the body side
+  g.add(limb([P(-0.02, ts, 0.0), P(0.012, ts * 1.25, 0.012), P(0.04, ts * 0.8, 0.012), P(0.054, ts * 0.35, 0.004)], [0.013, 0.012, 0.0105, 0.0095], { segments: 6, sub: 1, uv }));
+  return g;
 }
 
 /**
@@ -352,40 +384,95 @@ export function hud(o) {
   return { glass, frame };
 }
 
+/** Flat quad on a kit sidecar ('panel' | 'display'), centred, w × h, facing +Z at z = dz; uvf(u, v) → [u, v] (u right, v down). */
+function sideQuad(m, kind, w, h, uvf, dz = 0) {
+  const f = m.sidecar(kind), i0 = f.vertexCount;
+  for (const [x, y, u, v] of [[-w / 2, -h / 2, 0, 1], [w / 2, -h / 2, 1, 1], [w / 2, h / 2, 1, 0], [-w / 2, h / 2, 0, 0]]) { const q = uvf(u, v); f.vert(x, y, dz, 0, 0, 1, q[0], q[1]); }
+  f.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+  return m;
+}
+/** Rotary knob facing +Z: skirt, grip with flutes suggested by facets, pointer. */
+function knob(r, h, uv, uvCap) {
+  return lathe([[r * 1.25, 0], [r * 1.25, h * 0.25, 1], [r, h * 0.3, 1], [r * 0.95, h, 1], [r * 0.7, h * 1.04], [0, h * 1.04]], { segments: 8, uv }).add(box(r * 0.25, r * 0.9, 0.002, uvCap || uv).translate(0, r * 0.4, h * 1.05));
+}
+/** Toggle switch facing +Z: round bushing and a bat lever tilted up. */
+function toggle(s, uv, uvBat) {
+  return lathe([[s * 0.5, 0], [s * 0.5, s * 0.3, 1], [s * 0.3, s * 0.35, 1], [0, s * 0.35]], { segments: 6, uv }).add(tube([0, 0, s * 0.3], [0, s * 0.55, s * 1.3], s * 0.14, s * 0.2, { segments: 6, uv: uvBat || uv }));
+}
+
 /**
  * A display unit (MFD / PFD / ND / EICAS…): bezel and housing in the visual's atlas colour, the screen on the kit 'display'
- * material (emissive page from the shared display texture, dimmed at night by the rig). Faces +Z (toward the pilot) before
- * the tilt. opts: { centre: [x, y, z], width = .2, height = width, tilt = 12 (deg, top leaning away from the pilot), yaw = 0 (deg,
- *   + turns the screen toward +X), page = 'mfdRadar' (see DISPLAY_TILES), bezel = .022, buttons = auto (OSB rows on fighter MFD
- *   pages), uv (bezel), uvButton }
+ * material (emissive page from the display textures — live pages follow the aircraft state; dimmed at night by the rig).
+ * Faces +Z (toward the pilot) before the tilt. opts: { centre: [x, y, z], width = .2, height = width, tilt = 12 (deg, top leaning
+ * away from the pilot), yaw = 0 (deg, + turns the screen toward +X), page = 'mfdRadar' (see DISPLAY_TILES), bezel = .022,
+ * buttons = auto (OSB rows on fighter MFD pages), knob = auto (brightness knob on airliner screens), uv (bezel), uvButton }
  */
 export function display(o) {
   const c = o.centre, w = o.width ?? 0.2, h = o.height ?? w, b = o.bezel ?? Math.max(0.012, w * 0.11), uv = o.uv, A = atlasOf(uv);
   const page = o.page || 'mfdRadar', uvBtn = o.uvButton || ksw(A, 'cockpit.button', { color: '#3a3d40', rough: 0.6, metal: 0 }, uv), m = new Mesh();
+  const uvBlack = ksw(A, 'cockpit.screenSurround', { color: '#0b0c0d', rough: 0.5, metal: 0 }, uv);
   m.add(rbox(w + 2 * b, h + 2 * b, 0.022, 0.006, { segments: 12, n: 8, uv }).translate(0, 0, -0.011));                        // bezel
   m.add(box(w * 0.9, h * 0.9, 0.05, uv).translate(0, 0, -0.045));                                                            // housing
+  m.add(box(w + b * 0.5, h + b * 0.5, 0.002, uvBlack).translate(0, 0, -0.0006));                                                // black screen surround
   const btn = o.buttons ?? /^mfd/.test(page);
   if (btn) for (let i = 0; i < 5; i++) {
     const x = (i - 2) * w * 0.19;
-    for (const sy of [-1, 1]) m.add(box(w * 0.11, b * 0.45, 0.008, uvBtn).translate(x, sy * (h / 2 + b * 0.5), 0.003));
-    if (i < 4) for (const sx of [-1, 1]) m.add(box(b * 0.45, h * 0.1, 0.008, uvBtn).translate(sx * (w / 2 + b * 0.5), (i - 1.5) * h * 0.22, 0.003));
+    for (const sy of [-1, 1]) m.add(box(w * 0.11, b * 0.45, 0.007, uvBtn).translate(x, sy * (h / 2 + b * 0.5), 0.003));
+    if (i < 4) for (const sx of [-1, 1]) m.add(box(b * 0.45, h * 0.1, 0.007, uvBtn).translate(sx * (w / 2 + b * 0.5), (i - 1.5) * h * 0.22, 0.003));
   }
-  const scr = m.sidecar('display'), i0 = scr.vertexCount;
-  for (const [x, y, u, v] of [[-w / 2, -h / 2, 0, 1], [w / 2, -h / 2, 1, 1], [w / 2, h / 2, 1, 0], [-w / 2, h / 2, 0, 0]]) { const q = displayUV(page, u, v); scr.vert(x, y, 0.0015, 0, 0, 1, q[0], q[1]); }
-  scr.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+  if (o.knob ?? (!btn && w >= 0.12 && b >= 0.012)) m.add(knob(b * 0.32, 0.008, uvBtn).translate(w / 2 + b * 0.45, -h / 2 - b * 0.45, 0));   // BRT knob in the corner
+  sideQuad(m, 'display', w, h, (u, v) => displayUV(page, u, v), 0.0015);
   m.rotateX(-(o.tilt ?? 12) * DEG); if (o.yaw) m.rotateY((o.yaw) * DEG);
   return m.translate(c[0], c[1], c[2]);
 }
 
-/** A flat face on the kit 'panel' material (dark-grey panel with backlit legends + night flood), tiled in ~cell-sized squares so
- *  the lettering keeps a real size (≈ 8 mm). Faces +Z before placement. */
-function panelFace(w, h, cell = 0.24, legends = true) {
-  const m = new Mesh(), f = m.sidecar('panel'), nx = Math.max(1, Math.round(w / cell)), ny = Math.max(1, Math.round(h / cell));
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const i0 = f.vertexCount, x0 = -w / 2 + w * i / nx, x1 = -w / 2 + w * (i + 1) / nx, y0 = -h / 2 + h * j / ny, y1 = -h / 2 + h * (j + 1) / ny;
-    for (const [x, y, u, v] of [[x0, y0, 0, 1], [x1, y0, 1, 1], [x1, y1, 1, 0], [x0, y1, 0, 0]]) { const q = legends ? displayUV('legends', u, v) : displayUV('legends', 0.02, 0.985); f.vert(x, y, 0, 0, 0, 1, q[0], q[1]); }
-    f.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-  }
+/**
+ * Analogue instrument: square case with a round bezel ring, the dial on the kit 'panel' material (painted face lit by day, its
+ * markings glow at night) slightly recessed, a setting knob in the lower-left corner on the instruments that have one.
+ * opts: { centre: [x, y, z], size = .08 (case width), page = 'adi' (asi adi alt hsi vsi rpm egt fuel oil hyd gmeter aoa aclock
+ *   flaps brake cabin), tilt = 12, yaw = 0, uv (case), knob = auto }
+ */
+export function gauge(o) {
+  const c = o.centre, s = o.size ?? 0.08, r = s * 0.44, uv = o.uv, A = atlasOf(uv), m = new Mesh(), page = o.page || 'adi';
+  const uvB = ksw(A, 'cockpit.gaugeBezel', { color: '#151617', rough: 0.45, metal: 0.2 }, uv);
+  m.add(rbox(s, s, 0.012, s * 0.08, { segments: 8, n: 6, uv }).translate(0, 0, -0.006));
+  m.add(lathe([[r * 1.12, -0.001], [r * 1.12, 0.004, 1], [r * 1.04, 0.006, 1], [r, 0.0035], [r, 0.001]], { segments: 16, uv: uvB }));
+  const f = m.sidecar('panel'), i0 = f.vertexCount, N = 20;                                   // round dial (fan) on the gauge page
+  f.vert(0, 0, 0.0012, 0, 0, 1, ...displayUV(page, 0.5, 0.5));
+  for (let i = 0; i <= N; i++) { const a = i / N * Math.PI * 2, x = Math.cos(a), y = Math.sin(a); f.vert(x * r, y * r, 0.0012, 0, 0, 1, ...displayUV(page, 0.5 + x * 0.5, 0.5 - y * 0.5)); }
+  for (let i = 0; i < N; i++) f.tri(i0, i0 + 1 + i, i0 + 2 + i);
+  if (o.knob ?? /^(alt|hsi|aclock|adi)$/.test(page)) m.add(knob(s * 0.07, 0.008, uvB).translate(-s * 0.36, -s * 0.36, 0));
+  m.rotateX(-(o.tilt ?? 12) * DEG); if (o.yaw) m.rotateY(o.yaw * DEG);
+  return m.translate(c[0], c[1], c[2]);
+}
+
+/** A flat face on the kit 'panel' material in a plain panel colour ('boeing' grey, 'airbus' blue-grey, 'fighter' dark grey, 'black').
+ *  Faces +Z before placement. (The legends of earlier versions are now separate plates.) */
+function panelFace(w, h, style = 'boeing') { return sideQuad(new Mesh(), 'panel', w, h, () => faceUV(style)); }
+
+/** A legend plate (labelled switch group) of a style: raised plate, its lettering on the 'panel' material, 3D toggles / buttons. */
+function legendPlate(style, k, size, uv) {
+  const tile = { boeing: 'legendsB', airbus: 'legendsA', fighter: 'legendsF' }[style] || 'legendsB', A = atlasOf(uv), m = new Mesh(), r = plateRect(k);
+  const uvT = ksw(A, 'cockpit.toggle', { color: '#c9ccce', rough: 0.3, metal: 0.85 }, uv), uvBt = ksw(A, 'cockpit.button', { color: '#3a3d40', rough: 0.6, metal: 0 }, uv);
+  m.add(box(size, size, 0.004, uv).translate(0, 0, -0.002));
+  sideQuad(m, 'panel', size, size, (u, v) => subUV(tile, r, u, v), 0.0003);
+  const P = plateParts(style, k), q = (p) => [(p[0] - 0.5) * size, (0.5 - p[1]) * size];
+  for (const p of P.toggles) { const [x, y] = q(p); m.add(toggle(size * 0.08, uvBt, uvT).translate(x, y, 0)); }
+  for (const p of P.buttons) { const [x, y] = q(p); m.add(box(size * 0.13, size * 0.09, 0.006, uvBt).translate(x, y, 0.003)); }
+  return m;
+}
+
+/** Landing-gear lever on its panel: plate with three green 'DOWN' lights and a lever ending in a wheel-shaped knob. Faces +Z. */
+function gearLever(size, uv, style) {
+  const A = atlasOf(uv), m = new Mesh(), w = size * 0.62, h = size;
+  const uvKnob = ksw(A, 'cockpit.gearKnob', { color: '#e9e7e0', rough: 0.4, metal: 0 }, uv), uvS = ksw(A, 'stick.steel', KF.steel, uv);
+  m.add(box(w, h, 0.004, uv).translate(0, 0, -0.002));
+  sideQuad(m, 'panel', w, h, (u, v) => subUV(style === 'fighter' ? 'legendsF' : style === 'airbus' ? 'legendsA' : 'legendsB', plateRect(style === 'fighter' ? 1 : 3), u, v * 0.25), 0.0003);
+  for (let i = 0; i < 3; i++) m.add(sideQuad(new Mesh(), 'display', w * 0.22, h * 0.07, (u, v) => displayUV('mcp', 0.02 + u * 0.2, (230 + v * 24) / 256)).translate((i - 1) * w * 0.3, h * 0.28, 0.001));   // three green DOWN lights
+  m.add(box(w * 0.14, h * 0.62, 0.006, ksw(A, 'cockpit.slot', KF.black, uv)).translate(0, -h * 0.1, 0.001));          // lever gate
+  m.add(tube([0, -h * 0.32, 0.004], [0, -h * 0.3, h * 0.42], size * 0.03, size * 0.03, { segments: 6, uv: uvS }));
+  m.add(lathe([[0, -size * 0.05], [size * 0.09, -size * 0.045], [size * 0.105, -size * 0.02, 1], [size * 0.105, size * 0.02, 1], [size * 0.09, size * 0.045], [0, size * 0.05]], { segments: 14, uv: uvKnob })
+    .rotateY(Math.PI / 2).translate(0, -h * 0.3, h * 0.44));                                                                   // wheel-shaped knob
   return m;
 }
 
@@ -393,77 +480,228 @@ function panelFace(w, h, cell = 0.24, legends = true) {
  * Glareshield: the padded coaming over the instrument panel — a hood whose top follows a shallow arc, a rounded padded lip
  * toward the pilot and side cheeks. opts: { eye (or centre: [x, y, z] of the lip middle), dist = .6 (lip ahead of the eye),
  *   drop = .2 (lip below the eye), width = .62, depth = .22 (hood length, forward from the lip), rise = .03 (crown height),
- *   mcp = false (airliner mode-control panel on the lip face), uv, uvPad }
+ *   taper = 1 (hood width at the windscreen end as a fraction of the lip width: airliner noses narrow forward),
+ *   mcp = false | true | 'boeing' | 'airbus' (mode-control panel / FCU on the lip, EFIS control panels at `efis` x positions),
+ *   efis: [x, …], uv, uvPad }
  */
 export function glareshield(o) {
   const e = o.eye || [0, 0, 0], c = o.centre || [e[0], e[1] - (o.drop ?? 0.2), e[2] - (o.dist ?? 0.6)];
-  const w = o.width ?? 0.62, dp = o.depth ?? 0.22, rise = o.rise ?? 0.03, uv = o.uv, A = atlasOf(uv), uvP = o.uvPad || ksw(A, 'cockpit.pad', KF.pad, uv), m = new Mesh();
-  const nx = 10, nz = 4, hw = w / 2, top = (x, f) => c[1] + 0.02 + rise * (1 - (x / hw) ** 2) * (0.5 + 0.5 * f), i0 = m.vertexCount;
+  const w = o.width ?? 0.62, dp = o.depth ?? 0.22, rise = o.rise ?? 0.03, tp = o.taper ?? 1, uv = o.uv, A = atlasOf(uv), uvP = o.uvPad || ksw(A, 'cockpit.pad', KF.pad, uv), m = new Mesh();
+  const nx = 10, nz = 4, hw = w / 2, sx = (f) => 1 - (1 - tp) * f, top = (x, f) => c[1] + 0.02 + rise * (1 - (x / (hw * sx(f))) ** 2) * (0.5 + 0.5 * f), i0 = m.vertexCount;
   for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {                                     // hood top (f: 0 lip … 1 windscreen)
-    const x = -hw + w * i / nx, f = j / nz, y = top(x, f), z = c[2] - dp * f, s = -2 * rise * x / (hw * hw) * (0.5 + 0.5 * f), l = Math.hypot(s, 1);
+    const f = j / nz, x = (-hw + w * i / nx) * sx(f), y = top(x, f), z = c[2] - dp * f, s = -2 * rise * x / ((hw * sx(f)) ** 2) * (0.5 + 0.5 * f), l = Math.hypot(s, 1);
     m.vert(c[0] + x, y, z, -s / l, 1 / l, 0, uv[0], uv[1]);
   }
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const q = i0 + j * (nx + 1) + i; m.quad(q, q + 1, q + nx + 2, q + nx + 1); }
   const lip = []; for (let i = 0; i <= nx; i++) { const x = -hw + w * i / nx; lip.push([c[0] + x, top(x, 0) - 0.012, c[2] + 0.004]); }
   m.add(limb(lip, lip.map(() => [0.018, 0.016]), { segments: 8, sub: 1, side: [0, 1, 0], caps: 'round', uv: uvP }));        // padded roll
-  for (const sx of [-1, 1]) m.add(prism([[c[2] + 0.01, c[1] - 0.1], [c[2] + 0.01, top(sx * hw, 0)], [c[2] - dp, top(sx * hw, 1)], [c[2] - dp, c[1] - 0.1]], c[0] + sx * hw - 0.008, c[0] + sx * hw + 0.008, uv));
-  const face = panelFace(w - 0.02, 0.07, 0.07, !!o.mcp);
-  face.translate(c[0], c[1] - 0.03, c[2] + 0.011); m.add(face);                                                                // lip face
-  m.add(box(w - 0.01, 0.075, 0.012, uv).translate(c[0], c[1] - 0.03, c[2] + 0.004));
-  if (o.mcp) {                                                                                                                 // MCP knobs and windows
-    const sc = m.sidecar('display');
-    for (let i = 0; i < 6; i++) {
-      const x = c[0] + (i - 2.5) * (w - 0.1) / 6;
-      m.add(tube([x + 0.035, c[1] - 0.03, c[2] + 0.012], [x + 0.035, c[1] - 0.03, c[2] + 0.03], 0.011, 0.01, { segments: 10, uv: ksw(A, 'stick.boot', KF.rubber, uv) }));
-      const j0 = sc.vertexCount;
-      for (const [dx, dy, u, v] of [[-0.022, -0.009, 0.05, 0.3], [0.022, -0.009, 0.95, 0.3], [0.022, 0.009, 0.95, 0.12], [-0.022, 0.009, 0.05, 0.12]]) { const q = displayUV('ufc', u, v); sc.vert(x + dx - 0.01, c[1] - 0.012 + dy, c[2] + 0.0125, 0, 0, 1, q[0], q[1]); }
-      sc.quad(j0, j0 + 1, j0 + 2, j0 + 3);
-    }
+  for (const s of [-1, 1]) {                                                                                                  // cheeks (follow the taper)
+    const xa = c[0] + s * hw, xb = c[0] + s * hw * tp, q = m.vertexCount, nrm = [s * dp, 0, s * hw * (1 - tp)], L = Math.hypot(...nrm);
+    for (const [x, y, z] of [[xa, c[1] - 0.1, c[2] + 0.01], [xb, c[1] - 0.1, c[2] - dp], [xb, top(s * hw * tp, 1), c[2] - dp], [xa, top(s * hw, 0), c[2] + 0.01]]) m.vert(x, y, z, nrm[0] / L, 0, nrm[2] / L, uv[0], uv[1]);
+    if (s > 0) m.quad(q, q + 1, q + 2, q + 3); else m.quad(q, q + 3, q + 2, q + 1);
+    const q2 = m.vertexCount;                                                                                                 // inner face of the cheek
+    for (const [x, y, z] of [[xa - s * 0.012, c[1] - 0.1, c[2] + 0.01], [xb - s * 0.012, c[1] - 0.1, c[2] - dp], [xb - s * 0.012, top(s * hw * tp, 1), c[2] - dp], [xa - s * 0.012, top(s * hw, 0), c[2] + 0.01]]) m.vert(x, y, z, -nrm[0] / L, 0, -nrm[2] / L, uv[0], uv[1]);
+    if (s > 0) m.quad(q2, q2 + 3, q2 + 2, q2 + 1); else m.quad(q2, q2 + 1, q2 + 2, q2 + 3);
+  }
+  m.add(box(w - 0.01, 0.075, 0.012, uv).translate(c[0], c[1] - 0.03, c[2] + 0.004));                                         // lip face (structure colour: dark at night)
+  if (o.mcp) {
+    const style = o.mcp === 'airbus' ? 'airbus' : 'boeing', mw = Math.min(style === 'airbus' ? 0.52 : 0.6, w * 0.42), mh = 0.078;
+    m.add(mcpPanel(style, mw, mh, uv).rotateX(-12 * DEG).translate(c[0], c[1] - 0.008, c[2] + 0.03));
+    for (const x of o.efis || [c[0] - hw * 0.62, c[0] + hw * 0.62]) m.add(efisPanel(style, uv).rotateX(-12 * DEG).translate(x, c[1] - 0.006, c[2] + 0.025));
   }
   return m;
 }
 
+/** Mode-control panel / FCU, w × h, facing +Z: case, two face strips (labels on the 'panel' material), windows on the display
+ *  material, knobs and lit push buttons from displays.js MCP. */
+function mcpPanel(style, w, h, uv) {
+  const A = atlasOf(uv), m = new Mesh(), d = 0.055, L = MCP[style], strip = style === 'airbus' ? 2 : 0;
+  const uvK = ksw(A, 'cockpit.mcpKnob', { color: '#1e1f21', rough: 0.5, metal: 0.1 }, uv), uvBt = ksw(A, 'cockpit.mcpButton', { color: '#2a2d31', rough: 0.55, metal: 0 }, uv);
+  m.add(rbox(w + 0.012, h + 0.01, d, 0.008, { segments: 12, n: 8, uv }).translate(0, 0, -d / 2));
+  for (let k = 0; k < 2; k++) {
+    const x0 = (k - 0.5) * w / 2, S = L[k], P = (u, v) => [x0 + (u - 0.5) * w / 2, (0.5 - v) * h];
+    m.add(sideQuad(new Mesh(), 'panel', w / 2, h, (u, v) => displayUV('mcpFace', u, ((strip + k) * 64 + 0.5 + v * 63) / 256)).translate(x0, 0, 0.0003));
+    for (const [u0, v0, u1, v1, row] of S.windows) {
+      const [xa, ya] = P(u0, v0), [xb, yb] = P(u1, v1);
+      m.add(sideQuad(new Mesh(), 'display', xb - xa, ya - yb, (u, v) => displayUV('mcp', 0.12 + u * 0.76, (row * 28 + 3 + v * 22) / 256), 0.0008).translate((xa + xb) / 2, (ya + yb) / 2, 0));
+    }
+    for (const [u, v] of S.knobs) { const [x, y] = P(u, v); m.add(knob(h * 0.13, 0.016, uvK).translate(x, y, 0)); }
+    for (const [u, v] of S.buttons) { const [x, y] = P(u, v); m.add(box(w / 2 * 0.095, h * 0.2, 0.006, uvBt).translate(x, y, 0.002)); }
+  }
+  return m;
+}
+/** EFIS control panel in front of each pilot (baro / range knobs, mode buttons). Faces +Z. */
+function efisPanel(style, uv) {
+  const A = atlasOf(uv), m = new Mesh(), w = 0.15, h = 0.07, uvK = ksw(A, 'cockpit.mcpKnob', { color: '#1e1f21', rough: 0.5, metal: 0.1 }, uv), uvBt = ksw(A, 'cockpit.mcpButton', { color: '#2a2d31', rough: 0.55, metal: 0 }, uv);
+  m.add(rbox(w, h, 0.04, 0.006, { segments: 10, n: 8, uv }).translate(0, 0, -0.02));
+  sideQuad(m, 'panel', w - 0.006, h - 0.006, (u, v) => subUV(style === 'airbus' ? 'legendsA' : 'legendsB', plateRect(style === 'airbus' ? 0 : 2), u, 0.1 + v * 0.8), 0.0003);
+  for (const x of [-0.045, 0.045]) m.add(knob(0.011, 0.014, uvK).translate(x, -0.005, 0));
+  for (let i = 0; i < 4; i++) m.add(box(0.016, 0.009, 0.005, uvBt).translate(-0.03 + i * 0.02, 0.022, 0.002));
+  return m;
+}
+
 /**
- * Instrument panel with displays, placed from the eye point(s): fighter = two MFDs either side of an up-front control
- * display under the HUD, a standby instrument and a caution panel; airline = per pilot a PFD (outboard) and ND (inboard),
- * EICAS + standby in the centre, an MCP glareshield across. Panel faces use the kit 'panel' material (backlit legends and a dim
- * flood at night), screens the kit 'display' material; the visual registers nothing extra.
+ * Instrument panel with displays, placed from the eye point(s).
+ *   fighter: two MFDs either side of an up-front control display under the HUD, a standby instrument, a caution panel, labelled
+ *            switch plates, the gear handle and backup gauges in the corners;
+ *   airline: per pilot a PFD (outboard) and ND (inboard) along the top of the panel, upper EICAS / E-WD + standby in the centre,
+ *            the lower display and the gear lever below it, switch plates, clock and brake gauge under the screens, MCP / FCU
+ *            and EFIS panels on the glareshield.
+ * Panel faces, plates and dials use the kit 'panel' material (painted by day, lit lettering and a dim flood at night), screens
+ * the kit 'display' material; the visual registers nothing extra.
  * opts: { eye: [x, y, z] | eyes: [[x, y, z], …], kind = 'fighter' | 'airline', dist = .68 / .78 (panel ahead of the eye),
  *   drop = .3 / .34 (panel centre below the eye), width = .6 / auto, height = .3 / .32, tilt = 14 (deg), glareshield = true,
- *   mfd = .135 / .2 (screen size), pages: [left, right] (fighter MFD pages), uv (structure / bezels), uvPad }
+ *   mfd = .135 / .2 (screen size), pages: [left, right] (fighter MFD pages), uv (structure / bezels), uvPad,
+ *   — all optional —
+ *   style = 'boeing' | 'airbus' (airline: page set, panel colour, MCP or FCU), hoodDepth, hoodTaper, hoodRise (glareshield),
+ *   centreDisplay: page (fighter: a third MFD in the centre, F/A-18 / F-15E / F-22 style), ufc = true, standby = true,
+ *   annunciators = true, gearLever = true, analogue = false (round-dial instruments instead of screens, older types),
+ *   pedestal = false | true | { floor, levers = 2, length = 1 } (airline centre pedestal with thrust levers and two CDUs) }
  * Returns a Mesh; add it to the static mesh with the rest of the cockpit.
  */
 export function instrumentPanel(o) {
-  const eyes = o.eyes || [o.eye], airline = o.kind === 'airline', uv = o.uv, m = new Mesh(), tl = (o.tilt ?? 14) * DEG;
+  const eyes = o.eyes || [o.eye], airline = o.kind === 'airline', uv = o.uv, m = new Mesh(), tl = (o.tilt ?? 14) * DEG, tdeg = o.tilt ?? 14;
   const dist = o.dist ?? (airline ? 0.78 : 0.68), drop = o.drop ?? (airline ? 0.34 : 0.3), H = o.height ?? (airline ? 0.32 : 0.3);
   const xs = eyes.map(q => q[0]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, ey = eyes[0][1], ez = eyes[0][2];
   const W = o.width ?? (airline ? Math.max(0.9, Math.max(...xs) - Math.min(...xs) + 0.75) : 0.6);
+  const style = airline ? (o.style === 'airbus' ? 'airbus' : 'boeing') : 'fighter';
   const y0 = ey - drop, z0 = ez - dist;                                       // panel face centre
   const onFace = (x, y, dz = 0) => [x, y0 + y * Math.cos(tl), z0 - y * Math.sin(tl) + dz];
-  // board: housing box behind, panel face in front
+  const put = (mesh, x, y, dz = 0.004) => m.add(mesh.rotateX(-tl).translate(...onFace(x, y, dz)));
+  // board: housing box behind, plain painted face in front
   m.add(box(W, H, 0.05, uv).rotateX(-tl).translate(cx, y0, z0 - 0.03));
-  const face = panelFace(W, H, 0.24, true); face.rotateX(-tl).translate(cx, y0, z0 - 0.004); m.add(face);
-  const S = o.mfd ?? (airline ? 0.2 : 0.135), tdeg = o.tilt ?? 14;
-  if (!airline) {
-    const pages = o.pages || ['mfdRadar', 'mfdSA'];
-    for (const [k, sx] of [[0, -1], [1, 1]]) m.add(display({ centre: onFace(cx + sx * (W / 2 - S * 0.68), -H * 0.08, 0.004), width: S, page: pages[k], tilt: tdeg, yaw: -sx * 8, uv, uvButton: o.uvButton }));
-    m.add(display({ centre: onFace(cx, H * 0.24, 0.004), width: S * 0.95, height: S * 0.42, page: 'ufc', tilt: tdeg, uv, bezel: 0.012, buttons: false }));
-    m.add(display({ centre: onFace(cx, -H * 0.12, 0.004), width: S * 0.55, page: 'standby', tilt: tdeg, uv, bezel: 0.01 }));
-    m.add(display({ centre: onFace(cx, -H * 0.38, 0.004), width: S * 0.62, height: S * 0.32, page: 'annunciators', tilt: tdeg, uv, bezel: 0.008 }));
-  } else {
-    for (const e of eyes) {
-      const out = e[0] < cx ? -1 : 1;                                         // PFD outboard, ND inboard
-      m.add(display({ centre: onFace(e[0] + out * S * 0.56, 0.0, 0.004), width: S, page: 'pfd', tilt: tdeg, uv }));
-      m.add(display({ centre: onFace(e[0] - out * S * 0.56, 0.0, 0.004), width: S, page: 'nd', tilt: tdeg, uv }));
+  put(panelFace(W, H, style), cx, 0, -0.004);
+  const S = o.mfd ?? (airline ? 0.2 : 0.135), bz = Math.max(0.012, S * 0.11), half = S / 2 + bz;
+  const gaugeAt = (page, x, y, s) => m.add(gauge({ centre: onFace(x, y, 0.004), size: s, page, tilt: tdeg, uv }));
+  const fits = (s) => s >= 0.035;
+  if (!airline && o.analogue) {
+    // round-dial fighter panel: ADI over HSI in the centre, ASI / AOA left, ALT / VSI right, engine dials outboard right
+    const g = Math.min(0.13, (H - 0.06) * 0.42, W * 0.18), gs = g * 0.84, ya = H / 2 - 0.05 - g * 0.6, yb = ya - g * 1.2;
+    gaugeAt('adi', cx, ya, g); gaugeAt('hsi', cx, yb, g);
+    gaugeAt('asi', cx - g * 1.08, ya, gs); gaugeAt('aoa', cx - g * 1.08, yb, gs);
+    gaugeAt('alt', cx + g * 1.08, ya, gs); gaugeAt('vsi', cx + g * 1.08, yb, gs);
+    const xo = Math.max(g * 1.08 + gs * 1.02, W / 2 - gs * 0.62), ge = Math.min(gs * 0.9, (H - 0.07) / 3.15);
+    if (o.pages) { const ds = Math.min(S, (xo - g * 1.08 - gs * 0.5) * 1.6, H * 0.45); m.add(display({ centre: onFace(cx - xo - gs * 0.5 + ds * 0.62, ya - g * 0.6 + ds * 0.4, 0.004), width: ds, page: o.pages[0], tilt: tdeg, uv, uvButton: o.uvButton })); }
+    else { gaugeAt('gmeter', cx - xo, ya, gs * 0.9); gaugeAt('aclock', cx - xo, yb, gs * 0.9); }
+    ['rpm', 'egt', 'fuel'].forEach((p, i) => gaugeAt(p, cx + xo, H / 2 - 0.05 - ge * (0.55 + i * 1.05), ge));
+    if (o.annunciators !== false && yb - g * 0.6 - 0.012 - gs * 0.4 > -H / 2) m.add(display({ centre: onFace(cx, yb - g * 0.6 - 0.012 - gs * 0.2, 0.004), width: gs * 1.3, height: gs * 0.4, page: 'annunciators', tilt: tdeg, uv, bezel: 0.006, buttons: false }));
+  } else if (!airline) {
+    const pages = o.pages || ['mfdRadar', 'mfdSA'], mx = W / 2 - S * 0.68, my = -H * 0.08;
+    for (const [k, sx] of [[0, -1], [1, 1]]) m.add(display({ centre: onFace(cx + sx * mx, my, 0.004), width: S, page: pages[k], tilt: tdeg, yaw: -sx * 8, uv, uvButton: o.uvButton }));
+    const cd = o.centreDisplay, ufcH = S * 0.42 + 0.024;
+    if (o.ufc !== false) m.add(display({ centre: onFace(cx, H * 0.24, 0.004), width: S * 0.95, height: S * 0.42, page: 'ufc', tilt: tdeg, uv, bezel: 0.012, buttons: false }));
+    const topY = o.ufc !== false ? H * 0.24 - ufcH / 2 : H / 2;                 // free space under the UFC down to the panel bottom
+    if (cd) {
+      const cs = Math.min(S, (mx - half) * 2 - 0.02, topY + H / 2 - 0.03);
+      m.add(display({ centre: onFace(cx, topY - cs * 0.61 - 0.006, 0.004), width: cs, page: cd === true ? 'mfdHsd' : cd, tilt: tdeg, uv, uvButton: o.uvButton }));
+      const below = topY - cs * 1.22 - 0.012;                                 // standby / annunciators move under it if there is room
+      if (o.standby !== false && below + H / 2 > S * 0.4) m.add(display({ centre: onFace(cx, below - S * 0.2, 0.004), width: S * 0.38, page: 'standby', tilt: tdeg, uv, bezel: 0.008 }));
+    } else {
+      if (o.standby !== false) m.add(display({ centre: onFace(cx, -H * 0.12, 0.004), width: S * 0.55, page: 'standby', tilt: tdeg, uv, bezel: 0.01 }));
+      if (o.annunciators !== false) m.add(display({ centre: onFace(cx, -H * 0.38, 0.004), width: S * 0.62, height: S * 0.32, page: 'annunciators', tilt: tdeg, uv, bezel: 0.008 }));
     }
-    if (eyes.length > 1 || o.centre) {
-      m.add(display({ centre: onFace(cx, 0.0, 0.004), width: S, page: 'eicas', tilt: tdeg, uv }));
-      m.add(display({ centre: onFace(cx, -H * 0.36, 0.004), width: S * 0.42, page: 'standby', tilt: tdeg, uv, bezel: 0.008 }));
+    // corners around the MFDs: plates, gear handle, backup gauges (only where they fit)
+    const above = H / 2 - (my + half) - 0.012, under = (my - half) + H / 2 - 0.012, cw = Math.min(S * 0.95, W / 2 - mx + S / 2 - 0.02);
+    const sa = Math.min(above, cw * 0.5, 0.085), su = Math.min(under, cw * 0.5, 0.09);
+    if (fits(sa)) {
+      put(legendPlate('fighter', 0, sa, uv), cx - mx - sa * 0.55, my + half + 0.006 + sa / 2);
+      put(legendPlate('fighter', 3, sa, uv), cx - mx + sa * 0.55, my + half + 0.006 + sa / 2);
+      gaugeAt('fuel', cx + mx - sa * 0.55, my + half + 0.006 + sa / 2, sa); gaugeAt('hyd', cx + mx + sa * 0.55, my + half + 0.006 + sa / 2, sa);
+    }
+    if (fits(su)) {
+      if (o.gearLever !== false) put(gearLever(su, uv, 'fighter'), cx - mx - su * 0.5, my - half - 0.006 - su / 2);
+      put(legendPlate('fighter', 2, su * 0.9, uv), cx - mx + su * 0.45, my - half - 0.006 - su / 2);
+      gaugeAt('aclock', cx + mx - su * 0.5, my - half - 0.006 - su / 2, su * 0.85); gaugeAt('cabin', cx + mx + su * 0.5, my - half - 0.006 - su / 2, su * 0.85);
+    }
+  } else {
+    const D = S + 2 * bz + 0.014, rowY = H / 2 - half - 0.04, centre = eyes.length > 1 || o.centre;
+    let ndIn = Infinity;
+    for (const e of eyes) {
+      const out = eyes.length > 1 ? (e[0] < cx ? -1 : 1) : -1;                 // PFD outboard, ND inboard
+      if (o.analogue) {
+        const g = Math.min(0.095, D * 0.42);
+        [['asi', -1, 1], ['adi', 0, 1], ['alt', 1, 1], ['aclock', -1, 0], ['hsi', 0, 0], ['vsi', 1, 0]].forEach(([p, i, r]) => gaugeAt(p, e[0] - out * 0 + i * g * 1.12, rowY + (r ? 0.03 : 0.03 - g * 1.12), p === 'adi' || p === 'hsi' ? g * 1.06 : g * 0.92));
+        ndIn = Math.min(ndIn, Math.abs(e[0] - cx) - g * 1.7);
+        continue;
+      }
+      m.add(display({ centre: onFace(e[0] + out * D / 2, rowY, 0.004), width: S, page: style === 'airbus' ? 'pfdA' : 'pfd', tilt: tdeg, uv }));
+      m.add(display({ centre: onFace(e[0] - out * D / 2, rowY, 0.004), width: S, page: style === 'airbus' ? 'ndA' : 'nd', tilt: tdeg, uv }));
+      ndIn = Math.min(ndIn, Math.abs(e[0] - out * D / 2 - cx) - half);
+      // under the screens: a switch plate under the PFD, the clock (captain) / brake pressure (F/O) under the ND
+      const room = rowY - half + H / 2 - 0.016, ps = Math.min(room, S * 0.6, 0.12);
+      if (fits(ps)) {
+        const yb = rowY - half - 0.008 - ps / 2, left = e[0] < cx || eyes.length === 1, xP = e[0] + out * D / 2, xN = e[0] - out * D / 2;
+        put(legendPlate(style, left ? 0 : 2, ps, uv), xP, yb);
+        gaugeAt(left ? 'aclock' : 'brake', xN - out * ps * 0.45, yb, ps * 0.78);
+        put(legendPlate(style, 3, ps * 0.78, uv), xN + out * ps * 0.45, yb);
+        m.add(display({ centre: onFace(e[0], yb + ps * 0.2, 0.004), width: ps * 0.9, height: ps * 0.42, page: 'annunciators', tilt: tdeg, uv, bezel: 0.006, buttons: false, knob: false }));
+        if (room > ps * 2.1) {                                                // second row: flight-instrument transfer plate, lights
+          const y2 = yb - ps - 0.01;
+          put(legendPlate(style, 1, ps * 0.8, uv), xP + out * ps * 0.2, y2);
+          gaugeAt(left ? 'vsi' : 'cabin', xN, y2, ps * 0.7);
+        }
+      }
+    }
+    if (centre) {
+      const cS = Math.min(S, Math.max(0.1, (ndIn - 0.012) * 2 - 2 * bz)), cb = Math.max(0.012, cS * 0.11), ch = cS / 2 + cb;
+      const engY = H / 2 - ch - 0.04;
+      if (!o.analogue) m.add(display({ centre: onFace(cx, engY, 0.004), width: cS, page: style === 'airbus' ? 'ewd' : 'eicas', tilt: tdeg, uv }));
+      else ['rpm', 'egt', 'fuel', 'oil'].forEach((p, i) => gaugeAt(p, cx + ((i % 2) - 0.5) * cS * 0.55, engY + cS * 0.27 - Math.floor(i / 2) * cS * 0.55, cS * 0.5));
+      const room = engY - ch + H / 2 - 0.02, lS = Math.min(cS, room / 1.22);
+      let lowY = engY - ch - 0.01;
+      if (lS >= cS * 0.6 && !o.analogue) { lowY = engY - ch - 0.008 - lS * 0.61; m.add(display({ centre: onFace(cx, lowY, 0.004), width: lS, page: style === 'airbus' ? 'ecam' : 'lowerB', tilt: tdeg, uv })); }
+      else lowY -= Math.max(0, room) / 2;
+      // standby beside the engine display when it fits, gear lever and autobrake plate beside the lower display
+      const gapW = ndIn - ch, sbS = Math.min(S * 0.42, 0.1);
+      if (gapW > sbS * 1.3 + 0.02) m.add(display({ centre: onFace(cx - ch - gapW / 2, engY - ch + sbS * 0.62, 0.004), width: sbS, page: 'standby', tilt: tdeg, uv, bezel: 0.008, knob: false }));
+      else if (room > sbS * 1.3) m.add(display({ centre: onFace(cx - Math.max(lS, cS) / 2 - cb - sbS * 0.7, lowY + Math.max(0, lS * 0.61 - sbS * 0.65), 0.004), width: sbS, page: 'standby', tilt: tdeg, uv, bezel: 0.008, knob: false }));
+      const gl = Math.min(0.16, Math.max(room, 0.08) * 0.9, (ndIn - 0.02) * 1.2);
+      const gx = cx + Math.max(lS, cS) / 2 + cb + gl * 0.31 + 0.012;
+      if (o.gearLever !== false && fits(gl)) put(gearLever(gl, uv, style), gx, Math.max(lowY, -H / 2 + gl / 2 + 0.01));
+      const ap = Math.min(0.09, gl * 0.6);
+      if (fits(ap) && room > ap) put(legendPlate(style, 1, ap, uv), cx - Math.max(lS, cS) / 2 - cb - ap * 0.6 - 0.01, -H / 2 + ap / 2 + 0.012);
     }
   }
   if (o.glareshield !== false) {
     const lipY = y0 + H / 2 * Math.cos(tl) + 0.03, lipZ = z0 - H / 2 * Math.sin(tl) + 0.06;
-    m.add(glareshield({ centre: [cx, lipY, lipZ], width: W + 0.04, depth: airline ? 0.34 : 0.24, rise: airline ? 0.015 : 0.035, mcp: airline, uv, uvPad: o.uvPad }));
+    m.add(glareshield({ centre: [cx, lipY, lipZ], width: W + 0.04, depth: o.hoodDepth ?? (airline ? 0.34 : 0.24), rise: o.hoodRise ?? (airline ? 0.015 : 0.035), taper: o.hoodTaper ?? 1,
+      mcp: airline ? style : false, efis: airline && eyes.length > 1 ? eyes.map(q => q[0]) : undefined, uv, uvPad: o.uvPad }));
+  }
+  if (airline && o.pedestal) m.add(pedestal(o.pedestal === true ? {} : o.pedestal, onFace(cx, -H / 2), ey, style, uv, o.uvPad));
+  return m;
+}
+
+/** Airliner centre pedestal behind the panel's lower edge: sloping forward part with two CDUs, thrust-lever quadrant, radio plates. */
+function pedestal(p, pb, ey, style, uv, uvPad) {
+  const A = atlasOf(uv), m = new Mesh(), fl = p.floor ?? ey - 1.2, w = p.width ?? 0.44, hw = w / 2, len = p.length ?? 1, n = p.levers ?? 2;
+  const yT = fl + 0.74, zF = pb[2] + 0.04, zS = zF + 0.36, zA = zF + 0.36 + 0.62 * len, yF = Math.min(pb[1] - 0.02, yT + 0.3);
+  m.add(prism([[zF, fl], [zF, yF], [zS, yT], [zA, yT], [zA, fl]], -hw, hw, uv));
+  // sloping forward part: two CDUs side by side (screen + keypad)
+  const sl = Math.atan2(yF - yT, zS - zF), cl = Math.hypot(zS - zF, yF - yT), mid = [(zF + zS) / 2, (yF + yT) / 2];
+  for (const s of [-1, 1]) {
+    const cdu = new Mesh(), cw = hw - 0.02;
+    cdu.add(box(cw, cl * 0.92, 0.02, uv).translate(0, 0, -0.008));
+    cdu.add(display({ centre: [0, cl * 0.2, 0.004], width: cw * 0.66, height: cl * 0.34, page: 'cdu', tilt: 0, uv, bezel: 0.008, buttons: false, knob: false }));
+    for (const sx of [-1, 1]) for (let i = 0; i < 6; i++) cdu.add(box(0.012, 0.008, 0.006, uv).translate(sx * (cw * 0.42), cl * 0.32 - i * cl * 0.05, 0.004));   // line select keys
+    sideQuad(cdu, 'panel', cw * 0.9, cl * 0.4, (u, v) => displayUV('keys', u, v), 0.002); cdu.side.panel.translate(0, -cl * 0.24, 0);
+    m.add(cdu.rotateX(-(Math.PI / 2 - sl)).translate(s * (hw / 2), mid[1] + 0.012 * Math.cos(sl), mid[0] + 0.012 * Math.sin(sl)));
+  }
+  // thrust-lever quadrant: a hump with n levers, speedbrake lever left, flap lever right
+  const qz0 = zS + 0.04, qz1 = qz0 + 0.24 * len, uvS = ksw(A, 'stick.steel', KF.steel, uv), uvG = ksw(A, 'cockpit.leverGrip', { color: '#1c1d1f', rough: 0.5, metal: 0 }, uv);
+  m.add(prism([[qz0, yT], [qz0 + 0.03, yT + 0.1], [qz1 - 0.03, yT + 0.1], [qz1, yT]], -0.13, 0.13, uvPad || uv));
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * Math.min(0.06, 0.2 / n), b = [x, yT + 0.08, (qz0 + qz1) / 2], t = [x, yT + 0.25, b[2] - 0.05];
+    m.add(tube(b, t, 0.007, 0.007, { segments: 6, uv: uvS }));
+    m.add(rbox(Math.min(0.05, 0.2 / n), 0.026, 0.034, 0.008, { segments: 8, uv: uvG }).translate(t[0], t[1], t[2]));
+  }
+  for (const [x, uvH] of [[-0.17, uvG], [0.17, ksw(A, 'cockpit.flapGrip', { color: '#d8d6cf', rough: 0.5, metal: 0 }, uv)]]) {
+    m.add(tube([x, yT, qz0 + 0.1], [x, yT + 0.12, qz0 + 0.08], 0.006, 0.006, { segments: 6, uv: uvS }));
+    m.add(rbox(0.05, 0.022, 0.03, 0.006, { segments: 8, uv: uvH }).translate(x, yT + 0.125, qz0 + 0.08));
+  }
+  // radio / transponder plates on the flat aft part
+  for (let i = 0; i < 3; i++) {
+    const z = qz1 + 0.06 + i * 0.13 * len; if (z + 0.06 > zA) break;
+    for (const s of [-1, 1]) m.add(legendPlate(style, (i * 2 + (s > 0 ? 1 : 0)) % 4, Math.min(0.12, hw - 0.03), uv).rotateX(-Math.PI / 2).translate(s * hw / 2, yT + 0.002, z));
   }
   return m;
 }

@@ -15,6 +15,8 @@
 //   dims=1               overlay reference boxes / points from geometry.js
 //   sun=az,el            sun direction in degrees                     t=seconds (advance the lamp clock)   bg=studio|dark
 //   quality=low|medium|high|ultra
+//   kitdemo=fighter|airline  the kit's cockpit parts alone at the aircraft's eye point; with kitstyle=boeing|airbus, kitanalogue=1,
+//                        kitcd=<page> (fighter centre display), kitped=0 (no airline pedestal)
 import * as K from './index.js';
 import { Pen } from './atlas.js';
 import * as THREE from 'three';
@@ -76,7 +78,7 @@ function boot() {
   const ctx = {
     renderer, scene, camera, canvas, hudCanvas, params: { test: true, raw: Object.fromEntries(q) },
     quality: { level, anisotropy: 8, shadows: true },
-    env: { sunDir, moonDir: sunDir.clone().negate(), sunColor: new THREE.Color(SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day), ambientSky: new THREE.Color(0.25 * day, 0.4 * day, 0.7 * day), ambientGround: new THREE.Color(0.1 * day, 0.09 * day, 0.08 * day), sunLight: sun, exposure: 1, nightFactor: night },
+    env: { sunDir, moonDir: sunDir.clone().negate(), sunColor: new THREE.Color(SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day), ambientSky: new THREE.Color(0.25 * day, 0.4 * day, 0.7 * day), ambientGround: new THREE.Color(0.1 * day, 0.09 * day, 0.08 * day), sunLight: sun, exposure: renderer.toneMappingExposure, nightFactor: night },
     world: { origin: new THREE.Vector3(), groundHeightAt: () => 0, groundAt: (x, z, out = {}) => { out.height = 0; out.type = 'runway'; return out; }, toRender: (w, out = new THREE.Vector3()) => out.copy(w), toWorld: (r, out = new THREE.Vector3()) => out.copy(r) },
     events: { on: () => () => {}, emit: () => {} }, time: { now: num('t', 0), dt: 0 }, uniforms: { frame: { uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) } } }, player: null,
   };
@@ -242,7 +244,9 @@ function kitDemo(ctx, def, kind) {
   const U = { panel: sw('panel', '#3b3f44'), seat: sw('seat', '#2b2d30'), cushion: sw(airline ? 'sheep' : 'cushion', airline ? '#c9bfae' : '#4f5444', 0.9), suit: sw('suit', airline ? '#1b202b' : '#5d6649', 0.85), helmet: sw('helmet', '#d9dad6', 0.4), visor: sw('visor', '#14161a', 0.1), dark: sw('dark', '#1c1d1f'), glove: sw('glove', '#3a3326', 0.8), accent: sw('accent', '#d8b21c') };
   rig.material('paint', atlas.material(ctx, { envMapIntensity: 1 }));
   const st = new K.Mesh(), eyes = airline ? [[-Math.abs(e[0] || 0.53), e[1], e[2]], [Math.abs(e[0] || 0.53), e[1], e[2]]] : [e];
-  st.add(K.instrumentPanel({ eyes, kind: airline ? 'airline' : 'fighter', uv: U.panel }));
+  const q = new URLSearchParams(location.search), opt = { style: q.get('kitstyle') || undefined, analogue: q.get('kitanalogue') === '1', centreDisplay: q.get('kitcd') || undefined, pedestal: airline && q.get('kitped') !== '0' };
+  const dims = airline ? { dist: 0.64, drop: 0.56, height: 0.5, width: Math.max(1.8, 2 * Math.abs(e[0] || 0.53) + 0.75) } : { dist: 0.64, drop: 0.54, height: 0.42, width: 0.68 };
+  st.add(K.instrumentPanel({ eyes, kind: airline ? 'airline' : 'fighter', uv: U.panel, ...dims, ...opt }));
   if (!airline) st.add(K.hud({ eye: e, uv: U.panel }).frame);
   for (const q of eyes) st.add(airline ? K.crewSeat({ eye: q, uv: { frame: U.seat, cushion: U.cushion } }) : K.ejectionSeat({ eye: q, recline: 17, uv: { frame: U.seat, cushion: U.cushion, accent: U.accent } }));
   rig.addStatic(st);

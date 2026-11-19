@@ -231,7 +231,27 @@ K.buildGear(rig, atlas, {
   hose for fighters (`mask: false` = pressure suit), shirt, epaulettes and headset for airliners; its head turns (an
   optional morph: kept when the pilot is its own part, dropped when merged into static geometry). `K.crewSeat` is the
   airliner seat; both sit on the same layout as `K.ejectionSeat` built from the same eye point.
-  `kitdemo=fighter|airline` in the harness previews these parts alone at an aircraft's eye point (views `cpanel`, `ccrew`).
+  `kitdemo=fighter|airline` in the harness previews these parts alone at an aircraft's eye point (views `cpanel`, `ccrew`;
+  `kitstyle=airbus`, `kitanalogue=1`, `kitcd=<page>`, `kitped=0` try the options below; add `night=1` for the night levels).
+* **Cockpit options** (all optional; nothing changes for a call that does not pass them):
+  `K.instrumentPanel({ …, style: 'boeing' | 'airbus' })` — airline page set (Boeing PFD / ND / EICAS / lower DU or Airbus PFD / ND /
+  E-WD / SD), panel colour and MCP or FCU; `hoodDepth`, `hoodTaper` (hood width at the windscreen as a fraction of the lip width —
+  replaces vertex-fitting the glareshield into a narrowing nose), `hoodRise`; fighter `centreDisplay: page` (third MFD under the UFC),
+  `ufc: false`, `standby: false`, `annunciators: false`; `gearLever: false`; `analogue: true` (round-dial six-pack and engine
+  dials for older types, fighter or airline; a fighter keeps `pages[0]` as one small radar display when `pages` is given);
+  `pedestal: true | { floor, levers, length, width }` (airline centre pedestal with CDUs, thrust levers, flap / speedbrake
+  handles, radio plates — leave it off where the visual builds its own). `K.glareshield({ …, taper, mcp: 'boeing' | 'airbus', efis: [x, …] })`.
+  `K.gauge({ centre, size, page, tilt, yaw, uv })` is one analogue instrument (pages in `K.GAUGES`: asi adi alt hsi vsi rpm egt
+  fuel oil hyd gmeter aoa aclock flaps brake cabin). `K.pilot()` returns its mesh with `mesh.reach = { ok, right, left, right_,
+  left_ }` (false / ratio > 1 when a hand target is beyond arm's length — move the stick / throttle point or the eye).
+* **Screens**: pages are drawn at 512 px (PFD, ND, EICAS, E/WD, SD, fighter radar / SA / HSD / SMS / engine / TGP / TSD / FLCS)
+  or 256 px (CDU, UFC, standby, annunciators…). `pfd`, `pfdA`, `hud`, `eicas`, `ewd` and `standby` are **live**: the rig redraws
+  them from the aircraft state (attitude, IAS, altitude, vertical speed, heading, Mach, g, AoA, N1 / N2 / EGT / fuel flow, fuel,
+  flaps) while the camera is in the cockpit, about 12 times a second, one page per frame, only the pages the visual shows.
+* **Night**: screens, lit legends and the flood are set against the camera exposure (`ctx.env.exposure`): after exposure a
+  screen peaks near 0.5, legends near 0.2 and the flood leaves panel paint at a few percent, so panels read dark with crisp dim
+  lettering. Panel faces are plain paint (`'boeing'` grey, `'airbus'` blue-grey, `'fighter'` dark grey); the lettering lives on
+  labelled switch plates, gauge dials and the MCP, and only texels brighter than the paint glow.
 * **Airliner flight deck**: paint the windows (dark `FINISH.paintedGlass`), then line the inside with
   `K.liner(fus, [[z, t] × 4], { uv, mirror: true })` patches that share edges and leave the window polygons open,
   `K.bulkhead(fus, z, { facing })`, `K.deck(fus, z0, z1, y)`, `K.crewSeat`, `K.yoke`, a glareshield `K.prism`.
@@ -378,13 +398,15 @@ get frames / stiffeners (`ribs: false` to switch off).
 
 **propulsion.js** — `fan`, `fanBackdrop`, `petalNozzle`, `afterburnerGlow`, `abGlowColor`, `nozzle2D`, `nacelle`, `pylon`, `intake2DStations`.
 
-**cockpit.js** — `pilot`, `ejectionSeat`, `crewSeat`, `hud`, `display`, `glareshield`, `instrumentPanel`, `stick`, `throttle`, `yoke`,
-`pedals`, `tub`, `liner`, `bulkhead`, `deck`. **displays.js** — `displayTexture()`, `displayUV(page, u, v)`, `DISPLAY_TILES`.
+**cockpit.js** — `pilot`, `ejectionSeat`, `crewSeat`, `hud`, `display`, `gauge`, `glareshield`, `instrumentPanel`, `stick`, `throttle`, `yoke`,
+`pedals`, `tub`, `liner`, `bulkhead`, `deck`. **displays.js** — `displayTexture()`, `displayUV(page, u, v)`, `DISPLAY_TILES` (page name →
+pixel rectangle; `live` pages answer v in (1, 2]), `GAUGES`.
 
 **rig.js** — also `lampFlash(kind, t)`: the strobe / beacon pattern shared with the effects light sprites (use `S.tLamp`, the sim
 clock, for t) — visuals that animate their own halos should use it so lens, halo and sprite flash together. Point sprites named
 `halos` are depth-pulled toward the camera by the rig so the skin no longer clips them. `Mesh.sidecar(kind)` ('display' | 'panel' |
-'hud') holds geometry for kit-owned materials; it follows transforms / add / clone and the rig draws it.
+'hud' | 'visor') holds geometry for kit-owned materials; it follows transforms / add / clone and the rig draws it ('visor' is the
+pilot's smoked mirror visor; it turns with the head). `globalThis.__kitNoLive = true` before building switches the live pages off.
 `glowMaterial()` draws on the post layer (the night grade cannot desaturate it); `abGlowColor` gives a dim turbine-exit glow at dry
 thrust (visible at night) and switches the pattern to the flame holder in afterburner.
 
