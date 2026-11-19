@@ -29,9 +29,9 @@ export const LIVERIES = ['usaf', 'early', 'nasa'];
 //   early — 1960s / 70s scheme: white serial and "U.S. AIR FORCE", full-colour national insignia on the nacelles
 //   nasa  — NASA Dryden research aircraft: white tail number, NASA insignia on the fins and chines, no USAF markings
 const SCHEMES = {
-  usaf: { name: 'USAF operational (low-vis red)', base: '#0b0d12', hi: '#181c25', lo: '#050608', chalk: '#262a33', mark: '#8a2420', legend: '#8a2420', white: '#c9c9c3', serial: '17984', insignia: 'lowvis', weather: 0.75, seed: 7177 },
-  early: { name: 'USAF early (white markings)', base: '#0c0e13', hi: '#191d26', lo: '#06070a', chalk: '#242831', mark: '#a32a22', legend: '#e2e2dc', white: '#e2e2dc', serial: '17987', insignia: 'full', weather: 0.5, seed: 3313 },
-  nasa: { name: 'NASA research', base: '#0c0e13', hi: '#181c24', lo: '#06070a', chalk: '#262a32', mark: '#a32a22', legend: '#e6e6e0', white: '#e6e6e0', serial: '848', insignia: 'nasa', weather: 0.6, seed: 5821 },
+  usaf: { name: 'USAF operational (low-vis red)', base: '#080a0f', hi: '#12161e', lo: '#040507', chalk: '#1c2029', mark: '#8a2420', legend: '#8a2420', white: '#c9c9c3', serial: '17984', insignia: 'lowvis', weather: 0.75, seed: 7177 },
+  early: { name: 'USAF early (white markings)', base: '#090b10', hi: '#13171f', lo: '#050608', chalk: '#1c2029', mark: '#a32a22', legend: '#e2e2dc', white: '#e2e2dc', serial: '17987', insignia: 'full', weather: 0.5, seed: 3313 },
+  nasa: { name: 'NASA research', base: '#090b10', hi: '#12161e', lo: '#050608', chalk: '#1c2029', mark: '#a32a22', legend: '#e6e6e0', white: '#e6e6e0', serial: '848', insignia: 'nasa', weather: 0.6, seed: 5821 },
 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -40,13 +40,13 @@ export function createVisual(ctx, opts = {}) {
   const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'usaf', SC = SCHEMES[livery];
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
   const G = geometry, F = K.FINISH, lap = K.stopwatch();
-  const paintF = (c) => ({ color: c, rough: 0.72, metal: 0.1 });     // iron-ball: ferrite pigment in a matt binder
+  const paintF = (c) => ({ color: c, rough: 0.8, metal: 0.04 });     // iron-ball: ferrite pigment in a matt binder
   const seg = Math.max(48, Math.round(96 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   // skin: thin titanium skins between closely spaced ribs (more oil-canning than a fighter's machined skins), hard-used
   // paint (chalking, streaks, dirt in the gaps), clear coat only on the few gloss swatches (helmets, visors, lenses)
-  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.base), swatchRows: 5, skin: { weathering: SC.weather, framePitch: 0.5, waviness: 1.3, heatTint: 1.2, cavity: 1.15 } });
+  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.base), swatchRows: 5, skin: { weathering: SC.weather * 0.7, framePitch: 0.5, waviness: 1.3, heatTint: 1.2, cavity: 1.15 } });
   const cFus = atlas.chart('fus', { type: 'unwrap', z: [-19.7, 12.8], girth: 13.6, vScale: 0.78, strips: 2 });
   const cNac = atlas.chart('nac', { type: 'unwrap', z: [-3.7, 9.75], girth: 5.8, vScale: 0.85 });
   const cWT = { R: atlas.chart('wingTopR', { type: 'plan', x: [3.6, 8.6], z: [-1.6, 9.1], view: 'top' }), L: atlas.chart('wingTopL', { type: 'plan', x: [-8.6, -3.6], z: [-1.6, 9.1], view: 'top' }) };
@@ -276,7 +276,7 @@ export function createVisual(ctx, opts = {}) {
     glows.push(K.afterburnerGlow({ zDeep: 8.32, zExit: 9.9, rDeep: 0.5, rExit: 0.45, centre: c }));
     // TEB ignition puff: the effects plume (src/effects) draws the afterburner core, diamonds and sheath; this short
     // green flame only shows for the moment the triethylborane lights the burner
-    tebMeshes.push(K.lathe([[0.42, 9.9], [0.46, 10.4], [0.4, 11.2], [0.26, 12.2], [0.0, 13.2]], { segments: 16, uv: (k) => [[0.5, 0.45, 0.32, 0.16, 0.0][k], 0.5] }).translate(c[0], c[1], 0));
+    tebMeshes.push(K.lathe([[0.44, 9.9], [0.52, 10.6], [0.46, 11.6], [0.3, 12.8], [0.0, 14.2]], { segments: 16, uv: (k) => [[1, 0.92, 0.7, 0.4, 0.05][k], 0.5] }).translate(c[0], c[1], 0));
   }
 
   // ---- outboard wings -------------------------------------------------------------------------------------------------------
@@ -454,7 +454,7 @@ export function createVisual(ctx, opts = {}) {
   lap('geometry');
   paint(atlas, { SC, HATCH, fus, nac, W, fins, cEI, cFus, cNac, cWT, cWB, cFin, cPanel, cNoz, paintF, tAtX, T_SILL, Z_CK, zLE, hingeZ, Z_MLG, Z_NG, tW0, tW1, tW2, tN });
   lap('paint');
-  const mat = atlas.material(ctx, { envMapIntensity: 1, normalScale: 1 });
+  const mat = atlas.material(ctx, { envMapIntensity: 0.5, normalScale: 1 });     // matt ferrite paint: the env cube's bright haze band must not wash it to charcoal
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
@@ -462,7 +462,8 @@ export function createVisual(ctx, opts = {}) {
   const glowMat = [rig.material('glowL', K.glowMaterial(), { shadow: false }), rig.material('glowR', K.glowMaterial(), { shadow: false })];
   const tebMat = [rig.material('tebL', K.glowMaterial(), { shadow: false }), rig.material('tebR', K.glowMaterial(), { shadow: false })];
   if (mat.isMeshPhysicalMaterial) {     // iron-ball bloom: a cool, chalky haze at grazing angles instead of a glossy highlight
-    mat.sheen = 0.25; mat.sheenRoughness = 0.65; mat.sheenColor = new THREE.Color('#4c5a72');
+    mat.sheen = 0.1; mat.specularIntensity = 0.45; mat.specularColor = new THREE.Color('#b4c0d8');   // RAM binder: low, slightly blue dielectric reflectance (high sun at grazing angles otherwise washes the top surfaces to charcoal)
+    mat.sheenRoughness = 0.65; mat.sheenColor = new THREE.Color('#3a4862');
   }
 
   rig.addStatic(stat, 'paint');
@@ -613,7 +614,7 @@ export function createVisual(ctx, opts = {}) {
       if (ab > 0.02 && abPrev[i] >= 0 && abPrev[i] <= 0.02) teb[i] = 0.9;
       abPrev[i] = ab; teb[i] = Math.max(0, teb[i] - (dt > 0 ? dt : 0));
       const g = Math.min(1, teb[i] / 0.45) * (1 - 0.4 * S.night);
-      tebMat[i].color.copy(GREEN).multiplyScalar(g * 0.9);
+      tebMat[i].color.copy(GREEN).multiplyScalar(g * 5);
       if (g > 0) glowMat[i].color.lerp(GREEN, g * 0.8);
       tebNodes[i].visible = g > 0.01;
     }
@@ -662,7 +663,7 @@ function paint(atlas, o) {
   const line = { px: 1, depth: 0.42, dark: 0.04 }, gap = { px: 2, depth: 0.85, dark: 0.35 }, rivet = { px: 1.2, depth: 0.28, dark: 0.05 };
   const tone = (Q, path, k) => Q.fill(path, { color: k > 0 ? SC.hi : SC.lo }, { alpha: Math.abs(k) });
   const red = { color: mark, rough: 0.6, metal: 0 };
-  const chalk = { color: SC.chalk, rough: 0.82, metal: 0.05 }, fresh = { color: SC.lo, rough: 0.56, metal: 0.12 };
+  const chalk = { color: SC.chalk, rough: 0.86, metal: 0.03 }, fresh = { color: SC.lo, rough: 0.66, metal: 0.06 };
   const W8 = SC.weather;
   // JP-7 seepage: the tanks are the airframe and only seal when the skin is hot, so fuel weeps from the panel joints
   // and dries into dark, slightly glossy runs streaming aft
@@ -681,7 +682,7 @@ function paint(atlas, o) {
   for (let i = 0; i < frames.length - 1; i++) for (let j = 0; j < bands.length - 1; j++) {
     const r = (g) => g.rect(frames[i], bands[j], frames[i + 1] - frames[i], bands[j + 1] - bands[j]), up = bands[j] >= 0.25 && bands[j + 1] <= 0.75;
     tone(P, r, (rnd() - 0.5) * 0.24);
-    if (up && rnd() < 0.55) P.fill(r, chalk, { alpha: (0.06 + rnd() * 0.16) * W8, feather: 6 });
+    if (up && rnd() < 0.55) P.fill(r, chalk, { alpha: (0.04 + rnd() * 0.1) * W8, feather: 6 });
     else if (rnd() < 0.12) P.fill(r, fresh, { alpha: 0.55 });
   }
   P.fill((g) => g.rect(-19.7, 0, 4.8, 1), { color: '#171d1e' }, { alpha: 0.3 });                         // slightly greenish nose section
@@ -717,8 +718,8 @@ function paint(atlas, o) {
     for (const x of [1.05, 2.78]) P.line(poly(x, -2.2, 7.4), line);
     for (const z of [-2.2, 0.2, 2.6, 5.0, 7.4]) P.line([[z, tt(z, 1.05)], [z, tt(z, 2.78)]], line);
     // red walkway / NO STEP lines
-    P.stroke((g) => { const a = poly(0.98, -1.8, 7.0); a.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); }, 0, red, { px: 1.6 });
-    P.stroke((g) => { const a = poly(2.86, -1.4, 7.0); a.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); }, 0, red, { px: 1.6 });
+    P.stroke((g) => { const a = poly(0.98, -1.8, 7.0); a.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); }, 0, red, { px: 1.1, alpha: 0.8 });
+    P.stroke((g) => { const a = poly(2.86, -1.4, 7.0); a.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); }, 0, red, { px: 1.1, alpha: 0.8 });
     for (const z of [-0.4, 3.8]) P.decalT(z, tt(z, 1.9), { rot: s > 0 ? 0 : 180 }, (g) => K.drawText(g, 'NO STEP', 0.07, { color: mark }));
     // inboard elevon hinge gap and TE wear
     P.line([[7.6, tt(7.6, 1.45)], [7.6, tt(7.6, 3.0)]], gap);
@@ -811,7 +812,7 @@ function paint(atlas, o) {
         const fA = [0.0, ...spars][j], fB = [...spars, 0.99][j + 1] ?? 0.99, x0 = ribs[i], x1 = ribs[i + 1];
         const poly = [at(x0, fA), at(x1, fA), at(x1, Math.min(fB, 0.99)), at(x0, Math.min(fB, 0.99))].map((p) => [p[0] * s, p[1]]);
         tone(Q, poly, (rnd() - 0.5) * 0.26);
-        if (isTop && rnd() < 0.5) Q.fill(poly, chalk, { alpha: (0.05 + rnd() * 0.14) * W8, feather: 6 });
+        if (isTop && rnd() < 0.5) Q.fill(poly, chalk, { alpha: (0.04 + rnd() * 0.09) * W8, feather: 6 });
       }
       for (const f of spars) { ln([at(4.6, f), at(8.4, f)], line); const a = at(4.6, f), b = at(8.4, f); for (const d of [-0.02, 0.02]) Q.rivets(a[0] * s, a[1] + d, b[0] * s, b[1] + d, 0.07, rivet); }
       for (const x of ribs) { ln([at(x, 0.01), at(x, 0.99)], line); const a = at(x, 0.01), b = at(x, 0.99); for (const d of [-0.02, 0.02]) Q.rivets((a[0] + d) * s, a[1], (b[0] + d) * s, b[1], 0.07, rivet); }
@@ -825,7 +826,7 @@ function paint(atlas, o) {
       }
       if (isTop) {
         // red no-step line along the nacelle side
-        Q.stroke((g) => { g.moveTo(4.72 * s, zLE(4.72) + 0.4); g.lineTo(4.72 * s, 7.3); }, 0, red, { px: 1.6 });
+        Q.stroke((g) => { g.moveTo(4.72 * s, zLE(4.72) + 0.4); g.lineTo(4.72 * s, 7.3); }, 0, red, { px: 1.1, alpha: 0.8 });
         const p = at(5.6, 0.62); Q.text('NO STEP', p[0] * s, p[1], 0.07, { color: mark, rot: s > 0 ? -90 : 90 });
       }
       const le = [at(4.55, 0.004), at(8.45, 0.004)].map((p) => [p[0] * s, p[1]]);
