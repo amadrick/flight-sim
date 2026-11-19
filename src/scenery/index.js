@@ -13,6 +13,7 @@ import { createSurfaceProvider } from './surface.js';
 import { makePavementNoise, makeGlyphAtlas, makeFacades, makeSignAtlas, makeFenceTexture } from './textures.js';
 import { createPaveShared, makePavementMaterial, buildPavementGeometry, buildPaintGeometry, makePaintMaterial } from './pavement.js';
 import { createLightSystem } from './lights.js';
+import { makeCurtainMaterial } from './curtain.js';
 import { MultiBuilder, lin } from './builder.js';
 import { buildStructures } from './structures.js';
 import { setupDebugCamera } from './debugcam.js';
@@ -97,7 +98,7 @@ export async function createScenery(ctx) {
   // ---- shared materials
   const std = (o) => addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, ...o })));
   const M = {
-    glass: std({ map: facades.glass.map, emissiveMap: facades.glass.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.15, metalness: 0.15 }),
+    glass: addPools(addCurvature(makeCurtainMaterial(facades.glass.map))),
     office: std({ map: facades.office.map, emissiveMap: facades.office.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.8 }),
     garage: std({ map: facades.garage.map, emissiveMap: facades.garage.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.9 }),
     cab: std({ map: facades.cab.map, emissiveMap: facades.cab.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.08, metalness: 0.5 }),
@@ -111,7 +112,7 @@ export async function createScenery(ctx) {
     leaf: std({ side: THREE.DoubleSide, roughness: 0.8 }),
   };
   const tiles = Object.fromEntries(Object.entries(facades).map(([k, v]) => [k, v.tile]));
-  const emissiveMats = [M.glass, M.office, M.garage, M.cab, M.sign];
+  const emissiveMats = [M.office, M.garage, M.cab, M.sign];
   const carMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.6 })));
   const carGeo = makeCarGeometry();
   const sockGeo = makeWindsockGeometry();
@@ -303,7 +304,9 @@ export async function createScenery(ctx) {
     const res = ctx.uniforms.frame.uResolution.value;
     shared.uPixAngle.value = (2 * Math.tan((ctx.camera.fov * DEG) / 2)) / Math.max(1, res.y);
     const winK = THREE.MathUtils.smoothstep(night, 0.1, 0.8);
-    M.glass.emissiveIntensity = 0.55 * winK; M.office.emissiveIntensity = 0.9 * winK;
+    M.glass.userData.curtain.uIntNight.value = winK;
+    M.glass.userData.curtain.uIntDay.value = 0.07 * (1 - THREE.MathUtils.smoothstep(night, 0.0, 0.6)) * (0.4 + 0.6 * Math.max(0, Math.min(1, (ctx.env.sunDir?.y ?? 0.5) * 2)));
+    M.office.emissiveIntensity = 0.9 * winK;
     M.garage.emissiveIntensity = 0.7 * winK; M.cab.emissiveIntensity = 0.8 * winK; M.sign.emissiveIntensity = 1.5 * Math.max(winK, on * 0.6);
     ctx.world.toWorld(ctx.camera.position, camW);
     const w = ctx.weather.wind, ws = Math.hypot(w.x, w.z);

@@ -107,7 +107,7 @@ function building(B, b, L) {
       B.box({ pa: 'glass', na: 'glass', pr: 'glass', nr: 'glass' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h - 2, C.glassTint);
       // floating barrel-vault roof with deep overhangs + fascia slab
       B.box({ bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h - 2, b.z, b.hdg, b.len + 16, b.wid + 20, 1.2, C.offwhite);
-      B.vault('roof', { pa: 'plain', na: 'plain' }, b.x, b.h - 0.8, b.z, b.hdg, b.len + 16, b.wid + 20, 7, C.offwhite, 14, C.offwhite);
+      B.vault('metal', { pa: 'cab', na: 'cab' }, b.x, b.h - 0.8, b.z, b.hdg, b.len + 16, b.wid + 20, 7, lin(0xc4c8cc), 14, C.glassTint);
       // landside canopy and kerb on the -along side? (terminal faces landside on -along)
       B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x - d.dx * (b.len / 2 + 12), 7, b.z - d.dz * (b.len / 2 + 12), b.hdg, 20, b.wid * 0.9, 0.8, C.white);
       for (let k = -2; k <= 2; k++) B.box('plain', b.x - d.dx * (b.len / 2 + 18) + d.rx * k * b.wid * 0.2, 0, b.z - d.dz * (b.len / 2 + 18) + d.rz * k * b.wid * 0.2, b.hdg, 0.6, 0.6, 7, C.grey);
@@ -115,12 +115,31 @@ function building(B, b, L) {
       break;
     }
     case 'pier': {
+      // apron level (baggage, services: cladding + roller shutters), glazed gate-lounge level with interior,
+      // deep roof overhang with fascia, vertical sun fins on the airside face, rooftop plant and a skylight ridge
       const fs = b.faceSide; // which right-side faces the apron (+1 = +r)
-      B.box({ pa: 'glass', na: 'glass', pr: fs > 0 ? 'glass' : 'office', nr: fs < 0 ? 'glass' : 'office', top: 'roof' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, C.glassTint);
-      // parapet
-      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 0.4, b.wid + 0.4, 0.9, C.offwhite);
-      B.box('roof', b.x, b.h, b.z, b.hdg, b.len - 1, b.wid - 1, 0.92, C.grey);
-      rooftop(B, b, Math.round(b.len / 60), b.h + 0.9);
+      const base = 4.5, side = fs > 0 ? 'pr' : 'nr', land = fs > 0 ? 'nr' : 'pr';
+      B.box({ pa: 'metal', na: 'metal', [side]: 'metal', [land]: 'metal' }, b.x, 0, b.z, b.hdg, b.len, b.wid, base, C.civil);
+      B.box({ pa: 'glass', na: 'glass', [side]: 'glass', [land]: 'office', top: 'roof' }, b.x, base, b.z, b.hdg, b.len, b.wid, b.h - base, C.glassTint);
+      // roller shutters along the apron face (slightly proud of the cladding)
+      const nD = Math.floor(b.len / 22);
+      for (let k = 0; k < nD; k++) {
+        const sa = -b.len / 2 + (k + 0.5) * (b.len / nD);
+        B.box({ [side]: 'door' }, b.x + d.dx * sa, 0, b.z + d.dz * sa, b.hdg, 5.5, b.wid + 0.1, 3.6, C.grey);
+      }
+      // floor slab edge band between levels
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, base - 0.4, b.z, b.hdg, b.len + 0.3, b.wid + 0.3, 0.6, C.offwhite);
+      // roof overhang: soffit + fascia, 3 m beyond the glass
+      B.box({ bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len + 6, b.wid + 6, 1.1, C.offwhite);
+      // sun fins every 4.5 m on the glazed face
+      const nf = Math.floor(b.len / 4.5);
+      for (let k = 0; k <= nf; k++) {
+        const sa = -b.len / 2 + k * (b.len / nf), sc = fs * (b.wid / 2 + 0.35);
+        B.box('plain', b.x + d.dx * sa + d.rx * sc, base, b.z + d.dz * sa + d.rz * sc, b.hdg, 0.18, 0.7, b.h - base, C.steel);
+      }
+      // skylight ridge (dark glazing) along the roof centre, plant enclosures
+      B.box({ top: 'cab', pr: 'cab', nr: 'cab', pa: 'plain', na: 'plain' }, b.x, b.h + 1.1, b.z, b.hdg, b.len * 0.85, 5, 1.2, C.glassTint);
+      rooftop(B, b, Math.round(b.len / 45), b.h + 1.1);
       break;
     }
     case 'spine':
