@@ -415,7 +415,7 @@ export function createVisual(ctx, opts = {}) {
     }
     setFin.R(sf.rudder * 20 * DEG); setFin.L(sf.rudder * 20 * DEG);
     // inlet spikes translate aft above Mach 1.6 (0.66 m at Mach 3.2)
-    const mach = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('mach')) || (S.raw && Number.isFinite(S.raw.mach) ? S.raw.mach : 0), target = clamp((mach - 1.6) / 1.6, 0, 1) * 0.66;
+    const mach = S.raw && Number.isFinite(S.raw.mach) ? S.raw.mach : 0, target = clamp((mach - 1.6) / 1.6, 0, 1) * 0.66;
     spikePos = first || !(dt > 0) ? target : spikePos + (target - spikePos) * Math.min(1, dt * 1.5); first = false;
     for (const n of spikeNodes) n.position.z = n.userData.pivot[2] + spikePos;
     for (let i = 0; i < 2; i++) {
