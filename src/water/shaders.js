@@ -367,7 +367,7 @@ void main() {
     float across = length(rel + uWashV.xy * ac);
     float wdt = uWashV.w * (1.0 + along / max(uWashV.z, 1.0) * 1.5);
     washF = uWash.z * exp(-across * across / (wdt * wdt)) * (1.0 - smoothstep(0.0, uWashV.z, along)) * step(-wdt, along);
-    var += vec2(0.05) * washF;
+    var += vec2(0.08) * washF;
     float ring = sin(length(rel) * 1.3 - uTime * 9.0);
     grad += normalize(rel + 1e-3) * ring * 0.06 * washF;
   }
@@ -390,9 +390,9 @@ void main() {
 
   // ---- water body ----------------------------------------------------------------------------------------------
   float tropic = smoothstep(35.0, 70.0, wAbs.y * 0.001);
-  float coastal = 1.0 - smoothstep(12.0, 60.0, depth);
+  float coastal = 1.0 - smoothstep(10.0, 80.0, depth);
   vec3 rhoOcean = vec3(0.0011, 0.0055, 0.0170);
-  vec3 rhoCoast = mix(vec3(0.0042, 0.0115, 0.0098), vec3(0.0030, 0.0150, 0.0185), tropic);
+  vec3 rhoCoast = mix(vec3(0.0060, 0.0145, 0.0115), vec3(0.0030, 0.0150, 0.0185), tropic);
   vec3 rhoDeep = mix(rhoOcean, rhoCoast, coastal);
   vec3 Kd = mix(vec3(0.36, 0.065, 0.032), mix(vec3(0.5, 0.2, 0.24), vec3(0.34, 0.07, 0.055), tropic), coastal);
   // suspended sand in the surf: browner, brighter, murkier
@@ -468,7 +468,7 @@ void main() {
                        surfF * mix(0.4, lace * 0.55, detailW));
   // swash front: a thin foam line at the leading edge of the run-up
   float edgeFoam = (1.0 - smoothstep(0.0, 0.06 + 0.04 * Hloc, dW)) * covW * smoothstep(0.1, 0.5, Hloc) * (1.0 - sheltered) * mix(0.6, smoothstep(0.3, 0.6, ftS), detailW);
-  float foam = clamp(max(max(wc * (1.0 - 0.7 * sheltered), surfFoam), max(edgeFoam, washF * 0.5 * smoothstep(0.4, 0.7, ft))), 0.0, 1.0);
+  float foam = clamp(max(max(wc * (1.0 - 0.7 * sheltered), surfFoam), max(edgeFoam, washF * (0.18 + 0.4 * smoothstep(0.3, 0.75, ftS * 0.6 + ft * 0.4)))), 0.0, 1.0);
   vec3 foamRad = 0.82 * (vSunE * max(dot(N, L), 0.0) / PI + atmAmbient(P, N) + vMoonE * max(uMoonDir.y, 0.0) / PI);
 
   // ---- compose (premultiplied: rgb = emitted/reflected light, a = 1 - transmittance of what lies below) --------

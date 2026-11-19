@@ -29,6 +29,11 @@ async function boot() {
   const hdg = num('hdg', 180) * Math.PI / 180, pitch = num('pitch', -4) * Math.PI / 180;
   ctx.camera.fov = num('fov', 60); ctx.camera.updateProjectionMatrix();
   const speed = num('spd', 0);
+  // wake=<h>: a stand-in aircraft <h> m above the water, 80 m ahead of the camera, flying the camera heading at 90 m/s
+  if (raw.wake !== undefined) {
+    const p = new THREE.Vector3(camWorld.x + Math.sin(hdg) * 80, num('wake', 6), camWorld.z - Math.cos(hdg) * 80);
+    ctx.player = { def: { geometry: { span: 10 } }, visual: { object3D: new THREE.Group() }, state: { position: p, velocity: new THREE.Vector3(Math.sin(hdg) * 90, 0, -Math.cos(hdg) * 90) } };
+  }
   const resize = () => {
     const w = Math.max(2, window.innerWidth), h = Math.max(2, window.innerHeight);
     ctx.camera.aspect = w / h; ctx.camera.updateProjectionMatrix();
