@@ -22,7 +22,7 @@ const C = FLARE_CONSTS;
 export const STAR_TEX = { w: 128, h: 32 };
 export const META_LUT_N = 97;
 /** Default gains relative to the simulated lens (see createNeuralFlare). */
-export const FLARE_GAINS = { ghost: 5, star: 0.5 };
+export const FLARE_GAINS = { ghost: 3, star: 0.5 };
 
 function b64ToF32(b64) {
   let bytes;
