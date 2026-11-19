@@ -12,8 +12,8 @@ export default {
     { name: 'right', pos: [5.5, -4.5, 2.8], wheelRadius: 0.64, steerable: false, braked: true },
   ],
   engines: [
-    { nozzle: [-10.9, -2.1, -1.0], intake: [-10.9, -2.1, -8.6], nozzleRadius: 1 },
-    { nozzle: [10.9, -2.1, -1.0], intake: [10.9, -2.1, -8.6], nozzleRadius: 1 },
+    { nozzle: [-10.9, -2, -1.0], intake: [-10.9, -2, -8.6], nozzleRadius: 1 },
+    { nozzle: [10.9, -2, -1.0], intake: [10.9, -2, -8.6], nozzleRadius: 1 },
   ],
   wingtips: [[-32.4, 1.52, 12.0], [32.4, 1.52, 12.0]],
   lights: { navLeft: [-32.35, 1.52, 11.8], navRight: [32.35, 1.52, 11.8], tail: [0, 1.2, 37.6], strobe: [0, 0.72, 37.62], beacon: [0, 3.12, -4.0], landing: [-4.4, -1.25, -7.62] },

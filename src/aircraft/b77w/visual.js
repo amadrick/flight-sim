@@ -10,8 +10,8 @@
 //   [-0.5, 1.45, -30.8] (refined in geometry.js so the eye sits behind the windscreen with ~15° over-the-nose view).
 //   Cabin windows: centre y 0.3, 0.51 m pitch, d 7.5 … 66; doors 1–5 at d 9.5, 19.8, 45.5, 58.0, 66.5 plus an over-wing exit at
 //   d ≈ 34; cargo doors on the right (fwd d 17–21, aft d 48–52, bulk d 58).
-//   Tail cone: lower line sweeps up from d ≈ 56; the cone ends in a vertical, laterally flattened blade (0.66 m wide,
-//   2.2 m tall) with the APU exhaust on its left side. Tail skid under d ≈ 59.
+//   Tail cone: lower line sweeps up from d ≈ 56; the cone ends in a vertical, laterally flattened blade (0.48 m wide,
+//   1.9 m tall) with the APU exhaust on its left side. Tail skid under d ≈ 59.
 //   Wing (right): root LE at the fuselage side (x 3.1) z -8.5, chord 11.5; Yehudi kink x 12 (LE z -2.3, chord 7.2);
 //   main tip x 30 (LE z 8.73, chord 3.2); raked tip to x 32.4 (LE sweep 50°, tip chord 0.94). LE sweep 35° inboard / 31.5°
 //   outboard; TE sweep 12° inboard / 21° outboard; dihedral 5.5° from y -1.3 at the root LE; supercritical, t/c 14 → 7.5 %.
@@ -20,9 +20,9 @@
 //   x 24.6–29.8; seven spoilers per wing (2 inboard, 5 outboard); four flap-track fairings per wing.
 //   Tailplane span 21.3 m, root LE z 24.7, chord 7.8 → 2.2, LE sweep 36°, dihedral 7°. Fin LE root z 19.7 (crown), chord
 //   11.9 → 3.8 at y 14.0, LE sweep 43°; rudder 30 % chord with a geared tab on its lower section.
-//   GE90-115B: centre x ±10.9, y -2.1 (nozzle Y refined, thrustLineOffset in physics.js), inlet highlight z -8.6, Ø 3.48 m
-//   highlight, Ø 3.72 m max, fan Ø 3.24 m (22 swept, wide-chord composite blades), fan cowl + translating reverser 5.0 m,
-//   long core cowl to z -1.0 and a long conical plug; 0.54 m ground clearance (the sim's gear is shorter than the real one).
+//   GE90-115B: centre x ±10.9, y -2.0, inlet highlight z -8.6, Ø 3.64 m
+//   highlight, Ø 3.9 m max, fan Ø 3.24 m (22 swept, wide-chord composite blades), fan cowl + translating reverser 5.0 m,
+//   long core cowl to z -1.0 and a long conical plug; 0.55 m ground clearance (the sim's gear is shorter than the real one).
 //   Gear (geometry.js, unchanged): nose twin r 0.55 at z -28.4 retracting forward; main six-wheel bogies (3 axles × 2,
 //   1.45 m axle pitch, 1.4 m wheel pitch) centred on x ±5.5, z 2.8, legs hinged in the wing at x ±5.4, retracting inward
 //   into the wing-body fairing; bogie hangs 12° toe-up in flight; the rear axle steers.
@@ -51,8 +51,8 @@ const NOSE = [
 //  z     top     keel    half-width  widest
 const TAIL = [
   [19.0, 3.10, -3.10, 3.10, 0.00], [21.7, 3.06, -2.98, 3.05, 0.03], [24.2, 2.95, -2.62, 2.86, 0.12], [26.7, 2.79, -2.15, 2.54, 0.25],
-  [29.2, 2.59, -1.66, 2.11, 0.40], [31.7, 2.36, -1.24, 1.62, 0.52], [34.2, 2.07, -0.88, 1.10, 0.58], [36.4, 1.78, -0.66, 0.58, 0.56],
-  [37.56, 1.60, -0.60, 0.33, 0.50],
+  [29.2, 2.59, -1.66, 2.10, 0.40], [31.7, 2.36, -1.22, 1.56, 0.52], [34.2, 2.05, -0.84, 0.98, 0.58], [36.4, 1.72, -0.58, 0.46, 0.56],
+  [37.56, 1.50, -0.42, 0.24, 0.52],
 ];
 
 export function createVisual(ctx, opts = {}) {
@@ -85,8 +85,8 @@ export function createVisual(ctx, opts = {}) {
   B.pack();
   const UB = {
     grey: B.swatch('grey', F.semigloss('#b9bec3')), engine: B.swatch('engine', F.gloss(SC.engine)), lip: B.swatch('lip', F.polished), band: B.swatch('band', F.gloss(SC.lipBand)),
-    duct: B.swatch('duct', { color: '#24262a', rough: 0.55, metal: 0.3 }), acoustic: B.swatch('acoustic', { color: '#7d8185', rough: 0.6, metal: 0.55 }), core: B.swatch('core', F.semigloss('#c9cdd0')),
-    coreMetal: B.swatch('coreMetal', F.titanium), plug: B.swatch('plug', F.heatStained), blade: B.swatch('blade', { color: '#2c2f34', rough: 0.32, metal: 0.45 }),
+    duct: B.swatch('duct', { color: '#101113', rough: 0.6, metal: 0.2 }), acoustic: B.swatch('acoustic', { color: '#7d8185', rough: 0.6, metal: 0.55 }), core: B.swatch('core', F.semigloss('#c9cdd0')),
+    coreMetal: B.swatch('coreMetal', F.titanium), plug: B.swatch('plug', F.heatStained), blade: B.swatch('blade', { color: '#565b63', rough: 0.28, metal: 0.65 }),
     spinner: B.swatch('spinner', { color: '#202226', rough: 0.3, metal: 0.5 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.primer),
     pylon: B.swatch('pylon', F.gloss(SC.style === 'sweep' ? '#e9ebec' : '#e9ebec')), tail: B.swatch('tail', F.gloss(SC.tail)), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }),
     wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', F.semigloss('#c0c5c9')), tip: B.swatch('tip', F.gloss(SC.tipColor)), metal: B.swatch('metal', { color: '#c9ccce', rough: 0.26, metal: 0.9 }),
@@ -101,7 +101,7 @@ export function createVisual(ctx, opts = {}) {
   ];
   const fseg = Math.max(40, Math.round(104 * detail / 4) * 4);
   const fus = K.loft({
-    stations: FS, segments: fseg, step: 1.1 / detail, chart: cFus, capEnd: 'flat', capUV: UA.body,
+    stations: FS, segments: fseg, step: 1.1 / detail, chart: cFus, capEnd: 'flat', capUV: SC.style === 'sweep' ? UA.fair : UA.body,
     cutouts: [{ name: 'ngf', z: [-31.1, -29.35], t: [0, 0.034], mirror: true }, { name: 'nga', z: [-29.3, -27.7], t: [0, 0.034], mirror: true }],
   });
   cFus.body = fus;
@@ -111,15 +111,15 @@ export function createVisual(ctx, opts = {}) {
   // ring parameter on the upper half (right side) at half-width x
   const tAtX = (z, x) => { let lo = 0.25, hi = 0.5; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (fus.at(z, m).p[0] > x) lo = m; else hi = m; } return (lo + hi) / 2; };
   // APU exhaust: short oval duct on the left side of the tail-cone blade, angled outboard
-  stA.add(K.lathe([[0.16, -0.25], [0.17, 0.12, 1], [0.13, 0.12, 1], [0.11, -0.3]], { segments: 16, uv: UA.exhaust, sx: 0.8 }).rotateY(-16 * DEG).translate(-0.2, 0.62, 37.2));
+  stA.add(K.lathe([[0.16, -0.25], [0.17, 0.12, 1], [0.13, 0.12, 1], [0.11, -0.3]], { segments: 16, uv: UA.exhaust, sx: 0.8 }).rotateY(-16 * DEG).translate(-0.16, 0.6, 37.2));
 
   // wing-to-body fairing with the main-gear bays cut into its flat bottom
-  const fairStations = [[-12.8, 2.3, 0.45, 0.95], [-10.5, 3.25, 0.85, 1.22], [-8.0, 3.85, 1.05, 1.34], [-4.0, 4.25, 1.15, 1.38], [1.0, 4.45, 1.15, 1.40], [4.6, 4.4, 1.1, 1.40], [7.0, 3.75, 0.95, 1.3], [9.4, 2.8, 0.6, 1.08], [11.6, 2.0, 0.3, 0.78]]
-    .map(r => ({ z: r[0], y: -2.0, w: r[1], top: r[2], bot: r[3], kTop: 0.6, kBot: [0.95, 0.5523] }));
+  const fairStations = [[-13.0, 2.0, 0.4, 0.85], [-10.8, 2.85, 0.75, 1.1], [-8.2, 3.35, 0.95, 1.2], [-4.0, 3.65, 1.05, 1.24], [1.0, 3.78, 1.05, 1.26], [4.6, 3.72, 1.0, 1.26], [7.0, 3.3, 0.85, 1.16], [9.4, 2.6, 0.55, 0.98], [11.6, 1.9, 0.3, 0.72]]
+    .map(r => ({ z: r[0], y: -2.1, w: r[1], top: r[2], bot: r[3], kTop: 0.62, kBot: [0.95, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(32, Math.round(48 * detail / 4) * 4), step: 0.8, uv: UA.fair };
   let fair = K.loft(fairOpts);
   const fAtX = (z, x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(z, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
-  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'mlg', z: [0.3, 4.9], t: [fAtX(2.6, 2.35), fAtX(2.6, 4.2)], mirror: true }] });
+  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'mlg', z: [0.3, 4.9], t: [fAtX(2.6, 1.85), fAtX(2.6, 3.62)], mirror: true }] });
   stA.add(fair.mesh).add(K.well(fair.patches.mlgR, 1.5, UA.well, [0, 1, 0])).add(K.well(fair.patches.mlgL, 1.5, UA.well, [0, 1, 0]));
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
@@ -206,7 +206,7 @@ export function createVisual(ctx, opts = {}) {
   // flap-track fairings ("canoes"): front half fixed to the wing, rear half rides on the flap
   const canoeAt = (x, len, side, h = 1) => {
     const zf = W.R.at(x, 0.74, 'lower'), z0 = zf[2] - len * 0.42, y = zf[1] - 0.05;
-    const s = [[0, 0.01, 0.01], [0.12, 0.16, 0.2], [0.35, 0.25, 0.4], [0.6, 0.25, 0.42], [0.85, 0.16, 0.28], [1, 0.01, 0.03]].map(r => ({ z: z0 + r[0] * len, x: side * x, y: y - r[2] * h * 0.5 + (r[0] > 0.6 ? (r[0] - 0.6) * 0.45 : 0), w: r[1], top: r[2] * h * 0.6, bot: r[2] * h }));
+    const s = [[0, 0.01, 0.01], [0.12, 0.11, 0.15], [0.35, 0.17, 0.28], [0.6, 0.17, 0.3], [0.85, 0.11, 0.2], [1, 0.01, 0.02]].map(r => ({ z: z0 + r[0] * len, x: side * x, y: y - r[2] * h * 0.5 + (r[0] > 0.6 ? (r[0] - 0.6) * 0.35 : 0), w: r[1], top: r[2] * h * 0.6, bot: r[2] * h }));
     const split = zf[2] + 0.15;
     return { front: K.loft({ stations: s, segments: 12, step: 0.4, uv: UB.canoe, zRange: [z0, split] }).mesh, rear: K.loft({ stations: s, segments: 12, step: 0.4, uv: UB.canoe, zRange: [split, z0 + len], capStart: 'flat' }).mesh };
   };
@@ -241,12 +241,12 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- engines: GE90-115B -----------------------------------------------------------------------------------------------------
   const eng = [];
-  const NAC = { len: 5.0, rHi: 1.74, rMax: 1.86, rThroat: 1.6, rFan: 1.62, zFan: 1.2, rExit: 1.42, sleeve: 0.56 };
+  const NAC = { len: 5.0, rHi: 1.82, rMax: 1.95, rThroat: 1.63, rFan: 1.625, zFan: 1.25, rExit: 1.48, sleeve: 0.56 };
   const EC = G.engines.map(e => [e.nozzle[0], e.nozzle[1], e.intake[2]]);
   for (const [i, sx] of [[0, -1], [1, 1]]) {
     const c = EC[i];
     const n = K.nacelle({ centre: c, length: NAC.len, rHi: NAC.rHi, rMax: NAC.rMax, rThroat: NAC.rThroat, rFan: NAC.rFan, zFan: NAC.zFan, rExit: NAC.rExit, flat: 0, droop: 0, sleeve: NAC.sleeve,
-      core: { r0: 1.02, r1: 0.64, length: 2.6, z0: NAC.zFan + 0.9 }, plug: { r: 0.5, length: 1.55 }, segments: Math.max(36, Math.round(56 * detail / 4) * 4),
+      core: { r0: 1.06, r1: 0.64, length: 2.6, z0: NAC.zFan + 0.9 }, plug: { r: 0.5, length: 1.55 }, segments: Math.max(36, Math.round(56 * detail / 4) * 4),
       uv: UB.engine, uvLip: UB.lip, uvInner: UB.acoustic, uvSleeve: UB.engine, uvCore: UB.core, uvPlug: UB.plug, uvCascade: UB.cascade });
     stB.add(n.cowl).add(n.cascade).add(n.core).add(n.plug);
     // coloured intake band just behind the polished lip
@@ -257,7 +257,7 @@ export function createVisual(ctx, opts = {}) {
     stB.add(K.fanBackdrop(NAC.rFan, 0.55, UB.duct).translate(c[0], c[1], n.fanZ));
     // pylon: aft fairing on the core cowl, main strut, blended into the wing lower surface
     stB.add(K.pylon([{ y: c[1] + 0.92, z0: c[2] + 5.0, z1: c[2] + 9.1, x: c[0], tc: 0.12 }, { y: c[1] + 1.5, z0: c[2] + 1.9, z1: c[2] + 10.2, x: c[0], tc: 0.075 }, { y: c[1] + 1.85, z0: c[2] + 2.3, z1: c[2] + 11.0, x: c[0], tc: 0.07 }], { uv: UB.pylon }));
-    stB.add(K.plate([c[0] - sx * 1.42, c[1] + 1.12, c[2] + 1.2], [c[0] - sx * 1.42, c[1] + 1.12, c[2] + 2.5], [c[0] - sx * 1.72, c[1] + 1.38, c[2] + 2.55], [c[0] - sx * 1.68, c[1] + 1.35, c[2] + 1.45], 0.015, UB.engine));   // inboard nacelle strake
+    stB.add(K.plate([c[0] - sx * 1.36, c[1] + 1.36, c[2] + 1.3], [c[0] - sx * 1.36, c[1] + 1.36, c[2] + 2.65], [c[0] - sx * 1.64, c[1] + 1.64, c[2] + 2.7], [c[0] - sx * 1.6, c[1] + 1.6, c[2] + 1.55], 0.015, UB.engine));   // inboard nacelle strake
     eng.push({ c, n, fanMesh: ge90Fan({ radius: NAC.rFan - 0.015, hub: 0.6, blades: 22, uvBlade: UB.blade, uvSpinner: UB.spinner, uvSwirl: UB.swirl }) });
   }
 
@@ -332,9 +332,9 @@ export function createVisual(ctx, opts = {}) {
   for (const [i, sx, key] of [[1, -1, 'L'], [2, 1, 'R']]) {
     const c = gp[i].pos;
     bogieGear(rig, {
-      name: 'main' + key, index: i, side: sx, contact: c, R: gp[i].wheelRadius, wW: 0.5, pivot: [sx * 5.4, -1.45, 2.1], stow: [sx * 3.2, -2.45, 2.6],
+      name: 'main' + key, index: i, side: sx, contact: c, R: gp[i].wheelRadius, wW: 0.5, pivot: [sx * 5.3, -1.45, 2.1], stow: [sx * 2.75, -2.0, 2.6],
       stroke: 0.5, staticFrac: 0.4, strutR: 0.2, axle: 1.45, track: 0.7, tilt: 12, window: [0.18, 0.9], uv: UA,
-      brace: [sx * 3.1, -1.75, 2.2], drag: [sx * 5.5, -1.2, 0.4], legDoor: UA.fair,
+      brace: [sx * 3.2, -1.6, 2.2], drag: [sx * 5.4, -1.2, 0.4], legDoor: UA.fair,
       door: { mesh: K.thicken(fair.patches['mlg' + key], 0.03, UA.well), edge: sx > 0 ? fair.edges.mlgR.tLo : fair.edges.mlgL.tHi, ref: K.centroid(fair.patches['mlg' + key]) },
     });
   }
@@ -411,7 +411,7 @@ function ge90Fan(o) {
   // white swirl: a spiral stripe on the spinner cone
   const pts = [];
   for (let k = 0; k <= 14; k++) { const f = 0.12 + 0.82 * k / 14, z = -sl * (1 - f), r = hub * (0.1 + 0.9 * f) * 1.012 + 0.012, a = 2.6 * f; pts.push([r * Math.cos(a), r * Math.sin(a), z]); }
-  m.add(K.pipe(pts, 0.03, { segments: 5, uv: o.uvSwirl }));
+  m.add(K.pipe(pts, 0.05, { segments: 6, uv: o.uvSwirl }));
   return m;
 }
 
@@ -529,7 +529,7 @@ function paintFuselage(A, o) {
     P.textOn(SC.title, -15.5, 1.75, 'both', 0.95, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
     P.textOn('777', -6.0, 1.7, 'both', 1.3, { color: SC.accent, font: K.FONT.round, weight: 700 });
   }
-  P.textOn(SC.reg, 27.0, 1.25, 'both', 0.42, { color: SC.style === 'sweep' ? '#16264a' : '#1d2126', font: K.FONT.sans, weight: 700 });
+  P.textOn(SC.reg, 20.5, 1.45, 'both', 0.45, { color: SC.style === 'sweep' ? SC.belly : '#1d2126', font: K.FONT.sans, weight: 700 });
   P.textOn('777-300ER', -25.5, -0.7, 'both', 0.2, { color: '#7c8288', font: K.FONT.wide, weight: 700 });
   // radome joint
   P.ring(zd(2.6), 0, 1, { px: 1.4, depth: 0.5, dark: 0.28 });
