@@ -34,7 +34,7 @@ const _nets = {};
  *   'thick'   samples re-weighted by column optical thickness (clip(tauUp + tauDown, 1, 64)): nearly unbiased for
  *             thick cumulus / stratocumulus decks, but over-brightens thin veils and cloud edges (2.5-3.4x).
  * Three features cannot tell a veil from the top of a thick cloud, so one of the two has to be assumed: see
- * REPORT.md, "The prior".  The 4-feature model (createNeuralCloudScatter4) removes the ambiguity.
+ * INTEGRATION.md, "Accuracy and limits".  The 4-feature model (createNeuralCloudScatter4) removes the ambiguity.
  */
 export function getCloudScatterNet(prior = 'dataset') {
   const key = prior === 'thick' && WEIGHTS.CLOUD_SCATTER_MODEL_THICK_PRIOR ? 'thick' : 'dataset';
@@ -156,7 +156,7 @@ float ${fn}(float tauSun, float tauUp, float cosTheta) {
 /**
  * GLSL of the analytic fallback with the same signature: the Wrenninge / Frostbite "octave" multiple-scattering
  * approximation, with its parameters FITTED to the same path-traced training set (so it is the best that this
- * family can do with these inputs; see REPORT.md for how far it is from the reference).  No texture needed.
+ * family can do with these inputs; see tools/neural/results/eval.md for how far it is from the reference).  No texture needed.
  */
 export function analyticScatterGLSL(model = CLOUD_SCATTER_MODEL, opts = {}) {
   const o = { ...model.octaves, ...(opts.octaves || {}) };
@@ -295,7 +295,7 @@ export function createNeuralCloudScatter(opts = {}) {
 // Optional 4-feature model:  float cloudSunScatter4(float tauSun, float tauUp, float cosTheta, float tauDown)
 //
 // Adding tauDown (optical depth from the sample straight DOWN to the cloud base) lets the network tell a thin veil
-// from the top of a thick cloud, which the three standard features cannot (see REPORT.md: the unexplained error
+// from the top of a thick cloud, which the three standard features cannot (see INTEGRATION.md, "Accuracy and limits": the unexplained error
 // drops substantially).  A 4-D table would be large, so this model is deployed in factorised form, exactly as the
 // network is built:   ln J_ms = bias + sum_r B_r(tauSun, tauUp, tauDown) * A_r(tauSun, cosTheta)
 // B lives in RGBA16F 3-D texture(s), A in RGBA16F 2-D texture(s): two fetches per sample for rank 4.

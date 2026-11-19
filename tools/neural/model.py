@@ -199,7 +199,7 @@ def baseline_nubis2017(tau_sun, tau_up, cos_t):
 
 
 # ------------------------------------------------------------------------------------- noise-aware metrics
-J_FLOOR = 0.05   # "display floor": J of a mid-grey cloud / clear-sky radiance per unit sun irradiance (see REPORT.md)
+J_FLOOR = 0.05   # "display floor": J of a mid-grey cloud / clear-sky radiance per unit sun irradiance
 
 
 def mc_noise(jss, ja, jb, j2, paths):

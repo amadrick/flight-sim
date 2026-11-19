@@ -1,6 +1,6 @@
 """Validation of the reference solver against analytic / independent results.
 Run:  NUMBA_NUM_THREADS=2 .venv/bin/python validate.py            (about 2-3 minutes)
-Prints PASS/FAIL per check and writes validation.json (numbers quoted in src/neural/REPORT.md).
+Prints PASS/FAIL per check and writes validation.json (copied to results/validation.json).
 """
 import json
 import math

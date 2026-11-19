@@ -290,7 +290,7 @@ def main():
                           rel_rmse=float(math.sqrt(max(np.mean(pw * num / ref ** 2), 0.0))))
         lines.append('| %s | %.3f | %.3f |' % (name, wres[name]['disp_rmse'], wres[name]['rel_rmse']))
     lines.append('')
-    # brightness bias by column optical thickness: what a 3-feature model cannot know (REPORT.md, "The prior")
+    # brightness bias by column optical thickness: what a 3-feature model cannot know (src/neural/INTEGRATION.md, "Accuracy and limits")
     yms = 0.5 * (ja + jb)
     bias_cols = [(k, lab) for k, lab in ((names_k, lab_k) for names_k, lab_k in (
         ('Octaves, (a,b,c,gain) FITTED to our training set', 'octaves fitted'), (k_lut, 'NEURAL (LUT)'),
