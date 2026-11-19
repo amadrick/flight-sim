@@ -308,6 +308,48 @@ def test_grid_vs_slab_and_mis():
     RESULTS['grid_mis_table'] = rows
 
 
+def test_sky_visibility():
+    """Sky-light visibility V (uniform dome over a conservative plane-parallel slab):
+       optically thin limit V = 1/2; V(top) + V(bottom mirror point) = 1 by symmetry; mid-plane V = 1/2;
+       thick slab interior follows diffusion theory  V = ((tau* - tau)(1-g) + q) / (tau* (1-g) + 2 q), q = 0.71."""
+    worst = 0.0
+    rows = []
+    n = 4000
+    # thin limit and mid-plane symmetry (albedo 1)
+    for tau_slab, frac, expect in ((1e-3, 0.3, 0.5), (6.0, 0.5, 0.5), (40.0, 0.5, 0.5)):
+        med = slab_medium(tau_slab, 0.7, nz=64)
+        h = med.size[2]
+        pos = np.tile([0.0, 0.0, h * frac], (n, 1))
+        r = med.sky_visibility(pos, 64, albedo=1.0, seed=9)
+        vv = 0.5 * (r[:, 0] + r[:, 1])
+        m, se = float(vv.mean()), float(vv.std(ddof=1) / math.sqrt(n))
+        z = (m - expect) / max(se, 1e-9)
+        worst = max(worst, abs(z))
+        rows.append([tau_slab, frac, m, expect, z])
+    # mirror symmetry: V(depth d) + V(depth tau* - d) = 1
+    med = slab_medium(10.0, 0.7, nz=64)
+    h = med.size[2]
+    a = med.sky_visibility(np.tile([0.0, 0.0, h * 0.9], (n, 1)), 64, albedo=1.0, seed=10).mean()
+    b = med.sky_visibility(np.tile([0.0, 0.0, h * 0.1], (n, 1)), 64, albedo=1.0, seed=11).mean()
+    worst = max(worst, abs(a + b - 1.0) / 0.005)
+    rows.append([10.0, 'mirror', float(a), float(1 - b), float((a + b - 1) / 0.005)])
+    # diffusion theory in a thick slab
+    g = ph.G_MEAN
+    worst_diff = 0.0
+    tau_slab = 80.0
+    med = slab_medium(tau_slab, 0.7, nz=64)
+    h = med.size[2]
+    for depth in (10.0, 25.0, 40.0, 60.0):
+        r = med.sky_visibility(np.tile([0.0, 0.0, h * (1 - depth / tau_slab)], (n, 1)), 64, albedo=1.0, seed=12)
+        m = float(r.mean())
+        th = ((tau_slab - depth) * (1 - g) + 0.71) / (tau_slab * (1 - g) + 1.42)
+        worst_diff = max(worst_diff, abs(m - th))
+        rows.append([tau_slab, depth, m, th, m - th])
+    check('sky visibility: thin limit, mid-plane = 1/2, mirror symmetry', worst < 4.0, max_abs_z=worst)
+    check('sky visibility: thick slab interior matches diffusion theory within 0.02', worst_diff < 0.02,
+          max_abs_diff=worst_diff, rows=rows)
+
+
 if __name__ == '__main__':
     t0 = time.time()
     print('phase: d=%.0f um g_HG=%.5f g_D=%.5f alpha=%.3f w_D=%.5f  <cos>=%.4f' % (
@@ -317,6 +359,7 @@ if __name__ == '__main__':
     test_isotropic_exact()
     test_grid_vs_slab_and_mis()
     test_slab_energy_and_diffusion()
+    test_sky_visibility()
     RESULTS['all_ok'] = bool(ALL_OK)
     RESULTS['seconds'] = time.time() - t0
     with open('validation.json', 'w') as f:

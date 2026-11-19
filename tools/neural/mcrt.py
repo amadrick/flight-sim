@@ -365,6 +365,60 @@ def estimate_batch(sig, cum, maj, bsz, geo, pp, pos, w, npaths, max_bounce, albe
     return res
 
 
+# ------------------------------------------------------------------------------------- sky-light visibility
+@njit(cache=True, parallel=True)
+def sky_visibility_batch(sig, maj, bsz, geo, pp, pos, npaths, max_bounce, albedo, seed):
+    """Diffuse sky-light reaching a point, all orders of scattering: for a uniform sky of radiance L over the upper
+    hemisphere (black ground), the direction-averaged source function at x is L * V(x) with
+        V(x) = E[ albedo^n * 1{ adjoint walk from x (isotropic start) leaves through the TOP of the layer } ].
+    Returns (N,2): the two independent half-estimates of V (even / odd paths)."""
+    n = pos.shape[0]
+    res = np.zeros((n, 2))
+    dx = geo[0]
+    dy = geo[1]
+    dz = geo[2]
+    tan0 = geo[3]
+    nz = sig.shape[2]
+    twopi = 2.0 * math.pi
+    for i in prange(n):
+        st = np.zeros(1, dtype=np.uint64)
+        _seed(st, seed, i)
+        z0 = pos[i, 2]
+        ux0 = (pos[i, 0] - z0 * tan0) / dx
+        uy0 = pos[i, 1] / dy
+        uz0 = z0 / dz
+        acc0 = 0.0
+        acc1 = 0.0
+        for ip in range(npaths):
+            ux = ux0
+            uy = uy0
+            uz = uz0
+            mu = 1.0 - 2.0 * _rand(st)
+            ph_ = twopi * _rand(st)
+            sn = math.sqrt(max(0.0, 1.0 - mu * mu))
+            dxw = sn * math.cos(ph_)
+            dyw = sn * math.sin(ph_)
+            dzw = mu
+            wt = 1.0
+            score = 0.0
+            for b in range(max_bounce):
+                hit, ux, uy, uz = _flight(sig, maj, bsz, ux, uy, uz, (dxw - dzw * tan0) / dx, dyw / dy, dzw / dz, st)
+                if not hit:
+                    if uz >= nz:
+                        score = wt
+                    break
+                wt *= albedo
+                c = _sample_mu(pp, st)
+                dxw, dyw, dzw = _rotate(dxw, dyw, dzw, c, twopi * _rand(st))
+            if ip & 1:
+                acc1 += score
+            else:
+                acc0 += score
+        res[i, 0] = acc0 / max((npaths + 1) // 2, 1)
+        res[i, 1] = acc1 / max(npaths // 2, 1)
+    return res
+
+
 # ------------------------------------------------------------------------- deterministic ray integrals
 @njit(cache=True)
 def _march_tau(sig, geo, x, y, z, dxw, dyw, dzw, step, smax, taumax):
@@ -500,6 +554,12 @@ class Medium:
         w = np.ascontiguousarray(w, dtype=np.float64)
         return estimate_batch(self.sig, self.cum, self.maj, self.bsz, self.geo, pp, pos, w,
                               int(npaths), int(max_bounce), float(albedo), float(tau_mis), int(seed))
+
+    def sky_visibility(self, pos, npaths, max_bounce=20000, albedo=0.9999, seed=1, pp=PP_CLOUD):
+        """(N,2) half-estimates of the sky-light visibility V (see sky_visibility_batch)."""
+        return sky_visibility_batch(self.sig, self.maj, self.bsz, self.geo, pp,
+                                    np.ascontiguousarray(pos, dtype=np.float64), int(npaths), int(max_bounce),
+                                    float(albedo), int(seed))
 
     def features(self, pos, w):
         return features_batch(self.sig, self.cum, self.geo, np.ascontiguousarray(pos, dtype=np.float64),

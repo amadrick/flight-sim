@@ -20,18 +20,33 @@ def load(split):
     return M.load_split(split)
 
 
+EXTRA_BY_NAME = {'x_tauDown': '3', 'x_mu0': '6', 'x_sigma': '5', 'x_tauView': '4', 'x_tauDown_mu0': '3,6'}
+
+
 def load_net(name):
     ck = torch.load('runs/%s.pt' % name, weights_only=False)
+    st = ck['state']
     if ck['arch'] == 'factor':
         net = M.ScatterNet(tuple(ck['hidden']), ck['rank'])
-        fx = M.features_main
-    elif ck['arch'] == 'plain3':
-        net = M.PlainNet(5, tuple(ck['hidden']))
-        fx = M.features_main
+        fx = M.features_factor
+    elif ck['arch'] == 'factor4':
+        net = M.ScatterNet(tuple(ck['hidden']), ck['rank'], n_extra=1)
+        fx = M.features_factor4
     else:
-        net = M.PlainNet(10, tuple(ck['hidden']))
-        fx = M.features_oracle
-    net.load_state_dict(ck['state'])
+        ws = [v for k, v in st.items() if k.endswith('weight')]
+        hidden = tuple(int(w.shape[0]) for w in ws[:-1])
+        n_in = int(ws[0].shape[1])
+        net = M.PlainNet(n_in, hidden)
+        if ck['arch'] == 'plain3':
+            fx = M.features_main
+        elif ck['arch'] == 'oracle8':
+            fx = M.features_oracle
+        else:
+            cols = [int(c) for c in (ck.get('extra') or EXTRA_BY_NAME[name]).split(',')]
+            fx = lambda feat: M.features_oracle(feat)[:, [0, 1, 2, 3, 4] + [5 + c - 3 for c in cols]]
+    if ck.get('drop_up'):
+        fx = M.drop_up(fx)
+    net.load_state_dict(st)
     net.eval()
     return net, fx, ck
 
@@ -115,26 +130,62 @@ def fit_octaves(tr, ref_ms, n_oct=8, iters=400):
     return dict(a=a, b=b, c=cc, gain=float(torch.exp(p[3])), n=n_oct, loss=float(loss))
 
 
-def binned_predictor(tr, n1=40, n2=40, n3=24):
-    """Non-parametric 3-feature predictor: mean of the training J_ms in (x1, x2, x3) bins."""
-    x = M.features_main(tr['feat'])
-    y = 0.5 * (tr['ja'] + tr['jb']).astype(np.float64)
+def interp_grid(grid, coords):
+    """N-linear interpolation of grid (n0, n1, ..., [channels]) at coords in [0,1] per axis (clamped)."""
+    nd = len(coords)
+    idx, fr = [], []
+    for ax, v in enumerate(coords):
+        n = grid.shape[ax]
+        f = np.clip(v, 0.0, 1.0) * (n - 1)
+        i = np.minimum(np.floor(f).astype(np.int64), n - 2)
+        idx.append(i)
+        fr.append(f - i)
+    out = 0.0
+    for corner in range(1 << nd):
+        w = 1.0
+        ii = []
+        for ax in range(nd):
+            bit = (corner >> ax) & 1
+            w = w * (fr[ax] if bit else 1.0 - fr[ax])
+            ii.append(idx[ax] + bit)
+        g = grid[tuple(ii)]
+        out = out + (w[:, None] * g if g.ndim == 2 else w * g)
+    return out
 
-    def key(x):
-        i = np.minimum((x[:, 0] * n1).astype(np.int64), n1 - 1)
-        j = np.minimum((x[:, 1] * n2).astype(np.int64), n2 - 1)
-        k = np.minimum((x[:, 2] * n3).astype(np.int64), n3 - 1)
-        return (i * n2 + j) * n3 + k
-    kk = key(x)
-    s = np.bincount(kk, weights=y, minlength=n1 * n2 * n3)
-    cnt = np.bincount(kk, minlength=n1 * n2 * n3)
-    mean = s / np.maximum(cnt, 1)
-    glob = y.mean()
 
-    def predict(feat):
-        k2 = key(M.features_main(feat))
-        return np.where(cnt[k2] >= 8, mean[k2], glob), cnt[k2]
-    return predict
+BODY4_N = (24, 24, 12)     # (tauSun, tauUp, tauDown) resolution of the 4-feature body texture (as in cloud-scatter.js)
+ANG4_N = (32, 48)          # (tauSun, angle) resolution of the 4-feature angular texture
+
+
+def bake_factor4(net, half=True):
+    """The optional 4-feature model as deployed: body factors on a 3-D grid, angular factors on a 2-D grid."""
+    u = [np.linspace(0, 1, n) for n in BODY4_N]
+    tau = [np.expm1(v * M.LOG_TAU) for v in u]
+    ts, tu, td = np.meshgrid(tau[0], tau[1], tau[2], indexing='ij')
+    x5 = tu / (tu + ts + M.RATIO_EPS)
+    xb = np.stack([2 * np.log1p(ts) / M.LOG_TAU - 1, 2 * np.log1p(tu) / M.LOG_TAU - 1, 2 * x5 - 1,
+                   2 * np.log1p(td) / M.LOG_TAU - 1], axis=-1).reshape(-1, 4).astype(np.float32)
+    ua = [np.linspace(0, 1, n) for n in ANG4_N]
+    chord = M.T0 * np.expm1(ua[1] * M.LOG_ANG)
+    cos_t = np.clip(1 - 0.5 * chord * chord, -1, 1)
+    a1, a3 = np.meshgrid(ua[0], ua[1], indexing='ij')
+    _, a4 = np.meshgrid(ua[0], cos_t, indexing='ij')
+    xa = np.stack([2 * a1 - 1, 2 * a3 - 1, a4], axis=-1).reshape(-1, 3).astype(np.float32)
+    with torch.no_grad():
+        B = net.body(torch.from_numpy(xb)).numpy().reshape(*BODY4_N, -1).astype(np.float64)
+        A = net.ang(torch.from_numpy(xa)).numpy().reshape(*ANG4_N, -1).astype(np.float64)
+    if half:
+        B = B.astype(np.float16).astype(np.float64)
+        A = A.astype(np.float16).astype(np.float64)
+    return B, A, float(net.bias)
+
+
+def sample_factor4(B, A, bias, tau_sun, tau_up, cos_t, tau_down):
+    x1, x2, x3, _, _ = M.encode(tau_sun, tau_up, cos_t)
+    x6 = M.encode_down(tau_down)
+    b = interp_grid(B, [x1, x2, x6])
+    a = interp_grid(A, [x1, x3])
+    return np.exp(np.clip(bias + (a * b).sum(axis=1), -30.0, 12.0))
 
 
 def main():
@@ -142,36 +193,49 @@ def main():
     tr, te = load('train'), load('test')
     feat = te['feat']
     ts, tu, c = [feat[:, i].astype(np.float64) for i in range(3)]
+    td = feat[:, 3].astype(np.float64)
     jss = M.j_single(feat)
     ja, jb = te['ja'].astype(np.float64), te['jb'].astype(np.float64)
+    noise = M.mc_noise(jss, ja, jb, te['j2'].astype(np.float64), te['paths'])
 
     net, fx, ck = load_net('main')
     p_main = predict_ms(net, fx, feat)
-    preds = {}
-    have = {n: os.path.exists('runs/%s.pt' % n) for n in ('plain3', 'oracle8')}
-    p_plain = predict_ms(*load_net('plain3')[:2], feat) if have['plain3'] else None
-    p_orc = predict_ms(*load_net('oracle8')[:2], feat) if have['oracle8'] else None
+    have = lambda n: os.path.exists('runs/%s.pt' % n)
+    p_orc = predict_ms(*load_net('oracle8')[:2], feat) if have('oracle8') else None
     ref = jss + (p_orc if p_orc is not None else p_main)          # smooth noise-free weight for relative errors
 
-    # baselines
     tuned = fit_octaves(tr, predict_ms(net, fx, tr['feat']))
-    print('tuned octaves:', tuned)
+    print('fitted octaves:', tuned)
+    preds = {}
     preds['Single scattering only'] = M.baseline_single(ts, tu, c)
     preds['Beer-powder (Schneider 2015)'] = M.baseline_beer_powder(ts, tu, c)
     preds['Nubis 2017 attenuation clamp'] = M.baseline_nubis2017(ts, tu, c)
-    preds['Octaves, stock a=b=c=0.5, N=8 (Wrenninge/Frostbite)'] = M.baseline_octaves(ts, tu, c)
-    preds['Octaves, parameters FITTED to our training set'] = M.baseline_octaves(
+    preds['Octaves, stock a=b=c=0.5, N=8 (Wrenninge / Frostbite)'] = M.baseline_octaves(ts, tu, c)
+    preds['Octaves, (a,b,c,gain) FITTED to our training set'] = M.baseline_octaves(
         ts, tu, c, a=tuned['a'], b=tuned['b'], c=tuned['c'], n=tuned['n'], gain=tuned['gain'])
-    binp, bcnt = binned_predictor(tr)(feat)
-    preds['Binned mean of training data (40x40x24 bins, non-parametric)'] = jss + binp
     lut = bake_lut(net)
     p_lut = sample_lut(lut, ts, tu, c)
-    preds['NEURAL (%d params), direct MLP' % ck['params']] = jss + p_main
-    preds['NEURAL, baked 32^3 half-float LUT (as deployed)'] = jss + p_lut
-    if p_plain is not None:
-        preds['Oracle: large MLP, same 3 features (not deployed)'] = jss + p_plain
-    if p_orc is not None:
-        preds['Oracle: large MLP, 8 features (not deployed)'] = jss + p_orc
+    k_net = '**NEURAL** (%d params), network evaluated directly' % ck['params']
+    k_lut = '**NEURAL, as deployed** (32^3 half-float LUT, trilinear)'
+    preds[k_net] = jss + p_main
+    preds[k_lut] = jss + p_lut
+    extra_info = {}
+    if have('main_noup'):
+        preds['Ablation: NEURAL without tauUp (tauSun, cosTheta only)'] = jss + predict_ms(*load_net('main_noup')[:2], feat)
+    if have('main4'):
+        net4, fx4, ck4 = load_net('main4')
+        p4 = predict_ms(net4, fx4, feat)
+        B, A, bias4 = bake_factor4(net4)
+        p4d = sample_factor4(B, A, bias4, ts, tu, c, td)
+        preds['Stretch: NEURAL 4-feature (+tauDown, %d params), direct' % ck4['params']] = jss + p4
+        preds['Stretch: NEURAL 4-feature, as deployed (2 textures)'] = jss + p4d
+        extra_info['lut4_vs_mlp_rel_rms'] = float(np.sqrt(np.mean(((p4d - p4) / (jss + p4)) ** 2)))
+    for nm, label in (('plain3', 'same 3 features'), ('x_mu0', '3 features + sun elevation mu0'),
+                      ('x_sigma', '3 features + local extinction'), ('x_tauView', '3 features + tauView'),
+                      ('x_tauDown', '3 features + tauDown'), ('x_tauDown_mu0', '3 features + tauDown + mu0'),
+                      ('oracle8', 'all 8 recorded features')):
+        if have(nm):
+            preds['Oracle (not deployed): 9k-param MLP, %s' % label] = jss + predict_ms(*load_net(nm)[:2], feat)
 
     subsets = {
         'all': np.ones(len(ts), dtype=bool),
@@ -185,31 +249,49 @@ def main():
     }
     for i, k in enumerate(KINDS):
         subsets['family: ' + k] = te['kind'] == i
-    res = {name: {s: M.metrics(p, jss, ja, jb, ref, m) for s, m in subsets.items()} for name, p in preds.items()}
-    noise = float(np.sqrt(np.mean(((ja - jb) / 2) ** 2 / ref ** 2)))
+    res = {name: {s: M.metrics(p, jss, ja, jb, ref, m, noise) for s, m in subsets.items()} for name, p in preds.items()}
+    noise_rms = float(np.sqrt(np.mean(((ja - jb) / 2) ** 2 / ref ** 2)))
+    zero_frac = float(np.mean((ja <= 0) | (jb <= 0)))
     ms_frac = float(np.mean((0.5 * (ja + jb)) / np.maximum(jss + 0.5 * (ja + jb), 1e-12)))
     lut_vs_mlp = float(np.sqrt(np.mean(((p_lut - p_main) / (jss + p_main)) ** 2)))
+    lut_med = float(np.median(np.abs(p_lut - p_main) / (jss + p_main)))
 
-    print('\nTEST set: %d samples, %d unseen clouds, %d paths/sample; MC noise of the reference (rel. RMS of the mean) = %.3f'
-          % (len(ts), len(np.unique(te['cloud'])), int(te['paths']), noise))
-    print('mean multiple-scattering fraction of J: %.3f ; LUT vs direct MLP rel RMS diff: %.4f' % (ms_frac, lut_vs_mlp))
-    hdr = '| model | rel. RMSE | log-RMSE (x factor) | energy-wtd RMSE | bias | camera rel. RMSE | deep rel. RMSE |'
-    print('\n' + hdr + '\n|' + '---|' * 7)
+    lines = []
+    lines.append('TEST set: %d samples from %d unseen clouds, %d paths/sample.' % (len(ts), len(np.unique(te['cloud'])), int(te['paths'])))
+    lines.append('MC noise of the reference: rel. RMS %.3f, median rel. std %.3f; %d low-noise samples (<10%%, both halves non-zero).' % (
+        noise_rms, float(np.median(noise)), res[list(res.keys())[0]]['all']['n_lownoise']))
+    lines.append('Mean multiple-scattering fraction of J: %.3f. LUT vs direct network: rel. RMS %.4f, median %.4f.' % (
+        ms_frac, lut_vs_mlp, lut_med))
+    lines.append('')
+    lines.append('| model | display-rel. RMSE | rel. RMSE | energy-wtd RMSE | ln-RMSE (low-noise) | median abs rel. err (low-noise / all) | within 25 % (low-noise / all) | within x2 (low-noise / all) |')
+    lines.append('|---|---|---|---|---|---|---|---|')
     for name, r in res.items():
         a = r['all']
-        print('| %s | %.3f | %.3f (x%.2f) | %.3f | %+.3f | %.3f | %.3f |' % (
-            name, a['rel_rmse'], a['log_rmse'], math.exp(a['log_rmse']), a['energy'], a['bias'],
-            r['camera (image-weighted)']['rel_rmse'], r['deep (tauSun>=8)']['rel_rmse']))
-    print('\nper-subset rel. RMSE (neural direct | fitted octaves | stock octaves | single):')
+        lines.append('| %s | %.3f | %.3f | %.3f | %.3f | %.3f / %.3f | %.1f %% / %.1f %% | %.1f %% / %.1f %% |' % (
+            name, a['disp_rmse'], a['rel_rmse'], a['energy'], a['log_rmse'], a['med_abs'], a['med_abs_all'],
+            100 * a['within25'], 100 * a['within25_all'], 100 * a['fac2'], 100 * a['fac2_all']))
+    lines.append('')
     names = list(preds.keys())
-    for s in subsets:
-        print('  %-28s n=%6d  %.3f | %.3f | %.3f | %.3f' % (
-            s, res[names[6]][s]['n'], res[names[6]][s]['rel_rmse'], res[names[4]][s]['rel_rmse'],
-            res[names[3]][s]['rel_rmse'], res[names[0]][s]['rel_rmse']))
+    cols = [names[0], names[3], names[4], k_lut] + [n for n in names if n.startswith('Stretch') and 'deployed' in n]
+    short = ['single', 'octaves stock', 'octaves fitted', 'NEURAL (LUT)', 'NEURAL-4 (stretch)'][:len(cols)]
+    for metric, title in (('disp_rmse', 'display-relative RMSE'), ('rel_rmse', 'relative RMSE'), ('fac2_all', 'fraction within a factor 2 (all samples)')):
+        lines.append('Per-subset %s:' % title)
+        lines.append('')
+        lines.append('| subset | n | ' + ' | '.join(short) + ' |')
+        lines.append('|---|---|' + '---|' * len(cols))
+        for s in subsets:
+            lines.append('| %s | %d | ' % (s, res[names[0]][s]['n']) + ' | '.join('%.3f' % res[n][s].get(metric, float('nan')) for n in cols) + ' |')
+        lines.append('')
+    txt = '\n'.join(lines)
+    print(txt)
+    with open('runs/eval.md', 'w') as f:
+        f.write(txt + '\n')
     with open('runs/eval.json', 'w') as f:
         json.dump(dict(test_samples=int(len(ts)), test_clouds=int(len(np.unique(te['cloud']))),
-                       paths_per_sample=int(te['paths']), mc_noise_rel_rms=noise, ms_fraction=ms_frac,
-                       lut_vs_mlp_rel_rms=lut_vs_mlp, tuned_octaves=tuned, results=res), f, indent=1)
+                       paths_per_sample=int(te['paths']), mc_noise_rel_rms=noise_rms,
+                       mc_noise_median=float(np.median(noise)), zero_half_fraction=zero_frac, ms_fraction=ms_frac,
+                       lut_vs_mlp_rel_rms=lut_vs_mlp, lut_vs_mlp_median=lut_med, tuned_octaves=tuned,
+                       key_net=k_net, key_lut=k_lut, results=res, **extra_info), f, indent=1)
 
 
 if __name__ == '__main__':

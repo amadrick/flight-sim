@@ -18,12 +18,13 @@ import phase as ph
 
 TAU_MAX = 128.0          # optical depths are clamped here (LUT edge)
 T0 = 0.02                # angular warp scale (rad, ~1.1 deg): x3 = ln(1 + chord/T0) / ln(1 + 2/T0)
-RATIO_EPS = 0.05
+RATIO_EPS = 1.0          # x5 = tauUp / (tauUp + tauSun + RATIO_EPS)   (deployed, factorised network)
+RATIO_EPS_PLAIN = 0.05   # legacy value used by the (non-deployed) PlainNet oracles
 LOG_TAU = math.log1p(TAU_MAX)
 LOG_ANG = math.log1p(2.0 / T0)
 
 
-def encode(tau_sun, tau_up, cos_t, xp=np):
+def encode(tau_sun, tau_up, cos_t, xp=np, ratio_eps=RATIO_EPS):
     """Returns the 5 raw encodings in [0,1] (x1, x2, x3) / [-1,1] (x4) / [0,1] (x5)."""
     ts = xp.clip(tau_sun, 0.0, TAU_MAX)
     tu = xp.clip(tau_up, 0.0, TAU_MAX)
@@ -32,7 +33,7 @@ def encode(tau_sun, tau_up, cos_t, xp=np):
     x2 = xp.log1p(tu) / LOG_TAU
     chord = xp.sqrt(2.0 * (1.0 - c))
     x3 = xp.log1p(chord / T0) / LOG_ANG
-    x5 = tu / (tu + ts + RATIO_EPS)
+    x5 = tu / (tu + ts + ratio_eps)
     return x1, x2, x3, c, x5
 
 
@@ -53,19 +54,24 @@ def mlp(sizes):
 
 
 class ScatterNet(nn.Module):
-    """Factorised network.  body: (x1, x2, x5) -> R ; angular: (x1, x3, x4) -> R ; out = bias + <body, angular>."""
+    """Factorised network.  body: (x1, x2, x5 [, x6]) -> R ; angular: (x1, x3, x4) -> R ; out = bias + <body, angular>.
+    n_extra = 1 adds x6 = ln(1+tauDown)/ln(1+tauMax) to the body net (the optional 4-feature model)."""
 
-    def __init__(self, hidden=(32, 32), rank=12):
+    def __init__(self, hidden=(32, 32), rank=12, n_extra=0):
         super().__init__()
         self.hidden = tuple(hidden)
         self.rank = rank
-        self.body = mlp([3, *hidden, rank])
+        self.n_extra = n_extra
+        self.body = mlp([3 + n_extra, *hidden, rank])
         self.ang = mlp([3, *hidden, rank])
         self.bias = nn.Parameter(torch.tensor(math.log(0.07)))
 
     def forward(self, x):
-        """x: (N,5) columns x1..x5 as returned by encode(); inputs are recentred to [-1,1] here."""
-        xb = torch.stack([2 * x[:, 0] - 1, 2 * x[:, 1] - 1, 2 * x[:, 4] - 1], dim=1)
+        """x: (N,5+n_extra) columns x1..x5 as returned by encode() [+ x6]; inputs are recentred to [-1,1] here."""
+        cols = [2 * x[:, 0] - 1, 2 * x[:, 1] - 1, 2 * x[:, 4] - 1]
+        for e in range(self.n_extra):
+            cols.append(2 * x[:, 5 + e] - 1)
+        xb = torch.stack(cols, dim=1)
         xa = torch.stack([2 * x[:, 0] - 1, 2 * x[:, 2] - 1, x[:, 3]], dim=1)
         return self.bias + (self.body(xb) * self.ang(xa)).sum(dim=1)
 
@@ -99,9 +105,36 @@ def n_params(m):
 
 
 def features_main(feat):
-    """feat: (N,8) dataset features -> (N,5) network inputs."""
+    """feat: (N,8) dataset features -> (N,5) inputs of the PlainNet oracles."""
+    x = encode(feat[:, 0].astype(np.float64), feat[:, 1].astype(np.float64), feat[:, 2].astype(np.float64),
+               ratio_eps=RATIO_EPS_PLAIN)
+    return np.stack(x, axis=1).astype(np.float32)
+
+
+def features_factor(feat):
+    """feat: (N,8) dataset features -> (N,5) inputs of the deployed factorised network."""
     x = encode(feat[:, 0].astype(np.float64), feat[:, 1].astype(np.float64), feat[:, 2].astype(np.float64))
     return np.stack(x, axis=1).astype(np.float32)
+
+
+def drop_up(fx):
+    """Ablation wrapper: remove all tauUp information (x2 and x5) from the inputs."""
+    def f(feat):
+        x = fx(feat).copy()
+        x[:, 1] = 0.0
+        x[:, 4] = 0.0
+        return x
+    return f
+
+
+def encode_down(tau_down, xp=np):
+    return xp.log1p(xp.clip(tau_down, 0.0, TAU_MAX)) / LOG_TAU
+
+
+def features_factor4(feat):
+    """(N,6): the 5 encodings + x6 = ln(1+tauDown)/ln(1+tauMax) for the optional 4-feature model."""
+    return np.concatenate([features_factor(feat), encode_down(feat[:, 3].astype(np.float64))[:, None].astype(np.float32)],
+                          axis=1)
 
 
 def features_oracle(feat):
@@ -151,15 +184,29 @@ def baseline_nubis2017(tau_sun, tau_up, cos_t):
 
 
 # ------------------------------------------------------------------------------------- noise-aware metrics
-def metrics(pred_total, jss, ja, jb, ref_total, mask=None):
-    """Noise-debiased error metrics of a prediction of total J against the path-traced reference.
+J_FLOOR = 0.05   # "display floor": J of a mid-grey cloud / clear-sky radiance per unit sun irradiance (see REPORT.md)
+
+
+def mc_noise(jss, ja, jb, j2, paths):
+    """Estimated relative standard error of the reference J per sample (from the single-path second moment)."""
+    mean = 0.5 * (ja + jb)
+    var = np.maximum(j2 - mean * mean, 0.0) / max(int(paths), 1)
+    return np.sqrt(var) / np.maximum(jss + mean, 1e-12)
+
+
+def metrics(pred_total, jss, ja, jb, ref_total, mask=None, noise=None):
+    """Error metrics of a prediction of total J against the path-traced reference.
     ja / jb are two INDEPENDENT Monte Carlo half-estimates of J_ms, so (p - Ja)(p - Jb) is an unbiased estimate
-    of (p - J)^2 per sample.  ref_total is a smooth noise-free stand-in for J used only as the relative weight.
-      rel_rmse : sqrt(mean[(p-Ja)(p-Jb) / ref^2])            per-sample relative RMS error
-      log_rmse : sqrt(mean[ln(p/Ja) ln(p/Jb)])                RMS error in natural-log space (factor = exp)
-      energy   : sqrt(sum (p-Ja)(p-Jb) / sum Ja Jb)           energy-weighted (dominated by the bright samples)
-      bias     : mean[(p - J) / ref]                          mean signed relative error
-      med_abs  : median |p - (Ja+Jb)/2| / ref                 (not debiased; MC noise floor reported separately)
+    of (p - J)^2 per sample: the RMSE-type metrics below are free of Monte Carlo noise bias.
+    ref_total is a smooth noise-free stand-in for the true J (the 8-feature oracle network), used only as weight.
+      rel_rmse   sqrt(mean[(p-Ja)(p-Jb) / ref^2])              per-sample relative RMS error
+      disp_rmse  sqrt(mean[(p-Ja)(p-Jb) / (ref + J_FLOOR)^2])  relative to J plus a display floor
+      energy     sqrt(sum (p-Ja)(p-Jb) / sum Ja Jb)            energy-weighted (dominated by the forward peak)
+      rel_bias   mean[(p - J) / ref]                           mean signed relative error
+      disp_bias  mean[(p - J) / (ref + J_FLOOR)]
+    and, on the low-noise samples only (estimated MC standard error < 10 %):
+      log_rmse   sqrt(mean[ln(p/Ja) ln(p/Jb)])                 RMS error in ln space
+      med_abs    median |p/J - 1|,   within25 / fac2: fraction with |p/J - 1| < 0.25 / 0.5 < p/J < 2
     """
     if mask is None:
         mask = np.ones(len(jss), dtype=bool)
@@ -168,12 +215,29 @@ def metrics(pred_total, jss, ja, jb, ref_total, mask=None):
     b = (jss + jb)[mask].astype(np.float64)
     r = ref_total[mask].astype(np.float64)
     num = (p - a) * (p - b)
+    jm = 0.5 * (a + b)
     out = dict(n=int(mask.sum()))
     out['rel_rmse'] = float(math.sqrt(max(np.mean(num / (r * r)), 0.0)))
-    ok = (a > 0) & (b > 0) & (p > 0)
-    lg = np.log(p[ok] / a[ok]) * np.log(p[ok] / b[ok])
-    out['log_rmse'] = float(math.sqrt(max(np.mean(lg), 0.0)))
+    out['disp_rmse'] = float(math.sqrt(max(np.mean(num / (r + J_FLOOR) ** 2), 0.0)))
     out['energy'] = float(math.sqrt(max(num.sum() / (a * b).sum(), 0.0)))
-    out['bias'] = float(np.mean((p - 0.5 * (a + b)) / r))
-    out['med_abs'] = float(np.median(np.abs(p - 0.5 * (a + b)) / r))
+    out['rel_bias'] = float(np.mean((p - jm) / r))
+    out['disp_bias'] = float(np.mean((p - jm) / (r + J_FLOOR)))
+    # low-noise subset: both half-estimates non-zero (a zero Monte Carlo estimate is "unresolved", not "dark")
+    # and an estimated standard error of the reference below 10 %
+    ok = (ja[mask] > 0) & (jb[mask] > 0) & (p > 0)
+    if noise is not None:
+        ok &= noise[mask] < 0.10
+    out['n_lownoise'] = int(ok.sum())
+    if ok.sum() > 10:
+        lg = np.log(p[ok] / a[ok]) * np.log(p[ok] / b[ok])
+        out['log_rmse'] = float(math.sqrt(max(np.mean(lg), 0.0)))
+        ratio = p[ok] / jm[ok]
+        out['med_abs'] = float(np.median(np.abs(ratio - 1.0)))
+        out['within25'] = float(np.mean(np.abs(ratio - 1.0) < 0.25))
+        out['fac2'] = float(np.mean((ratio > 0.5) & (ratio < 2.0)))
+    # the same three on ALL samples (includes the Monte Carlo noise of the reference: see the oracle rows for the floor)
+    ratio = p / np.maximum(jm, 1e-30)
+    out['med_abs_all'] = float(np.median(np.abs(ratio - 1.0)))
+    out['within25_all'] = float(np.mean(np.abs(ratio - 1.0) < 0.25))
+    out['fac2_all'] = float(np.mean((ratio > 0.5) & (ratio < 2.0)))
     return out

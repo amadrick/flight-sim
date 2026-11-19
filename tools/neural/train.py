@@ -29,7 +29,7 @@ def load(split):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--name', default='main')
-    ap.add_argument('--arch', default='factor', choices=['factor', 'plain3', 'oracle8', 'plainx'])
+    ap.add_argument('--arch', default='factor', choices=['factor', 'factor4', 'plain3', 'oracle8', 'plainx'])
     ap.add_argument('--extra', default='', help="plainx: comma list of extra dataset feature columns (3 tauDown, 4 tauView, 5 sigma, 6 mu0, 7 z/H)")
     ap.add_argument('--hidden', default='32,32')
     ap.add_argument('--rank', type=int, default=12)
@@ -38,6 +38,7 @@ def main():
     ap.add_argument('--freeze', type=float, default=0.3, help='fraction of epochs after which loss weights are frozen')
     ap.add_argument('--lr', type=float, default=3e-3)
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--drop-up', action='store_true', help='ablation: hide tauUp from the network')
     ap.add_argument('--threads', type=int, default=2)
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
@@ -49,7 +50,10 @@ def main():
     hidden = tuple(int(h) for h in a.hidden.split(','))
     if a.arch == 'factor':
         net = M.ScatterNet(hidden, a.rank)
-        fx = M.features_main
+        fx = M.features_factor
+    elif a.arch == 'factor4':
+        net = M.ScatterNet(hidden, a.rank, n_extra=1)
+        fx = M.features_factor4
     elif a.arch == 'plain3':
         net = M.PlainNet(5, hidden if a.hidden != '32,32' else (64, 64, 64))
         fx = M.features_main
@@ -60,6 +64,8 @@ def main():
     else:
         net = M.PlainNet(10, hidden if a.hidden != '32,32' else (64, 64, 64))
         fx = M.features_oracle
+    if a.drop_up:
+        fx = M.drop_up(fx)
     print('arch %s, %d parameters' % (a.arch, M.n_params(net)))
 
     xt = torch.from_numpy(fx(tr['feat']))
@@ -124,7 +130,7 @@ def main():
             best = (v, {k: t_.clone() for k, t_ in net.state_dict().items()})
     net.load_state_dict(best[1])
     torch.save(dict(state=net.state_dict(), arch=a.arch, hidden=list(getattr(net, 'hidden', hidden)),
-                    rank=a.rank, params=M.n_params(net)), 'runs/%s.pt' % a.name)
+                    rank=a.rank, params=M.n_params(net), extra=a.extra, drop_up=a.drop_up), 'runs/%s.pt' % a.name)
     with open('runs/%s.json' % a.name, 'w') as f:
         json.dump(dict(name=a.name, arch=a.arch, params=M.n_params(net), epochs=a.epochs, batch=a.batch, lr=a.lr,
                        train_samples=int(n), val_samples=int(len(xv)), best_val_rel_rmse=math.sqrt(max(best[0], 0)),

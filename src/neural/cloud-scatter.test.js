@@ -9,6 +9,7 @@ import { decodeModel, logJms, scatterJ, cloudPhase, encodeFeatures } from './mlp
 import {
   createNeuralCloudScatter, createAnalyticCloudScatter, bakeScatterLUT, getCloudScatterNet, lutAxes,
   neuralScatterGLSL, analyticScatterGLSL, analyticScatterJ, CLOUD_SCATTER_LUT_SIZE,
+  hasCloudScatter4, getCloudScatterNet4, createNeuralCloudScatter4,
 } from './cloud-scatter.js';
 
 const vec = JSON.parse(readFileSync(fileURLToPath(new URL('./test-vectors.json', import.meta.url)), 'utf8'));
@@ -164,4 +165,59 @@ test('analytic fallback: finite, includes single scattering', () => {
     assert.ok(Number.isFinite(j) && j >= cloudPhase(c, net.phase) * Math.exp(-ts));
   }
   assert.equal(createAnalyticCloudScatter().sample(2, 1, 0.3), analyticScatterJ(2, 1, 0.3));
+});
+
+// ---------------------------------------------------------------------------- optional 4-feature model (+ tauDown)
+test('4-feature model: JS forward pass reproduces Python (1e-4)', { skip: !hasCloudScatter4() }, () => {
+  const net4 = getCloudScatterNet4();
+  assert.ok(net4.params <= 5000);
+  let maxLn = 0, maxRel = 0;
+  for (let i = 0; i < vec.lnJms4.length; i++) {
+    const y = logJms(net4, vec.tauSun[i], vec.tauUp[i], vec.cosTheta[i], vec.tauDown[i]);
+    maxLn = Math.max(maxLn, Math.abs(y - vec.lnJms4[i]));
+    const j = scatterJ(net4, vec.tauSun[i], vec.tauUp[i], vec.cosTheta[i], vec.tauDown[i]);
+    maxRel = Math.max(maxRel, Math.abs(j - vec.J4[i]) / vec.J4[i]);
+  }
+  console.log(`  4-feature: max |ln J_ms (JS) - (Python)| = ${maxLn.toExponential(2)}, max rel diff of J = ${maxRel.toExponential(2)}`);
+  assert.ok(maxLn < 1e-4 && maxRel < 1e-4);
+});
+
+test('4-feature model: factor textures, GLSL, CPU twin close to the network, build time', { skip: !hasCloudScatter4() }, () => {
+  const net4 = getCloudScatterNet4();
+  const times = [];
+  let s;
+  for (let r = 0; r < 5; r++) {
+    const t0 = performance.now();
+    s = createNeuralCloudScatter4();
+    times.push(performance.now() - t0);
+    if (r < 4) s.dispose();
+  }
+  times.sort((a, b) => a - b);
+  assert.match(s.glsl, /float cloudSunScatter4\(float tauSun, float tauUp, float cosTheta, float tauDown\)/);
+  assert.doesNotMatch(s.glsl, /NaN|undefined|Infinity/);
+  assert.equal((s.glsl.match(/{/g) || []).length, (s.glsl.match(/}/g) || []).length);
+  assert.equal(s.textures.length, net4.rank / 2);
+  for (const name of Object.keys(s.uniforms)) assert.ok(s.glsl.includes(name), `uniform ${name} declared`);
+  for (const t of s.textures) {
+    assert.equal(t.type, THREE.HalfFloatType);
+    assert.equal(t.format, THREE.RGBAFormat);
+    assert.equal(t.minFilter, THREE.LinearFilter);
+  }
+  let seed = 4242;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const errs = [];
+  for (let i = 0; i < 20000; i++) {
+    const ts = Math.expm1(rnd() * Math.log1p(128)), tu = Math.expm1(rnd() * Math.log1p(128)), td = Math.expm1(rnd() * Math.log1p(128));
+    const c = Math.cos(Math.exp(Math.log(1e-3) + rnd() * (Math.log(Math.PI) - Math.log(1e-3))));
+    const a = s.sample(ts, tu, c, td), b = scatterJ(net4, ts, tu, c, td);
+    assert.ok(Number.isFinite(a) && a >= cloudPhase(c, net4.phase) * Math.exp(-ts));
+    errs.push(Math.abs(a - b) / b);
+  }
+  errs.sort((x, y) => x - y);
+  const med = errs[errs.length >> 1], p99 = errs[Math.floor(errs.length * 0.99)];
+  console.log(`  4-feature: build median ${times[2].toFixed(1)} ms (bake ${s.info.bakeMs.toFixed(1)} ms); factor textures vs direct network: median rel err ${(med * 100).toFixed(2)} %, 99th pct ${(p99 * 100).toFixed(1)} %`);
+  assert.ok(med < 0.03, `median factor-LUT error ${med}`);
+  assert.ok(p99 < 0.30, `99th percentile factor-LUT error ${p99}`);
+  assert.ok(Number.isFinite(s.sample(1e6, 1e6, 0.3, 1e6)) && Number.isFinite(s.sample(-1, -1, 2, -1)));
+  s.dispose();
 });

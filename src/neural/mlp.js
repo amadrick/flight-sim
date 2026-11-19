@@ -36,16 +36,17 @@ export function decodeModel(model) {
     }
     return layers;
   };
+  const nExtra = model.bodyExtra | 0;                 // 1 for the optional 4-feature model (adds tauDown)
   const sizes = [3, ...model.hidden, model.rank];
-  const body = stack(sizes);
+  const body = stack([3 + nExtra, ...model.hidden, model.rank]);
   const ang = stack(sizes);
   const bias = take(1)[0];
   if (p !== f32.length) throw new Error(`cloud scatter weights: expected ${p} floats, got ${f32.length}`);
-  let maxWidth = 3;
+  let maxWidth = 4;
   for (const s of sizes) maxWidth = Math.max(maxWidth, s);
-  return { body, ang, bias, rank: model.rank, enc: model.enc, phase: model.phase, params: p, maxWidth,
+  return { body, ang, bias, rank: model.rank, nExtra, enc: model.enc, phase: model.phase, params: p, maxWidth,
     _a: new Float64Array(maxWidth), _b: new Float64Array(maxWidth), _ob: new Float64Array(model.rank),
-    _oa: new Float64Array(model.rank), _x: new Float64Array(5) };
+    _oa: new Float64Array(model.rank), _x: new Float64Array(6) };
 }
 
 /** Run one MLP stack. `x` holds the inputs; result is written to `out` (length = last layer width). */
@@ -79,22 +80,27 @@ export function encodeFeatures(tauSun, tauUp, cosTheta, enc, out) {
   return out;
 }
 
-const _in3 = new Float64Array(3);
+const _in = new Float64Array(4);
 
-/** ln J_ms from already encoded features x = [x1..x5]. */
+/** ln J_ms from already encoded features x = [x1..x5] (+ x6 = encoded tauDown for the 4-feature model). */
 export function logJmsEncoded(net, x) {
-  _in3[0] = 2 * x[0] - 1; _in3[1] = 2 * x[1] - 1; _in3[2] = 2 * x[4] - 1;
-  mlpForward(net.body, _in3, net._ob, net._a, net._b);
-  _in3[0] = 2 * x[0] - 1; _in3[1] = 2 * x[2] - 1; _in3[2] = x[3];
-  mlpForward(net.ang, _in3, net._oa, net._a, net._b);
+  _in[0] = 2 * x[0] - 1; _in[1] = 2 * x[1] - 1; _in[2] = 2 * x[4] - 1; _in[3] = 2 * x[5] - 1;
+  mlpForward(net.body, _in, net._ob, net._a, net._b);
+  _in[0] = 2 * x[0] - 1; _in[1] = 2 * x[2] - 1; _in[2] = x[3];
+  mlpForward(net.ang, _in, net._oa, net._a, net._b);
   let y = net.bias;
   for (let r = 0; r < net.rank; r++) y += net._ob[r] * net._oa[r];
   return y;
 }
 
-/** Network output: natural log of the multiple-scattering source function J_ms (sr^-1 per unit sun irradiance). */
-export function logJms(net, tauSun, tauUp, cosTheta) {
-  return logJmsEncoded(net, encodeFeatures(tauSun, tauUp, cosTheta, net.enc, net._x));
+/**
+ * Network output: natural log of the multiple-scattering source function J_ms (sr^-1 per unit sun irradiance).
+ * `tauDown` (optical depth straight down to the cloud base) is only used by the optional 4-feature model.
+ */
+export function logJms(net, tauSun, tauUp, cosTheta, tauDown = 0) {
+  const x = encodeFeatures(tauSun, tauUp, cosTheta, net.enc, net._x);
+  x[5] = Math.log1p(Math.min(Math.max(tauDown, 0), net.enc.tauMax)) / Math.log1p(net.enc.tauMax);
+  return logJmsEncoded(net, x);
 }
 
 /** Cloud-droplet phase function (Jendersie & d'Eon HG + Draine Mie fit), sr^-1, normalised to 1 over the sphere. */
@@ -109,6 +115,6 @@ export function cloudPhase(cosTheta, ph) {
 }
 
 /** Full source function J = single scattering (analytic) + multiple scattering (network), evaluated directly. */
-export function scatterJ(net, tauSun, tauUp, cosTheta) {
-  return cloudPhase(cosTheta, net.phase) * Math.exp(-Math.max(tauSun, 0)) + Math.exp(logJms(net, tauSun, tauUp, cosTheta));
+export function scatterJ(net, tauSun, tauUp, cosTheta, tauDown = 0) {
+  return cloudPhase(cosTheta, net.phase) * Math.exp(-Math.max(tauSun, 0)) + Math.exp(logJms(net, tauSun, tauUp, cosTheta, tauDown));
 }

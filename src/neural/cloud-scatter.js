@@ -17,8 +17,10 @@
 //     tauUp    >= 0  optical depth from the sample straight up to the cloud top
 //     cosTheta       cos(angle between sunlight travel direction and the direction toward the viewer); 1 = forward
 import * as THREE from 'three';
-import { CLOUD_SCATTER_MODEL } from './weights.js';
+import * as WEIGHTS from './weights.js';
 import { decodeModel, mlpForward, cloudPhase } from './mlp.js';
+
+const CLOUD_SCATTER_MODEL = WEIGHTS.CLOUD_SCATTER_MODEL;
 
 export const CLOUD_SCATTER_LUT_SIZE = 32;
 const LN_MIN = -30, LN_MAX = 12;
@@ -263,5 +265,172 @@ export function createNeuralCloudScatter(opts = {}) {
     sample,
     sampleMulti,
     dispose() { texture.dispose(); },
+  };
+}
+
+// =====================================================================================================================
+// Optional 4-feature model:  float cloudSunScatter4(float tauSun, float tauUp, float cosTheta, float tauDown)
+//
+// Adding tauDown (optical depth from the sample straight DOWN to the cloud base) lets the network tell a thin veil
+// from the top of a thick cloud, which the three standard features cannot (see REPORT.md: the unexplained error
+// drops substantially).  A 4-D table would be large, so this model is deployed in factorised form, exactly as the
+// network is built:   ln J_ms = bias + sum_r B_r(tauSun, tauUp, tauDown) * A_r(tauSun, cosTheta)
+// B lives in RGBA16F 3-D texture(s), A in RGBA16F 2-D texture(s): two fetches per sample for rank 4.
+// The main interface is unchanged; use this only if the cloud renderer has a cheap tauDown.
+// =====================================================================================================================
+let _net4 = null;
+/** True if the 4-feature weights are embedded. */
+export function hasCloudScatter4() { return !!WEIGHTS.CLOUD_SCATTER_MODEL4; }
+export function getCloudScatterNet4() {
+  if (!WEIGHTS.CLOUD_SCATTER_MODEL4) throw new Error('cloud-scatter: the 4-feature model is not embedded in weights.js');
+  if (!_net4) _net4 = decodeModel(WEIGHTS.CLOUD_SCATTER_MODEL4);
+  return _net4;
+}
+
+export const CLOUD_SCATTER4_BODY_SIZE = [24, 24, 12];   // tauSun x tauUp x tauDown
+export const CLOUD_SCATTER4_ANG_SIZE = [32, 48];         // tauSun x angle
+
+/** Evaluate the two factor networks on their grids. body[(i + n1*(j + n2*k))*R + r], ang[(i + m1*k)*R + r]. */
+export function bakeScatterFactors4(net = getCloudScatterNet4(), bodySize = CLOUD_SCATTER4_BODY_SIZE, angSize = CLOUD_SCATTER4_ANG_SIZE) {
+  const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
+  const t0 = now();
+  const R = net.rank, enc = net.enc;
+  const [n1, n2, n3] = bodySize, [m1, m2] = angSize;
+  const logTau = Math.log1p(enc.tauMax), logAng = Math.log1p(2 / enc.t0);
+  const x = new Float64Array(4), out = new Float64Array(R);
+  const ta = new Float64Array(net.maxWidth), tb = new Float64Array(net.maxWidth);
+  const body = new Float32Array(n1 * n2 * n3 * R);
+  for (let k = 0; k < n3; k++) {
+    const u6 = k / (n3 - 1);
+    for (let j = 0; j < n2; j++) {
+      const u2 = j / (n2 - 1), tu = Math.expm1(u2 * logTau);
+      for (let i = 0; i < n1; i++) {
+        const u1 = i / (n1 - 1), ts = Math.expm1(u1 * logTau);
+        x[0] = 2 * u1 - 1; x[1] = 2 * u2 - 1; x[2] = 2 * (tu / (tu + ts + enc.ratioEps)) - 1; x[3] = 2 * u6 - 1;
+        mlpForward(net.body, x, out, ta, tb);
+        body.set(out, (i + n1 * (j + n2 * k)) * R);
+      }
+    }
+  }
+  const ang = new Float32Array(m1 * m2 * R);
+  for (let k = 0; k < m2; k++) {
+    const u3 = k / (m2 - 1), chord = enc.t0 * Math.expm1(u3 * logAng);
+    const c = Math.min(1, Math.max(-1, 1 - 0.5 * chord * chord));
+    for (let i = 0; i < m1; i++) {
+      x[0] = 2 * (i / (m1 - 1)) - 1; x[1] = 2 * u3 - 1; x[2] = c;
+      mlpForward(net.ang, x, out, ta, tb);
+      ang.set(out, (i + m1 * k) * R);
+    }
+  }
+  return { body, ang, bodySize, angSize, rank: R, ms: now() - t0 };
+}
+
+/**
+ * Build the optional 4-feature scatter model.
+ * @returns {{ glsl: string, uniforms: object, textures: THREE.Texture[], info: object,
+ *            sample: (tauSun:number, tauUp:number, cosTheta:number, tauDown:number) => number, dispose: () => void }}
+ */
+export function createNeuralCloudScatter4(opts = {}) {
+  const net = getCloudScatterNet4();
+  const model = WEIGHTS.CLOUD_SCATTER_MODEL4;
+  const R = net.rank;
+  if (R % 4 !== 0) throw new Error('cloud-scatter: 4-feature model rank must be a multiple of 4');
+  const T = R / 4;
+  const fn = opts.functionName || 'cloudSunScatter4';
+  const phaseMax = opts.phaseMax ?? Infinity;
+  const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
+  const t0 = now();
+  const f = bakeScatterFactors4(net, opts.bodySize || CLOUD_SCATTER4_BODY_SIZE, opts.angSize || CLOUD_SCATTER4_ANG_SIZE);
+  const [n1, n2, n3] = f.bodySize, [m1, m2] = f.angSize;
+  const bodyHalf = [], angHalf = [], textures = [], uniforms = {};
+  for (let t = 0; t < T; t++) {
+    const bh = new Uint16Array(n1 * n2 * n3 * 4), ah = new Uint16Array(m1 * m2 * 4);
+    for (let i = 0; i < n1 * n2 * n3; i++) for (let ch = 0; ch < 4; ch++) bh[i * 4 + ch] = THREE.DataUtils.toHalfFloat(f.body[i * R + t * 4 + ch]);
+    for (let i = 0; i < m1 * m2; i++) for (let ch = 0; ch < 4; ch++) ah[i * 4 + ch] = THREE.DataUtils.toHalfFloat(f.ang[i * R + t * 4 + ch]);
+    const bt = new THREE.Data3DTexture(bh, n1, n2, n3);
+    const at = new THREE.DataTexture(ah, m1, m2);
+    for (const tex of [bt, at]) {
+      tex.format = THREE.RGBAFormat;
+      tex.type = THREE.HalfFloatType;
+      tex.minFilter = tex.magFilter = THREE.LinearFilter;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.generateMipmaps = false;
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.needsUpdate = true;
+    }
+    bt.wrapR = THREE.ClampToEdgeWrapping;
+    bt.name = `cloudScatterBody4_${t}`; at.name = `cloudScatterAng4_${t}`;
+    uniforms[`tCloudScatterBody4_${t}`] = { value: bt };
+    uniforms[`tCloudScatterAng4_${t}`] = { value: at };
+    bodyHalf.push(bh); angHalf.push(ah); textures.push(bt, at);
+  }
+  const buildMs = now() - t0;
+  const enc = net.enc;
+  const kTau = 1 / Math.log1p(enc.tauMax), kAng = 1 / Math.log1p(2 / enc.t0);
+  let decl = '', sum = '';
+  for (let t = 0; t < T; t++) {
+    decl += `uniform highp sampler3D tCloudScatterBody4_${t};\nuniform highp sampler2D tCloudScatterAng4_${t};\n`;
+    sum += ` + dot(texture(tCloudScatterBody4_${t}, ub), texture(tCloudScatterAng4_${t}, ua))`;
+  }
+  const glsl = /* glsl */`
+// ---- neural cloud scattering, optional 4-feature model (src/neural/cloud-scatter.js): ${model.meta.params} parameters ----
+${decl}${phaseGLSL(model.phase)}
+float ${fn}Multi(float tauSun, float tauUp, float cosTheta, float tauDown) {
+  float x1 = log(1.0 + clamp(tauSun, 0.0, ${glf(enc.tauMax)})) * ${glf(kTau)};
+  float x2 = log(1.0 + clamp(tauUp, 0.0, ${glf(enc.tauMax)})) * ${glf(kTau)};
+  float x6 = log(1.0 + clamp(tauDown, 0.0, ${glf(enc.tauMax)})) * ${glf(kTau)};
+  float x3 = clamp(log(1.0 + sqrt(max(0.0, 2.0 - 2.0 * cosTheta)) * ${glf(1 / enc.t0)}) * ${glf(kAng)}, 0.0, 1.0);
+  vec3 ub = vec3(x1, x2, x6) * vec3(${glf((n1 - 1) / n1)}, ${glf((n2 - 1) / n2)}, ${glf((n3 - 1) / n3)}) + vec3(${glf(0.5 / n1)}, ${glf(0.5 / n2)}, ${glf(0.5 / n3)});
+  vec2 ua = vec2(x1, x3) * vec2(${glf((m1 - 1) / m1)}, ${glf((m2 - 1) / m2)}) + vec2(${glf(0.5 / m1)}, ${glf(0.5 / m2)});
+  return exp(clamp(${glf(net.bias)}${sum}, ${glf(LN_MIN)}, ${glf(LN_MAX)}));
+}
+// Source function J per unit sun irradiance (sr^-1); tauDown = optical depth straight down to the cloud base.
+float ${fn}(float tauSun, float tauUp, float cosTheta, float tauDown) {
+  float single = min(cloudScatterPhase(cosTheta), ${glf(phaseMax)}) * exp(-max(tauSun, 0.0));
+  return single + ${fn}Multi(tauSun, tauUp, cosTheta, tauDown);
+}
+`;
+  // CPU twin (multilinear interpolation of the half-float factors, then the rank-R contraction)
+  const lerpN = (data, dims, coords, stride, ch) => {
+    const nd = dims.length;
+    let acc = 0;
+    const i0 = [], fr = [];
+    for (let a = 0; a < nd; a++) {
+      const v = Math.min(1, Math.max(0, coords[a])) * (dims[a] - 1);
+      i0[a] = Math.min(Math.floor(v), dims[a] - 2); fr[a] = v - i0[a];
+    }
+    for (let corner = 0; corner < (1 << nd); corner++) {
+      let w = 1, idx = 0, mul = 1;
+      for (let a = 0; a < nd; a++) {
+        const bit = (corner >> a) & 1;
+        w *= bit ? fr[a] : 1 - fr[a];
+        idx += (i0[a] + bit) * mul; mul *= dims[a];
+      }
+      acc += w * THREE.DataUtils.fromHalfFloat(data[idx * stride + ch]);
+    }
+    return acc;
+  };
+  const sampleMulti = (tauSun, tauUp, cosTheta, tauDown) => {
+    const c = Math.min(1, Math.max(-1, cosTheta));
+    const x1 = Math.log1p(Math.min(Math.max(tauSun, 0), enc.tauMax)) * kTau;
+    const x2 = Math.log1p(Math.min(Math.max(tauUp, 0), enc.tauMax)) * kTau;
+    const x6 = Math.log1p(Math.min(Math.max(tauDown, 0), enc.tauMax)) * kTau;
+    const x3 = Math.log1p(Math.sqrt(Math.max(0, 2 - 2 * c)) / enc.t0) * kAng;
+    let y = net.bias;
+    for (let t = 0; t < T; t++) for (let ch = 0; ch < 4; ch++) {
+      y += lerpN(bodyHalf[t], [n1, n2, n3], [x1, x2, x6], 4, ch) * lerpN(angHalf[t], [m1, m2], [x1, x3], 4, ch);
+    }
+    return Math.exp(Math.min(LN_MAX, Math.max(LN_MIN, y)));
+  };
+  return {
+    glsl,
+    uniforms,
+    textures,
+    info: { kind: 'neural-factor-lut-4', params: net.params, rank: R, bodySize: f.bodySize, angSize: f.angSize,
+      bakeMs: f.ms, buildMs, meta: model.meta },
+    sampleMulti,
+    sample: (tauSun, tauUp, cosTheta, tauDown) =>
+      Math.min(cloudPhase(cosTheta, net.phase), phaseMax) * Math.exp(-Math.max(tauSun, 0)) + sampleMulti(tauSun, tauUp, cosTheta, tauDown),
+    dispose() { for (const t of textures) t.dispose(); },
   };
 }
