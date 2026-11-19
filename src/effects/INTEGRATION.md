@@ -74,9 +74,28 @@ height, wingArea, noseZ, tailZ, cgHeight, pilotEye}`, `def.specs.{engineType, th
   when their amount > 0 and only over their screen footprint. Step counts scale with `quality.particles`.
 * **Rain**: ≤ 9 000 streak quads × precipitation × quality. Canopy rain: 1 fullscreen triangle, ~40 ALU ops/pixel.
 * **Lights**: ≤ 12 sprites (1 draw); 1 SpotLight + 1 PointLight shared by the scene.
+* **Beam** (night, lamp on): 1 draw over the cone's screen footprint, 6–16 samples × ~25 ALU per pixel.
 
 ## Feature switches
 `plume=classic` previous plume incl. the dry nozzle-exit glow; `acl=classic` previous aircraft-light sprites.
+Night pass: `lamp=classic` landing/taxi spot at the real lamp position with the old hard cone (it lit the cockpit
+and the inside of the forward fuselage through the skin: the spot has no shadow map); `beam=classic` previous
+murk-only additive cone instead of the scattering beam; `beaconlight=0` beacons do not light the airframe/ground;
+`fxmoon=0` smoke/contrails/vapour not lit by the moon.
+
+## Night behaviour (night pass)
+* **Landing / taxi spot**: when the lamp is behind the nose the source is moved to just ahead of the nose with the
+  same aim, and falls off as `I'/d^p` (`p = 2·40/(40+t)`, `I' = I·40^p/(40+t)²`) so the pool keeps the real lamp's
+  length and brightness from ~12 to 150 m. Wide cone, long penumbra (soft pool edges). Combined landing+taxi = one
+  wider cone.
+* **Beam**: single scattering of the spot by the air along each view ray (analytic ray/cone entry, 6–16 jittered
+  samples by `quality.particles`), scattering coefficient from `weather.visibility` (Koschmieder minus Rayleigh) +
+  rain; forward-peaked aerosol phase. Faint in clear air, strong in mist/rain. Back faces of a 350 m cone proxy,
+  no depth test (own depth read), drawn only while the spot is on.
+* **Beacon light**: when nothing else uses the shared fx PointLight (lightning > explosion > fire > afterburner),
+  it follows the flashing beacon (top or belly) at ~0.8 cd-units × night: a red wash on the skin and the ground.
+* **Media lighting**: `fxSun()` = sun (cloud shadow) + moon; phase/wrap use `uFxKeyDir` (= `pipeline.lighting.keyDir`).
+  `fxFinish/fxFinishAP` apply the pipeline night grade (`pipeline.nightGrade`) to the lit part only.
 `uFxExposure` (shared uniform) carries `ctx.env.exposure` to every effects shader.
 
 ## Debug URL params (headless testing only; harmless in production)

@@ -431,7 +431,7 @@ export async function createPipeline(ctx) {
     poleAxis.set(0, Math.sin(lat), -Math.cos(lat));
     starRot.makeRotationAxis(poleAxis, ((ctx.time.timeOfDay || 0) / 24 + (ctx.time.dayOfYear || 0) / 365.25) * Math.PI * 2);
     u.uSkyStarRot.value.setFromMatrix4(starRot);
-    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, smooth(0.45, 1, night) * 16 / clamp(exposure || 16, 8, 40), MOON_RADIUS, MOON_DISC_RADIANCE);
+    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, (dbg.stars === 'classic' ? smooth(0.45, 1, night) : smooth(0.62, 1, night)) * 16 / clamp(exposure || 16, 8, 40), MOON_RADIUS, MOON_DISC_RADIANCE);
   }
 
   function fitKeyShadows() {

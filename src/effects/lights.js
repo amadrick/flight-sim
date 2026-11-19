@@ -139,7 +139,7 @@ export function createAircraftLights(ctx, shared, header) {
     ...premulMaterialOpts(), side: beamClassic ? THREE.DoubleSide : THREE.BackSide, depthTest: !beamClassic,
     uniforms: { ...shared, uBeam: { value: 0 }, uLen: { value: 120 }, uRad: { value: 25 },
       uBeamPos: { value: new THREE.Vector3() }, uBeamDir: { value: new THREE.Vector3(0, 0, -1) }, uBeamCos: { value: new THREE.Vector2(0.97, 0.99) },
-      uBeamI: { value: new THREE.Vector3() }, uBeamSigma: { value: 1e-4 }, uBeamSteps: { value: 12 }, uBeamClassic: { value: beamClassic ? 1 : 0 } },
+      uBeamI: { value: new THREE.Vector3() }, uBeamSigma: { value: 1e-4 }, uBeamSteps: { value: 12 }, uBeamDecay: { value: 2 }, uBeamClassic: { value: beamClassic ? 1 : 0 } },
     vertexShader: header + /* glsl */`
       uniform float uLen; uniform float uRad;
       out vec3 vW; out float vAlong; out vec3 vN;
@@ -152,7 +152,7 @@ export function createAircraftLights(ctx, shared, header) {
       }`,
     fragmentShader: '#define FX_FRAG\n' + header + /* glsl */`
       uniform float uBeam; uniform float uBeamClassic;
-      uniform vec3 uBeamPos; uniform vec3 uBeamDir; uniform vec2 uBeamCos; uniform vec3 uBeamI; uniform float uBeamSigma; uniform float uBeamSteps;
+      uniform vec3 uBeamPos; uniform vec3 uBeamDir; uniform vec2 uBeamCos; uniform vec3 uBeamI; uniform float uBeamSigma; uniform float uBeamSteps; uniform float uBeamDecay;
       in vec3 vW; in float vAlong; in vec3 vN;
       out vec4 outColor;
       void main() {
@@ -193,7 +193,7 @@ export function createAircraftLights(ctx, shared, header) {
           vec3 ld = rel * inversesqrt(d2);
           float cone = smoothstep(uBeamCos.x, uBeamCos.y, dot(ld, uBeamDir));
           float ph = 0.85 * fxHG(dot(ld, -rd), 0.7) + 0.15 / (4.0 * FX_PI);   // aerosol: forward peaked
-          acc += cone * ph / d2;
+          acc += cone * ph * pow(d2, -0.5 * uBeamDecay);
         }
         vec3 e = uBeamI * (uBeamSigma * acc * dt);
         outColor = fxFinish(vec3(0.0), 0.0, e, uCameraPos + rd * (0.5 * (t0 + t1)));
@@ -289,21 +289,23 @@ export function createAircraftLights(ctx, shared, header) {
         group.updateWorldMatrix(true, false);
         // aim 4° below the body axis (taxi light: 10° below, wider; both: in between)
         let down = Ls.landing ? (Ls.taxi ? 0.11 : 0.07) : 0.18;
-        let half = (Ls.landing ? (Ls.taxi ? 20 : 13) : 30) * Math.PI / 180;
+        // real lamps have a bright core and wide soft tails: a wide cone with a long penumbra (no hard pool edges)
+        let half = (lampVirtual ? (Ls.landing ? (Ls.taxi ? 24 : 18) : 34) : (Ls.landing ? (Ls.taxi ? 20 : 13) : 30)) * Math.PI / 180;
+        spot.penumbra = lampVirtual ? 0.85 : 0.45;
         let I = want * ((Ls.landing ? 9000 : 0) + (Ls.taxi ? 2500 : 0));
         let lz = lampPos[2];
+        spot.decay = 2;
         if (lampVirtual) {
           // The spot has no shadow map, so a lamp behind the nose (wing roots, main-gear doors) would light the
-          // cockpit and the inside of the forward fuselage through the skin. Move the source to just ahead of the nose
-          // and re-aim it at the ground point the real beam centre hits (at least 12 m ahead), with the footprint and
-          // irradiance the real lamp gives there.
+          // cockpit and the inside of the forward fuselage through the skin. Move the source to just ahead of the nose,
+          // same aim and cone, and make it fall off like the real lamp t metres further back: irradiance ~ I/(d+t)^2 is
+          // matched by I'/d^p with p = 2 Dm/(Dm+t) and I' = I Dm^p/(Dm+t)^2 (exact at Dm = 40 m, within ~30 % from
+          // 12 to 150 m), so the pool keeps its length and brightness.
           const nose = (g.noseZ ?? -6) - 0.3, t = lz - nose;
           if (t > 0) {
-            const h = Math.max(0.4, (g.cgHeight ?? 2) + lampPos[1]);
-            const D = h / down, Dv = Math.max(D - t, 12), Dr = Dv + t;
-            down = h / Dv;
-            half = Math.min(Math.atan(Math.tan(half) * Dr / Dv), 36 * Math.PI / 180);
-            I *= (Dv * Dv) / (Dr * Dr);
+            const Dm = 40, p = 2 * Dm / (Dm + t);
+            I *= Math.pow(Dm, p) / ((Dm + t) * (Dm + t));
+            spot.decay = p;
             lz = nose;
           }
         }
@@ -338,7 +340,7 @@ export function createAircraftLights(ctx, shared, header) {
           const outer = spot.angle, inner = spot.angle * (1 - spot.penumbra);
           u.uBeamCos.value.set(Math.cos(outer), Math.cos(inner));
           u.uBeamI.value.set(spot.color.r, spot.color.g, spot.color.b).multiplyScalar(spot.intensity);
-          u.uBeamSigma.value = sigma;
+          u.uBeamSigma.value = sigma; u.uBeamDecay.value = spot.decay;
           u.uBeamSteps.value = Math.round(6 + 10 * Math.min(1, ctx.quality?.particles ?? 1));
           // proxy cone in body space: same apex / axis as the spot, 350 m long
           const L = 350;
