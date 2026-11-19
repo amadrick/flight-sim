@@ -170,8 +170,8 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   {  // glareshield
-    const gs = K.prism([[-6.2, 0.55], [-6.2, 0.68], [-5.66, 0.745], [-5.6, 0.72], [-5.6, 0.55]], -0.42, 0.42, U.black);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.55 + 0.45 * (gs.p[i + 2] + 6.2) / 0.6;
+    const gs = K.prism([[-6.05, 0.6], [-6.05, 0.66], [-5.64, 0.735], [-5.58, 0.715], [-5.58, 0.6]], -0.33, 0.33, U.black);
+    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * (gs.p[i + 2] + 6.05) / 0.47;
     stat.add(gs);
   }
   {  // instrument panel (painted chart), consoles, centre stick, throttles
@@ -378,7 +378,7 @@ export function createVisual(ctx, opts = {}) {
     K.buildGear(rig, atlas, {
       name: 'main' + key, index: i, contact: c, wheelRadius: gp[i].wheelRadius, wheelWidth: 0.25, pivot: [sx * 1.2, -0.46, -0.05], stroke: 0.35, staticFrac: 0.4,
       strutR: 0.07, fork: 'axle', links: 'rear', retract: { to: [sx * 0.95, -0.46, -1.15], twist: sx * 90 }, window: [0.2, 0.9], brace: [sx * 0.95, -0.52, 0.75],
-      doors: [{ name: 'mainDoor' + key, ...doorOf(P['mlg' + key], sx > 0 ? edge.tHi : edge.tLo), open: 95 }],
+      doors: [{ name: 'mainDoor' + key, ...doorOf(P['mlg' + key], sx > 0 ? edge.tHi : edge.tLo), open: 95, closes: true }],
     });
   }
 
@@ -586,7 +586,7 @@ function paint(atlas, o) {
       Q.fill([at(1.1, 0), at(3.4, 0), at(3.4, 1), at(1.1, 1)], F.semigloss(SC.finA));
       Q.fill([at(1.0, 0), at(1.1, 0), at(1.1, 1), at(1.0, 1)], F.semigloss(SC.finB));
       // lightning bolt
-      const b = [at(3.2, 0.25), at(2.35, 0.55), at(2.45, 0.38), at(1.25, 0.72), at(2.15, 0.48), at(2.05, 0.62)];
+      const b = [at(3.12, 0.16), at(3.12, 0.36), at(2.42, 0.56), at(2.5, 0.68), at(1.18, 0.93), at(2.05, 0.5), at(1.97, 0.38)];
       Q.fill(b, F.semigloss(SC.finB)); Q.stroke((g) => { b.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); }, 0.03, F.semigloss(SC.finC));
       Q.fill([at(3.18, 0), at(3.4, 0), at(3.4, 1), at(3.18, 1)], F.semigloss(SC.finB));
     }
@@ -621,7 +621,7 @@ function paint(atlas, o) {
   {
     const Q = atlas.pen(cPanel); Q.fill('all', { color: '#191b1d', rough: 0.6, metal: 0 });
     const scr = (a, b, w, h, col) => { Q.fill((g) => g.rect(a, b, w, h), { color: '#050607', rough: 0.15, metal: 0 }); Q.fill((g) => g.rect(a + 0.01, b + 0.01, w - 0.02, h - 0.02), { color: col, rough: 0.12, metal: 0, emissive: col }); };
-    scr(0.06, 0.12, 0.2, 0.2, '#0d2a16'); scr(0.6, 0.12, 0.2, 0.2, '#0d2a16'); scr(0.32, 0.18, 0.22, 0.22, '#14261c'); scr(0.33, 0.02, 0.2, 0.1, '#1a2a12');
+    scr(0.06, 0.12, 0.2, 0.2, '#2e7a46'); scr(0.6, 0.12, 0.2, 0.2, '#3a6e8a'); scr(0.32, 0.18, 0.22, 0.22, '#4a7a3a'); scr(0.33, 0.02, 0.2, 0.1, '#6a8a3a');
     for (let i = 0; i < 10; i++) for (const a of [0.035, 0.29, 0.585, 0.825]) Q.fill((g) => g.rect(a, 0.13 + i * 0.019, 0.012, 0.01), { color: '#5a5c5e', rough: 0.5, metal: 0 });
   }
 }
