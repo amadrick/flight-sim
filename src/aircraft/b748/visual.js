@@ -358,7 +358,7 @@ export function createVisual(ctx, opts = {}) {
   // gloss airline paint: light weathering (a well-kept long-haul jet), frames every 0.53 m for the skin waviness
   const A = K.createAtlas({ size: atlasSize, base: F.gloss(SC.body), swatchRows: 6, skin: { weathering: 0.32, framePitch: 0.53 } });
   const cFus = A.chart('fus', { type: 'unwrap', z: [-38.5, 37.8], girth: 20.6, vScale: 0.8, strips: 2 });
-  const cHump = A.chart('hump', { type: 'unwrap', z: [-35.95, 5.6], girth: 14.2, vScale: 0.62, strips: 2 });
+  const cHump = A.chart('hump', { type: 'unwrap', z: [-35.95, 8.2], girth: 14.2, vScale: 0.62, strips: 2 });
   const cPanel = A.chart('panel', { type: 'rect', w: 2.4, h: 0.68, density: 2.2 });
   const cOver = A.chart('overhead', { type: 'rect', w: 0.8, h: 1.0, density: 1.5 });
   const cPed = A.chart('pedestal', { type: 'rect', w: 0.5, h: 1.0, density: 1.5 });
@@ -383,7 +383,7 @@ export function createVisual(ctx, opts = {}) {
   B.pack();
   const UB = {
     grey: B.swatch('grey', F.semigloss('#b9bec3')), engine: B.swatch('engine', F.gloss(SC.engine)), lip: B.swatch('lip', F.polished), band: B.swatch('band', F.gloss(SC.lip)),
-    duct: B.swatch('duct', { color: '#101113', rough: 0.6, metal: 0.2 }), acoustic: B.swatch('acoustic', { color: '#7d8185', rough: 0.6, metal: 0.55 }), core: B.swatch('core', F.semigloss('#c3c7ca')),
+    duct: B.swatch('duct', { color: '#101113', rough: 0.6, metal: 0.2 }), acoustic: B.swatch('acoustic', { color: '#6a6e72', rough: 0.72, metal: 0.3 }), core: B.swatch('core', F.semigloss('#c3c7ca')),
     coreMetal: B.swatch('coreMetal', F.titanium), plug: B.swatch('plug', F.heatStained), blade: B.swatch('blade', { color: '#4d5259', rough: 0.3, metal: 0.65 }),
     spinner: B.swatch('spinner', { color: '#26282c', rough: 0.3, metal: 0.5 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.semigloss('#8c9399')),
     pylon: B.swatch('pylon', F.gloss(SC.style === 'aurora' ? '#e8eaec' : SC.body)), tail: B.swatch('tail', F.gloss(SC.tail)), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }),
@@ -416,7 +416,7 @@ export function createVisual(ctx, opts = {}) {
   const HS = [
     [2.60, 1.00, 0.00, 0.00, 0.00], [3.20, 1.12, 0.90, 0.55, 0.60], [4.20, 1.45, 1.55, 0.95, 0.90], [5.20, 1.75, 2.00, 1.15, 1.00], [6.20, 1.95, 2.25, 1.72, 1.05],
     [7.40, 2.10, 2.36, 2.12, 1.20], [9.00, 2.20, 2.40, 2.33, 1.30], [12.0, 2.25, 2.42, 2.50, 1.30], [16.0, 2.25, 2.42, 2.55, 1.30], [32.0, 2.25, 2.42, 2.55, 1.30],
-    [35.5, 2.20, 2.38, 2.43, 1.30], [38.5, 2.02, 2.22, 2.13, 1.25], [41.3, 1.72, 1.92, 1.75, 1.15], [44.1, 1.38, 1.52, 1.55, 1.00],
+    [35.5, 2.20, 2.38, 2.45, 1.30], [38.5, 2.08, 2.25, 2.20, 1.28], [41.3, 1.85, 2.00, 1.75, 1.20], [44.0, 1.60, 1.72, 1.72, 1.12], [46.6, 1.30, 1.40, 1.80, 1.00],
   ].map(r => ({ z: D(r[0]), y: r[1], w: r[2], top: r[3], bot: r[4], kTop: [0.62, 0.6] }));
   const hump = K.loft({ stations: HS, segments: Math.max(32, Math.round(72 * detail / 4) * 4), step: 0.9 / detail, chart: cHump });
   cHump.body = hump;
@@ -588,7 +588,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- small details ----------------------------------------------------------------------------------------------------------
   for (const [z, top] of [[-24, true], [-6, true], [12, false], [19, false]]) stA.add(K.bladeAntenna({ pos: [0, (top ? hump.topAt(z) : fus.topAt(z)) - 0.02, z], height: 0.34, chord: 0.48, sweep: 0.22, uv: UA.antenna }));
   for (const z of [-21, -19.6]) stA.add(K.ellipsoid(0.13, 0.04, 0.16, { segments: 10, rings: 4, uv: UA.dome }).translate(0, hump.topAt(z) - 0.005, z));   // GPS antennas
-  stA.add(K.ellipsoid(0.55, 0.19, 1.45, { segments: 16, rings: 6, uv: UA.dome }).translate(0, fus.topAt(8.2) - 0.04, 8.2));                             // satcom radome behind the upper deck
+  stA.add(K.ellipsoid(0.55, 0.19, 1.45, { segments: 16, rings: 6, uv: UA.dome }).translate(0, fus.topAt(10.6) - 0.04, 10.6));                             // satcom radome behind the upper deck
   for (const z of [-21, 14]) stA.add(K.bladeAntenna({ pos: [0, fus.botAt(z) + 0.02, z], height: 0.3, chord: 0.42, sweep: 0.18, down: true, uv: UA.antenna }));
   for (const [z, x] of [[-23.2, 0.35], [-22.6, -0.35], [14.8, 0.3], [15.5, -0.3]]) stA.add(K.bladeAntenna({ pos: [x, fus.botAt(z) + 0.03, z], height: 0.13, chord: 0.12, sweep: 0.08, down: true, thickness: 0.02, uv: UA.steel }));   // drain masts
   stA.add(K.box(0.3, 0.12, 1.6, UA.steel).translate(0, fus.botAt(30.5) + 0.02, 30.5));               // tail-strike skid
