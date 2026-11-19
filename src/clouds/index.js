@@ -478,7 +478,7 @@ export async function createClouds(ctx) {
     U.uClTemporal2.value.set(dbg('clYoung', 1), 0, dbg('clClamp', 1), dbg('clCR', detailLevel > 0 ? 1 : 0));
     // detail cascade, detailed light samples (not at `low`), crease occlusion, surface refinement
     U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 1.0), dbg('clRef', 1));
-    U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', 0), dbg('clWxL', 1), dbg('clAmbSide', 0.5));
+    U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', dbg('clPhys', 1) > 0 ? 0.7 : 0), dbg('clWxL', 1), dbg('clAmbSide', 0.5));
     U.uClDet5.value.set(dbg('clGrad', 1), dbg('clCal', 1), dbg('clSoft', 0.35), dbg('clCirK', 1));
     U.uClDet4.value.set(dbg('clColTau', 1), dbg('clQuilt', 1), dbg('clPouch', 1), dbg('clCb', 1));
     // round five: life cycle (clLife=0 freezes it; clLifeT = nominal lifetime in s) and microphysical extinction

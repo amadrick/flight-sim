@@ -107,13 +107,18 @@ async function boot() {
     const dir = ctx.camera.getWorldDirection(new THREE.Vector3()), p = new THREE.Vector3();
     dir.y = 0; dir.normalize();
     const y = camPos.y, tMin = num('standoffMin', 0);
-    for (let t = tMin; t < 60000; t += 40) {
+    // (the first cloud whose D metres in front are clear air, so the camera never starts inside a cloud; the CPU
+    //  mirror has no detail erosion, so 25 % extra clearance)
+    let clearFrom = tMin;
+    for (let t = tMin; t < 60000; t += 20) {
       p.set(camPos.x + dir.x * t, y, camPos.z + dir.z * t);
-      if (ctx.clouds.densityAt(p) > num('standoffD', 0.2)) {
+      const d = ctx.clouds.densityAt(p);
+      if (d > num('standoffD', 0.2) && t - clearFrom >= D * 1.25) {
         camPos.addScaledVector(dir, t - D);
         sim.standoff = { t, D, x: camPos.x, z: camPos.z };
         return;
       }
+      if (d > 0) clearFrom = t;
     }
     sim.standoff = { miss: true };
   }
