@@ -126,6 +126,11 @@ float terrThresh(float f, float sg) { f = clamp(f, 0.002, 0.998); return 0.5 - s
 
 // n0..n3 = tTerrNoise at scales 0..3 at this point; n = terrain normal; curv = clipmap curvature; water = river mask;
 // E = the learned ecosystem cover (terrEco) at this point.
+// metres per pixel where the cover is being shaded (0 in the placement passes, which have no screen footprint).
+// Hedgerows, avenues and woodlot edges are 5-10 m features: without this prefilter a pixel wider than that is either
+// all hedge or all of the pale road beside it, and the boundary lines broke into regular dashes and steps (the
+// "white staircase" from a few kilometres up).
+float gTerrPx = 0.0;
 TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float water, vec4 n0, vec4 n1, vec4 n2, vec4 n3, TerrEco E) {
   TerrCover C;
   float latK = (rxz.y + uOrigin.z) * 0.001;           // km south of the origin
@@ -171,8 +176,8 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
     C.fld = terrFieldAt(rxz + uOrigin.xz);
     // hedgerows with trees along some field boundaries, tree-lined section roads, shelter belts at the farmsteads
     float hasHedge = step(0.42, fract(C.fld.id.x * 7.31 + C.fld.blk.z));
-    float hd = (1.0 - ss(2.0, 5.5, C.fld.edge)) * hasHedge * ss(0.30, 0.50, n3.r * 0.6 + n2.r * 0.4);
-    float avenue = (1.0 - ss(5.0, 8.0, abs(C.fld.road - 9.0))) * step(0.62, C.fld.blk.y) * ss(0.35, 0.5, n2.g);
+    float hd = (1.0 - ss(2.0 - 0.5 * gTerrPx, 5.5 + 0.5 * gTerrPx, C.fld.edge)) * min(1.0, 9.0 / (gTerrPx + 3.0)) * hasHedge * ss(0.30, 0.50, n3.r * 0.6 + n2.r * 0.4);
+    float avenue = (1.0 - ss(5.0 - 0.5 * gTerrPx, 8.0 + 0.5 * gTerrPx, abs(C.fld.road - 9.0))) * min(1.0, 15.0 / (gTerrPx + 3.0)) * step(0.62, C.fld.blk.y) * ss(0.35, 0.5, n2.g);
     C.hedge = max(hd, avenue) * C.crop;
   }
 
@@ -186,7 +191,7 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   stand = max(max(stand, ss(0.94, 0.99, dens)), lot0) * (1.0 - ss(0.42, 0.60, slope)) * open;
   // woods that survive in farmed country: wet hollows and stream lines, the cores of the old stands, and whole
   // parcels left as woodlots (straight edges along the field boundaries)
-  float lot = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * ss(1.0, 6.0, C.fld.edge + 9.0 * (n3.g - 0.5));
+  float lot = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * ss(1.0 - 0.5 * gTerrPx, 6.0 + 0.5 * gTerrPx, C.fld.edge + 9.0 * (n3.g - 0.5));
   float core = ss(0.74, 0.80, fnoise) * ss(0.25, 0.5, dens);
   float keep = max(max(ss(0.86, 0.93, E.b.w + 0.06 * (n2.r - 0.5)), max(lot, core)), 1.0 - C.crop);
   C.woods = stand * keep;
@@ -436,6 +441,7 @@ TerrSurf terrSurface(vec3 rp) {
 
   float slope = 1.0 - n.y;                            // 0.03 = 14 deg, 0.13 = 30 deg, 0.29 = 45 deg
   float latK = w.y * 0.001;                           // km south of the origin
+  gTerrPx = px;
   TerrCover C = terrCoverEco(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3c, E);
   float macro = n0.r * 0.6 + C.mac.x * 0.4;           // 0..1 large-scale variation
   // ---- rills, chutes and runnels: streaks running down the fall line ---------------------------------------------
@@ -816,14 +822,15 @@ TerrSurf terrSurface(vec3 rp) {
         float e2 = 0.442 * exp(-T.ds * T.ds / sg2);                 // mean along the street: sqrt(2 pi) sigma / spacing
         float e3 = 0.442 * 15.04 * 0.0300;                           // mean over the blocks: x sqrt(2 pi) sigma (1 / bw + 1 / bd)
         float e = mix(mix(e1, e2, ss(5.0, 16.0, px)), e3, ss(24.0, 80.0, px));
-        vec3 lamp = mix(vec3(1.0, 0.56, 0.22), vec3(0.92, 0.90, 0.80), step(0.62, T.lamp));
+        // (saturated on purpose: the night grade in post pulls everything dimmer than a lamp towards blue)
+        vec3 lamp = mix(vec3(1.0, 0.40, 0.09), vec3(1.0, 0.58, 0.24), step(0.62, T.lamp));
         // lit windows and yard lights spill a little warm light around every other house
         float spill = occ * step(T.h2.y, 0.6) * exp(-max(-inside, 0.0) * 0.35) * step(inside, 0.0) * 0.5;
         spill = mix(spill, 0.05, ss(6.0, 30.0, px));
         // arterial streets carry taller, brighter, whiter lamps: the grid a city shows from the air
-        lamp = mix(lamp, vec3(0.95, 0.86, 0.66), T.art * 0.7);
+        lamp = mix(lamp, vec3(1.0, 0.52, 0.17), T.art * 0.7);
         e *= 1.0 + 1.6 * T.art * (1.0 - ss(24.0, 80.0, px)) + 0.4 * ss(24.0, 80.0, px) * step(1.5, T.kind);
-        emis = (lamp * e * dens + vec3(1.0, 0.70, 0.40) * spill * dens) * tk * uSetOn.z;
+        emis = (lamp * e * dens + vec3(1.0, 0.50, 0.16) * spill * dens) * tk * uSetOn.z;
       }
     }
     TerrRoad Rd = C.road;
@@ -1032,7 +1039,7 @@ TerrSurf terrSurface(vec3 rp) {
 #ifdef TERR_SETTLE
   S.shadow *= (1.0 - 0.92 * bShade);
   S.ao *= 1.0 - 0.25 * bShade;
-  S.emis = emis * (0.17 * col + 0.007);
+  S.emis = emis * (0.40 * col + 0.018);
 #endif
   return S;
 }

@@ -190,11 +190,11 @@ function townParams(t) {
   t.s1x = Math.cos(a1); t.s1z = Math.sin(a1); t.s2x = Math.cos(a2); t.s2z = Math.sin(a2); t.s3x = Math.cos(a3); t.s3z = Math.sin(a3);
   return t;
 }
-/** Fraction of the nominal radius the settlement reaches in direction (x, z) of its frame: 0.6 .. 1. Mirrors the GLSL. */
+/** Fraction of the nominal radius the settlement reaches in direction (x, z) of its frame: 0.45 .. 1. Mirrors the GLSL. */
 function townShape(T, x, z) {
   const l = Math.hypot(x, z) + 1e-3, ux = x / l, uz = z / l;
   const q = 0.5 + 0.9 * (T.s1x * ux + T.s1z * uz) * (T.s2x * ux + T.s2z * uz) + 0.35 * (T.s3x * ux + T.s3z * uz);
-  return 0.6 + 0.4 * Math.min(1, Math.max(0, q));
+  return 0.45 + 0.55 * Math.min(1, Math.max(0, q));
 }
 const _lot = { cx: 0, cz: 0, hx: 0, hz: 0, h: 0, roofK: 0, h1x: 0, h1y: 0, h2x: 0, h2y: 0, nl: 0 };
 /** Lots per row of block (bx, bz) and its type (0 houses, 1 sheds / industry, 2 green). Mirrors the GLSL. */
@@ -351,7 +351,7 @@ float terrTownShape(vec2 q, vec2 hs) {
   vec2 u = q / (length(q) + 1.0e-3);
   float a1 = hs.x * 6.2831853, a2 = hs.y * 6.2831853 + 1.3, a3 = (hs.x + hs.y) * 9.42;
   float k = 0.5 + 0.9 * dot(vec2(cos(a1), sin(a1)), u) * dot(vec2(cos(a2), sin(a2)), u) + 0.35 * dot(vec2(cos(a3), sin(a3)), u);
-  return 0.6 + 0.4 * clamp(k, 0.0, 1.0);
+  return 0.45 + 0.55 * clamp(k, 0.0, 1.0);
 }
 TerrTown terrTownIn(uvec4 cell, vec2 rxz) {
   TerrTown T;
