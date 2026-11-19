@@ -15,7 +15,10 @@ import { createClipmap, SNAP, EDGE } from './clipmap.js';
 import { createLodSelector } from './lod.js';
 import { createTerrainMaterial, clipmapGLSL, TILE_SCALES } from './material.js';
 import { createNoiseTextures } from './noisetex.js';
-import { setGroundMode } from './surface.glsl.js';
+import { setGroundMode, setSettleMode } from './surface.glsl.js';
+import { createSettlements } from './settle.js';
+import { createBuildings } from './buildings.js';
+import { createGroundMicro } from '../neural/ground-micro.js';
 import { createGroundDetail } from './ground-detail.js';
 import { createTrees } from './trees.js';
 
@@ -54,6 +57,12 @@ export async function createTerrain(ctx) {
   // ground: learned land cover + layered materials (default) or the previous hand-tuned shader (?ground=classic).
   // Must be chosen before any material that includes COVER_GLSL is built (the terrain and the 3D trees).
   const groundMode = setGroundMode((ctx.params.raw || {}).ground === 'classic' ? 'classic' : 'neural');
+  // roads and settlements (painted into the neural ground; 3-D buildings near the camera): roads=0 / towns=0 switch them off
+  const rawP = ctx.params.raw || {};
+  const roadsOn = rawP.roads !== '0', townsOn = rawP.towns !== '0';
+  const settle = setSettleMode(groundMode === 'neural' && (roadsOn || townsOn)) ? createSettlements(renderer, { roads: roadsOn, towns: townsOn }) : null;
+  // learned micro-relief transfer for the far field (micro=0: plain Lambert as before)
+  const micro = groundMode === 'neural' && rawP.micro !== '0' ? createGroundMicro() : null;
   const groundQ = () => ({ low: 0, medium: 1 }[ctx.quality.level] ?? 2);
   const detail = groundMode === 'neural' ? createGroundDetail(renderer, { size: ctx.quality.level === 'low' ? 256 : 512, anisotropy: ctx.quality.anisotropy ?? 4 }) : null;
   let cfg = configFor(ctx);
@@ -75,6 +84,8 @@ export async function createTerrain(ctx) {
     uTerrShadowOn: { value: 1 }, uTerrTree: { value: new THREE.Vector4(0, 300, 400, 0) },
     uTerrWin: { value: 1 }, uTerrOrg: { value: new THREE.Vector3() }, uTerrCurv: { value: 1 },
     uOrigin: F.uOrigin, uSunDir: F.uSunDir,
+    ...(settle ? settle.uniforms : {}),
+    ...(micro ? micro.uniforms : {}),
   };
 
   // ---- geometry: one (P+1)^2 grid patch, instanced ---------------------------------------------------------
@@ -112,6 +123,12 @@ export async function createTerrain(ctx) {
     if (cfg.treeG > 0) { trees = createTrees(ctx, { L, uniforms }); ctx.scene.add(trees.object3D); }
   }
   makeTrees();
+  let buildings = null;
+  function makeBuildings() {
+    if (buildings) { ctx.scene.remove(buildings.object3D); buildings.dispose(); buildings = null; }
+    if (settle && townsOn && rawP.bldg !== '0') { buildings = createBuildings(ctx, { settle, heightAt }); ctx.scene.add(buildings.object3D); }
+  }
+  makeBuildings();
 
   ctx.world.setTerrainHeightFn(heightAt);
 
@@ -133,7 +150,7 @@ export async function createTerrain(ctx) {
     noiseTex.noise.anisotropy = noiseTex.norm.anisotropy = ctx.quality.anisotropy ?? 4;
     noiseTex.noise.needsUpdate = noiseTex.norm.needsUpdate = true;
     if (detail) detail.texture.anisotropy = ctx.quality.anisotropy ?? 4;
-    makeTrees();
+    makeTrees(); makeBuildings();
     frameNo = 0;
   }
   ctx.events.on('quality:change', rebuild);
@@ -216,10 +233,17 @@ export async function createTerrain(ctx) {
     // rain soaks the ground in about a minute and dries over several
     const rain = Math.min(1, Math.max(0, ctx.weather?.precipitation ?? 0)), wet = uniforms.uTerrWet.value, dtw = ctx.time?.dt ?? 0;
     uniforms.uTerrWet.value = ctx.params.test ? rain : wet + (rain - wet) * Math.min(1, dtw / (rain > wet ? 60 : 400));
+    if (settle) {
+      const night = ctx.env?.nightFactor ?? 0, nk = Math.min(1, Math.max(0, (night - 0.15) / 0.55));
+      if (buildings) buildings.update(wx, cy, wz, org, nk * nk * (3 - 2 * nk));
+      settle.update(org, nk * nk * (3 - 2 * nk), buildings ? buildings.fadeRadius : 0);
+    }
     if (trees) trees.update(wx, wz, org, Hd, minLevel);
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
     stats.drawCalls = 1 + (trees && trees.object3D.visible ? trees.stats.drawCalls : 0);
     stats.veg = trees ? trees.stats : null;
+    stats.buildings = buildings ? buildings.stats : null;
+    if (buildings && buildings.object3D.visible) stats.drawCalls += 1;
   }
 
   // ---- public GLSL hook for other shaders (ocean depth, shoreline foam) -------------------------------------
@@ -247,7 +271,7 @@ float terrainHeight(vec2 worldXZ) {
 
   // ---- debug helpers (tests / tooling) ------------------------------------------------------------------------
   const debug = {
-    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0 }; },
+    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0, settleMs: settle ? settle.ms : 0, microMs: micro ? micro.ms : 0 }; },
     /** Compare the GPU-generated heights of one clipmap level with the CPU function. Returns max/mean abs error (m). */
     parity(level = 0, step = 7) {
       const N = cfg.N, lv = clip.levels[level];

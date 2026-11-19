@@ -45,6 +45,7 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
       tTerrH: uniforms.tTerrH, tTerrD: uniforms.tTerrD, tTerrNoise: uniforms.tTerrNoise, uTerrLvl: uniforms.uTerrLvl,
       uTerrCam: uniforms.uTerrCam, uTerrLod: uniforms.uTerrLod, uTerrTile: uniforms.uTerrTile, uTerrRw: uniforms.uTerrRw,
       uTerrRwL: uniforms.uTerrRwL, uOrigin: uniforms.uOrigin, uSunDir: uniforms.uSunDir, uTerrShadowOn: uniforms.uTerrShadowOn,
+      ...(uniforms.tSetGrid ? { tSetGrid: uniforms.tSetGrid, tSetSeg: uniforms.tSetSeg, tSetTown: uniforms.tSetTown, uSetOrg: uniforms.uSetOrg, uSetOn: uniforms.uSetOn } : {}),
       ...U,
     },
     vertexShader: FULLSCREEN_VERT,

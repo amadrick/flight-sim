@@ -27,7 +27,7 @@ ${HASH_JS}${body}
 /** Terrain elevation, metres MSL (negative = seabed), at world x (east), z (south) in metres. */
 export function heightAt(x, z) { return terrain(x, z); }
 /** Height plus the generator's material outputs. out = { height, arid, special } */
-export function sampleTerrain(x, z, out) { out.height = terrain(x, z); out.arid = gArid; out.special = gSpec; return out; }
+export function sampleTerrain(x, z, out) { out.height = terrain(x, z); out.arid = Math.min(gArid, 1); out.dune = Math.max(gArid - 1, 0); out.special = gSpec; return out; }
 /** Height as generated for a clipmap level with texel spacing \`lod\` metres (band-limited). Tools/tests only. */
 export function heightAtLod(x, z, lod) { gLod = lod; const h = terrain(x, z); gLod = 0; return h; }
 `;

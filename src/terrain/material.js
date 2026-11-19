@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../core/glsl.js';
 import { COVER_GLSL, SURFACE_GLSL, ECO_GLSL, GROUND_MODE } from './surface.glsl.js';
 import { VEG_NEURAL_GLSL } from '../neural/veg.js';
+import { GROUND_MICRO_GLSL } from '../neural/ground-micro.js';
 import { VEG_CANOPY_GLSL } from './veg/canopy.js';
 
 // Noise sampling scales: period in metres and a rotation so the scales never line up (anti-tiling).
@@ -103,6 +104,7 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms, quality =
         ${neural ? 'varying vec4 vTerrEcoA; varying vec4 vTerrEcoB; varying vec4 vTerrEcoC; varying vec4 vTerrN0; varying vec4 vTerrAux;' : ''}
         ${cover}
         ${vegK ? '#define VEG_CANOPY 1\n' + VEG_NEURAL_GLSL + VEG_CANOPY_GLSL : ''}
+        ${neural && uniforms.tTerrMicro ? '#define TERR_MICRO 1\n' + GROUND_MICRO_GLSL : ''}
         ${surface}
       `)
       .replace('#include <map_fragment>', /* glsl */`
@@ -120,7 +122,8 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms, quality =
         reflectedLight.directDiffuse *= tSurf.shadow${neural ? ' * tSurf.canopyK' : ''};
         reflectedLight.directSpecular *= tSurf.shadow;
       `);
+    if (neural) shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += tSurf.emis;');
   };
-  mat.customProgramCacheKey = () => `skyward-terrain-${GROUND_MODE}-${L}-${shadowSteps}-${quality}-${vegCanopyOn() ? 1 : 0}`;
+  mat.customProgramCacheKey = () => `skyward-terrain-${GROUND_MODE}-${L}-${shadowSteps}-${quality}-${vegCanopyOn() ? 1 : 0}-${uniforms.tSetGrid ? 1 : 0}-${uniforms.tTerrMicro ? 1 : 0}`;
   return mat;
 }

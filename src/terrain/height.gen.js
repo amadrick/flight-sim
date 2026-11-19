@@ -348,6 +348,23 @@ function terrain(x, z) {
     let wP = 1.0 - ss(8.5, 26.0, dK);
     if (wP > 0.0) { h = mix(h, 702.0, wP); rough *= 1.0 - wP; }
     gSpec = -max(basin * ss(0.03, 0.11, fill), ss(0.55, 1.0, wP)) * fade;
+    // dune fields on the gentle floors of the desert basins: transverse ridges (the wind is westerly, crest lines run
+    // roughly north-south) about 260 m apart with smaller dunes riding on them. The surface shader reads the dune
+    // mask from gArid > 1.
+    if (D > 0.8 && gLod < 300.0) {
+      let dm = ss(0.8, 0.97, D) * ss(0.10, 0.035, sl) * ss(-0.62, -0.22, fill) * (1.0 + gSpec) * (1.0 - Ms) * fade;
+      if (dm > 0.001) {
+        dm *= ss(-0.22, 0.12, noised(x * 0.00006 + 21.3, z * 0.00006 - 13.1));
+        let dwv = noised(x * 0.0011 + 3.7, z * 0.0011 + 9.2);
+        let du = x * 0.0038 + 1.6 * dwv, dv = z * 0.0013 + 0.8 * gDx;
+        let d1 = noised(du, dv);
+        let r1 = 1.0 - 1.25 * sqrt(d1 * d1 + 0.004);
+        let d2 = noised(du * 3.1 + 5.0, dv * 3.1 - 2.0);
+        let r2 = 1.0 - 1.25 * sqrt(d2 * d2 + 0.004);
+        h += dm * (13.0 * mix(0.55, r1, bl(260.0)) + 2.6 * mix(0.55, r2, bl(85.0)) * (0.5 + 0.5 * r1));
+        gArid = 1.0 + dm;
+      }
+    }
 
     // Pinecrest: a glacial trough through the range, pass to the NNW, draining SSE to the Haven plain
     if (inV > 0.5) {
@@ -387,7 +404,7 @@ function terrain(x, z) {
   }
   // ---- small-scale relief ---------------------------------------------------------------------------------
   if (gLod < 105.0) {
-    let da = (0.5 + 4.5 * rough + 1.0 * gArid) * ss(0.0, 2.5, abs(h) + 0.4) * (1.0 - abs(gSpec));
+    let da = (0.5 + 4.5 * rough + 1.0 * min(gArid, 1.0)) * ss(0.0, 2.5, abs(h) + 0.4) * (1.0 - abs(gSpec));
     h += detail(x, z) * da;
   }
     h = flatten(h, x, z, 0.0, 0.0, 12.0, 4500.0, 9000.0);
@@ -401,6 +418,6 @@ function terrain(x, z) {
 /** Terrain elevation, metres MSL (negative = seabed), at world x (east), z (south) in metres. */
 export function heightAt(x, z) { return terrain(x, z); }
 /** Height plus the generator's material outputs. out = { height, arid, special } */
-export function sampleTerrain(x, z, out) { out.height = terrain(x, z); out.arid = gArid; out.special = gSpec; return out; }
+export function sampleTerrain(x, z, out) { out.height = terrain(x, z); out.arid = Math.min(gArid, 1); out.dune = Math.max(gArid - 1, 0); out.special = gSpec; return out; }
 /** Height as generated for a clipmap level with texel spacing `lod` metres (band-limited). Tools/tests only. */
 export function heightAtLod(x, z, lod) { gLod = lod; const h = terrain(x, z); gLod = 0; return h; }
