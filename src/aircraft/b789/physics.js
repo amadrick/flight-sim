@@ -18,12 +18,13 @@ export default {
       m:     [0,      0.3,    0.5,    0.6,    0.7,    0.75,   0.80,   0.83,   0.85,   0.87,   0.90,   0.95,   1.0],
       cla:   [1.00,   1.03,   1.10,   1.15,   1.22,   1.27,   1.31,   1.32,   1.32,   1.31,   1.26,   1.15,   1.00],
       clMax: [1.00,   0.98,   0.90,   0.83,   0.76,   0.70,   0.62,   0.57,   0.54,   0.50,   0.44,   0.40,   0.38],   // buffet boundary / low-speed CLmax
-      cd0:   [0.0155, 0.0155, 0.0155, 0.0155, 0.0155, 0.0155, 0.0155, 0.0156, 0.0160, 0.0180, 0.0270, 0.0700, 0.1000],
+      cd0:   [0.0170, 0.0170, 0.0170, 0.0170, 0.0170, 0.0165, 0.0160, 0.0158, 0.0160, 0.0180, 0.0270, 0.0700, 0.1000],
       k:     [0.0440, 0.0440, 0.0440, 0.0440, 0.0442, 0.0445, 0.0452, 0.0462, 0.0475, 0.0500, 0.0600, 0.0800, 0.0900],
       xac:   [0,      0,      0,      0,      0,      0.003,  0.012,  0.022,  0.032,  0.045,  0.070,  0.090,  0.100],
       ctrl:  [1,      1,      1,      1,      0.99,   0.98,   0.96,   0.94,   0.92,   0.90,   0.85,   0.76,   0.70],
     },
-    drag: { clMinDrag: 0.10, gear: 0.020, spoiler: 0.085, speedbrake: 0.03, beta: 1.4, elevator: 0.10 },
+    drag: { clMinDrag: 0.10, gear: 0.017, spoiler: 0.085, speedbrake: 0.03, beta: 1.4, elevator: 0.10 },
+    // clde ~ 0: the all-moving-tail lift is small on a 787, and a non-zero value makes the nose-up elevator cause a sink before the flare bites
     pitch: { cm0: 0.02, staticMargin: 0.20, cmq: -24, cmde: 2.0, clde: 0.0, cmPostStall: -1.4, cmGear: -0.01, cmSpoiler: 0.02 },
     side: { cyb: -0.95, cydr: 0.22 },
     roll: { clb: -0.10, clbCl: -0.05, clp: -0.45, clr: 0.08, clrCl: 0.20, clda: 0.050, cldr: 0.012, clSpoiler: 0.040 },
@@ -55,9 +56,9 @@ export default {
     trim: { max: 22, rate: 0.03, authority: 1 },
   },
   engines: {
-    type: 'turbofan-hb', throttleRatio: 1.06, machLapse: 0.50,
+    type: 'turbofan-hb', throttleRatio: 1.06, machLapse: 0.55, altLapse: 0.88,
     n1Idle: 0.20, n2Idle: 0.60, spoolUp: 7, spoolDown: 7, idleThrust: 0.035, idleFuelFlow: 0.14,
-    tsfc: [0.28, 0.30], egt: [440, 890, 890], startTime: 18,
+    tsfc: [0.32, 0.34], egt: [440, 890, 890], startTime: 18,
     reverser: { fraction: 0.40, time: 2, power: 0.8, minSpeed: 30, stowSpeed: 26 },
   },
   gear: {
@@ -67,9 +68,12 @@ export default {
   structure: { tailStrikeDeg: 10.5, bellyY: -1.6 },
   limits: { vmo: 170, mmo: 0.90, gearSpeed: 118 },      // 330 KCAS / M0.90; gear 270 kt
   fcs: {
+    // Boeing FBW, C*U-style: stick = load-factor demand with speed-stable trim, soft envelope protection (AoA, 2.5 g, bank 67/33,
+    // overspeed). pitchGainMax/pitchBandwidth/nzGain are raised so the heavy airframe can flare; the large rate loop plus
+    // extra pitch/roll damping (cmq, clp) gives the smooth, gust-suppressed ride.
     type: 'fbw-airliner',
     nzMax: 2.5, nzMin: -1.0, alphaMax: 12.5, alphaStallMargin: 0.8, pitchRateMax: 10, rotationRate: 3,
-    pitchGainMax: 12, pitchBandwidth: 4.5, yawDamper: 1, betaGain: 3, ari: 0.12,
+    pitchGainMax: 12, pitchBandwidth: 4.5, rollRate: 8, yawDamper: 1, betaGain: 3, ari: 0.18,
   },
   autopilot: { bankMax: 25, vsMax: 10, turnRate: 3 },
   targets: {
@@ -77,11 +81,11 @@ export default {
     stallSpeedClean: [78, 0.07],
     takeoffRoll: [1800, 0.3],                 // m, flaps 5, 200 t, SL ISA
     landingRoll: [1200, 0.35],                // m, max manual braking + reverse
-    climbRate: [22, 0.3],                     // m/s at sea level, 200 t
+    climbRate: [24, 0.3],                     // m/s at sea level, 200 t
     climbSpeed: 140,
     maxSpeedSL: [170, 0.03], maxSpeedSLisCas: true,
     maxSpeedAlt: [0.90, 0.04], maxSpeedAltitude: 11000,
-    ceiling: 13100, ceilingMach: 0.80,
+    ceiling: 12500, ceilingMach: 0.80,   // thrust-limited ceiling at 200 t (13 100 m certified ceiling needs ~ 170 t)
     rollRate: [10, 0.35], rollSpeed: 76,
     sustainedTurn: [0, 0], instantTurn: [0, 0],
     maxG: [2.5, 0.2], maxGSpeed: 130,
