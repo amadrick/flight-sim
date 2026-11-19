@@ -51,7 +51,7 @@ function noiseTiles() {
     const kr = 1 + Math.pow(r(), 1.6) * 21, ka = r() * Math.PI * 2, kx = Math.round(kr * Math.cos(ka)), ky = Math.round(kr * Math.sin(ka)), ph = Math.floor(r() * S);
     if (!kx && !ky) continue;
     const amp = 1 / Math.pow(Math.hypot(kx, ky), 1.1);
-    for (let y = 0; y < S; y++) { const by = ((ky * y + ph) % S + S) % S; for (let x = 0; x < S; x++) val[y * S + x] += amp * cs[(((kx * x) % S + S) % S + by) % S]; }
+    for (let y = 0, o = 0; y < S; y++) { let i = ky * y + ph; for (let x = 0; x < S; x++, o++, i += kx) val[o] += amp * cs[i & 127]; }   // S is a power of two: wrap with a mask
   }
   let mean = 0, sd = 0; for (let i = 0; i < val.length; i++) mean += val[i]; mean /= val.length;
   for (let i = 0; i < val.length; i++) sd += (val[i] - mean) ** 2; sd = Math.sqrt(sd / val.length) || 1;
@@ -143,7 +143,7 @@ export function createAtlas(o = {}) {
         else { s.sy = s.rect.h / (s.b1 - s.b0); s.ty = s.rect.y - s.b0 * s.sy; }
       }
       const mkLayer = (scale, fill, read = false) => { const c = document.createElement('canvas'); c.width = c.height = size * scale; const g = c.getContext('2d', { willReadFrequently: read }); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale }; };
-      layers.color = mkLayer(1, base.color);
+      layers.color = mkLayer(1, base.color, true);
       layers.height = mkLayer(o.heightScale ?? 1, '#808080', true);
       layers.orm = mkLayer(0.5, ormStyle(base.rough, base.metal), true);
       packed = true;
@@ -264,7 +264,7 @@ export function createAtlas(o = {}) {
   function lazyLayer(name = 'emis') {
     if (name === 'tone') {
       if (!tone) {
-        const mk = (fill) => { const c = document.createElement('canvas'); c.width = c.height = size * 0.25; const g = c.getContext('2d'); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale: 0.25 }; };
+        const mk = (fill) => { const c = document.createElement('canvas'); c.width = c.height = size * 0.25; const g = c.getContext('2d', { willReadFrequently: true }); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale: 0.25 }; };
         tone = { color: mk(null), rough: mk('#000') };
       }
       return tone;
@@ -272,7 +272,7 @@ export function createAtlas(o = {}) {
     if (layers[name]) return layers[name];
     if (name !== 'emis' && name !== 'ao') return undefined;
     const k = name === 'ao' ? 0.25 : 0.5, c = document.createElement('canvas'); c.width = c.height = size * k;
-    const g = c.getContext('2d'); g.fillStyle = name === 'ao' ? '#fff' : '#000'; g.fillRect(0, 0, c.width, c.height);
+    const g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = name === 'ao' ? '#fff' : '#000'; g.fillRect(0, 0, c.width, c.height);
     return (layers[name] = { canvas: c, ctx: g, scale: k });
   }
   return atlas;
