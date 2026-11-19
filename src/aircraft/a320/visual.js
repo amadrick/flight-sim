@@ -604,8 +604,11 @@ function paintFuselage(A, o) {
     P.band(Z0, Z1, -Infinity, -0.7, belly, { step: 0.5 });
     P.band(-14.2, 19.9, -0.42, -0.2, accent, { step: 0.5 });
     P.band(-14.2, 19.9, -0.12, -0.06, F.gloss(SC.titleColor), { step: 0.5 });
-    P.textOn(SC.title, -8.6, 1.45, 'both', 0.55, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
-    P.textOn('neo', -4.9, 1.4, 'both', 0.7, { color: SC.accent, font: K.FONT.round, weight: 700 });
+    // 'SKYWARD neo' must read in that order on both sides: the second word sits aft on the left, forward on the right
+    P.textOn(SC.title, -8.6, 1.45, 'L', 0.55, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
+    P.textOn('neo', -4.9, 1.4, 'L', 0.7, { color: SC.accent, font: K.FONT.round, weight: 700 });
+    P.textOn(SC.title, -6.9, 1.45, 'R', 0.55, { color: SC.titleColor, font, weight: 700, spacing: 0.12 });
+    P.textOn('neo', -10.6, 1.4, 'R', 0.7, { color: SC.accent, font: K.FONT.round, weight: 700 });
   }
   P.textOn(SC.reg, 15.0, 1.35, 'both', 0.3, { color: SC.style === 'sweep' ? '#ffffff' : '#1d2126', font: K.FONT.sans, weight: 700 });
   P.textOn('A320neo', -11.0, -0.45, 'both', 0.14, { color: '#7c8288', font: K.FONT.wide, weight: 700 });
