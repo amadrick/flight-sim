@@ -156,7 +156,7 @@ function humpSkin(hump, fus, cHump, cFus, wins, detail) {
     return { y: (lo + hi) / 2, ext: ht - ft };
   };
   const zs = [], span = (a, b, s) => { const n = Math.max(1, Math.ceil((b - a) / s)); for (let i = 0; i < n; i++) zs.push(a + (b - a) * i / n); };
-  span(hz0 + 0.02, D(9.2), 0.22 / detail); span(D(9.2), D(34), 0.75 / detail); span(D(34), hz1 - 0.02, 0.34 / detail); zs.push(hz1 - 0.02);
+  span(hz0 + 0.02, D(9.2), 0.26 / detail); span(D(9.2), D(13), 0.6 / detail); span(D(13), D(33), 2.5 / detail); span(D(33), hz1 - 0.02, 0.42 / detail); zs.push(hz1 - 0.02);
   for (const s of [...(cFus.splits || []), ...(cHump.splits || [])]) if (s > zs[0] && s < zs[zs.length - 1] && zs.every(z => Math.abs(z - s) > 1e-4)) zs.push(s);
   zs.sort((a, b) => a - b);
   const NF = 5, NL = Math.max(28, Math.round(48 * detail) & ~1);
