@@ -215,7 +215,9 @@ float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px +
 // e = edge softness in noise units. As e grows (distance) the result converges to f itself.
 float terrPatch(float f, float nz, float sg, float e) {
   float t = terrThresh(f, sg);
-  return mix(clamp((nz - t) / (2.0 * e) + 0.5, 0.0, 1.0), clamp(f, 0.0, 1.0), clamp(e * 2.2 - 0.1, 0.0, 1.0)) * ss(0.012, 0.05, f);
+  // near-total cover goes to an even cover: the rare gaps left by a threshold would show the lattice of the noise tile
+  float k = max(clamp(e * 2.2 - 0.1, 0.0, 1.0), ss(0.80, 0.95, f));
+  return mix(clamp((nz - t) / (2.0 * e) + 0.5, 0.0, 1.0), clamp(f, 0.0, 1.0), k) * ss(0.012, 0.05, f);
 }
 
 // Lookups with explicit gradients (legal inside branches, keep anisotropic filtering). dx, dy = screen-space
@@ -256,7 +258,7 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   float cr = mix(across, along, head);
   // growth is uneven: wetter hollows are darker and lusher, dry knolls pale; drill misses and waterlogging
   float vig = clamp(0.5 + 1.1 * (wet - 0.52) + 0.9 * (n3.r - 0.5) + 0.5 * (n2.g - 0.5) + 0.35 * (n4.g - 0.5), 0.0, 1.0);
-  vec3 soil = mix(vec3(0.175, 0.135, 0.090), vec3(0.090, 0.068, 0.045), clamp(wet * 1.3 - 0.25 + 0.5 * (n3.g - 0.5), 0.0, 1.0));
+  vec3 soil = mix(vec3(0.165, 0.130, 0.080), vec3(0.090, 0.070, 0.045), clamp(wet * 1.3 - 0.25 + 0.5 * (n3.g - 0.5), 0.0, 1.0));
   vec3 c; float rowP = 0.0, rowA = 0.0, swP = 0.0, swA = 0.0, tram = 0.0, kind = 0.0;
   rough = 0.92;
   if (t < 0.25) {            // cereal, green: from thin young growth showing soil to dense blue-green
@@ -271,7 +273,7 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
     c = soil * (0.9 + 0.3 * stage); rowP = 0.45; rowA = 0.30; swP = 6.0; swA = 0.06; kind = 1.0; rough = 0.88;
   } else if (t < 0.69) {     // pasture: mottled, grazed unevenly
     c = mix(vec3(0.105, 0.135, 0.050), vec3(0.052, 0.098, 0.030), vig);
-    c = mix(c, vec3(0.180, 0.165, 0.080), ss(0.62, 0.85, n4.r * 0.5 + n3.b * 0.5) * 0.4);
+    c = mix(c, vec3(0.180, 0.165, 0.080), ss(0.62, 0.85, n4.r * 0.5 + n3.g * 0.5) * 0.4);
   } else if (t < 0.79) {     // stubble
     c = mix(vec3(0.255, 0.220, 0.130), vec3(0.200, 0.170, 0.100), vig); rowP = 0.25; rowA = 0.12; swP = 7.5; swA = 0.09;
   } else if (t < 0.86) {     // hay: mown, swaths drying in rows
@@ -345,12 +347,21 @@ TerrSurf terrSurface(vec3 rp) {
   vec4 n0 = vTerrN0;                                  // 19 km scale (per vertex)
   vec4 n1 = texture(tTerrNoise, terrUV(TERR_TILE1, uTerrTile[1], rp.xz));
   vec4 n2 = texture(tTerrNoise, terrUV(TERR_TILE2, uTerrTile[2], rp.xz));
-  vec4 n3 = texture(tTerrNoise, terrUV(TERR_TILE3, uTerrTile[3], rp.xz));
+  vec4 n3c = texture(tTerrNoise, terrUV(TERR_TILE3, uTerrTile[3], rp.xz));   // as the tree pass reads it (cover)
+  // Anti-tiling: the noise that draws the patches is read through a warp by the next larger scales, so the 110 m,
+  // 23 m and 4 m tiles never line up into a visible lattice (the warps cost no lookups except for the 110 m one).
+#if TERR_Q > 0
+  vec4 n3 = texture(tTerrNoise, terrUV(TERR_TILE3, uTerrTile[3], rp.xz) + 0.34 * (n2.rg - 0.5) + 0.8 * (n1.gr - 0.5));
+#else
+  vec4 n3 = n3c;
+#endif
   vec4 n4 = vec4(0.5), n5 = vec4(0.5);
   float near4 = ss(46.0, 12.0, px), near5 = ss(8.0, 2.0, px);          // fine breakup fades before it can alias
-  if (near4 > 0.0) n4 = mix(n4, terrNoiseTex(TERR_TILE4, uTerrTile[4], rp.xz, dxz, dyz), near4);
+  if (near4 > 0.0) n4 = mix(n4, textureGrad(tTerrNoise, terrUV(TERR_TILE4, uTerrTile[4], rp.xz) + 0.34 * (n3.rg - 0.5) + 0.6 * (n2.gr - 0.5),
+                                            terrUV(TERR_TILE4, vec2(0.0), dxz), terrUV(TERR_TILE4, vec2(0.0), dyz)), near4);
 #if TERR_Q > 0
-  if (near5 > 0.0) n5 = mix(n5, terrNoiseTex(TERR_TILE5, uTerrTile[5], rp.xz, dxz, dyz), near5);
+  if (near5 > 0.0) n5 = mix(n5, textureGrad(tTerrNoise, terrUV(TERR_TILE5, uTerrTile[5], rp.xz) + 0.34 * (n4.rg - 0.5) + 0.6 * (n3.gr - 0.5),
+                                            terrUV(TERR_TILE5, vec2(0.0), dxz), terrUV(TERR_TILE5, vec2(0.0), dyz)), near5);
 #endif
 
   float slope = 1.0 - n.y;                            // 0.03 = 14 deg, 0.13 = 30 deg, 0.29 = 45 deg
@@ -360,9 +371,9 @@ TerrSurf terrSurface(vec3 rp) {
   float bk = 0.5 + 0.55 * (n2.r - 0.5) + 0.50 * (n3.g - 0.5) + 0.45 * (n4.r - 0.5) + 0.35 * (n5.g - 0.5);
   float bk2 = 0.5 + 0.55 * (n2.g - 0.5) + 0.50 * (n3.r - 0.5) + 0.45 * (n4.g - 0.5) + 0.35 * (n5.r - 0.5);
   float bk3 = 0.5 + 0.45 * (n1.g - 0.5) + 0.40 * (n2.r - n2.g) + 0.36 * (n3.g - n3.r) + 0.32 * (n4.r - n4.g) + 0.25 * (n5.g - n5.r);
-  float eps = 0.012 + 0.10 * ss(4.0, 400.0, px);      // edge softness of the patches
+  float eps = 0.012 + 0.022 * ss(0.4, 3.0, px) + 0.10 * ss(4.0, 400.0, px);      // edge softness of the patches
 
-  TerrCover C = terrCoverEco(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3, E);
+  TerrCover C = terrCoverEco(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3c, E);
   float pad = C.pad, treeline = C.treeline, forest = C.forest, conifer = C.conifer, cropPot = C.crop, tropic = C.tropic;
 
   // ---- climate lines kept from the art direction (colour only) ---------------------------------------------
@@ -407,30 +418,39 @@ TerrSurf terrSurface(vec3 rp) {
   vec3 grass = mix(grassDry, grassGreen, ss(0.0, 0.5, lush));
   grass = mix(grass, mix(vec3(0.150, 0.150, 0.075), vec3(0.105, 0.125, 0.058), lush), alpine * 0.8);   // alpine turf
   grass = mix(grass, vec3(0.060, 0.115, 0.030), tropic * 0.5 * lush);
-  grass *= 0.86 + 0.28 * n3.b;
+  grass *= 0.88 + 0.24 * clamp(0.5 + (n3.r - 0.5) + 0.8 * (n4.g - 0.5), 0.0, 1.0);
   // the simulated grass and shrub fractions are shares of all ground; trees take their share in separate stands,
   // so the open ground between the stands carries the rest
   float openFrac = max(1.0 - 0.95 * eForest, 0.06);
   float herb = clamp((eGrass + eShrub) / openFrac, 0.0, 1.0);
+  // dry country: bunch grass between the bushes covers a fraction of the ground, the soil colour carries the scene
+  herb *= 1.0 - 0.72 * desertAmt;
   // below the tree line in a humid climate, ground that carries soil is never bare for long
   herb = max(herb, 0.88 * ss(0.30, 0.50, wet) * ss(0.12, 0.35, eSoil) * (1.0 - alpine));
-  float grassAmt = terrPatch(herb, bk, 0.11, eps);
+  float dry = ss(0.25, 0.60, arid);
+  float grassAmt = terrPatch(herb, bk + 0.35 * (n1.g - 0.5), 0.12, eps + 0.22 * dry);
   grassAmt *= 1.0 - washAmt * 0.8;
   col = mix(col, grass, grassAmt);
   rough = mix(rough, 0.93, grassAmt);
   if (grassAmt > 0.5) mat = M_GRASS;
   // shrubs and heath: dark clumps over the ground (sagebrush and creosote in the dry country, krummholz and heath
   // on the mountain, scrub regrowth in the lowland)
-  float shrubN = 1.0 - mix(n3.b, n4.b, near4 * 0.7);                                // cellular: discrete bushes
-  float shrubAmt = terrPatch(clamp(eShrub / openFrac * 1.1 + 0.035 * desertAmt * (1.0 - playa), 0.0, 1.0), 0.5 + (shrubN - 0.45) * 0.55 + 0.3 * (bk2 - 0.5), 0.13, eps + 0.02);
-  vec3 shrubCol = mix(mix(vec3(0.060, 0.082, 0.036), vec3(0.098, 0.100, 0.060), desertAmt), vec3(0.070, 0.075, 0.040), alpine);
+  // bushes are a metre or two across (the cells of the 23 m tile): single plants close up, irregular clumps and
+  // finally a tint of the ground from further off. Stand density drifts over hundreds of metres. (The cells of the
+  // larger tiles are not used: a jittered grid of 7 m cells shows as a weave from the air.)
+  float bushes = ss(1.3, 0.4, px);
+  float shrubN = 0.5 + 0.85 * (bk2 - 0.5) + 0.25 * (n1.g - 0.5) + (0.45 - n4.b) * 0.55 * bushes;
+  float shrubF = eShrub / openFrac * 1.1 * (1.0 - 0.5 * desertAmt) + 0.035 * desertAmt * (1.0 - playa);
+  shrubF *= mix(1.0, 0.5 + 1.0 * ss(0.25, 0.75, 0.5 + (n1.r - 0.5) + 0.6 * (n2.g - 0.5)), 0.5 + 0.5 * dry);
+  float shrubAmt = terrPatch(clamp(shrubF, 0.0, 1.0), shrubN, 0.12, eps + 0.02 + 0.5 * dry * (1.0 - bushes));
+  vec3 shrubCol = mix(mix(vec3(0.060, 0.082, 0.036), vec3(0.105, 0.104, 0.070), desertAmt), vec3(0.070, 0.075, 0.040), alpine);
   col = mix(col, shrubCol * (0.8 + 0.4 * n4.g), shrubAmt * 0.85);
   if (shrubAmt > 0.6) mat = M_GRASS;
 
   // ---- forest -------------------------------------------------------------------------------------------------
-  vec3 fcol = mix(vec3(0.046, 0.082, 0.028), vec3(0.027, 0.050, 0.024), conifer);
-  fcol = mix(fcol, fcol * vec3(1.35, 1.2, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.6);
-  fcol = mix(fcol, fcol * vec3(1.25, 1.12, 0.80), (1.0 - lush) * 0.5);          // drier stands are paler, yellower
+  vec3 fcol = mix(vec3(0.036, 0.066, 0.022), vec3(0.024, 0.045, 0.021), conifer);
+  fcol = mix(fcol, fcol * vec3(1.30, 1.18, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.4);
+  fcol = mix(fcol, fcol * vec3(1.22, 1.10, 0.80), (1.0 - lush) * 0.35);         // drier stands are paler, yellower
   fcol = mix(fcol, vec3(0.030, 0.052, 0.016), tropic * 0.5);
   // where 3D trees stand (trees.js) the ground shows as shaded forest floor instead of painted crowns
   float t3d = uTerrTree.x * (1.0 - ss(uTerrTree.y, uTerrTree.z, distance(rp.xz, uTerrCam.xz)));
@@ -509,7 +529,7 @@ TerrSurf terrSurface(vec3 rp) {
   granite = mix(granite, granite * vec3(0.80, 0.86, 0.74), ss(0.5, 0.9, wet) * (1.0 - alpine) * 0.5);   // moss, lichen in damp shade
   // sandstone: colour follows the (tilted, mip-filtered) beds
   vec3 sandstone = mix(vec3(0.290, 0.130, 0.072), vec3(0.50, 0.315, 0.19), ss(0.25, 0.75, beds.g + 0.6 * (beds2.r - 0.5)));
-  sandstone = mix(sandstone, vec3(0.58, 0.48, 0.36), ss(0.62, 0.72, beds.a) * 0.8);
+  sandstone = mix(sandstone, vec3(0.50, 0.41, 0.31), ss(0.62, 0.72, beds.a) * 0.7);
   vec3 rockCol = mix(granite, sandstone, ss(0.45, 0.75, arid));
   vec3 screeCol = mix(rockCol * 1.15, vec3(0.30, 0.285, 0.265), 0.35);
   col = mix(col, screeCol, screeAmt * 0.92);
@@ -556,7 +576,7 @@ TerrSurf terrSurface(vec3 rp) {
     vec3 bed = mix(beachCol, vec3(0.20, 0.22, 0.17), ss(0.0, 25.0, depth));
     bed = mix(bed, vec3(0.07, 0.09, 0.08), ss(15.0, 90.0, depth));
     // reef rock, coral heads and seagrass in the shallows
-    float reefP = ss(0.50, 0.62, n2.b * 0.6 + n3.g * 0.4) * ss(0.4, 1.5, depth) * ss(30.0, 8.0, depth);
+    float reefP = ss(0.50, 0.62, n2.g * 0.6 + n3.g * 0.4) * ss(0.4, 1.5, depth) * ss(30.0, 8.0, depth);
     bed = mix(bed, mix(vec3(0.10, 0.11, 0.07), vec3(0.16, 0.13, 0.09), n3.r), reefP * (0.45 + 0.4 * tropic));
     col = mix(col, bed, ss(0.5, -0.3, h));
     if (reefP > 0.5) mat = M_ROCK;
@@ -569,7 +589,7 @@ TerrSurf terrSurface(vec3 rp) {
     // damp, darker clay where the last water stood; wind / sheet-flow streaks
     pc = mix(pc, pc * vec3(0.80, 0.78, 0.76), ss(0.55, 0.70, n0.r * 0.8 + n1.a * 0.2) * 0.6);
     pc *= 0.96 + 0.04 * sin((w.x * 0.8 + w.y * 0.6) * 0.004 + n0.g * 14.0) + 0.05 * (n1.g - 0.5);
-    pc *= 1.0 - 0.10 * ss(0.78, 0.95, n3.b);          // giant desiccation polygons
+    pc *= 1.0 - 0.10 * ss(0.78, 0.95, n3.b) * ss(5.0, 1.2, px);          // giant desiccation polygons
     col = mix(col, pc, playa);
     rough = mix(rough, 0.8, playa);
     if (playa > 0.5) mat = M_MUD;
