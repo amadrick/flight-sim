@@ -8,12 +8,21 @@ function hash2(ix, iy, seed) {
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+// value noise on a periodic lattice; lattice values are cached per (period, seed) so each sample is 4 table reads
+const _lat = new Map();
+function lattice(period, seed) {
+  const k = period * 4096 + seed;
+  let t = _lat.get(k);
+  if (!t) { t = new Float32Array(period * period); for (let y = 0; y < period; y++) for (let x = 0; x < period; x++) t[y * period + x] = hash2(x, y, seed); _lat.set(k, t); }
+  return t;
+}
 function tileNoise(x, y, period, seed) {
   const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
   const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
-  const m = (a) => ((a % period) + period) % period;
-  const a = hash2(m(xi), m(yi), seed), b = hash2(m(xi + 1), m(yi), seed);
-  const c = hash2(m(xi), m(yi + 1), seed), d = hash2(m(xi + 1), m(yi + 1), seed);
+  const T = lattice(period, seed);
+  const x0 = ((xi % period) + period) % period, y0 = ((yi % period) + period) % period;
+  const x1 = x0 + 1 === period ? 0 : x0 + 1, y1 = y0 + 1 === period ? 0 : y0 + 1;
+  const a = T[y0 * period + x0], b = T[y0 * period + x1], c = T[y1 * period + x0], d = T[y1 * period + x1];
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 function fbm(x, y, period, oct, seed) {
@@ -53,7 +62,7 @@ export function makePavementNoise(ctx, N = 256) {
 }
 
 // ---------- glyph atlas for painted markings ----------
-export const GLYPHS = '0123456789LRC-';
+export const GLYPHS = '0123456789LRC-o';   // 'o' = soft blob (stains, tyre marks)
 export const ATLAS = { cellW: 80, cellH: 240, cols: GLYPHS.length + 1, rows: 2, w: 1280, h: 512 };
 
 function drawRunwayGlyph(g, ch, x, y, w, h) {
@@ -71,6 +80,8 @@ function drawRunwayGlyph(g, ch, x, y, w, h) {
   g.restore();
 }
 
+function rngA(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
 export function makeGlyphAtlas(ctx) {
   const c = document.createElement('canvas');
   c.width = ATLAS.w; c.height = ATLAS.h;
@@ -83,6 +94,18 @@ export function makeGlyphAtlas(ctx) {
       const ch = GLYPHS[i];
       const x = i * cellW, y = row * cellH;
       if (ch === '-') { g.fillRect(x + cellW * 0.15, y + cellH * 0.46, cellW * 0.7, cellH * 0.08); continue; }
+      if (ch === 'o') {
+        // soft, irregular blob with low peak opacity: oil/fuel stains and tyre scuffs are layered from these
+        g.save(); g.beginPath(); g.rect(x, y, cellW, cellH); g.clip();
+        const R2 = rngA(row + 5);
+        for (let k = 0; k < 9; k++) {
+          const cx = x + cellW * (0.35 + 0.3 * R2()), cy = y + cellH * (0.3 + 0.4 * R2()), rr = cellW * (0.18 + 0.16 * R2());
+          const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
+          gr.addColorStop(0, 'rgba(255,255,255,0.2)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = gr; g.save(); g.translate(cx, cy); g.scale(1, cellH / cellW); g.translate(-cx, -cy); g.fillRect(x, y, cellW, cellH); g.restore();
+        }
+        g.restore(); g.fillStyle = '#fff'; continue;
+      }
       if (row === 1) {
         // outline row: draw dilated glyph (black borders on concrete) by stamping offsets
         for (let a = 0; a < 16; a++) {
@@ -240,21 +263,27 @@ export function makeFacades(ctx) {
 
 /** Sign atlas: black/red/yellow sign faces with text (distance-remaining, holding position, location). */
 export function makeSignAtlas(ctx, texts) {
-  const cellW = 256, cellH = 96, cols = 8;
+  const cellW = 128, cellH = 48, cols = 16;
   const rows = Math.ceil(texts.length / cols);
   const [c, g] = canvas(cellW * cols, Math.max(1, cellH * rows));
   const index = new Map();
   texts.forEach((t, i) => {
     const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
-    const [kind, txt] = t.split(':');
-    const bg = kind === 'hold' ? '#c0141a' : kind === 'loc' ? '#111' : '#0d0d0d';
-    const fg = kind === 'hold' ? '#ffffff' : kind === 'loc' ? '#ffd21c' : '#f4f4f4';
+    const [kind, txt, arrow] = t.split(':');
+    const bg = kind === 'hold' ? '#c0141a' : kind === 'loc' ? '#111' : kind === 'dir' ? '#f2c21b' : '#0d0d0d';
+    const fg = kind === 'hold' ? '#ffffff' : kind === 'loc' ? '#ffd21c' : kind === 'dir' ? '#0b0b0b' : '#f4f4f4';
     g.fillStyle = bg; g.fillRect(x, y, cellW, cellH);
-    if (kind === 'loc') { g.strokeStyle = '#ffd21c'; g.lineWidth = 6; g.strokeRect(x + 10, y + 10, cellW - 20, cellH - 20); }
+    if (kind === 'loc') { g.strokeStyle = '#ffd21c'; g.lineWidth = 3; g.strokeRect(x + 5, y + 5, cellW - 10, cellH - 10); }
     g.fillStyle = fg;
-    g.font = 'bold 66px "Arial Narrow","Liberation Sans Narrow",Arial,sans-serif';
+    g.font = 'bold 33px "Arial Narrow","Liberation Sans Narrow",Arial,sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(txt, x + cellW / 2, y + cellH / 2 + 3, cellW - 30);
+    if (kind === 'dir') {
+      // text + a drawn arrow (no reliance on font glyphs): arrow on the side it points to
+      const right = arrow === 'R', ax = right ? x + cellW - 31 : x + 31, ay = y + cellH / 2, dirn = right ? 1 : -1;
+      g.beginPath(); g.moveTo(ax + dirn * 20, ay); g.lineTo(ax + dirn * 3, ay - 15); g.lineTo(ax + dirn * 3, ay - 6); g.lineTo(ax - dirn * 19, ay - 6);
+      g.lineTo(ax - dirn * 19, ay + 6); g.lineTo(ax + dirn * 3, ay + 6); g.lineTo(ax + dirn * 3, ay + 15); g.closePath(); g.fill();
+      g.fillText(txt, x + cellW / 2 - dirn * 20, y + cellH / 2 + 2, cellW - 60);
+    } else g.fillText(txt, x + cellW / 2, y + cellH / 2 + 2, cellW - 15);
     index.set(t, [x / c.width, 1 - (y + cellH) / c.height, (x + cellW) / c.width, 1 - y / c.height]);
   });
   const tex = texFrom(c, ctx);
