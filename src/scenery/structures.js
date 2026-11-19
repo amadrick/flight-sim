@@ -210,6 +210,14 @@ function building(B, b, L) {
       rooftop(B, b, 5, b.h);
       break;
     }
+    case 'hotel': {
+      // airport hotel: two-storey podium, glazed slab tower, plant crown
+      B.box({ pa: 'glass', na: 'glass', pr: 'glass', nr: 'glass', top: 'roof' }, b.x, 0, b.z, b.hdg, b.len + 24, b.wid + 18, 9, C.glassTint);
+      B.box({ pa: 'concrete', na: 'concrete', pr: 'glass', nr: 'glass' }, b.x, 9, b.z, b.hdg, b.len, b.wid, b.h - 9, C.glassTint);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len + 0.6, b.wid + 0.6, 1.2, C.offwhite);
+      B.box({ pa: 'metal', na: 'metal', pr: 'metal', nr: 'metal', top: 'roof' }, b.x, b.h + 1.2, b.z, b.hdg, b.len * 0.6, b.wid * 0.6, 4, C.grey);
+      break;
+    }
     case 'thangar': {
       B.box({ pa: 'metal', na: 'metal', pr: 'metal', nr: 'door', top: 'metal' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, C.civil, { cols: { nr: C.blue } });
       break;

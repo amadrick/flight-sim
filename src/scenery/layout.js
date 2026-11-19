@@ -64,7 +64,7 @@ export function buildLayout(airport) {
     id: airport.id, kind: airport.kind, spec, frame: F, elevation: airport.elevation,
     radius: airport.flattenRadius,
     runways: [], pave: [], taxiLines: [], holds: [], stands: [], buildings: [], props: [],
-    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [], dirSigns: [],
+    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [], dirSigns: [], trees: [],
   };
 
   // ---------------- runways ----------------
@@ -377,6 +377,27 @@ function layoutHub(L, F, spec) {
       L.fences.push({ pts: [F.P(aC - 420, cF), F.P(aC - 220, cF)] });
     }
     L.landside = { a: aLand, c: cMid };
+    // landside: airport hotel (glazed tower), second garage, rental-car lot, office park along the access road
+    const cEdge = gap / 2 - 30;
+    L.buildings.push({ type: 'hotel', ...F.P(aLand + 20, cMid + Math.min(cEdge, lotW / 2 + 45)), hdg: F.H, len: 46, wid: 22, h: 48 });
+    L.buildings.push({ type: 'garage', ...F.P(aLand + 10, cMid - Math.min(cEdge, lotW / 2 + 45)), hdg: F.H, len: 90, wid: 50, h: 16 });
+    L.parkingLots.push({ ...F.P(aLand - 190, cMid - lotW * 0.2), hdg: F.H, len: 120, wid: lotW * 0.5 });
+    for (let k = 0; k < 4; k++) {
+      const a = aLand - 360 - k * 150, cs = (k % 2 ? 1 : -1) * 70;
+      L.buildings.push({ type: 'office', ...F.P(a, cMid + lotW * 0.25 + cs), hdg: F.H, len: 60 + (k % 2) * 20, wid: 30, h: 14 + (k % 3) * 6 });
+    }
+    // street trees along the access road and around the lots
+    for (let k = 0; k < 40; k++) {
+      const a = aLand - 110 - k * 26;
+      for (const e of [-1, 1]) { const p = F.P(a, cMid + lotW * 0.25 + e * 18); L.trees.push({ x: p.x, z: p.z, s: 0.85 + 0.3 * ((k * 7 + e * 3) % 5) / 5, kind: 'broad' }); }
+    }
+    for (const P of L.parkingLots) {
+      const h = P.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+      for (let k = 0; k <= 10; k++) for (const e of [-1, 1]) {
+        const a = -P.len / 2 + (k / 10) * P.len, c = e * (P.wid / 2 + 5);
+        L.trees.push({ x: P.x + dx * a + rx * c, z: P.z + dz * a + rz * c, s: 0.8 + 0.4 * ((k * 5) % 7) / 7, kind: 'broad' });
+      }
+    }
   }
 }
 
@@ -512,6 +533,14 @@ function layoutSmall(L, F, spec, kind) {
   const aE = R.len / 2 + R.blast + 90, cNear = R.c - s * (R.wid / 2 + 140), cFar = cOut + s * 40;
   L.fences.push({ pts: [F.P(-aE, cFar), F.P(aC - 110 - 20, cFar)] });
   L.fences.push({ pts: [F.P(aC + 30 + 20, cFar), F.P(aE, cFar), F.P(aE, cNear), F.P(-aE, cNear), F.P(-aE, cFar)] });
+  if (kind !== 'island') {
+    // alpine strip: stands of conifers beyond the car park and along the access road
+    for (let k = 0; k < 34; k++) {
+      const a = aC - 140 + k * 9 + Math.sin(k * 7.3) * 3, c = cOut + s * (125 + Math.sin(k * 3.1) * 8 + (k % 3) * 7);
+      const p = F.P(a, c); L.trees.push({ x: p.x, z: p.z, s: 0.8 + 0.5 * ((k * 7) % 5) / 5, kind: 'conifer' });
+    }
+    for (let k = 0; k < 10; k++) { const p = F.P(aC - 120 + k * 12, cOut + s * 44); L.trees.push({ x: p.x, z: p.z, s: 0.7, kind: 'conifer' }); }
+  }
   if (kind === 'island') {
     L.palms = [];
     for (let k = 0; k < 26; k++) {

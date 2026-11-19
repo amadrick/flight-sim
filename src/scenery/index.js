@@ -127,6 +127,11 @@ export async function createScenery(ctx) {
   const LIVERY = [[0x0b3d91, 0x9aa4b0], [0xc8102e, 0x2a2d34], [0x00843d, 0xc9ccd0], [0xf2a900, 0x1f3a68], [0x5b2c83, 0xb9bdc1], [0x0093b2, 0x0b3d5c],
     [0x1d1d1b, 0xc8102e], [0xe35205, 0xd8dadc], [0x7a1f2b, 0xc2b59b], [0x2e6db4, 0xe8e8e8], [0x0f6b5c, 0x0f6b5c], [0xd0d3d6, 0x1a4d8f]];
 
+  const treeMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })));
+  const treeGeo = {
+    broad: (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.18, 2.6, 6, lin(0x5a4a3a)); B.dome('b', 0, 2.2, 0, 2.6, lin(0x3d5a2a), -0.6, 8, 3); B.dome('b', 0.6, 3.6, 0.3, 1.8, lin(0x46642f), -0.5, 7, 2); return B.build().b; })(),
+    conifer: (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.2, 1.6, 6, lin(0x4a3a2c)); for (let k = 0; k < 3; k++) B.cylinder('b', 0, 1.2 + k * 2.6, 0, 2.4 - k * 0.6, 3.6, 8, lin(0x24402a), null, 0.05); return B.build().b; })(),
+  };
   const fixtureGeo = (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.035, 0.28, 6, lin(0x9a9a40)); B.cylinder('b', 0, 0.28, 0, 0.07, 0.09, 8, [1, 1, 1], 'b', 0.05); return B.build().b; })();
   const fixtureMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.1 }));
 
@@ -243,6 +248,11 @@ export async function createScenery(ctx) {
       for (const [k, list] of Object.entries(lists)) if (list.length) (k === 'light' ? near : mid).add(aircraftInstances(GEO[k], parkedMat, list));
       for (const [k, list] of Object.entries(veh)) if (list.length && GEO.veh[k]) near.add(instances(GEO.veh[k], vehMat, list));
     }
+    // trees (landside planting; conifers at the alpine strip)
+    for (const kind of ['broad', 'conifer']) {
+      const list = L.trees.filter((t) => t.kind === kind).map((t, k) => ({ x: t.x, z: t.z, hdg: (k * 137.5) % 360, scale: t.s * (kind === 'conifer' ? 1.6 : 1.2), color: new THREE.Color().setHSL(0.2 + 0.06 * Math.sin(k * 1.7), 0.3, 0.8 + 0.12 * Math.sin(k * 2.3)).getHex() }));
+      if (list.length) mid.add(instances(treeGeo[kind], treeMat, list));
+    }
     // windsocks (animated)
     const socks = [];
     for (const p of L.props) if (p.type === 'windsock') {
@@ -286,7 +296,9 @@ export async function createScenery(ctx) {
   ctx.world.addSurfaceProvider(surfaceAt);
 
   // quality: shadow casting from scenery only when the preset has shadows
+  let rangeK = 1;
   const applyQuality = () => {
+    rangeK = { low: 0.35, medium: 0.7, high: 1, ultra: 1.25 }[ctx.quality.level] ?? 1;
     const sh = ctx.quality.shadows !== false;
     for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.userData.scnCaster) o.castShadow = sh; });
   };
@@ -329,8 +341,8 @@ export async function createScenery(ctx) {
       const dx = camW.x - A.data.position.x, dz = camW.z - A.data.position.z;
       const dist = Math.hypot(dx, dz);
       A.far.visible = dist < RANGE.pavement;
-      A.mid.visible = dist < RANGE.buildings;
-      A.near.visible = dist < RANGE.props;
+      A.mid.visible = dist < RANGE.buildings * Math.max(0.5, rangeK);
+      A.near.visible = dist < RANGE.props * rangeK;
       A.lightMesh.visible = dist < RANGE.lights;
       if (A.near.visible) {
         const yaw = Math.atan2(-w.z, w.x);
