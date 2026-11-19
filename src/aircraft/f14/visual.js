@@ -81,8 +81,6 @@ export function createVisual(ctx, opts = {}) {
     fRI: atlas.chart('finRI', { type: 'side', z: [0.85, 7.3], y: [0.4, 3.22], view: 'left', density: 0.6 }),
     fLO: atlas.chart('finLO', { type: 'side', z: [0.85, 7.3], y: [0.4, 3.22], view: 'left', density: 0.9 }),
     fLI: atlas.chart('finLI', { type: 'side', z: [0.85, 7.3], y: [0.4, 3.22], view: 'right', density: 0.6 }),
-    panel: atlas.chart('panel', { type: 'rect', w: 0.84, h: 0.4, density: 2.6, ao: false }),
-    rio: atlas.chart('rio', { type: 'rect', w: 0.8, h: 0.44, density: 2.2, ao: false }),
     noz: atlas.chart('nozzle', { type: 'rect', w: 3.6, h: 0.95, density: 0.7, ao: false }),
   };
   atlas.pack();
@@ -219,22 +217,12 @@ export function createVisual(ctx, opts = {}) {
     }
     stat.add(ledge.occlude(0.2));
   }
-  {  // glareshield / coaming over the pilot's panel: rounded lip, tapering into the windscreen, black anti-glare
-    const gs = K.prism([[-7.62, 0.6], [-7.62, 0.77], [-7.4, 0.8], [-7.2, 0.815], [-7.04, 0.82], [-6.995, 0.81], [-6.985, 0.795], [-7.0, 0.782], [-7.07, 0.782], [-7.07, 0.6]], -0.45, 0.45, U.black);
-    for (let i = 0; i < gs.p.length; i += 3) { const f = Math.min(1, (gs.p[i + 2] + 7.62) / 0.56); gs.p[i] *= 0.6 + 0.4 * f; if (gs.p[i + 1] > 0.7) gs.p[i + 1] -= 0.05 * (gs.p[i] / 0.45) ** 2; }
-    stat.add(gs);
-  }
-  const panelQuad = (chart, z, x0, x1, y0, y1, w, h, tilt = 0) => {
-    const i0 = stat.vertexCount;
-    for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) { const uv = chart.uv((x - x0) / (x1 - x0) * w, (y1 - y) / (y1 - y0) * h); stat.vert(x, y, z + (y - y0) * tilt, 0, tilt, 1, uv[0], uv[1]); }
-    stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-  };
-  panelQuad(C.panel, -7.06, -0.42, 0.42, 0.38, 0.78, 0.84, 0.4, -0.02);     // pilot's instrument panel, under the glareshield overhang
-  panelQuad(C.rio, -5.83, -0.4, 0.4, 0.56, 1.0, 0.8, 0.44, -0.1);           // RIO's panel (TID) on the back of the pilot's seat bulkhead
+  // instrument panels (kit): pilot (F-14D: two MFDs, up-front display) under a glareshield whose top stays at ≈ 0.82, and the RIO's
+  // panel on the back of the pilot's bulkhead (tactical displays, its own coaming)
+  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.5, drop: 0.54, height: 0.4, width: 0.82, uv: U.console, uvPad: U.black }));
+  stat.add(K.instrumentPanel({ eye: eyeR, kind: 'fighter', dist: 0.48, drop: 0.48, height: 0.42, width: 0.8, mfd: 0.16, pages: ['mfdSA', 'mfdRadar'], uv: U.console, uvPad: U.black }));
   {
     const ck = new K.Mesh();
-    ck.add(K.box(0.86, 0.46, 0.06, U.console).translate(0, 0.78, -5.81));                 // RIO panel housing
-    ck.add(K.box(0.84, 0.05, 0.16, U.black).translate(0, 1.025, -5.86));                   // RIO glareshield lip
     ck.add(K.box(0.9, 0.04, 0.1, U.console).translate(0, 0.36, -7.02));                    // pilot panel lower lip
     for (const [z0, z1, y, x] of [[-7.0, -5.95, 0.52, 0.41], [-5.75, -4.15, 0.62, 0.42]]) for (const sx of [-1, 1]) {
       const L = z1 - z0, zc = (z0 + z1) / 2;
@@ -634,14 +622,14 @@ export function createVisual(ctx, opts = {}) {
     const lad = S.onGround ? K.smooth01(sf.canopy / 0.4) : 0;
     ladderNode.visible = lad > 0.01; ladderNode.scale.y = Math.max(0.01, lad);       // telescopes down from its top fitting
     // halos (night only; landing / taxi only with the gear down and locked); wingtip halos follow the sweep
-    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0;
+    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2));
     const sa = sweepDeg * DEG, cs = Math.cos(sa), sn = Math.sin(sa);
     HALO.forEach((h, i) => {
       if (h.tip) { const dx = Math.abs(h.p[0]) - PIV[0], dz = h.p[2] - PIV[2]; haloPos.setXYZ(i, h.tip * (PIV[0] + dx * cs - dz * sn), h.p[1], PIV[2] + dx * sn + dz * cs); }
       let on = 0;
       if (h.k === 'nav') on = lt.nav ? 1 : 0;
-      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
-      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else if (h.k === 'strobe') on = lt.strobe ? K.lampFlash('strobe', S.tLamp) : 0;
+      else if (h.k === 'beacon') on = lt.beacon ? K.lampFlash('beacon', S.tLamp) : 0;
       else on = lt[h.k] && sf.gear > 0.98 ? 1 : 0;
       const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
     });
@@ -985,39 +973,5 @@ function paint(atlas, o) {
     Q.fill((g) => g.rect(0, 0.55, 3.6, 0.4), { color: '#4a433e', rough: 0.58, metal: 0.8 }, { alpha: 0.4, feather: 8 });
     Q.fill((g) => g.rect(0, 0, 3.6, 0.05), { color: '#5d5853', rough: 0.5, metal: 0.8 });
     Q.noise({ alpha: 0.12, scale: 0.8, stretch: [1, 2] });
-  }
-
-  // ================= instrument panels (F-14D: two MFDs and the centre display, up-front control; RIO: TID + MFDs) =================
-  const glowF = (c) => ({ color: c, rough: 0.12, metal: 0, emissive: c });
-  const scr = (Q, a, b, w, h, col) => {
-    Q.fill((g) => g.rect(a - 0.012, b - 0.012, w + 0.024, h + 0.024), { color: '#2a2c2e', rough: 0.5, metal: 0 });
-    Q.fill((g) => g.rect(a, b, w, h), glowF(col));
-    for (let i = 0; i < 5; i++) for (const bb of [b - 0.009, b + h + 0.003]) Q.fill((g) => g.rect(a + w * (0.1 + i * 0.2) - 0.006, bb, 0.012, 0.006), { color: '#5a5d5f', rough: 0.5, metal: 0 });
-  };
-  {
-    const Q = atlas.pen(C.panel); Q.fill('all', { color: '#191b1d', rough: 0.6, metal: 0 });
-    scr(Q, 0.07, 0.17, 0.18, 0.18, '#0f2a17'); scr(Q, 0.59, 0.17, 0.18, 0.18, '#0f2a17'); scr(Q, 0.33, 0.13, 0.18, 0.18, '#0d2416');
-    // symbology: left MFD engine tapes, centre HSI rose, right MFD radar sweep
-    for (let i = 0; i < 4; i++) Q.fill((g) => g.rect(0.1 + i * 0.035, 0.31 - 0.04 - 0.02 * (i % 3), 0.016, 0.04 + 0.02 * (i % 3)), glowF('#4fbf6a'));
-    Q.stroke((g) => g.arc(0.42, 0.22, 0.06, 0, Math.PI * 2), 0.003, glowF('#7fe08f'));
-    Q.stroke((g) => { g.moveTo(0.42, 0.16); g.lineTo(0.42, 0.28); }, 0.003, glowF('#7fe08f'));
-    for (const r of [0.04, 0.08, 0.12]) Q.stroke((g) => g.arc(0.68, 0.34, r, Math.PI * 1.25, Math.PI * 1.75), 0.0025, glowF('#4fbf6a'));
-    // up-front control (keypad + scratchpad) under the HUD, standby gauges, warning lights, switch rows
-    Q.fill((g) => g.rect(0.33, 0.015, 0.18, 0.09), { color: '#222527', rough: 0.5, metal: 0 });
-    Q.fill((g) => g.rect(0.35, 0.025, 0.14, 0.02), glowF('#6fbf3a'));
-    for (let i = 0; i < 8; i++) Q.fill((g) => g.rect(0.345 + (i % 4) * 0.038, 0.055 + Math.floor(i / 4) * 0.022, 0.03, 0.017), { color: '#4a4d50', rough: 0.5, metal: 0 });
-    for (let i = 0; i < 4; i++) { const cx = 0.29 + (i % 2) * 0.27, cy = 0.05 + Math.floor(i / 2) * 0.06; Q.fill((g) => g.arc(cx, cy, 0.022, 0, Math.PI * 2), { color: '#0b0c0d', rough: 0.3, metal: 0 }); Q.stroke((g) => g.arc(cx, cy, 0.022, 0, Math.PI * 2), 0.003, { color: '#9a9c9a' }); Q.stroke((g) => { g.moveTo(cx, cy); g.lineTo(cx + 0.014, cy - 0.01); }, 0.002, { color: '#e8e8e0' }); }
-    for (let i = 0; i < 10; i++) Q.fill((g) => g.rect(0.08 + i * 0.07, 0.375, 0.04, 0.016), i % 4 === 1 ? glowF('#6a4a14') : { color: '#3a3c3e', rough: 0.5, metal: 0 });
-    for (const a of [0.02, 0.8]) for (let i = 0; i < 6; i++) Q.fill((g) => g.rect(a, 0.06 + i * 0.05, 0.025, 0.03), { color: '#4a4d50', rough: 0.5, metal: 0 });
-  }
-  {
-    const Q = atlas.pen(C.rio); Q.fill('all', { color: '#191b1d', rough: 0.6, metal: 0 });
-    Q.fill((g) => g.roundRect(0.25, 0.08, 0.3, 0.27, 0.04), { color: '#050607', rough: 0.15, metal: 0 });
-    Q.fill((g) => g.roundRect(0.265, 0.095, 0.27, 0.24, 0.03), glowF('#0e2a18'));        // tactical information display
-    for (let i = 0; i < 9; i++) { const x = 0.3 + rnd() * 0.2, y = 0.13 + rnd() * 0.17; Q.fill((g) => g.rect(x - 0.005, y - 0.005, 0.01, 0.01), glowF(i % 3 ? '#79d58a' : '#d8c060')); }
-    Q.stroke((g) => { g.moveTo(0.4, 0.33); g.lineTo(0.4, 0.31); }, 0.003, glowF('#79d58a'));
-    scr(Q, 0.05, 0.12, 0.15, 0.15, '#0c2a14'); scr(Q, 0.6, 0.12, 0.15, 0.15, '#0c2a14');
-    scr(Q, 0.32, 0.015, 0.16, 0.045, '#10270f');                                          // detail data display strip
-    for (let i = 0; i < 14; i++) Q.fill((g) => g.rect(0.06 + i * 0.05, 0.39, 0.03, 0.02), i % 4 ? { color: '#3a3c3e', rough: 0.5, metal: 0 } : glowF('#6a4a14'));
   }
 }
