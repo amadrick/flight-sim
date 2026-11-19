@@ -387,7 +387,7 @@ export function createVisual(ctx, opts = {}) {
     const fanMesh = K.fan({ radius: NAC.rFan - 0.01, hub: 0.44, blades: 18, chord: 0.6, staggerRoot: 30, staggerTip: 64, sweep: 0.3, uvBlade: UB.blade, uvSpinner: UB.spinner });
     { const R = NAC.rFan - 0.01, hub = 0.44, sp = R * 0.55, prof = [[0, -sp], [hub * 0.35, -sp * 0.82], [hub * 0.72, -sp * 0.42], [hub, 0.02]];      // spinner spiral
       const rAt = (z) => { for (let i = 1; i < prof.length; i++) if (z <= prof[i][1]) { const a = prof[i - 1], b = prof[i], f = (z - a[1]) / (b[1] - a[1]); return a[0] + (b[0] - a[0]) * f; } return hub; };
-      const pts = []; for (let k = 0; k <= 18; k++) { const f = 0.06 + 0.9 * k / 18, z = -sp * (1 - f), r = rAt(z) + 0.01, a = 3.4 * f; pts.push([r * Math.cos(a), r * Math.sin(a), z]); }
+      const pts = []; for (let k = 0; k <= 26; k++) { const f = 0.05 + 0.92 * k / 26, z = -sp * (1 - f), r = rAt(z) + 0.012, a = 6.3 * f; pts.push([r * Math.cos(a), r * Math.sin(a), z]); }
       fanMesh.add(K.pipe(pts, 0.028, { segments: 5, uv: UB.swirl })); }
     eng.push({ c, fanZ, fanMesh });
   }
@@ -538,7 +538,7 @@ export function createVisual(ctx, opts = {}) {
   for (const sx of [-1, 1]) rig.lamp('landing', [sx * Math.abs(L.landing[0]), L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.2, squash: [1.6, 0.8, 0.5] });
   for (const sx of [-1, 1]) { const p = stab.R.at(3.2, 0.25, 'upper'); rig.lamp('nav', [sx * p[0], p[1] + 0.04, p[2]], { color: [1, 0.98, 0.92], size: 0.07 }); }       // logo lights (fin floodlights)
   for (const sx of [-1, 1]) { const z = -10.5, p = fus.at(z, fus.tAtY(z, 0.2)).p; rig.lamp('landing', [sx * (p[0] + 0.02), p[1], p[2]], { color: [1, 0.97, 0.9], size: 0.07 }); }   // wing inspection lights
-  const turnoff = [-1, 1].map((sx) => [sx * (Math.abs(L.landing[0]) + 0.45), L.landing[1] - 0.06, L.landing[2] + 0.35]);
+  const turnoff = [-1, 1].map((sx) => { const x = Math.abs(L.landing[0]) + 0.55; return [sx * x, wy(x) - 0.06, zLE(x) - 0.04]; });
   for (const p of turnoff) rig.lamp('taxi', p, { color: [1, 0.97, 0.92], size: 0.11, squash: [1.4, 0.8, 0.5] });                   // runway turnoff lights in the wing roots
   const pTipNav = W.R.at(XT - 0.12, 0.04, 'mid'), pTipStr = W.R.at(XT - 0.15, 0.93, 'mid'), beaconTop = [0, fus.topAt(-1) + 0.04, -1];
 
