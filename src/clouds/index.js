@@ -298,6 +298,8 @@ export async function createClouds(ctx) {
     // camera world position (works before the first render too)
     ctx.camera.getWorldPosition(camWorld); camWorld.x += ctx.world.origin.x; camWorld.z += ctx.world.origin.z;
 
+    // (the first session starts before this module listens: take the player of the first update as well)
+    if (spawnFirst && ctx.player?.state?.position) { spawnFirst = false; spawnPending = spawnPending || ctx.player; }
     if (spawnPending) { clearSpawn(spawnPending); spawnPending = null; }
     updateLightning(dt);
     const d = densityAt(camWorld);
@@ -307,7 +309,7 @@ export async function createClouds(ctx) {
   // A session should not begin in the shadow of a cloud when the sky has gaps (fair / scattered): the whole air mass
   // is shifted by the smallest offset (<= ~8 km) that leaves the sun's path to the spawn point clear, with a margin
   // of 700 m around it. It is a phase shift of the entire field, so clouds and their shadows stay consistent.
-  let spawnPending = null;
+  let spawnPending = null, spawnFirst = true;
   const spawnP = new THREE.Vector3();
   function clearSpawn(player) {
     const pos = player?.state?.position;
@@ -317,16 +319,21 @@ export async function createClouds(ctx) {
     bake.sx = streetDir.x; bake.sz = streetDir.y; bake.streets = P.streets * streetFade; bake.convective = P.convective; bake.time = ctx.time.now;
     const ox0 = windOffset.x, oz0 = windOffset.y;
     const shaded = () => {
-      for (let y = P.base + 40; y < P.top; y += 130) {
+      // (the CPU density has no detail erosion and only approximates the turrets: fine vertical steps and two rings
+      //  of margin, 500 m on the axes and 1100 m on the diagonals, keep the eroded GPU cloud off the sun path too)
+      for (let y = P.base + 30; y < P.top; y += 60) {
         const t = (y - pos.y) / L.y, x = pos.x + L.x * t, z = pos.z + L.z * t;
-        for (let k = 0; k < 5; k++) {
-          spawnP.set(x + (k === 1 ? 700 : k === 2 ? -700 : 0), y, z + (k === 3 ? 700 : k === 4 ? -700 : 0));
+        for (let k = 0; k < 9; k++) {
+          const m = k === 0 ? 0 : k < 5 ? 500 : 780;
+          const ux = k === 0 ? 0 : k < 5 ? (k === 1 ? 1 : k === 2 ? -1 : 0) : (k < 7 ? 1 : -1);
+          const uz = k === 0 ? 0 : k < 5 ? (k === 3 ? 1 : k === 4 ? -1 : 0) : (k % 2 ? 1 : -1);
+          spawnP.set(x + m * ux, y, z + m * uz);
           if (densityAt(spawnP) > 0) return true;
         }
       }
       return false;
     };
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 300; i++) {
       // sunflower spiral: candidates in order of distance
       const r = 450 * Math.sqrt(i), a = i * 2.39996;
       windOffset.set(ox0 + r * Math.cos(a), oz0 + r * Math.sin(a));
