@@ -44,6 +44,11 @@ const MOON_DISC_RADIANCE = 0.075;
 // twilight came out darker than a moonlit night. The sun's light is boosted while it is below the horizon so the
 // order is right (day > civil twilight > moonlit night ~ nautical twilight > moonless night) and dusk fades smoothly.
 // x = degrees below the horizon; 1 at and above the horizon, ~3 at -3.4 deg, ~10 at -6.5, capped at 60.
+// Star brightness through dusk: two decades between sun -4 deg and -12 deg, so with the per-star contrast test in the
+// composite the brightest stars appear around the end of civil twilight and the faint ones in astronomical twilight.
+export function starGate(sunY) {
+  return Math.exp(Math.log(0.01) * (1 - smooth(-0.07, -0.21, sunY))) * smooth(-0.04, -0.09, sunY);
+}
 export function twilightGain(sunY) {
   const x = Math.max(0, -Math.asin(clamp(sunY, -1, 1)) * 180 / Math.PI);
   return Math.min(60, Math.exp(0.42 * x * x / (x + 1.5)));
@@ -431,7 +436,7 @@ export async function createPipeline(ctx) {
     poleAxis.set(0, Math.sin(lat), -Math.cos(lat));
     starRot.makeRotationAxis(poleAxis, ((ctx.time.timeOfDay || 0) / 24 + (ctx.time.dayOfYear || 0) / 365.25) * Math.PI * 2);
     u.uSkyStarRot.value.setFromMatrix4(starRot);
-    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, (dbg.stars === 'classic' ? smooth(0.45, 1, night) : smooth(0.62, 1, night)) * 16 / clamp(exposure || 16, 8, 40), MOON_RADIUS, MOON_DISC_RADIANCE);
+    u.uSkyParams.value.set(2 * Math.tan((camera.fov * Math.PI / 180) / 2) / size.h, (dbg.stars === 'classic' ? smooth(0.45, 1, night) : starGate(sunDir.y)) * 16 / clamp(exposure || 16, 8, 40), MOON_RADIUS, MOON_DISC_RADIANCE);
   }
 
   function fitKeyShadows() {
@@ -789,10 +794,12 @@ export async function createPipeline(ctx) {
       if (dbg.flare !== 'classic') post.flare.update((ps.x - 0.5) * 2 * size.w / size.h, (ps.y - 0.5) * 2, Math.tan(camera.fov * Math.PI / 360), ctx.cameraRig?.isInterior ? 0.35 : 1);
       u.uFlareParams.value.y = dbg.flare === 'classic' ? 0 : 1;
       // dark-adapted look: less contrast and saturation so a moonlit landscape stays faintly readable (no effect by day)
-      const look = dbg.nlook === '0' ? 0 : smooth(0.3, 1, ctx.env.nightFactor) * (1 - smooth(0.006, 0.05, lighting.sceneLuminance));
+      // civil twilight is still seen in colour (tens of lux): the dark-adapted look and grade start in nautical twilight
+      const dark = twilightOn ? 1 - smooth(-0.13, -0.05, ctx.env.sunDir.y) : 1;
+      const look = dbg.nlook === '0' ? 0 : smooth(0.3, 1, ctx.env.nightFactor) * (1 - smooth(0.006, 0.05, lighting.sceneLuminance)) * (twilightOn ? 1 - smooth(-0.09, -0.02, ctx.env.sunDir.y) : 1);
       u.uGrade.value.set(lerp(1.5, 1.12, look), lerp(1.3, 1.12, look), caps.float ? 0 : 1 / 255, frameNo % 64);
       u.uDebug.value = dbg.rdebug === 'notonemap' ? 1 : 0;
-      const ng = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));
+      const ng = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance)) * (ngradeMode === 'classic' ? 1 : dark);
       u.uNightGrade.value = ngradeMode === 'classic' ? ng : 0;
       compositeUniforms.uNightK.value.x = ngradeMode === 'composite' ? ng : 0;
       compositeUniforms.uNightK.value.z = exposure;
