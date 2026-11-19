@@ -492,7 +492,7 @@ function paintSurfaces(B, o) {
     }
     // flag (low-vis outline), serial, unit crest
     { const c = fa(9.0, 0.22); Q.decal(c[0], c[1], (g) => { g.strokeStyle = SC.mark; g.lineWidth = 0.03; g.strokeRect(-0.55, -0.3, 1.1, 0.6); for (let i = 1; i < 7; i++) { g.beginPath(); g.moveTo(-0.08, -0.3 + i * 0.086); g.lineTo(0.55, -0.3 + i * 0.086); g.stroke(); } g.strokeRect(-0.55, -0.3, 0.47, 0.32); }); }
-    { const c = fa(7.2, 0.33); Q.text(`AF ${SC.serial.slice(0, 2)}`, c[0] - 0.9, c[1] + 0.2, 0.3, { color: SC.mark, font: K.FONT.sans, weight: 700 }); Q.text(SC.serial.replace('-', '').slice(1), c[0] + 0.5, c[1] - 0.2, 0.7, { color: SC.mark, font: K.FONT.sans, weight: 700 }); }
+    { const c = fa(7.2, 0.33), k = key === 'L' ? 1 : -1; Q.text('AF', c[0] - k * 1.45, c[1] + 0.18, 0.26, { color: SC.mark, font: K.FONT.sans, weight: 700 }); Q.text(SC.serial.slice(0, 2), c[0] - k * 1.45, c[1] - 0.18, 0.26, { color: SC.mark, font: K.FONT.sans, weight: 700 }); Q.text(SC.serial.replace('-', '').slice(1), c[0] + k * 0.15, c[1], 0.72, { color: SC.mark, font: K.FONT.sans, weight: 700 }); }
     { const c = fa(5.0, 0.35); Q.decal(c[0], c[1], (g) => { g.strokeStyle = SC.mark; g.lineWidth = 0.035; g.beginPath(); g.moveTo(-0.45, -0.5); g.lineTo(0.45, -0.5); g.lineTo(0.45, 0.1); g.quadraticCurveTo(0.4, 0.45, 0, 0.62); g.quadraticCurveTo(-0.4, 0.45, -0.45, 0.1); g.closePath(); g.stroke(); g.beginPath(); g.moveTo(-0.3, 0.1); g.lineTo(0, -0.3); g.lineTo(0.3, 0.1); g.moveTo(-0.2, 0.25); g.lineTo(0.2, 0.25); g.stroke(); }); }
     Q.fill([fa(2.6, 0), fa(12.6, 0), fa(12.6, 0.025), fa(2.6, 0.025)], { color: '#73787c', rough: 0.55, metal: 0.25 });
     const fg = { px: 1.6, depth: 0.5, dark: 0.3 };
