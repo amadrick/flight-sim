@@ -462,7 +462,7 @@ export function createVisual(ctx, opts = {}) {
   const glowMat = [rig.material('glowL', K.glowMaterial(), { shadow: false }), rig.material('glowR', K.glowMaterial(), { shadow: false })];
   const tebMat = [rig.material('tebL', K.glowMaterial(), { shadow: false }), rig.material('tebR', K.glowMaterial(), { shadow: false })];
   if (mat.isMeshPhysicalMaterial) {     // iron-ball bloom: a cool, chalky haze at grazing angles instead of a glossy highlight
-    mat.sheen = 0.1; mat.specularIntensity = 0.45; mat.specularColor = new THREE.Color('#b4c0d8');   // RAM binder: low, slightly blue dielectric reflectance (high sun at grazing angles otherwise washes the top surfaces to charcoal)
+    mat.sheen = 0.1; mat.specularIntensity = 0.6; mat.specularColor = new THREE.Color('#b4c0d8');   // RAM binder: low, slightly blue dielectric reflectance (high sun at grazing angles otherwise washes the top surfaces to charcoal)
     mat.sheenRoughness = 0.65; mat.sheenColor = new THREE.Color('#3a4862');
   }
 
