@@ -157,18 +157,18 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec2 pc = floor(sl / pg);
             float ph = scnHash(pc + seed * 1.3);
             float patchK = 0.0, border = 0.0;
-            if (ph > 0.84) {
+            if (ph > 0.9) {
               vec2 lo = pc * pg + vec2(4.0 + 16.0 * scnHash(pc + 3.3), 0.25 + 1.2 * scnHash(pc + 7.7));
               vec2 hi = lo + vec2(7.0 + 22.0 * scnHash(pc + 1.9), lane - 0.5 - 1.6 * scnHash(pc + 4.4));
               vec2 fw = fwidth(sl) + 0.02;
               vec2 inn = smoothstep(lo, lo + fw, sl) * (1.0 - smoothstep(hi - fw, hi, sl));
               patchK = inn.x * inn.y;
-              vec2 bo = smoothstep(lo - 0.08 - fw, lo - 0.08, sl) * (1.0 - smoothstep(hi + 0.08, hi + 0.08 + fw, sl));
+              vec2 bo = smoothstep(lo - 0.05 - fw, lo - 0.05, sl) * (1.0 - smoothstep(hi + 0.05, hi + 0.05 + fw, sl));
               border = clamp(bo.x * bo.y - patchK, 0.0, 1.0);
             }
-            float fresh = step(0.93, ph);
-            col *= mix(1.0, mix(1.18 + 0.1 * nD.r, 0.62 + 0.08 * nD.r, fresh), patchK);
-            col = mix(col, vec3(0.035), border * 0.85);
+            float fresh = step(0.955, ph);
+            col *= mix(1.0, mix(1.08 + 0.08 * nD.r, 0.74 + 0.08 * nD.r, fresh), patchK);
+            col = mix(col, vec3(0.04), border * 0.5);
             // sealed cracks: black, glossy tar bands following the crack network
             float crack = smoothstep(0.74, 0.93, crackNet) * smoothstep(0.55, 0.9, crackZone) * (1.0 - patchK);
             col = mix(col, vec3(0.04, 0.039, 0.037), crack * 0.7);

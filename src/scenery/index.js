@@ -158,7 +158,7 @@ export async function createScenery(ctx) {
     // stand occupancy (decided before the structures so empty gates get their jet bridge retracted)
     {
       const orng = mulberry(ap.id.charCodeAt(0) * 131 + ap.id.charCodeAt(3) * 7 + 17);
-      for (const st of L.stands) st.occupied = orng() < (st.bridge ? 0.88 : st.size === 'light' ? 0.65 : 0.72);
+      for (const st of L.stands) st.occupied = orng() < (st.bridge ? 0.88 : st.size === 'light' ? 0.65 : ap.kind === 'regional' || ap.kind === 'island' ? 0.85 : 0.72);
     }
     // structures
     const B = new MultiBuilder(tiles);
