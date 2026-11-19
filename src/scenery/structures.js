@@ -214,8 +214,11 @@ function tower(B, t, kind) {
 function prop(B, p, signIndex) {
   switch (p.type) {
     case 'jetbridge': {
-      // rotunda on a column at the pier, telescopic tunnel sloping to the cab at the aircraft door, drive-wheel leg
-      const dx = p.ex - p.x, dz = p.ez - p.z, len = Math.hypot(dx, dz);
+      // rotunda on a column at the pier, telescopic tunnel sloping to the cab at the aircraft door, drive-wheel leg;
+      // retracted against the pier when the stand is empty
+      const docked = !p.stand || p.stand.occupied !== false;
+      const ex0 = docked ? p.ex : p.px, ez0 = docked ? p.ez : p.pz;
+      const dx = ex0 - p.x, dz = ez0 - p.z, len = Math.hypot(dx, dz);
       const ux = dx / len, uz = dz / len, hdg = Math.atan2(ux, -uz) / DEG;
       B.cylinder('plain', p.x, 0, p.z, 0.7, 4.0, 8, C.grey);
       B.cylinder('plain', p.x, 4.0, p.z, 2.4, 3.2, 10, C.steel, 'plain');
@@ -223,9 +226,9 @@ function prop(B, p, signIndex) {
       const mx = p.x + ux * (2.2 + tl / 2), mz = p.z + uz * (2.2 + tl / 2);
       B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, mx, 4.2, mz, hdg, tl, 3.2, 2.9, C.civil);
       B.box({ pr: 'plain', nr: 'plain' }, mx, 5.2, mz, hdg, tl * 0.96, 3.25, 0.8, C.dgrey);   // window band
-      const ex = p.ex - ux * 1.2, ez = p.ez - uz * 1.2;
+      const ex = ex0 - ux * 1.2, ez = ez0 - uz * 1.2;
       B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, ex, 4.0, ez, hdg, 2.6, 4.0, 3.3, C.steel);
-      const lx = p.ex - ux * 7, lz = p.ez - uz * 7, rx = -uz, rz = ux;
+      const lx = ex0 - ux * 7, lz = ez0 - uz * 7, rx = -uz, rz = ux;
       for (const s of [-1, 1]) B.box('plain', lx + rx * s * 1.2, 0.4, lz + rz * s * 1.2, hdg, 0.35, 0.35, 3.8, C.dgrey);
       B.box('plain', lx, 0.1, lz, hdg, 1.2, 3.4, 0.8, C.dgrey);
       break;

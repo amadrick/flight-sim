@@ -53,7 +53,7 @@ export function makePavementNoise(ctx, N = 256) {
 }
 
 // ---------- glyph atlas for painted markings ----------
-export const GLYPHS = '0123456789LRC-';
+export const GLYPHS = '0123456789LRC-o';   // 'o' = soft blob (stains, tyre marks)
 export const ATLAS = { cellW: 80, cellH: 240, cols: GLYPHS.length + 1, rows: 2, w: 1280, h: 512 };
 
 function drawRunwayGlyph(g, ch, x, y, w, h) {
@@ -71,6 +71,8 @@ function drawRunwayGlyph(g, ch, x, y, w, h) {
   g.restore();
 }
 
+function rngA(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
 export function makeGlyphAtlas(ctx) {
   const c = document.createElement('canvas');
   c.width = ATLAS.w; c.height = ATLAS.h;
@@ -83,6 +85,18 @@ export function makeGlyphAtlas(ctx) {
       const ch = GLYPHS[i];
       const x = i * cellW, y = row * cellH;
       if (ch === '-') { g.fillRect(x + cellW * 0.15, y + cellH * 0.46, cellW * 0.7, cellH * 0.08); continue; }
+      if (ch === 'o') {
+        // soft, irregular blob with low peak opacity: oil/fuel stains and tyre scuffs are layered from these
+        g.save(); g.beginPath(); g.rect(x, y, cellW, cellH); g.clip();
+        const R2 = rngA(row + 5);
+        for (let k = 0; k < 9; k++) {
+          const cx = x + cellW * (0.35 + 0.3 * R2()), cy = y + cellH * (0.3 + 0.4 * R2()), rr = cellW * (0.18 + 0.16 * R2());
+          const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
+          gr.addColorStop(0, 'rgba(255,255,255,0.2)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = gr; g.save(); g.translate(cx, cy); g.scale(1, cellH / cellW); g.translate(-cx, -cy); g.fillRect(x, y, cellW, cellH); g.restore();
+        }
+        g.restore(); g.fillStyle = '#fff'; continue;
+      }
       if (row === 1) {
         // outline row: draw dilated glyph (black borders on concrete) by stamping offsets
         for (let a = 0; a < 16; a++) {

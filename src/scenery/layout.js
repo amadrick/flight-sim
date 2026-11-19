@@ -282,11 +282,14 @@ function layoutHub(L, F, spec) {
       const sc = big ? 1.55 : 1;
       const noseC = cOut - s * (big ? 9 : 7);
       const p = F.P(a, noseC);
-      L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: big ? 'heavy' : 'medium', paint: true, number: k + 1 + (s > 0 ? 0 : 20), bridge: true, leadFrom: F.P(a, cLanePier) });
+      const stand = { x: p.x, z: p.z, hdg: towardPier, size: big ? 'heavy' : 'medium', paint: true, number: k + 1 + (s > 0 ? 0 : 20), bridge: true, leadFrom: F.P(a, cLanePier) };
+      L.stands.push(stand);
       // jet bridge: rotunda just off the pier face, tunnel to the forward left door
       const rot = F.P(a + leftA * (big ? 15 : 11), cOut - s * 3);
       const door = F.P(a + leftA * (2.0 * sc + 1.6), noseC + s * (4.6 - 6.2) * sc);
-      L.props.push({ type: 'jetbridge', x: rot.x, z: rot.z, ex: door.x, ez: door.z });
+      // parked (retracted) position: tunnel swung back along the pier face, cab clear of the stand
+      const park = F.P(a + leftA * (big ? 15 : 11) - leftA * 6, cOut - s * 15);
+      L.props.push({ type: 'jetbridge', x: rot.x, z: rot.z, ex: door.x, ez: door.z, px: park.x, pz: park.z, stand });
     }
     // remote stands at the two ends of the pier
     for (const e of [-1, 1]) {

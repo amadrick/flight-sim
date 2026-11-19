@@ -143,6 +143,11 @@ export async function createScenery(ctx) {
     paint.receiveShadow = true; paint.renderOrder = 1; far.add(paint);
     if (ctx.params.raw?.shide?.includes('paint')) paint.visible = false;
     if (ctx.params.raw?.shide?.includes('mid')) mid.visible = false;
+    // stand occupancy (decided before the structures so empty gates get their jet bridge retracted)
+    {
+      const orng = mulberry(ap.id.charCodeAt(0) * 131 + ap.id.charCodeAt(3) * 7 + 17);
+      for (const st of L.stands) st.occupied = orng() < (st.bridge ? 0.88 : st.size === 'light' ? 0.65 : 0.72);
+    }
     // structures
     const B = new MultiBuilder(tiles);
     buildStructures(L, B, signs.index, plans[i].poles);
@@ -173,7 +178,7 @@ export async function createScenery(ctx) {
     }
     // parked aircraft on ~70 % of the stands, ground vehicles around the occupied gates
     {
-      const occ = L.stands.filter(() => rnd() < 0.7);
+      const occ = L.stands.filter((st) => st.occupied);
       const lists = { airB: [], airA: [], ftr: [], gaB: [], gaA: [], tug: [], belt: [], fuel: [], cart: [] };
       for (const st of occ) {
         const h = st.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);

@@ -108,50 +108,93 @@ export function makePavementMaterial(ctx, shared, pools) {
           vec4 nA = texture(tNoise, F / 3.1);
           vec4 nB = texture(tNoise, F / 37.0 + 0.31);
           vec4 nC = texture(tNoise, F / 260.0 + 0.57);
-          float crack = texture(tNoise, F / 6.3 + 0.13).a * smoothstep(0.45, 0.8, texture(tNoise, F / 90.0 + 0.4).g);
+          vec4 nD = texture(tNoise, F / 11.0 + 0.71);
+          float crackNet = texture(tNoise, F / 7.3 + 0.13).a;
+          float crackZone = smoothstep(0.42, 0.78, texture(tNoise, F / 140.0 + 0.4).g);
           float aggr = nA.r;
-          vec3 col; float rough = 0.9; float hgt = aggr * 0.006;
+          vec2 sl = vLocal + vec2(plen, pwid) * 0.5;          // metres from the rectangle's corner
+          vec3 col; float rough; float hgt = aggr * 0.004;
           bool concrete = (kind > 0.5 && kind < 1.5) || (kind > 2.5 && kind < 3.5);
           if (concrete) {
-            // portland cement concrete: slabs with sealed joints, per-slab tone, stains
+            // Portland cement concrete: 7.5 m (runway) / 6 m (apron) slabs, sealed joints, per-slab cure tone,
+            // corner breaks, tar over-banding on re-sealed joints, oil and fuel stains, fine pitting
             float slab = kind < 1.5 ? 7.5 : 6.0;
-            vec2 sl = vLocal + vec2(plen, pwid) * 0.5;
             vec2 cell = floor(sl / slab);
-            float tone = 0.92 + 0.14 * scnHash(cell + seed);
-            float j = max(scnLines(sl.x, slab, 0.025), scnLines(sl.y, slab, 0.025));
-            col = (kind < 1.5 ? vec3(0.42, 0.41, 0.385) : vec3(0.36, 0.355, 0.335)) * tone * (0.86 + 0.22 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
-            col *= 1.0 - 0.4 * j;
-            col *= 1.0 - 0.35 * smoothstep(0.62, 0.8, nB.b) * (kind > 2.5 ? 1.0 : 0.4);      // oil / fuel stains
-            col *= 1.0 - 0.4 * crack * step(0.8, scnHash(cell * 1.7 + 3.1));
-            hgt -= j * 0.01;
-            rough = 0.82 + 0.1 * aggr;
+            vec2 inC = sl - cell * slab;
+            float h1 = scnHash(cell + seed), h2 = scnHash(cell * 1.37 + seed + 5.1), h3 = scnHash(cell * 2.11 + 9.7);
+            float tone = 0.86 + 0.24 * h1;
+            vec3 base = kind < 1.5 ? vec3(0.265, 0.26, 0.245) : vec3(0.24, 0.235, 0.222);
+            col = base * tone * (0.8 + 0.4 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
+            col *= vec3(1.0, 0.99 + 0.02 * h2, 0.97 + 0.05 * h3);                         // cement batches differ
+            float jx = scnLines(sl.x + 0.01, slab, 0.02), jy = scnLines(sl.y + 0.01, slab, 0.02);
+            float ob = max(scnLines(sl.x + 0.06, slab, 0.14) * step(0.55, h2), scnLines(sl.y + 0.06, slab, 0.14) * step(0.6, h3));
+            float j = max(jx, jy);
+            col *= 1.0 - 0.55 * j;
+            col = mix(col, vec3(0.05, 0.048, 0.045), 0.8 * ob * (0.7 + 0.3 * nD.r));
+            // spalled corners and the odd shattered slab (dark crack lines)
+            float corner = (1.0 - smoothstep(0.0, 0.9, min(inC.x, slab - inC.x))) * (1.0 - smoothstep(0.0, 0.9, min(inC.y, slab - inC.y)));
+            col *= 1.0 - 0.25 * corner * step(0.7, h1);
+            float crk = smoothstep(0.6, 0.9, crackNet) * step(0.82, h3);
+            col *= 1.0 - 0.55 * crk;
+            // stains: oil and hydraulic fluid on aprons, tyre scuffs; rust streaks from tie-downs are rare
+            float stain = smoothstep(0.62, 0.82, nB.b * 0.55 + nD.g * 0.45) * (kind > 2.5 ? 1.0 : 0.35);
+            col *= 1.0 - 0.45 * stain;
+            col *= 1.0 - 0.12 * smoothstep(0.5, 0.9, nD.b);
+            hgt -= (j + ob * 0.3) * 0.008 + crk * 0.004;
+            rough = 0.84 + 0.1 * aggr - 0.3 * stain - 0.25 * ob;
           } else {
-            // asphalt: aggregate, paving-lane seams, patching, sealed cracks
-            float base = kind < 0.5 ? 0.115 : kind < 2.5 ? 0.125 : kind < 4.5 ? 0.15 : kind < 5.5 ? 0.13 : 0.1;
-            col = vec3(base) * vec3(1.0, 0.99, 0.96) * (0.75 + 0.5 * aggr) * (0.85 + 0.3 * nB.g) * (0.88 + 0.24 * nC.b);
+            // asphalt: aggregate, paving-lane seams, patches (fresh = dark, old = grey), tar-sealed crack network
+            float base = kind < 0.5 ? 0.12 : kind < 2.5 ? 0.125 : kind < 4.5 ? 0.15 : kind < 5.5 ? 0.115 : kind < 6.5 ? 0.1 : 0.11;
+            col = vec3(base) * vec3(1.0, 0.985, 0.955) * (0.7 + 0.6 * aggr) * (0.84 + 0.32 * nB.g) * (0.88 + 0.24 * nC.b);
             float lane = kind < 2.5 ? 7.5 : 5.0;
-            float seam = scnLines(vLocal.y + pwid * 0.5 + lane * 0.5, lane, 0.12);
-            col *= 1.0 - 0.3 * seam;
-            vec2 pc = floor((vLocal + vec2(plen, pwid) * 0.5) / vec2(55.0, lane)) + 0.5;
-            float patchK = step(0.9, scnHash(pc + seed * 1.3));
-            col *= mix(1.0, 0.72 + 0.1 * nB.r, patchK);
-            col *= 1.0 - 0.4 * crack * (1.0 - patchK);
-            rough = 0.88 + 0.08 * aggr;
+            float seam = scnLines(sl.y + 0.06, lane, 0.12);
+            col *= 1.0 - 0.28 * seam;
+            // patches: random rectangles inside a coarse grid, soft-edged, with a sealed border
+            vec2 pg = vec2(48.0, lane);
+            vec2 pc = floor(sl / pg);
+            float ph = scnHash(pc + seed * 1.3);
+            float patchK = 0.0, border = 0.0;
+            if (ph > 0.84) {
+              vec2 lo = pc * pg + vec2(4.0 + 16.0 * scnHash(pc + 3.3), 0.25 + 1.2 * scnHash(pc + 7.7));
+              vec2 hi = lo + vec2(7.0 + 22.0 * scnHash(pc + 1.9), lane - 0.5 - 1.6 * scnHash(pc + 4.4));
+              vec2 fw = fwidth(sl) + 0.02;
+              vec2 inn = smoothstep(lo, lo + fw, sl) * (1.0 - smoothstep(hi - fw, hi, sl));
+              patchK = inn.x * inn.y;
+              vec2 bo = smoothstep(lo - 0.08 - fw, lo - 0.08, sl) * (1.0 - smoothstep(hi + 0.08, hi + 0.08 + fw, sl));
+              border = clamp(bo.x * bo.y - patchK, 0.0, 1.0);
+            }
+            float fresh = step(0.93, ph);
+            col *= mix(1.0, mix(1.18 + 0.1 * nD.r, 0.62 + 0.08 * nD.r, fresh), patchK);
+            col = mix(col, vec3(0.035), border * 0.85);
+            // sealed cracks: black, glossy tar bands following the crack network
+            float crack = smoothstep(0.5, 0.82, crackNet) * crackZone * (1.0 - patchK);
+            col = mix(col, vec3(0.032, 0.031, 0.03), crack * 0.85);
+            // transverse thermal cracks every few tens of metres on older surfaces
+            float tcr = scnLines(sl.x + 3.0 * nB.g, 31.0, 0.05) * step(0.45, scnHash(vec2(floor(sl.x / 31.0), seed)));
+            col = mix(col, vec3(0.035), tcr * 0.7 * (1.0 - patchK));
+            hgt -= crack * 0.003 + seam * 0.002;
+            rough = 0.9 + 0.06 * aggr - 0.35 * crack - 0.3 * border - 0.08 * fresh * patchK;
           }
-          // rubber deposits in the touchdown zones (runways only)
+          // runways: rubber deposits in both touchdown zones, streaked along the gear tracks; grooved surface is a
+          // touch darker than the taxiways
           if (kind < 1.5) {
-            float streak = texture(tNoise, vec2(vLocal.x / 90.0, vLocal.y / 2.0)).g;
-            float rub = rubberAmount(vLocal.x + plen * 0.5, vLocal.y, plen, pwid, streak + 0.25 * nB.g);
-            col = mix(col, vec3(0.028, 0.027, 0.026), rub * (concrete ? 0.9 : 0.7));
-            rough = mix(rough, 0.6, rub);
+            float streak = texture(tNoise, vec2(vLocal.x / 140.0, vLocal.y / 1.1)).g;
+            float streak2 = texture(tNoise, vec2(vLocal.x / 37.0 + 0.5, vLocal.y / 0.45)).r;
+            float rub = rubberAmount(sl.x, vLocal.y, plen, pwid, streak + 0.25 * nB.g);
+            rub = clamp(rub * (0.75 + 0.5 * streak2), 0.0, 1.0);
+            col *= 0.94;
+            col = mix(col, vec3(0.022, 0.021, 0.02), rub * (concrete ? 0.92 : 0.8));
+            rough = mix(rough, 0.55, rub);
+            // centreline wear: a darker band where nose gears track, faint oil drips along it
+            col *= 1.0 - 0.12 * exp(-pow(vLocal.y / 2.2, 2.0)) * (0.6 + 0.4 * nB.r);
           }
-          // shoulders: weathered, a little lighter, with loose debris
-          if (kind > 3.5 && kind < 4.5) col *= 0.9 + 0.25 * nB.b;
-          // wetness: darker, smoother, puddles in low spots
+          // shoulders and blast pads: weathered, lighter, loose grit
+          if (kind > 3.5 && kind < 5.5) col *= 0.88 + 0.28 * nB.b;
+          // wetness: darker, smoother, puddles in low spots (and along the sealed cracks)
           float puddle = smoothstep(0.55, 0.72, nC.b * 0.7 + nB.g * 0.3);
           gWetMask = uWet * (0.55 + 0.45 * puddle);
           col *= mix(1.0, 0.55, gWetMask);
-          rough = mix(rough, 0.12, gWetMask * (0.5 + 0.5 * puddle));
+          rough = mix(clamp(rough, 0.3, 1.0), 0.08, gWetMask * (0.5 + 0.5 * puddle));
           gRough = rough; gHeight = hgt * (1.0 - gWetMask * puddle);
           diffuseColor.rgb *= col;
         }`)
@@ -216,7 +259,7 @@ export function buildPavementGeometry(L) {
 }
 
 // --- paint ------------------------------------------------------------------------------------------------------------
-const PAINT_COLORS = { w: [0.8, 0.8, 0.78], y: [0.85, 0.58, 0.06], r: [0.55, 0.05, 0.04], k: [0.02, 0.02, 0.02] };
+const PAINT_COLORS = { w: [0.78, 0.78, 0.76], y: [0.8, 0.53, 0.05], r: [0.5, 0.05, 0.04], k: [0.02, 0.02, 0.02], s: [0.012, 0.011, 0.01] };
 
 export function buildPaintGeometry(L, quads) {
   const n = quads.length;
@@ -310,7 +353,13 @@ export function makePaintMaterial(ctx, shared, poolsLocal) {
           float a = texture(tAtlas, vPUv).a;
           vec4 nA = texture(tNoise, vField / 2.3);
           vec4 nB = texture(tNoise, vField / 31.0 + 0.7);
-          float wear = 0.78 + 0.22 * smoothstep(0.2, 0.7, nA.g) * (0.7 + 0.3 * nB.b);
+          // worn paint: thinner in blotches, chipped down to the pavement in small flakes (fades out with distance so
+          // far markings keep their average coverage instead of shimmering)
+          float wear = 0.74 + 0.26 * smoothstep(0.2, 0.7, nA.g) * (0.7 + 0.3 * nB.b);
+          float chipN = texture(tNoise, vField / 0.83 + 0.21).r;
+          float fwC = fwidth(vField.x) + fwidth(vField.y);
+          float chip = smoothstep(0.66, 0.72, chipN) * (1.0 - smoothstep(0.02, 0.12, fwC));
+          wear *= 1.0 - 0.75 * chip;
           diffuseColor.a *= a * vCover * wear;
           if (vRub.x >= 0.0) {
             float streak = texture(tNoise, vec2((vRub.x - vRub.z * 0.5) / 90.0, vRub.y / 2.0)).g;

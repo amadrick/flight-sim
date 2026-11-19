@@ -261,6 +261,28 @@ function standMarkings(L, q) {
       }
     }
   }
+  // stains: every stand collects oil/hydraulic drips under the engines and the nose gear, APU soot behind the tail,
+  // and tyre scuffs along the lead-in line where aircraft turn in and stop ('s' = soft dark blob, low opacity)
+  for (const s of L.stands) {
+    const h = s.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+    const at = (fwd, right) => ({ x: s.x + dx * fwd + rx * right, z: s.z + dz * fwd + rz * right });
+    const blob = (p, len, wid, hd = s.hdg) => q(p.x, p.z, hd, len, wid, 's', { glyph: 'o' });
+    if (s.size === 'heavy' || s.size === 'medium') {
+      const k = s.size === 'heavy' ? 1.55 : 1;
+      blob(at(-0.5, 0), 7, 3.2);
+      for (const sg of [-1, 1]) { blob(at(-9 * k, sg * 5.6 * k), 7 * k, 5 * k); blob(at(-15 * k, sg * 2.9 * k), 9, 3.5); }
+      blob(at(-34 * k, 0), 10 * k, 4.5 * k);
+      if (s.leadFrom) {
+        const a = s.leadFrom, ll = Math.hypot(s.x - a.x, s.z - a.z);
+        for (const sg of [-1, 1]) for (let t = 0; t < 3; t++) {
+          const m = ll * (0.2 + 0.25 * t);
+          q(a.x + (s.x - a.x) * (m / ll) + rx * sg * 2.9 * k, a.z + (s.z - a.z) * (m / ll) + rz * sg * 2.9 * k, s.hdg, ll * 0.3, 1.4, 's', { glyph: 'o' });
+        }
+      }
+    } else if (s.size === 'fighter') {
+      blob(at(-1, 0), 4, 2); blob(at(-7, 0), 6, 3.5); blob(at(-15, 0), 8, 4);
+    } else blob(at(-1.5, 0), 4, 3);
+  }
   // tail-of-stand service road along each apron (two white lines, dashed centre)
   for (const a of L.aprons) {
     if (L.kind !== 'international') continue;
