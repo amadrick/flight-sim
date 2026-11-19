@@ -46,8 +46,8 @@ export function createVisual(ctx, opts = {}) {
     fus: atlas.chart('fus', { type: 'unwrap', z: [-11.5, 7.6], girth: 4.7, vScale: 0.95, strips: 2 }),
     nacR: atlas.chart('nacR', { type: 'unwrap', z: [-4.0, 6.6], girth: 4.5, vScale: 0.9 }),
     nacL: atlas.chart('nacL', { type: 'unwrap', z: [-4.0, 6.6], girth: 4.5, vScale: 0.9 }),
-    gloveT: atlas.chart('gloveTop', { type: 'plan', x: [0.4, 3.5], z: [-7.7, 5.7], view: 'top', mirror: true, density: 0.9 }),
-    gloveB: atlas.chart('gloveBot', { type: 'plan', x: [0.4, 3.5], z: [-7.7, 5.7], view: 'bottom', mirror: true, density: 0.55 }),
+    gloveT: atlas.chart('gloveTop', { type: 'plan', x: [0.4, 3.5], z: [-4.7, 5.7], view: 'top', mirror: true, density: 0.9 }),
+    gloveB: atlas.chart('gloveBot', { type: 'plan', x: [0.4, 3.5], z: [-4.7, 5.7], view: 'bottom', mirror: true, density: 0.55 }),
     wTR: atlas.chart('wingTopR', { type: 'plan', x: [2.2, 9.86], z: [-1.42, 3.42], view: 'top' }),
     wTL: atlas.chart('wingTopL', { type: 'plan', x: [-9.86, -2.2], z: [-1.42, 3.42], view: 'top' }),
     wBR: atlas.chart('wingBotR', { type: 'plan', x: [2.2, 9.86], z: [-1.42, 3.42], view: 'bottom', density: 0.65 }),
@@ -67,7 +67,7 @@ export function createVisual(ctx, opts = {}) {
   const sw = (k, f) => atlas.swatch(k, f);
   const U = {
     top: sw('top', paintF(SC.top)), under: sw('under', paintF(SC.under)), fin: sw('fin', paintF(SC.fin)),
-    duct: sw('duct', F.gloss('#e6e7e3')), dark: sw('dark', F.darkGrey), black: sw('black', F.black), exhaust: sw('exhaust', F.exhaust),
+    duct: sw('duct', F.semigloss('#c9cbc7')), dark: sw('dark', F.darkGrey), black: sw('black', F.black), exhaust: sw('exhaust', F.exhaust),
     heat: sw('heat', { color: '#7f7871', rough: 0.48, metal: 0.8 }), heat2: sw('heat2', { color: '#45403d', rough: 0.55, metal: 0.8 }),
     well: sw('well', F.gearWhite), interior: sw('interior', { color: '#3f4447', rough: 0.72, metal: 0 }), console: sw('console', { color: '#1d1f21', rough: 0.6, metal: 0 }),
     seat: sw('seat', { color: '#272a2c', rough: 0.7, metal: 0 }), cushion: sw('cushion', F.fabric), accent: sw('accent', { color: '#d6b21e', rough: 0.5, metal: 0 }),
@@ -92,9 +92,9 @@ export function createVisual(ctx, opts = {}) {
     [-10.8, 0.400, -0.075, 0.240, 0.55, 0.56],
     [-10.3, 0.505, -0.165, 0.350, 0.55, 0.58],
     [-9.6, 0.625, -0.265, 0.470, 0.56, 0.6],
-    [-8.9, 0.725, -0.340, 0.580, 0.57, 0.63],
-    [-8.2, 0.805, -0.405, 0.670, 0.58, 0.66],
-    [-7.65, 0.865, -0.445, 0.730, 0.6, 0.68],
+    [-8.9, 0.712, -0.340, 0.580, 0.57, 0.63],
+    [-8.2, 0.780, -0.405, 0.670, 0.58, 0.66],
+    [-7.65, 0.835, -0.445, 0.730, 0.6, 0.68],
     [-7.0, 0.910, -0.485, 0.775, 0.6, 0.7],
     [-6.0, 0.950, -0.530, 0.805, 0.6, 0.72],
     [-5.0, 0.990, -0.570, 0.825, 0.6, 0.72],
@@ -125,21 +125,22 @@ export function createVisual(ctx, opts = {}) {
   stat.add(fus.mesh);
 
   // ---- canopy (fixed three-piece windscreen + one-piece tandem canopy hinged at the rear) -----------------------------------
-  const canTop = K.pchip([-7.65, -7.3, -6.95, -6.6, -6.2, -5.8, -5.3, -4.8, -4.4, -4.15, -3.95], [0.875, 1.085, 1.29, 1.42, 1.485, 1.515, 1.535, 1.5, 1.405, 1.28, 1.135]);
+  const canTop = K.pchip([-7.65, -7.3, -6.95, -6.6, -6.2, -5.8, -5.3, -4.8, -4.4, -4.15, -3.95], [0.845, 1.08, 1.3, 1.445, 1.505, 1.53, 1.545, 1.505, 1.405, 1.28, 1.135]);
   const canZ = [-7.65, -7.5, -7.3, -7.1, -6.95, -6.75, -6.5, -6.2, -5.9, -5.6, -5.3, -5.0, -4.7, -4.4, -4.2, -4.05, -3.95];
   const canSt = canZ.map(z => { const s = fus.at(z, T_SILL).p; return { z, y: s[1], w: s[0], top: Math.max(0.002, canTop(z) - s[1]), bot: 0.01, kTop: [0.72, 0.62] }; });
   const cseg = Math.max(16, Math.round(32 * detail / 4) * 4), ct = 1 / cseg;
-  const canLoft = (zr, tr, inflate, uv) => K.loft({ stations: canSt, segments: cseg, step: 0.1, tRange: tr, zRange: zr, inflate, uv }).mesh;
+  const canLoft = (zr, tr, inflate, uv, sg = cseg) => K.loft({ stations: canSt, segments: sg, step: 0.1, tRange: tr, zRange: zr, inflate, uv }).mesh;
   const glassFixed = canLoft([-7.65, -6.95], [0.25, 0.75], 0, [0, 0]);
   const glassMove = canLoft([-6.95, -3.95], [0.25, 0.75], 0, [0, 0]);
   // windscreen arch and the two posts of the three-piece windscreen
-  stat.add(canLoft([-7.0, -6.93], [0.25, 0.75], 0.006, U.frame));
-  for (const t of [0.405, 0.595 - ct]) stat.add(canLoft([-7.65, -6.95], [t, t + ct], 0.004, U.frame));
-  stat.add(canLoft([-7.65, -6.95], [0.25, 0.25 + ct], 0.004, U.frame)).add(canLoft([-7.65, -6.95], [0.75 - ct, 0.75], 0.004, U.frame));
+  const wsFrame = K.merge(canLoft([-7.0, -6.93], [0.25, 0.75], 0.006, U.frame), canLoft([-7.65, -6.95], [0.25, 0.25 + ct], 0.004, U.frame), canLoft([-7.65, -6.95], [0.75 - ct, 0.75], 0.004, U.frame));
+  for (const t of [0.4, 0.6 - 1 / 80]) wsFrame.add(canLoft([-7.65, -6.95], [t, t + 1 / 80], 0.004, U.frame, 80));
+  stat.add(wsFrame).add(wsFrame.clone().flip());
   const frameMove = K.merge(
     canLoft([-6.95, -3.95], [0.25, 0.25 + ct], 0.005, U.frame), canLoft([-6.95, -3.95], [0.75 - ct, 0.75], 0.005, U.frame),
     canLoft([-6.93, -6.86], [0.25, 0.75], 0.006, U.frame), canLoft([-5.93, -5.86], [0.25, 0.75], 0.005, U.frame), canLoft([-4.12, -3.95], [0.25, 0.75], 0.006, U.frame),
   );
+  frameMove.add(frameMove.clone().flip());            // frames are seen from inside the cockpit too
 
   // ---- cockpit: tandem tubs, pilot + RIO, seats, panels, HUD, glareshield -----------------------------------------------------
   const eye = G.pilotEye, eyeR = [0, eye[1] + 0.15, eye[2] + 1.25];
@@ -157,7 +158,7 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   {  // glareshield / coaming over the pilot's panel
-    const gs = K.prism([[-7.62, 0.62], [-7.62, 0.86], [-7.08, 0.935], [-7.04, 0.915], [-7.04, 0.62]], -0.46, 0.46, U.black);
+    const gs = K.prism([[-7.62, 0.6], [-7.62, 0.8], [-7.1, 0.875], [-7.06, 0.86], [-7.06, 0.6]], -0.46, 0.46, U.black);
     for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * Math.min(1, (gs.p[i + 2] + 7.62) / 0.58);
     stat.add(gs);
   }
@@ -166,7 +167,7 @@ export function createVisual(ctx, opts = {}) {
     for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) { const uv = chart.uv((x - x0) / (x1 - x0) * w, (y1 - y) / (y1 - y0) * h); stat.vert(x, y, z, 0, 0, 1, uv[0], uv[1]); }
     stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
   };
-  panelQuad(C.panel, -7.06, -0.42, 0.42, 0.5, 0.9, 0.84, 0.4);           // pilot's instrument panel
+  panelQuad(C.panel, -7.055, -0.42, 0.42, 0.46, 0.86, 0.84, 0.4);           // pilot's instrument panel
   panelQuad(C.rio, -5.86, -0.4, 0.4, 0.58, 1.02, 0.8, 0.44);             // RIO's panel (TID) behind the pilot's seat
   stat.add(K.box(0.84, 0.42, 0.05, U.console).translate(0, 0.79, -5.84));  // RIO panel housing
   for (const z of [-6.45, -5.0]) for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.1, 1.0, U.console).translate(sx * 0.4, 0.5, z));   // side consoles
@@ -187,12 +188,12 @@ export function createVisual(ctx, opts = {}) {
     const n = K.loft({
       stations: [
         NS(-2.35, 1.47, -0.22, 0.44, 0.555, 0.82),
-        NS(-3.82, 1.5, -0.2, 0.497, 0.617, 0.88, { hard: true }),
-        NS(-3.88, 1.5, -0.2, 0.508, 0.628, 0.88),
-        NS(-3.9, 1.5, -0.2, 0.525, 0.645, 0.88),
-        NS(-3.88, 1.5, -0.2, 0.542, 0.662, 0.88),
-        NS(-3.7, 1.5, -0.2, 0.555, 0.675, 0.88),
-        NS(-2.6, 1.47, -0.19, 0.57, 0.685, 0.87),
+        NS(-3.82, 1.5, -0.2, 0.505, 0.625, 0.95, { hard: true }),
+        NS(-3.885, 1.5, -0.2, 0.512, 0.632, 0.95),
+        NS(-3.9, 1.5, -0.2, 0.525, 0.645, 0.95),
+        NS(-3.885, 1.5, -0.2, 0.538, 0.658, 0.95),
+        NS(-3.7, 1.5, -0.2, 0.55, 0.67, 0.94),
+        NS(-2.6, 1.47, -0.19, 0.57, 0.685, 0.9),
         NS(-1.2, 1.40, -0.16, 0.59, 0.67, 0.83),
         NS(0.3, 1.32, -0.11, 0.607, 0.648, 0.76),
         NS(1.8, 1.24, -0.06, 0.62, 0.635, 0.67),
@@ -205,6 +206,8 @@ export function createVisual(ctx, opts = {}) {
       uvFn: (x, y, z, t, ring) => (ring.run === 0 ? U.duct : chart.uvUnwrap(z, t)),
       cutouts: [{ name: 'mlg', z: [-0.5, 1.1], t: sx > 0 ? [0.07, 0.2] : [0.8, 0.93] }],
     });
+    // variable ramp: the upper duct wall slopes down from the lip to the throat (hides most of the compressor face)
+    n.mesh.add(K.prism([[-3.8, 0.43], [-2.5, 0.02], [-2.45, 0.04], [-2.45, 0.44]], sx > 0 ? 1.5 - 0.46 : -1.5 - 0.46, sx > 0 ? 1.5 + 0.46 : -1.5 + 0.46, U.duct));
     // rake the lip (top forward), sweep it in plan (outer wall aft) and lean the box slightly outward; fades out by z −2.6
     const p = n.mesh.p;
     for (let i = 0; i < p.length; i += 3) {
@@ -232,8 +235,9 @@ export function createVisual(ctx, opts = {}) {
     tc, camber: (f) => (lift / chord) * Math.pow(Math.max(0, 1 - f / 0.55), 2),
     thick: (f) => { const u = Math.min(1, f / a); return 0.5 * tc * Math.sqrt(Math.max(0, u * (2 - u))) * Math.pow(Math.min(1, (1 - f) / b), 0.85) + 0.0008; },
   });
-  const gLE = (x) => -7.3 + (x - 0.6) * (5.95 / 2.65);
-  const gStations = [[0.45, 5.6, 0.40, 0.76, 0.32, 0.45, 0.14], [1.75, 5.6, 0.38, 0.62, 0.24, 0.36, 0.16], [2.35, 4.75, 0.37, 0.5, 0.14, 0.24, 0.08], [3.25, 3.45, 0.36, 0.41, 0.06, 0.1, 0]]
+  // glove leading edge: from the intake's outer top corner (just behind the raked lip) out to the pivot at ~66°
+  const gLE = (x) => (x <= 1.75 ? -4.62 + (x - 0.45) * (0.42 / 1.3) : x <= 2.0 ? -4.2 + (x - 1.75) * 0.4 : -4.1 + (x - 2.0) * (2.75 / 1.25));
+  const gStations = [[0.45, 5.6, 0.42, 0.7, 0.22, 0.45, 0.06], [1.75, 5.6, 0.4, 0.6, 0.18, 0.36, 0.06], [2.35, 4.75, 0.38, 0.5, 0.12, 0.24, 0.04], [3.25, 3.45, 0.36, 0.41, 0.06, 0.1, 0]]
     .map(([x, te, y, th, a, b, lift]) => { const z = gLE(x), chord = te - z; return { x, y, z, chord, tc: th / chord, airfoil: gloveAF(th / chord, chord, a, b, lift) }; });
   const glove = {};
   for (const [key, sx] of [['R', 1], ['L', -1]]) {
@@ -444,7 +448,7 @@ export function createVisual(ctx, opts = {}) {
     rig.lamp('nav', [sx * 2.02, glove.R.at(2.0, 0.08, 'mid')[1], gLE(2.0) + 0.25], { color: sx > 0 ? [0.02, 1, 0.25] : [1, 0.04, 0.02], size: 0.03 });   // glove position lights
     const fp = fus.at(-8.4, sx > 0 ? 0.27 : 0.73).p;
     rig.lamp('formation', [fp[0] + sx * 0.005, fp[1], fp[2]], { color: [0.75, 1, 0.55], size: 0.025, squash: [0.3, 0.5, 2.4] });
-    rig.lamp('formation', [sx * (finRoot.x + 0.13), 2.2, 4.5], { color: [0.75, 1, 0.55], size: 0.025, squash: [0.3, 2.2, 0.6] });
+    rig.lamp('formation', [sx * (finRoot.x + 0.15), 1.42, 3.75], { color: [0.75, 1, 0.55], size: 0.025, squash: [0.3, 0.5, 2.4] });
   }
 
   // ---- animation --------------------------------------------------------------------------------------------------------------
@@ -585,11 +589,11 @@ function paint(atlas, o) {
       Q.line([[3.12, -1.2], [3.12, 3.35], [2.3, 4.7]], { px: 2, depth: 0.7, dark: 0.45 });         // overwing fairing seal (wing slot)
       if (isTop) {
         // black non-skid walkways beside the canopy, outlined for the hi-vis scheme
-        const wk = [[0.85, -4.4], [1.55, -3.3], [1.55, -0.5], [0.85, -0.5]];
+        const wk = [[0.85, -3.6], [1.45, -3.6], [1.45, -1.2], [0.85, -1.2]];
         Q.fill(wk, F.matte(SC.hivis ? '#222426' : '#5a6065'), { alpha: 0.9 });
         if (SC.hivis) Q.stroke((g) => { wk.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); }, 0.025, F.gloss('#f2f2ee'));
         Q.text('NO STEP', 2.4, 1.6, 0.07, { color: SC.hivis ? '#2a2c2e' : mark, rot: 90 });
-        Q.fill((g) => g.rect(1.95, -3.0, 0.06, 0.6), slime);
+        Q.fill((g) => g.rect(2.2, -2.6, 0.06, 0.6), slime);
         if (SC.hivis) Q.fill([at(0.6, 0.0), at(3.25, 0.0), at(3.25, 0.03), at(0.6, 0.05)], F.gloss(SC.accent));
       }
       Q.wear((g) => { const a = at(0.7, 0.004), b = at(3.2, 0.004); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }, 0.03, { color: '#9a9ea2', rough: 0.4, metal: 0.6 }, { alpha: 0.2 + 0.25 * WX });
@@ -658,26 +662,24 @@ function paint(atlas, o) {
     const span = Math.hypot(...[0, 1].map(i => fn.at(10, 0)[i] - fn.at(0, 0)[i]));
     const hz = (u) => fn.lines.hinge.at(fn.spanToU(u));
     Q.fill('all', paintF(SC.fin));
+    // squadron flash: a broad diagonal band from the fin root LE to the rudder top, pin-striped
+    const band = (f0, f1) => [at(0.05, f0), at(0.05, f1), at(span + 0.1, f1 + 0.62), at(span + 0.1, f0 + 0.62)];
     if (SC.hivis) {
-      // gold lightning bolt across the black fin, white rudder tips
-      const b = [at(0.35, 0.05), at(1.45, 0.42), at(1.3, 0.52), at(2.55, 0.95), at(1.55, 0.6), at(1.7, 0.5), at(0.6, 0.05)];
-      Q.fill(b, F.gloss(SC.accent));
-      Q.fill([at(span - 0.32, 0), at(span + 0.1, 0), at(span + 0.1, 1.05), at(span - 0.32, 1.05)], F.gloss('#eeefeb'));
-      Q.fill([at(span - 0.38, 0), at(span - 0.32, 0), at(span - 0.32, 1.05), at(span - 0.38, 1.05)], F.gloss(SC.accent));
+      Q.fill(band(-0.02, 0.2), F.gloss(SC.accent));
+      for (const f of [-0.05, 0.23]) Q.fill(band(f, f + 0.018), F.gloss('#f2f2ee'));
+      Q.fill([at(span - 0.12, 0), at(span + 0.1, 0), at(span + 0.1, 1.05), at(span - 0.12, 1.05)], F.gloss(SC.accent));
     } else {
-      const b = [at(0.35, 0.05), at(1.45, 0.42), at(1.3, 0.52), at(2.55, 0.95), at(1.55, 0.6), at(1.7, 0.5), at(0.6, 0.05)];
-      Q.stroke((g) => { b.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); }, 0.03, F.matte(SC.accent));
+      Q.stroke((g) => { const b = band(-0.02, 0.2); b.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); }, 0.025, F.matte(SC.accent));
     }
     Q.line([at(0.42, 1), at(0.42, hz(0.42)), at(span - 0.25, hz(span - 0.25)), at(span - 0.25, 1)], { px: 2, depth: 0.8, dark: 0.5 });
     for (const u of [0.6, 1.2, 1.8, 2.4]) Q.line([at(u, 0.02), at(u, hz(u))], { px: 1, depth: 0.3, dark: 0.12 });
     for (const f of [0.25, 0.48]) Q.line([at(0.05, f), at(span - 0.1, f)], { px: 1, depth: 0.3, dark: 0.12 });
-    Q.fill([at(span - 0.12, -0.05), at(span + 0.2, -0.05), at(span + 0.2, 0.3), at(span - 0.12, 0.3)], F.semigloss(SC.hivis ? '#2b2d2f' : '#6d7378'));   // dielectric cap
     const tc = SC.hivis ? '#f2f2ee' : mark;
     const cc = at(1.55, 0.3);
     if (outboard || true) Q.text(SC.code, cc[0], cc[1], 0.62, { color: tc, weight: 700, font: K.FONT.sans });
     const sq = at(0.78, 0.3); Q.text(SC.sqn, sq[0], sq[1], 0.13, { color: tc, weight: 700, italic: true });
     const bn = at(0.3, 0.4); Q.text('NAVY ' + SC.buno, bn[0], bn[1], 0.06, { color: tc, weight: 700 });
-    const fl = at(1.9, 0.12); Q.fill((g) => g.rect(fl[0] - 0.04, fl[1] - 0.3, 0.07, 0.6), slime);
+    const fl = at(1.0, 0.1); Q.fill((g) => g.rect(fl[0] - 0.3, fl[1] - 0.03, 0.6, 0.06), slime);
     Q.noise({ alpha: 0.07 + 0.04 * WX, scale: 1.2, stretch: [1, 1.5], rough: 0.05 });
     void key;
   }
@@ -700,7 +702,7 @@ function paint(atlas, o) {
   const scr = (Q, a, b, w, h, col) => { Q.fill((g) => g.rect(a, b, w, h), { color: '#050607', rough: 0.15, metal: 0 }); Q.fill((g) => g.rect(a + 0.008, b + 0.008, w - 0.016, h - 0.016), { color: col, rough: 0.12, metal: 0, emissive: col }); };
   {
     const Q = atlas.pen(C.panel); Q.fill('all', { color: '#191b1d', rough: 0.6, metal: 0 });
-    scr(Q, 0.08, 0.16, 0.17, 0.17, '#0c2a14'); scr(Q, 0.59, 0.16, 0.17, 0.17, '#0c2a14'); scr(Q, 0.33, 0.1, 0.18, 0.15, '#13240f');
+    scr(Q, 0.08, 0.16, 0.17, 0.17, '#1a4a26'); scr(Q, 0.59, 0.16, 0.17, 0.17, '#1a4a26'); scr(Q, 0.33, 0.1, 0.18, 0.15, '#24421c');
     for (let i = 0; i < 6; i++) { const cx = 0.3 + (i % 3) * 0.12, cy = 0.3 + Math.floor(i / 3) * 0.05; Q.stroke((g) => g.arc(cx, cy, 0.022, 0, Math.PI * 2), 0.003, { color: '#9a9c9a' }); }
     for (let i = 0; i < 12; i++) Q.fill((g) => g.rect(0.12 + i * 0.05, 0.05, 0.03, 0.02), { color: i % 3 ? '#3a3c3e' : '#7a6a2a', rough: 0.5, metal: 0 });
   }
