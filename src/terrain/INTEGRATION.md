@@ -77,6 +77,10 @@ itself on `quality:change`.
 | `terrShadow=<steps>` | self-shadow ray-march steps (0 = off) |
 | `terrTrees=<cells>` | tree grid size override (0 = off) |
 | `terrHideWater=1` | hide `ctx.water.object3D` (look at the sea bed) |
+| `towns=0` | no settlements (painted towns, 3-D buildings, street lamps) |
+| `roads=0` | no road network (and no bridges, verges, road clearings) |
+| `bldg=0` / `bldgR=<m>` | no 3-D buildings (the painted town stays) / override their draw radius |
+| `micro=0` | no learned micro-relief shading in the far field |
 
 ## Tests and tools
 
@@ -102,3 +106,46 @@ whole-level refills (boot, teleport, quality change) are rationed to 5 levels on
 that (in `test=1` mode: up to 4.2 M texels per frame, i.e. everything at once on medium, 4 levels per frame on high —
 give `quality=high` screenshots at least 4 frames).
 `heightAt`: 1.5-3.5 us on the plain, 1-2 us at sea, 4-7 us in the mountains, 5-9 us in the desert (node, one core).
+
+## Settlements and roads (round 2)
+
+- `tools/gen-settle.mjs` (offline, ~30 s, `nice -n 10 node src/terrain/tools/gen-settle.mjs [--map shots/x.ppm]`) reads
+  `heightAt` on a 500 m grid, scores suitability (flat, low, not arid, off water, off the airports), sows 2 cities,
+  13 towns, 217 villages and 583 hamlets, grows a highway tree between the big places with a slope-aware Dijkstra,
+  links everything else with rural roads and lanes, and writes `settle-data.js` (154 kB, quantised). Rerun it after
+  any change of the height function that moves coasts or valleys.
+- `settle.js` decodes that at boot into a 512 m lookup grid (RGBA16UI: segment list offset/count, town index), a
+  segment texture and a town texture, and holds the JS twin of the GLSL town layout (`blockAt`, `lotAt`; the hash is
+  an integer hash that is bit-identical in both). `roadClear(x, z)` and `townAt(x, z)` are exported for other
+  modules (nothing outside terrain uses them yet).
+- `surface.glsl.js` paints roads (carriageway, markings, verges, bridge decks over water) and towns (streets, lots,
+  yards, drives, roofs with gable normals, an analytic box shadow, garden trees) into the ground material at every
+  distance; beyond the 3-D radius the town fades to its area mean. `ground=classic` turns all of it off.
+- `buildings.js` draws the same lots as one instanced mesh (box + gable roof, 14 triangles each) inside
+  650 / 1000 / 1400 / 2000 m (low / medium / high / ultra), capped at 2600 / 6000 / 10500 / 16000 instances
+  (36 k / 84 k / 147 k / 224 k triangles), one draw call plus one in the shadow pass. Chunks (one grid cell) are
+  generated at most two per frame (~6 ms each on the test box).
+- Night: street lamps are pools of emissive on the painted streets (they merge analytically into lit streets and then
+  into the town glow with distance, so the total emitted light is the same at every scale), windows are emissive on
+  the instanced walls. `index.js` scales both by `nightFactor * 40 / exposure`.
+
+## Dunes, rills, micro-relief (round 2)
+
+- Dune fields are part of the height function (`height.glsl.js`, after `gSpec`): transverse dunes with slip faces,
+  up to 21 m, only in the driest basins. The dune mask rides on the arid channel as `arid > 1`; every reader clamps
+  (`min(arid, 1)`).
+- Erosion rills and avalanche chutes: three fixed downslope-stretched noise lookups on slopes, steering scree, rock,
+  snow and colour. No height change.
+- `src/neural/ground-micro.js`: a 4-20-20-1 MLP (541 weights) trained on an offline numpy heightfield renderer
+  (`tools/neural/ground/micro/`) gives the mean brightness of a rough surface with self-shadowing as a function of
+  sun elevation, view elevation, relative azimuth and roughness; baked at boot into a 16x16x8 RGBA16F 3-D LUT and
+  read once per fragment in the far field. Held-out RMSE 0.0136 against 0.126 for Lambert and 0.059 for a fitted
+  Oren-Nayar.
+
+## Shader cost added in round 2 (per terrain fragment)
+
+- 1 integer fetch (settlement grid) everywhere; +2 fetches per road segment in the cell (at most 14 segments,
+  typically 0-3); +2 town texels and one more grid fetch inside a settlement.
+- up to 3 `textureGrad` on slopes steeper than ~12 degrees (rills).
+- micro self-shadow: +1 fetch on medium, +2 on high, near field only; micro LUT: 1 trilinear 3-D fetch.
+- Boot: settlement decode 47 ms, micro LUT bake 13 ms (software GL box under load).
