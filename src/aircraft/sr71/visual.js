@@ -386,7 +386,7 @@ export function createVisual(ctx, opts = {}) {
   const plumeMat = [rig.material('plumeL', K.glowMaterial(), { shadow: false }), rig.material('plumeR', K.glowMaterial(), { shadow: false })];
   const diaMat = [rig.material('diaL', K.glowMaterial(), { shadow: false }), rig.material('diaR', K.glowMaterial(), { shadow: false })];
   if (mat.isMeshPhysicalMaterial) {     // iron-ball bloom: a cool, chalky haze at grazing angles instead of a glossy highlight
-    mat.sheen = 0.4; mat.sheenRoughness = 0.6; mat.sheenColor = new THREE.Color('#56647c');
+    mat.sheen = 0.25; mat.sheenRoughness = 0.65; mat.sheenColor = new THREE.Color('#4c5a72');
   }
 
   rig.addStatic(stat, 'paint');
