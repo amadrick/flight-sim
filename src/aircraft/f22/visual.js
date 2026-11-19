@@ -328,7 +328,7 @@ export function createVisual(ctx, opts = {}) {
   }
   // centre "stinger" fairing between the nozzles (houses the hook)
   stat.add(K.loft({
-    stations: [{ z: 6.7, y: 0.0, w: 0.56, top: 0.2, bot: 0.24, kTop: 0.85, kBot: 0.88 }, { z: 7.35, y: 0.0, w: 0.555, top: 0.16, bot: 0.22, kTop: 0.85, kBot: 0.88 }, { z: 7.7, y: -0.02, w: 0.4, top: 0.08, bot: 0.16, kTop: 0.85, kBot: 0.88 }, { z: 7.82, y: -0.04, w: 0.2, top: 0.03, bot: 0.1, kTop: 0.85, kBot: 0.88 }],
+    stations: [{ z: 6.7, y: 0.0, w: 0.56, top: 0.17, bot: 0.22, kTop: 0.92, kBot: 0.9, aTop: 40, aBot: 50 }, { z: 7.35, y: 0.0, w: 0.555, top: 0.11, bot: 0.2, kTop: 0.92, kBot: 0.9, aTop: 40, aBot: 50 }, { z: 7.7, y: -0.03, w: 0.42, top: 0.05, bot: 0.14, kTop: 0.92, kBot: 0.9, aTop: 40, aBot: 50 }, { z: 7.82, y: -0.05, w: 0.22, top: 0.02, bot: 0.08, kTop: 0.92, kBot: 0.9 }],
     segments: 20, step: 0.2, uv: U.under, capEnd: 'flat', capUV: U.dark,
   }).mesh);
 
@@ -501,7 +501,7 @@ function paint(atlas, o) {
   // ---- fuselage ring lookup: ring parameter t on the right side for a given x (bottom or top quadrant) --------------------
   const K4 = fus.K;
   const tx = (z, x, top) => {
-    const r = fus.ring(z); let jm = 0, mx = -1;
+    const r = fus.ring(Math.round(z * 20) / 20); let jm = 0, mx = -1;      // quantised station: ring cache hits
     for (let j = 0; j <= K4 / 2; j++) if (r[j * 3] > mx) { mx = r[j * 3]; jm = j; }
     if (x >= mx) return jm / K4;
     if (!top) { for (let j = 0; j < jm; j++) { const a = r[j * 3], b = r[j * 3 + 3]; if (x >= a && x <= b) return (j + (x - a) / Math.max(1e-9, b - a)) / K4; } return 0; }
@@ -531,7 +531,7 @@ function paint(atlas, o) {
   }
   const zMinF = -10.9, zMaxF = 7.4;
   for (const b of blobs) {
-    const pts = dens(b, 5).filter(p => p[1] > zMinF && p[1] < zMaxF).map(p => { const hw = fus.halfWidthAt(p[1]) * 0.995; return upT(Math.max(-hw, Math.min(hw, p[0])), p[1]); });
+    const pts = dens(b, 5).filter(p => p[1] > zMinF && p[1] < zMaxF).map(p => { const hw = fus.halfWidthAt(Math.round(p[1] * 20) / 20) * 0.995; return upT(Math.max(-hw, Math.min(hw, p[0])), p[1]); });
     if (pts.length > 3) P.fill(pts, camo, { feather: 9 });
   }
   // radome joint, frames (few: LO aircraft), longitudinal seams
