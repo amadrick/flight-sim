@@ -22,6 +22,7 @@ import { createEnvironment } from './environment.js';
 import { KeyLight, fitShadows, installSunShadowChunk, SUN_SHADOW_API_GLSL } from './shadows.js';
 import { createPostPasses } from './post.js';
 import { createAO, AO_COMPOSITE_GLSL } from './ao.js';
+import { installEmissiveMaskChunk, NIGHT_GRADE_GLSL } from './nightgrade.js';
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -38,13 +39,23 @@ const GROUND_ALBEDO = new THREE.Vector3(0.14, 0.15, 0.13);
 const MOON_RADIUS = 0.00452 * 1.7;       // drawn 1.7x larger than life, as every film does
 const MOON_DISC_RADIANCE = 0.075;
 
+// Twilight is compressed like the night. The atmosphere is physical, so between sunset and the end of nautical
+// twilight the sky light falls ~4 decades while the (compressed) moon is 1600x too bright: without help, civil
+// twilight came out darker than a moonlit night. The sun's light is boosted while it is below the horizon so the
+// order is right (day > civil twilight > moonlit night ~ nautical twilight > moonless night) and dusk fades smoothly.
+// x = degrees below the horizon; 1 at and above the horizon, ~3 at -3.4 deg, ~10 at -6.5, capped at 60.
+export function twilightGain(sunY) {
+  const x = Math.max(0, -Math.asin(clamp(sunY, -1, 1)) * 180 / Math.PI);
+  return Math.min(60, Math.exp(0.42 * x * x / (x + 1.5)));
+}
+
 const HEAD = /* glsl */`
 precision highp float; precision highp sampler2D;
 in vec2 vUv; out vec4 outColor;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 `;
 
-const COMPOSITE_FRAG = (cloudShadowGLSL) => HEAD + FRAME_UNIFORMS_GLSL + DEPTH_GLSL + ATMOSPHERE_GLSL + SKY_GLSL + AO_COMPOSITE_GLSL + /* glsl */`
+const COMPOSITE_FRAG = (cloudShadowGLSL) => HEAD + FRAME_UNIFORMS_GLSL + DEPTH_GLSL + ATMOSPHERE_GLSL + SKY_GLSL + AO_COMPOSITE_GLSL + NIGHT_GRADE_GLSL + /* glsl */`
 uniform sampler2D tScene; uniform sampler2D tClouds; uniform float uHasClouds;
 uniform vec4 uCloudK;      // x: share of direct light in the scene lighting, y: cloud shadow at the player, z: same share for in-scatter, w: debug cloud shadow (<0 = off)
 uniform vec4 uFlash;       // rgb: lightning colour * envelope, a: envelope
@@ -54,7 +65,8 @@ ${cloudShadowGLSL}
 // ----
 void main() {
   float d = sceneDepthRaw(vUv);
-  vec3 col;
+  vec3 col, emitP = vec3(0.0);     // emitP: the part of col that main-layer emitters contributed (keeps its colour at night)
+  float share = 1.0;
   if (depthIsSky(d)) {
     vec3 dir = viewRay(vUv);
     col = sky_radiance(dir);
@@ -63,9 +75,11 @@ void main() {
     col += uFlash.rgb * hazeS * (0.03 + 0.12 * pow(max(dot(dir, uFlashDir), 0.0), 6.0));
   } else {
     vec3 P = renderPosFromDepth(vUv, d);
-    col = texture(tScene, vUv).rgb;
+    vec4 sc = texture(tScene, vUv);
+    col = sc.rgb;
     if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
     col = max(col, 0.0);
+    share = clamp(sc.a, 0.0, 1.0);
     // contact shading (SSAO, ambient share only)
     col *= aoFactor(vUv, length(P - uCameraPos));
     // Cloud shadows in screen space: the main pass lit this pixel with the cloud occlusion measured at the player
@@ -76,6 +90,7 @@ void main() {
     // Aerial perspective. The mean dimming of the air under a cloud deck is already in the LUTs (uAtmDeck), and the
     // in-scatter along the path does not depend on the shadow at its end point, so cloud shadows fade with distance.
     vec4 ap = atmAerialPerspective(P);
+    emitP = col * ((1.0 - share) * ap.a);
     col = col * ap.a + ap.rgb;
     if (uFlash.a > 0.0) col += uFlash.rgb * (1.0 - ap.a) * (0.03 + 0.12 * pow(max(dot(normalize(P - uCameraPos), uFlashDir), 0.0), 6.0));
   }
@@ -83,7 +98,11 @@ void main() {
     vec4 c = texture(tClouds, vUv);
     if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
     col = col * c.a + c.rgb + uFlash.rgb * (1.0 - c.a) * (0.035 + 0.25 * pow(max(dot(viewRay(vUv), uFlashDir), 0.0), 8.0));
+    emitP *= clamp(c.a, 0.0, 1.0);
   }
+  // night vision: rods grade the reflected light, emitters keep their colour (nightgrade.js)
+  if (uNightK.w > 0.5) col = depthIsSky(d) ? vec3(0.0, 0.0, 0.02) : mix(vec3(1.0, 0.25, 0.0), vec3(0.05), share) * 0.05 / max(uNightK.z, 1e-3);
+  else if (uNightK.x > 0.0) { vec3 refl = max(col - emitP, 0.0); col = emitP + ng_grade(refl, col); }
   outColor = vec4(clamp(col, 0.0, 30000.0), 1.0);
   gl_FragDepth = d;     // depth copy: LAYERS.POST objects test against this while still being able to SAMPLE tSceneDepth
 }`;
@@ -183,6 +202,11 @@ export async function createPipeline(ctx) {
   renderer.shadowMap.type = THREE.PCFShadowMap;
   const csm = installSunShadowChunk();
   if (!csm) console.warn('[render] three.js sun-shadow chunks not found: single shadow cascade');
+  // night grade: ?ngrade=classic (previous display-space grade in the tone map), ?ngrade=0 (off); ?emask=0 ignores the
+  // emissive mask (main-layer emitters are graded like surfaces); ?nlook=0 keeps the day contrast at night
+  const ngradeMode = dbg.ngrade === 'classic' ? 'classic' : (dbg.ngrade === '0' ? 'off' : 'composite');
+  const emask = dbg.emask !== '0' && installEmissiveMaskChunk();
+  if (dbg.emask !== '0' && !emask) console.warn('[render] opaque_fragment chunk changed: night grade without emissive mask');
 
   // ------------------------------------------------------------------------------------------------ targets
   const mkDepth = () => { const t = new THREE.DepthTexture(2, 2); t.type = THREE.FloatType; t.minFilter = t.magFilter = THREE.NearestFilter; return t; };
@@ -231,6 +255,8 @@ export async function createPipeline(ctx) {
 
   const sunT = new THREE.Vector3(), moonT = new THREE.Vector3(), sunE = new THREE.Vector3(), moonE = new THREE.Vector3();
   const moonIllum = new THREE.Vector3(), sunIllum = new THREE.Vector3(SUN_ILLUMINANCE, SUN_ILLUMINANCE, SUN_ILLUMINANCE);
+  const twilightOn = dbg.twilight !== 'classic';     // ?twilight=classic: physical (uncompressed) twilight
+  let twGain = 1;
   const keyDir = new THREE.Vector3(0, 1, 0), keyE = new THREE.Vector3(), airglow = new THREE.Vector3();
   const ambRaw = new THREE.Vector3(0.05, 0.09, 0.2), skyMean = new THREE.Vector3(0.1, 0.15, 0.3), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
   const groundRad = new THREE.Vector3();
@@ -257,8 +283,9 @@ export async function createPipeline(ctx) {
   const compositeUniforms = {
     tScene: { value: sceneTarget.texture }, tClouds: { value: null }, uHasClouds: { value: 0 },
     uSkyStarRot: { value: new THREE.Matrix3() }, uSkyParams: { value: new THREE.Vector4(0.001, 0, MOON_RADIUS, MOON_DISC_RADIANCE) },
-    uSkySunDisc: { value: new THREE.Vector3() },
+    uSkySunDisc: { value: new THREE.Vector3() }, uSkyStarMode: { value: dbg.stars === 'classic' ? 0 : 1 },
     uCloudK: { value: new THREE.Vector4(0.8, 1, 0.75, dbgShadow) }, uFlash: { value: new THREE.Vector4() }, uFlashDir: { value: flashDir },
+    uNightK: { value: new THREE.Vector4(0, 1, 1, dbg.rdebug === 'emask' ? 1 : 0) },
   };
   {
     // sun disc radiance so that its integral over the disc is the illuminance (per channel, with limb darkening)
@@ -345,7 +372,9 @@ export async function createPipeline(ctx) {
     atmosphere.setWeather(ctx.weather);
     atmosphere.lightTransmittance(hKm, sunDir.y, sunT);
     atmosphere.lightTransmittance(hKm, moonDir.y, moonT);
-    sunE.copy(sunT).multiplyScalar(SUN_ILLUMINANCE);
+    twGain = twilightOn ? twilightGain(sunDir.y) : 1;
+    sunIllum.setScalar(SUN_ILLUMINANCE * twGain);
+    sunE.copy(sunT).multiplyScalar(SUN_ILLUMINANCE * twGain);
     // moon: illuminated fraction from the sun-moon elongation; its sky scatter is irrelevant by day so it fades out (saves LUT work)
     const frac = 0.5 * (1 - sunDir.dot(moonDir));
     const moonDay = 1 - smooth(-0.035, 0.105, sunDir.y);
@@ -393,6 +422,8 @@ export async function createPipeline(ctx) {
     F.uSunColor.value.copy(ctx.env.sunColor); F.uAmbientSky.value.copy(ctx.env.ambientSky); F.uAmbientGround.value.copy(ctx.env.ambientGround);
 
     lighting.keyIsMoon = keyIsMoon; lighting.cloudOcclusion = occl; lighting.directShare = kDirect;
+    // radiance of white paint under the current natural light (night grade reference)
+    compositeUniforms.uNightK.value.y = 1 / Math.max(lum3(keyE) * Math.max(keyDir.y, 0) / Math.PI + lum3(tmpV), 1e-6);
     const u = compositeUniforms;
     u.uCloudK.value.set(kDirect, occl, 0.8 * clamp(kDirect * 1.2, 0, 1), dbgShadow);
     // stars: celestial sphere turns about the pole (latitude) once per sidereal day
@@ -757,10 +788,18 @@ export async function createPipeline(ctx) {
       u.uLensColor.value.copy(sunE);
       if (dbg.flare !== 'classic') post.flare.update((ps.x - 0.5) * 2 * size.w / size.h, (ps.y - 0.5) * 2, Math.tan(camera.fov * Math.PI / 360), ctx.cameraRig?.isInterior ? 0.35 : 1);
       u.uFlareParams.value.y = dbg.flare === 'classic' ? 0 : 1;
-      u.uGrade.value.set(1.5, 1.3, caps.float ? 0 : 1 / 255, frameNo % 64);
+      // dark-adapted look: less contrast and saturation so a moonlit landscape stays faintly readable (no effect by day)
+      const look = dbg.nlook === '0' ? 0 : smooth(0.3, 1, ctx.env.nightFactor) * (1 - smooth(0.006, 0.05, lighting.sceneLuminance));
+      u.uGrade.value.set(lerp(1.5, 1.12, look), lerp(1.3, 1.12, look), caps.float ? 0 : 1 / 255, frameNo % 64);
       u.uDebug.value = dbg.rdebug === 'notonemap' ? 1 : 0;
-      u.uNightGrade.value = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));
+      const ng = smooth(0.4, 1, ctx.env.nightFactor) * (1 - smooth(0.004, 0.03, lighting.sceneLuminance));
+      u.uNightGrade.value = ngradeMode === 'classic' ? ng : 0;
+      compositeUniforms.uNightK.value.x = ngradeMode === 'composite' ? ng : 0;
+      compositeUniforms.uNightK.value.z = exposure;
       u.uAlphaMotion.value = useTaa ? 1 : 0;
+      // ?localexp=0: no night local adaptation
+      u.tLocal.value = bloomDown[Math.min(3, bloomDown.length - 1)].texture;
+      u.uLocalExp.value = dbg.localexp === '0' ? 0 : look;
       post.tonemap.render(renderer, ldrTarget);
     }
 
@@ -844,6 +883,7 @@ export async function createPipeline(ctx) {
     setSize, render,
     // ---- additions (compatible) ----
     shadow: { glsl: SUN_SHADOW_API_GLSL, uniforms: shadowUniforms },
+    nightGrade: { glsl: NIGHT_GRADE_GLSL, uniforms: { uNightK: compositeUniforms.uNightK } },
     hdrTarget, lighting, keyLight: key,
     get exposure() { return exposure; },
     get internalSize() { return { width: size.w, height: size.h, scale: drs }; },
