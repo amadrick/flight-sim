@@ -435,6 +435,9 @@ export async function createClouds(ctx) {
       // a model that also provides cloudSunScatter4(tauSun, tauUp, cosTheta, tauDown) is called with the column
       // thickness below the sample as well (see the march in shaders.js)
       if (scatterModel && /float\s+cloudSunScatter4\s*\(/.test(scatterModel.glsl)) scatterModel.glsl = `#define CL_SCATTER4 1\n${scatterModel.glsl}`;
+      // a model that also provides vec2 cloudAmbientVis(tauUp, tauDown) replaces the hand-written sky / ground-bounce
+      // visibility of the march (S = E J + ambUp V.x + ambDown V.y)
+      if (scatterModel && /vec2\s+cloudAmbientVis\s*\(/.test(scatterModel.glsl)) scatterModel.glsl = `#define CL_AMBIENT_VIS 1\n${scatterModel.glsl}`;
       buildMaterials();
       historyValid = false;
     },

@@ -74,7 +74,17 @@ def compare(field, case, models, W, H, ambients=None, label=''):
     mask = (Tref < 0.9) | (R['T'] < 0.9)
     rows, imgs = {}, [ref]
     for name in models:
-        mod, amb = (name, None) if not isinstance(name, tuple) else name[1:]
+        if name == 'v2':
+            import gt_train_light as tl
+            mod, amb = tl.v2_models()
+        elif name == 'v2jOnly':
+            import gt_train_light as tl
+            mod, amb = tl.v2_models()[0], None
+        elif name == 'v2ambOnly':
+            import gt_train_light as tl
+            mod, amb = 'neural3', tl.v2_models()[1]
+        else:
+            mod, amb = (name, None) if not isinstance(name, tuple) else name[1:]
         key = name if isinstance(name, str) else name[0]
         img = gm.shade(R, case, field, mod, ambient=amb, cov=cov, bg=bg)
         rows[key] = metrics(img, ref, mask, W, H)

@@ -113,6 +113,18 @@ def make_case(name, field):
     """Sun, sky, ground and camera of one comparison case (camera placed relative to the field's box)."""
     b, t = field.base_alt, field.top_alt
     half = 0.5 * field.nx * field.dx
+    if name.startswith('g_'):
+        # generic training view: g_<sun elevation>_<camera azimuth from the sun side, deg>_<altitude>_<pitch>
+        el, az, alt, pitch = (float(v) for v in name[2:].split('_'))
+        k = np.clip((el - 2.5) / 60.0, 0, 1) ** 0.5
+        E = np.array([1.0, 0.55 + 0.45 * k, 0.25 + 0.75 * k]) * (0.4 + 0.6 * k)
+        sky = Sky(np.array([0.02, 0.035, 0.08]) * (1 - k) + np.array([0.045, 0.085, 0.19]) * k,
+                  np.array([0.10, 0.075, 0.055]) * (1 - k) + np.array([0.13, 0.155, 0.19]) * k, sun_dir(el), circ=2.0 - 1.4 * k)
+        a = math.radians(az)
+        r = half + 2600.0
+        cam = np.array([r * math.cos(a), alt, r * math.sin(a)])
+        yaw = math.degrees(math.atan2(-cam[2], -cam[0]))
+        return dict(name=name, L=sun_dir(el), E=E, sky=sky, cam=cam, yaw=yaw, pitch=pitch, fov=60.0, elev=el)
     if name in ('noon_above', 'noon_below', 'noon_side'):
         elev, E = 65.0, np.array([1.0, 1.0, 1.0])
         sky = Sky([0.045, 0.085, 0.19], [0.13, 0.155, 0.19], sun_dir(elev))
