@@ -7,6 +7,8 @@
 import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../core/glsl.js';
 import { COVER_GLSL, SURFACE_GLSL, ECO_GLSL, GROUND_MODE } from './surface.glsl.js';
+import { VEG_NEURAL_GLSL } from '../neural/veg.js';
+import { VEG_CANOPY_GLSL } from './veg/canopy.js';
 
 // Noise sampling scales: period in metres and a rotation so the scales never line up (anti-tiling).
 export const TILE_SCALES = [
@@ -39,8 +41,12 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms, quality =
   const neural = GROUND_MODE !== 'classic';
   const cover = COVER_GLSL, surface = SURFACE_GLSL;
 
+  // painted distant forest lit by the vegetation canopy network (its LUT uniforms are merged into `uniforms` by
+  // trees.js before the first render; without 3-D trees, or with ground=classic, the forest stays Lambertian)
+  const vegCanopyOn = () => neural && !!uniforms.tVegCanopyLUT;
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
+    const vegK = vegCanopyOn();
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', /* glsl */`#include <common>
         ${clipmapGLSL(L)}
@@ -96,6 +102,7 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms, quality =
         varying vec3 vTerrPos;
         ${neural ? 'varying vec4 vTerrEcoA; varying vec4 vTerrEcoB; varying vec4 vTerrEcoC; varying vec4 vTerrN0; varying vec4 vTerrAux;' : ''}
         ${cover}
+        ${vegK ? '#define VEG_CANOPY 1\n' + VEG_NEURAL_GLSL + VEG_CANOPY_GLSL : ''}
         ${surface}
       `)
       .replace('#include <map_fragment>', /* glsl */`
@@ -110,10 +117,10 @@ export function createTerrainMaterial(ctx, { L, shadowSteps, uniforms, quality =
       .replace('#include <aomap_fragment>', /* glsl */`
         reflectedLight.indirectDiffuse *= tSurf.ao;
         reflectedLight.indirectSpecular *= tSurf.ao * tSurf.ao;
-        reflectedLight.directDiffuse *= tSurf.shadow;
+        reflectedLight.directDiffuse *= tSurf.shadow${neural ? ' * tSurf.canopyK' : ''};
         reflectedLight.directSpecular *= tSurf.shadow;
       `);
   };
-  mat.customProgramCacheKey = () => `skyward-terrain-${GROUND_MODE}-${L}-${shadowSteps}-${quality}`;
+  mat.customProgramCacheKey = () => `skyward-terrain-${GROUND_MODE}-${L}-${shadowSteps}-${quality}-${vegCanopyOn() ? 1 : 0}`;
   return mat;
 }
