@@ -21,6 +21,8 @@ export const FLARE_CONSTS = FLARE_MODEL.consts;
 const C = FLARE_CONSTS;
 export const STAR_TEX = { w: 128, h: 32 };
 export const META_LUT_N = 97;
+/** Default gains relative to the simulated lens (see createNeuralFlare). */
+export const FLARE_GAINS = { ghost: 3, star: 0.7 };
 
 function b64ToF32(b64) {
   let bytes;
@@ -229,9 +231,12 @@ export function createNeuralFlare(opts = {}) {
   const uniforms = {
     tFlareGhost: { value: ghostTex }, tFlareStar: { value: starTex },
     uFlareGhost: { value: ghostU },
-    uFlareParams: { value: new THREE.Vector4(3, 1, opts.ghostGain ?? 1, 0) },
-    uFlareParams2: { value: new THREE.Vector4(opts.starGain ?? 1, 1, 0, 0) },
+    uFlareParams: { value: new THREE.Vector4(3, 1, 1, 0) },
+    uFlareParams2: { value: new THREE.Vector4(1, 1, 0, 0) },
   };
+  // Taste on top of the physics (the only hand-set numbers in the flare): ghost and starburst gains relative to the
+  // simulated lens.  1 = exactly the simulated f/4 double-Gauss with single-layer MgF2 coatings.
+  const baseGhost = opts.ghostGain ?? FLARE_GAINS.ghost, baseStar = opts.starGain ?? FLARE_GAINS.star;
   const meta = bake.meta;
   const hexComp = C.HEX_COMP;
   /** Per frame: sun position in frame units, tan(vertical fov / 2), ghost gain (e.g. lower in the cockpit). */
@@ -250,8 +255,8 @@ export function createNeuralFlare(opts = {}) {
       ghostU[g].set(c, ma, mc, amp);
     }
     const P = uniforms.uFlareParams.value;
-    P.set(1 / Math.max(tanHalfFov * tanHalfFov, 1e-6), 1, ghostGain, u * (NR - 1));
-    uniforms.uFlareParams2.value.x = starGain;
+    P.set(1 / Math.max(tanHalfFov * tanHalfFov, 1e-6), 1, baseGhost * ghostGain, u * (NR - 1));
+    uniforms.uFlareParams2.value.x = baseStar * starGain;
   }
   update(0, 0, Math.tan(Math.PI / 6));
   return {

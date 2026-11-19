@@ -64,7 +64,7 @@ def main():
     # test vectors (float64 arithmetic with the float32 weights == the JS forward pass)
     rng = np.random.default_rng(42)
     rs = rng.uniform(0, FE.R_MAX, 24)
-    mv = np.stack([FE.meta_decode(fwd(meta, 0, FE.meta_features(r)[None])[0].reshape(-1, 4)) for r in rs])
+    mv = np.stack([FE.meta_decode(fwd(meta, 0, FE.meta_features(r)[None])[0].reshape(-1, FE.META_OUT)) for r in rs])
     gi = rng.integers(0, ghost.G, 64)
     gr, ga, gc = rng.uniform(0, FE.R_MAX, 64), rng.uniform(-FE.QMAX, FE.QMAX, 64), rng.uniform(0, FE.QMAX, 64)
     gv = np.stack([fwd(ghost, int(g), FE.ghost_features(r, a, c)[None])[0] ** 2 for g, r, a, c in zip(gi, gr, ga, gc)])

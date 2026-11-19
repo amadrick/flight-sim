@@ -36,7 +36,7 @@ EXT = 0.17                      # half-extent of the cartesian pattern (frame un
 SIGMA_ROUGH = 2.0e-9 * 1e9      # nm rms surface micro-roughness of the polished glass
 HARVEY_L, HARVEY_S = 0.004, 2.2  # Harvey-Shack shoulder (direction cosine) and slope
 R_TAB = np.exp(np.linspace(math.log(0.012), math.log(2.4), 192))
-PHI_TAB = np.linspace(0, math.pi / BLADES / 2 * 2, 64) / 2     # 0 .. 30 deg (half the spike spacing)
+PHI_TAB = np.linspace(0, math.pi / BLADES, 64)   # 0 .. 30 deg from a spike (half the spike spacing)
 
 
 def aperture(rng):
@@ -194,6 +194,9 @@ def main():
     for ch in range(3):
         a1, b1 = fit(conv[ch], [np.full_like(ro, x) for x in rf], [np.arcsin(np.minimum(dperp / x, 0.5)) for x in rf])
         a2, b2 = fit(conv[ch], [np.full_like(ro, x) for x in rf], [po for x in rf])
+        # straight-edge diffraction falls as r^-2 along a spike and faster elsewhere: a fitted slope shallower than
+        # that is an artefact of the fit window (points approaching a spike in angle), so clamp it
+        b1 = np.minimum(b1, -2.0); b2 = np.minimum(b2, -2.0)
         v1 = a1 + b1 * np.log(ro / r_trust)
         v2 = a2 + b2 * np.log(ro / r_trust)
         t = np.clip((dperp / r_trust - 0.2) / 0.15, 0, 1)
