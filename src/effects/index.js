@@ -35,6 +35,7 @@ export async function createEffects(ctx) {
   if (raw.fxtm === '1') { shared.uFxPreviewTM.value = 1; shared.uFxPreviewExposure.value = +raw.fxexp || 1; }
   const header = sharedHeader(ctx);
   const anchor = createAnchor(ctx, shared);
+  const plumeClassic = raw.plume === 'classic';   // ?plume=classic: previous plume + dry nozzle-exit glow
   const q0 = () => clamp(ctx.quality?.particles ?? 1, 0.1, 1.5);
 
   // ---- systems (allocated once at max capacity; emission rates scale with quality) ----
@@ -70,7 +71,8 @@ export async function createEffects(ctx) {
     player.visual.object3D.add(group);
     const engines = (g.engines || []).map((en0, i) => {
       const en = { ...en0, nozzle: en0.nozzle || [0, 0, g.tailZ ?? 6], nozzleRadius: en0.nozzleRadius || 0.5 };
-      const plume = new Plume(plumeGeo, createPlumeMaterial(shared, header), en, isAB, lowBypass, i * 3.7 + 1.3);
+      const plume = new Plume(plumeGeo, createPlumeMaterial(shared, header, plumeClassic), en, isAB, lowBypass, i * 3.7 + 1.3, plumeClassic);
+      if (raw.fxab != null) plume.forceAB = +raw.fxab;   // debug: force the afterburner stage (visual only)
       group.add(plume.mesh);
       const trail = new Trail(ctx, shared, header, anchor, 2048, { life: 60, diff: 10, sink: 1.8, formStart: 0.04, formEnd: 0.3, sigma: 5, albedo: [1, 1, 1], g: 0.72, mergeTau: 14, wobble: 1, spacingMin: 3, spacingMax: 60, maxDt: 0.4 });
       return { def: en, plume, trail, acc: { v: 0 }, hazeAcc: { v: 0 }, blastAcc: { v: 0 }, wasRunning: true };
@@ -194,7 +196,7 @@ export async function createEffects(ctx) {
     let abSum = 0;
     for (let i = 0; i < P.engines.length; i++) {
       const e = P.engines[i], en = s.engines?.[i];
-      e.plume.update(crashed ? null : en, s, camPos, q, dt, now);
+      e.plume.update(crashed ? null : en, s, camPos, q, dt, now, ctx.env.exposure);
       abSum += e.plume.ab;
       const thr = clamp((en?.thrust ?? 0) / thrustRef, 0, 1.6);
       const running = en ? en.running !== false : true;
@@ -357,6 +359,7 @@ export async function createEffects(ctx) {
       anchor.update();
       const night = ctx.env.nightFactor || 0;
       shared.uFxNight.value = night;
+      shared.uFxExposure.value = Math.max(1e-3, ctx.env.exposure || 1);
       const s = ctx.player?.state;
       if (s) ctx.weather.windAt(s.position, shared.uFxWind.value); else shared.uFxWind.value.copy(ctx.weather.wind);
       const q = q0();
