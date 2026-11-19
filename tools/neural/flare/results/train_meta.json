@@ -1,0 +1,20 @@
+{
+ "params": 3496,
+ "seconds": 5.0573039054870605,
+ "fit": {
+  "train": {
+   "centre_abs_err_max": 0.00841664769835232,
+   "centre_abs_err_rms": 0.0020360413180338668,
+   "scale_rel_err_rms": 0.0018522886929764001,
+   "sign_errors": 0,
+   "flux_log10_err_rms": 0.0011522543738746703
+  },
+  "holdout": {
+   "centre_abs_err_max": 0.07993001452515625,
+   "centre_abs_err_rms": 0.01750635058302161,
+   "scale_rel_err_rms": 0.04127542756094197,
+   "sign_errors": 0,
+   "flux_log10_err_rms": 0.5198419386199309
+  }
+ }
+}

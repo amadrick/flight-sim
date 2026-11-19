@@ -117,7 +117,7 @@ def train(net, X, Y, Wt=None, epochs=2000, batch=4096, lr=3e-3, lr_end=1e-4, see
         if log_every and (ep % log_every == 0 or ep == epochs - 1):
             yp = net.forward(X)
             yu = out_fn(yp)[0] if out_fn is not None else yp
-            mse = (Wt * (yu - Y) ** 2).sum(axis=(1, 2)) / (Wt.sum(axis=(1, 2)) * Y.shape[2])
+            mse = (Wt * (yu - Y) ** 2).sum(axis=(1, 2)) / (Wt.sum(axis=(1, 2)) * (Y.shape[2] if Wt.shape[2] == 1 else 1))
             hist.append((ep, mse.tolist()))
             print('  epoch %5d  rmse %s' % (ep, ' '.join('%.4f' % np.sqrt(m) for m in mse)), flush=True)
     return hist

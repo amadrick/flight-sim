@@ -189,7 +189,7 @@ class Lens:
         return np.where(tir, 1.0, R)
 
     # --- exact ray tracing -------------------------------------------------------------------------------------
-    def trace(self, pos, d, lam, ghost=None, polygon=False, want_stop=False):
+    def trace(self, pos, d, lam, ghost=None, polygon=False, want_stop=False, rims=True):
         """Trace rays (pos, d: (N,3) arrays; d unit) along the direct path or a ghost path to the image plane.
         Returns (xy at image plane (N,2), weight (N,), alive (N,) bool[, stop-plane xy of the limiting pass])."""
         pos = pos.copy(); d = d.copy()
@@ -230,7 +230,7 @@ class Lens:
             r2 = hit[:, 0] ** 2 + hit[:, 1] ** 2
             if s['stop'] and polygon:
                 ok &= inside_polygon(hit[:, 0], hit[:, 1], self.stop_radius, self.blades)
-            else:
+            elif rims or s['stop']:
                 ok &= r2 <= s['h'] ** 2
             alive &= ok
             if s['stop']:

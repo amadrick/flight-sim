@@ -15,7 +15,7 @@ For each ghost g and sun radius r the dataset stores
   meta  = (c, m_al, m_ac, E): the image of the iris centre on the flare axis (frame units, + = toward the sun),
           the magnification iris -> ghost along / across the axis (frame units per iris radius, signed), and the
           ghost's luminous flux as a fraction of the flux the lens collects from the sun (E);
-  image = RGB flux density in iris coordinates q = ((x - c) / m_al, y / m_ac)  (fraction per unit q-area, white
+  image = RGB flux density in ghost coordinates q = ((x - c) / |m_al|, y / |m_ac|) (iris coordinates up to sign)  (fraction per unit q-area, white
           equal-energy source), on a 32 x 16 grid (q_al in [-1.6, 1.6], |q_ac| in [0, 1.6]; mirror symmetric),
           blurred by the angular size of the sun.
 The renderer converts with  L = E_sun * image / (|m_al m_ac| tan^2(fov / 2)).
@@ -112,7 +112,7 @@ def blur_axis(img, sigma, axis):
     return np.moveaxis(out, -1, axis)
 
 
-def ghost_at(L, g, r, rgbw, rng, n_dense=200):
+def ghost_at(L, g, r, rgbw, rng, n_dense=200, kp=None):
     """Trace one ghost at sun radius r for all wavelengths. Returns meta (c, m_al, m_ac, E) and image (NQA,NQC,3)."""
     U0 = U0_FRAC * L.efl
     A_ep = math.pi * L.ep_radius ** 2
@@ -142,29 +142,44 @@ def ghost_at(L, g, r, rgbw, rng, n_dense=200):
         hits.append((li, xy[al] / U0, flux, st))
     if not hits:
         return np.array([0.0, 1.0, 1.0, 0.0]), np.zeros((NQA, NQC, 3)), 0.0, 0
-    # limiting pass through the iris: the one whose survivors reach furthest out
-    npass = len(hits[0][3])
-    reach = [max(np.percentile(np.hypot(*h[3][k].T), 99.5) for h in hits) for k in range(npass)]
-    kp = int(np.argmax(reach))
-    # weighted least squares x = c + m_al a_x, y = m_ac a_y over all wavelengths (luminance weights)
-    X = np.concatenate([h[1] for h in hits])
-    A = np.concatenate([h[3][kp] for h in hits])
-    Wl = np.concatenate([h[2] * rgbw[h[0]] @ np.array([0.2126, 0.7152, 0.0722]) for h in hits])
-    Wl = np.maximum(Wl, 0)
+    # Ghost frame from the iris mapping: trace the same path with only the iris clipping (no element rims), find
+    # the iris pass that limits the bundle, and fit x = c + m_al a_x, y = m_ac a_y over the inner part of the iris
+    # (|a| < 0.7) at 550 nm.  c is then the image of the iris centre (stable even when rims cut the ghost).
+    cen = (L.z_ep * math.tan(th), 0.0)
+    p, d, _ = L.entrance_rays(th, 12.8, 96, centre=cen)
+    xy0, _, al0, st0 = L.trace(p, d, 550.0, ghost=g, want_stop=True, rims=False)
+    st0 = [s[al0] / L.stop_radius for s in st0]
+    xy0 = xy0[al0] / U0
+    if kp is None:
+        reach = [np.percentile(np.hypot(*s.T), 99.5) for s in st0]
+        kp = int(np.argmax(reach))
+    A = st0[kp]
+    if len(A) < 20:
+        return np.array([0.0, 1.0, 1.0, 0.0]), np.zeros((NQA, NQC, 3)), 0.0, 0
+    inner = np.hypot(*A.T) < 0.7
+    if inner.sum() < 20:
+        inner = np.ones(len(A), bool)
+    A, X = A[inner], xy0[inner]
     M = np.stack([np.ones_like(A[:, 0]), A[:, 0]], 1)
-    sw = np.sqrt(Wl)
-    c, m_al = np.linalg.lstsq(M * sw[:, None], X[:, 0] * sw, rcond=None)[0]
-    m_ac = (Wl * X[:, 1] * A[:, 1]).sum() / max((Wl * A[:, 1] ** 2).sum(), 1e-30)
+    c, m_al = np.linalg.lstsq(M, X[:, 0], rcond=None)[0]
+    m_ac = (X[:, 1] * A[:, 1]).sum() / max((A[:, 1] ** 2).sum(), 1e-30)
     # flare-axis coordinates: + toward the sun. The sensor image is inverted (sun at +x on the sensor for theta>0),
     # and so is the display; the along-axis coordinate measured toward the sun is x itself.
-    m_al = math.copysign(max(abs(m_al), M_MIN), m_al)
-    m_ac = math.copysign(max(abs(m_ac), M_MIN), m_ac)
+    # ghost frame scale: the iris magnification, enlarged where aberrations / line foci spread the light further
+    # than the iris image (2 x rms = radius of a uniform disc), never below the sun's size
+    Xa = np.concatenate([h[1] for h in hits])
+    Fw = np.concatenate([h[2] * (rgbw[h[0]] @ np.array([0.2126, 0.7152, 0.0722])) for h in hits])
+    Fw = np.maximum(Fw, 0)
+    rms_al = math.sqrt((Fw * (Xa[:, 0] - c) ** 2).sum() / max(Fw.sum(), 1e-30))
+    rms_ac = math.sqrt((Fw * Xa[:, 1] ** 2).sum() / max(Fw.sum(), 1e-30))
+    m_al = math.copysign(max(abs(m_al), 2.0 * rms_al, M_MIN), m_al)
+    m_ac = math.copysign(max(abs(m_ac), 2.0 * rms_ac, M_MIN), m_ac)
     img = np.zeros((NQA, 2 * NQC, 3))
     E = 0.0
     cover = 0.0
     for li, xy, flux, _ in hits:
-        qa = (xy[:, 0] - c) / m_al
-        qc = xy[:, 1] / m_ac
+        qa = (xy[:, 0] - c) / abs(m_al)     # image in |scale| units: continuous when a scale changes sign
+        qc = xy[:, 1] / abs(m_ac)
         for sgn in (1.0, -1.0):          # mirror symmetry about the flare axis
             ia = np.floor((qa + QMAX) / (2 * QMAX) * NQA).astype(int)
             ic = np.floor((sgn * qc + QMAX) / (2 * QMAX) * 2 * NQC).astype(int)
@@ -194,10 +209,15 @@ def make_data(lo, hi):
         t0 = time.time()
         rng = np.random.default_rng(100 + gi)
         out = {}
+        # the iris pass that limits the bundle near the axis defines the ghost frame at every sun radius
+        th = theta_of_r(0.3)
+        p, dd, _ = L.entrance_rays(th, 12.8, 96, centre=(L.z_ep * math.tan(th), 0.0))
+        _, _, al0, st0 = L.trace(p, dd, 550.0, ghost=g, want_stop=True, rims=False)
+        kp = int(np.argmax([np.percentile(np.hypot(*(s[al0] / L.stop_radius).T), 99.5) for s in st0]))
         for tag, rs in (('train', R_GRID), ('hold', R_HOLDOUT)):
             metas, imgs, covs = [], [], []
             for r in rs:
-                meta, img, cov, nr = ghost_at(L, g, float(r), rgbw, rng)
+                meta, img, cov, nr = ghost_at(L, g, float(r), rgbw, rng, kp=kp)
                 metas.append(meta); imgs.append(img); covs.append(cov)
             out[tag + '_meta'] = np.array(metas)
             out[tag + '_img'] = np.array(imgs)
