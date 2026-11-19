@@ -295,8 +295,20 @@ export function createVisual(ctx, opts = {}) {
   const fairOpts = { stations: fairStations, segments: Math.max(32, Math.round(52 * detail / 4) * 4), step: 0.9, uv: UA.fair };
   let fair = K.loft(fairOpts);
   const fAtX = (z, x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(z, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
-  fair = K.loft({ ...fairOpts, cutouts: [{ name: 'wgw', z: [-1.0, 2.1], t: [fAtX(0.5, 2.85), fAtX(0.5, 4.1)], mirror: true }, { name: 'bgw', z: [2.2, 7.5], t: [fAtX(5, 1.5), fAtX(5, 3.75)], mirror: true }] });
-  stA.add(fair.mesh);
+  const fairCuts = [{ name: 'wgw', z: [-1.0, 2.1], t: [fAtX(0.5, 2.85), fAtX(0.5, 4.1)], mirror: true }, { name: 'bgw', z: [2.2, 7.5], t: [fAtX(5, 1.5), fAtX(5, 3.75)], mirror: true }];
+  // the fairing samples the fuselage chart at the same station and height, so the livery (belly colour, lines, grime) runs
+  // across the wing-body junction without a seam; one loft per chart strip keeps every triangle inside one strip
+  {
+    const fz = [fairStations[0].z, ...cFus.splits.filter(s => s > fairStations[0].z && s < fairStations[fairStations.length - 1].z), fairStations[fairStations.length - 1].z];
+    const pieces = [];
+    for (let i = 0; i + 1 < fz.length; i++) {
+      const strip = cFus.stripAt((fz[i] + fz[i + 1]) / 2);
+      const uvFn = (x, y, z) => { const t = fus.tAtY(z, y); return cFus.uvUnwrap(z, x >= 0 ? t : 1 - t, strip); };
+      pieces.push(K.loft({ ...fairOpts, uvFn, zRange: [fz[i], fz[i + 1]], cutouts: fairCuts }));
+    }
+    fair = { at: fair.at, patches: Object.assign({}, ...pieces.map(q => q.patches)), edges: Object.assign({}, ...pieces.map(q => q.edges)) };
+    for (const q of pieces) stA.add(q.mesh);
+  }
   for (const k of ['wgwR', 'wgwL', 'bgwR', 'bgwL']) stA.add(K.well(fair.patches[k], 1.4, UA.well, [0, 1, 0]));
   // wheel-well plumbing: frames, actuators and pipe runs on the well roofs
   for (const sx of [-1, 1]) {
@@ -353,7 +365,6 @@ export function createVisual(ctx, opts = {}) {
       IN.add(K.box(0.025, 0.12, 0.03, UA.lever).rotateX(-0.3).translate(-0.17, yp + 0.05, zP + 0.62)); IN.add(K.box(0.03, 0.12, 0.03, UA.lever).rotateX(-0.3).translate(0.17, yp + 0.05, zP + 0.66));
     }
     { const i0 = IN.vertexCount; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); IN.vert(a - 0.4, 1.98 + b * 0.3, zd(4.45) + b, 0, -1, -0.25, uv[0], uv[1]); } IN.quad(i0, i0 + 1, i0 + 2, i0 + 3); }   // overhead panel
-    IN.add(K.box(0.9, 0.06, 1.05, UA.console).translate(0, 2.17, zd(4.95)));
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
       IN.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.cushion } }));
@@ -451,9 +462,9 @@ export function createVisual(ctx, opts = {}) {
     const L = NAC.len, rA = (z) => NAC.rHi + (NAC.rMax - NAC.rHi) * Math.sqrt(Math.min(1, z / (L * 0.3))) + 0.006;
     const rOut = (z) => (z < L * 0.4 ? rA(z) : NAC.rMax - (NAC.rMax - NAC.rExit) * Math.pow(Math.max(0, (z - L * 0.4) / (L * 0.6)), 1.6) + 0.006);
     // coloured intake band behind the polished lip, dark acoustic-liner rings in the inlet, panel seams on the cowl
-    stB.add(K.lathe([[rA(0.2) - 0.006, 0.2], [rA(0.21), 0.21], [rA(0.62), 0.62], [rA(0.63) - 0.006, 0.63]], { segments: 52, uv: UB.band }).translate(c[0], c[1], c[2]));
-    for (const z of [0.38, 0.62, 0.84]) stB.add(K.lathe([[NAC.rThroat - 0.004, z + 0.035], [NAC.rThroat - 0.004, z]], { segments: 40, uv: UB.duct }).occlude(0.4).translate(c[0], c[1] - 0.05, c[2]));
-    for (const z of [1.25, inboard ? L * NAC.sleeve - 0.02 : L * NAC.sleeve + 0.02]) stB.add(K.lathe([[rOut(z), z], [rOut(z + 0.025), z + 0.025]], { segments: 48, uv: UB.seam }).translate(c[0], c[1], c[2]));
+    stB.add(K.lathe([[rA(0.2) - 0.006, 0.2], [rA(0.21), 0.21], [rA(0.62), 0.62], [rA(0.63) - 0.006, 0.63]], { segments: 52, uv: UB.band }).translate(c[0], c[1] - 0.04, c[2]));
+    for (const z of [0.38, 0.62, 0.84]) stB.add(K.lathe([[NAC.rThroat - 0.004, z + 0.035], [NAC.rThroat - 0.004, z]], { segments: 40, uv: UB.duct }).occlude(0.4).translate(c[0], c[1] - 0.03, c[2]));
+    for (const z of [1.25, inboard ? L * NAC.sleeve - 0.02 : L * NAC.sleeve + 0.02]) stB.add(K.lathe([[rOut(z), z], [rOut(z + 0.025), z + 0.025]], { segments: 48, uv: UB.seam }).translate(c[0], c[1] - (z < 1.4 ? 0.04 : 0.006), c[2]));
     const exitZ = c[2] + L, coreZ = exitZ + NAC.core.length;
     // heat-stained core nozzle ring, sooty band on the core cowl
     stB.add(K.lathe([[NAC.core.r1 + 0.07, coreZ - 0.6], [NAC.core.r1 + 0.03, coreZ + 0.01, 1], [NAC.core.r1, coreZ + 0.01, 1]], { segments: 36, uv: UB.hot }).translate(c[0], c[1], 0));
@@ -796,7 +807,7 @@ function paintFuselage(A, o) {
     const m = (p) => [p[0], s > 0 ? p[1] : 1 - p[1]];
     for (const w of WIN) {
       const pts = w.map(m), path = (g) => { pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); };
-      P.stroke(path, 0, { color: '#2a2c30', rough: 0.45, metal: 0 }, { join: 'round', px: 2.5 });
+      P.stroke(path, 0, { color: '#2a2c30', rough: 0.45, metal: 0 }, { join: 'round', px: 1.4 });
       P.groove(path, { px: 1.0, depth: 0.5, dark: 0.12 });
     }
   }
@@ -837,7 +848,7 @@ function paintFuselage(A, o) {
   for (const z of [-17.5, 18.0]) P.decalOn(z, -3.3, 'L', (g) => { g.fillStyle = '#5a5e62'; g.beginPath(); g.roundRect(-0.38, -0.12, 0.76, 0.24, 0.1); g.fill(); g.strokeStyle = 'rgba(20,20,22,0.5)'; g.lineWidth = 0.012; for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 0.12, -0.1); g.lineTo(i * 0.12, 0.1); g.stroke(); } });   // outflow valves
   P.textOn('NO STEP', D(4.4), -2.4, 'both', 0.05, { color: '#c42a1e', font: K.FONT.sans, weight: 700 });
   P.textOn('RESCUE', D(8.5) + 0.75, -0.6, 'both', 0.05, { color: '#c42a1e', font: K.FONT.sans, weight: 700 });
-  for (const z of [-25.5, 4.0]) P.textOn('GROUND POWER', z, -3.3, 'R', 0.04, { color: '#4a4f54', font: K.FONT.sans, weight: 700 });
+  for (const z of [-25.5, -21.0]) P.textOn('GROUND POWER', z, -3.3, 'R', 0.04, { color: '#4a4f54', font: K.FONT.sans, weight: 700 });
   // grime: belly streaks from the drain masts and gear bays, APU soot, nose-gear spray, general weathering
   const rnd = (() => { let a = 11; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
   for (let i = 0; i < 46; i++) { const z = -16 + rnd() * 46, t = rnd() < 0.5 ? rnd() * 0.07 : 1 - rnd() * 0.07; P.streak(z, t, z + 1 + rnd() * 3, t, 0.004 + rnd() * 0.01, { alpha: 0.05 + rnd() * 0.08 }); }
@@ -877,7 +888,7 @@ function paintFuselage(A, o) {
 // ---- paint: wings, tail -------------------------------------------------------------------------------------------------------
 function paintSurfaces(B, o) {
   const { SC, W, fin, stab, cWT, cWB, cSt, cFin } = o, F = K.FINISH;
-  const grey = F.semigloss('#babfc4'), dgrey = F.semigloss('#a6acb1'), white = F.gloss('#e4e7e9'), metal = { color: '#c9ccce', rough: 0.26, metal: 0.9 };
+  const grey = F.semigloss('#babfc4'), dgrey = F.semigloss('#a6acb1'), white = F.gloss('#e4e7e9'), metal = { color: '#c6cacd', rough: 0.34, metal: 0.55 };
   const line = { px: 1, depth: 0.35, dark: 0.11 }, gap = { px: 1.8, depth: 0.8, dark: 0.45 };
   const at = (x, f) => { const p = W.at(x, f); return [p[0], p[2]]; };
   const Ln = (name, x) => W.lines[name].at(W.spanToU(x));
@@ -885,7 +896,7 @@ function paintSurfaces(B, o) {
   for (const [chart, top] of [[cWT.i, true], [cWT.o, true], [cWB.i, false], [cWB.o, false]]) {
     const Q = B.pen(chart); Q.fill('all', top ? grey : white);
     if (top) Q.fill([...pl('slat', 3.8, 39.4).map(p => [p[0], p[1] + 0.25]), ...pl('spoil', 3.8, 39.4).reverse().map(p => [p[0], p[1] - 0.15])], dgrey);   // wing box: darker grey
-    { const pts = []; for (let x = 3.8; x < XT; x += 1.5) pts.push(at(x, 0)); pts.push(at(XT, 0)); for (let x = XT; x > 3.8; x -= 1.5) pts.push(at(x, 0.03)); pts.push(at(3.8, 0.03)); Q.fill(pts, metal); }   // polished leading edge
+    { const pts = []; for (let x = 3.8; x < XT; x += 1.5) pts.push(at(x, 0)); pts.push(at(XT, 0)); for (let x = XT; x > 3.8; x -= 1.5) pts.push(at(x, 0.016)); pts.push(at(3.8, 0.016)); Q.fill(pts, metal); }   // polished leading edge
     // leading-edge devices
     Q.line(pl('slat', 4.4, 11.8), gap); Q.line(pl('slat', SLATS[0], SLATS[SLATS.length - 1]), gap);
     for (const x of [4.4, 7.0, 9.4, 11.8, ...SLATS]) Q.line([at(x, 0), at(x, Ln('slat', x))], gap);
