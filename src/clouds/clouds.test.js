@@ -65,8 +65,8 @@ test('cell field: tiling, power-law sizes, clear air between cells', () => {
   for (let i = 0; i < 4; i++) assert.ok(Math.abs(a[i] - b[i]) < 1e-6);
   let inside = 0, n = 0, small = 0, big = 0;
   for (let i = 0; i < c.size * c.size; i++) {
-    const r = c.data[i * 4] / 255; n++;
-    if (r >= 0.5) { inside++; const g = c.data[i * 4 + 1] / 255; if (g < 0.3) small++; if (g > 0.7) big++; }
+    const r = c.data[i * 4]; n++;
+    if (r >= 0.5) { inside++; const g = c.data[i * 4 + 1]; if (g < 0.3) small++; if (g > 0.7) big++; }
   }
   const f = inside / n;
   assert.ok(f > 0.3 && f < 0.6, `nominal disks cover ${f.toFixed(2)} of the area`);

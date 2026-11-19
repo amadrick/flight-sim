@@ -225,24 +225,29 @@ export function createCellField({ seed = 1337, size = 512, period = 20480, dMin 
       }
     }
   });
-  const data = new Uint8Array(S * S * 4);
+  // Half float on the GPU (round four): with 8 bits the distance to the centre came in steps of radius / 128 (8 m for
+  // a 2 km cell), which showed as vertical striations on the flanks of big clouds seen from a few hundred metres.
+  const data = new Float32Array(S * S * 4), half = new Uint16Array(S * S * 4);
   for (let i = 0; i < S * S; i++) {
     const c = placed[owner[i]];
-    data[i * 4] = Math.round(255 * Math.max(0, 0.5 + 0.5 * (1 - best[i])));
-    if (c) { data[i * 4 + 1] = Math.round(255 * c.g); data[i * 4 + 2] = Math.round(255 * c.id); data[i * 4 + 3] = Math.round(255 * c.ph); }
-    else { data[i * 4 + 2] = 255; }
+    data[i * 4] = Math.max(0, 0.5 + 0.5 * (1 - best[i]));
+    if (c) { data[i * 4 + 1] = c.g; data[i * 4 + 2] = c.id; data[i * 4 + 3] = c.ph; }
+    else { data[i * 4 + 2] = 1; }
   }
+  for (let i = 0; i < data.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i]);
   // Bilinear wrapping CPU sampler (same as the GPU fetch at mip 0); u, v in tiles.
   function sample(u, v, out) {
     const x = u * S - 0.5, y = v * S - 0.5;
     const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
     const xa = ((x0 % S) + S) % S, xb = (xa + 1) % S, ya = ((y0 % S) + S) % S, yb = (ya + 1) % S;
     const i00 = (ya * S + xa) * 4, i10 = (ya * S + xb) * 4, i01 = (yb * S + xa) * 4, i11 = (yb * S + xb) * 4;
-    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy, k = 1 / 255;
+    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy, k = 1;
     for (let c = 0; c < 4; c++) out[c] = (data[i00 + c] * w00 + data[i10 + c] * w10 + data[i01 + c] * w01 + data[i11 + c] * w11) * k;
     return out;
   }
-  return { texture: dataTex(data, S, THREE.RGBAFormat), data, size: S, period, dMin, dMax, count: placed.length, sample };
+  const texture = dataTex(half, S, THREE.RGBAFormat);
+  texture.type = THREE.HalfFloatType;
+  return { texture, data, size: S, period, dMin, dMax, count: placed.length, sample };
 }
 
 // ------------------------------------------------------------------------------------------------ GPU 3D noise

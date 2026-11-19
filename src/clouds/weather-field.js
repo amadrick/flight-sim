@@ -146,7 +146,12 @@ export function densityFromField(p, wf, n, y, cl, cells) {
   let cov = saturate(p.covBias + (wf.m - 0.5) * p.covAmp);
   if (cov < 0.01) return 0;
   const dev = smoothstep(p.devLo, p.devHi, wf.dev);
-  const topN = lerp(p.topMin, 1, dev), hRel = hN / topN;
+  let topN = lerp(p.topMin, 1, dev);
+  if (p.anvil > 0) {            // stepped cumulonimbus towers (clShape, round four)
+    const dn = dev + 0.3 * (n[0] - 0.5) + 0.12 * (n[1] - 0.5);
+    topN = lerp(topN, p.topMin + (0.5 - p.topMin) * smoothstep(0.15, 0.4, dn) + 0.5 * smoothstep(0.5, 0.7, dn), p.anvil);
+  }
+  const hRel = hN / topN;
   const am = p.anvil * smoothstep(p.devLo - 0.17, p.devLo + 0.03, wf.dev);
   const lid = 0.89 + 0.06 * (wf.vari - 0.5) + 0.05 * smoothstep(0.8, 1.0, dev), aThick = 0.035 + 0.15 * am * am;
   const anvil = am > 0.001 ? smoothstep(lid - aThick - 0.025, lid - aThick + 0.025, hN) : 0;
@@ -159,7 +164,7 @@ export function densityFromField(p, wf, n, y, cl, cells) {
   const rad = 0.5 * cells.dMin * Math.pow(cells.dMax / cells.dMin, cl[1]);
   const vig = saturate((cov * 1.45 - cl[2]) * 8), grow = lerp(0.55, 1, vig) + 1.4 * Math.max(cov - 0.62, 0);
   const H = Math.min(2 * rad * lerp(p.aspectLo, p.aspectHi, dev) * lerp(0.75, 1.25, cl[3]) * (0.6 + 0.4 * vig), 0.8 * lid * p.thickness);
-  const hc = h / Math.max(H, 1);
+  const hc = h / Math.max(H * lerp(1, 0.4, p.sheet * (1 - dev)), 1);
   const pf = p.profShallow.map((v, i) => lerp(v, p.profDeep[i], dev));
   const g = (pf[0] + (1 - pf[0]) * (1 - Math.pow(1 - Math.min(hc / pf[1], 1), pf[2])))
           * Math.pow(saturate(1 - Math.pow(saturate((hc - pf[1]) / (1 - pf[1])), 2)), pf[3]);

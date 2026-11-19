@@ -100,7 +100,7 @@ export async function createClouds(ctx) {
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
     tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture },
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
-    uClDet: v4(1, 1, 0.6, 1), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(),
+    uClDet: v4(1, 1, 0.6, 1), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
     uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
@@ -411,7 +411,8 @@ export async function createClouds(ctx) {
     // detail cascade, detailed light samples (not at `low`), crease occlusion, surface refinement
     U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 0.6), dbg('clRef', 1));
     U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', 0), dbg('clWxL', 1), dbg('clAmbSide', 0.5));
-    U.uClDet4.value.set(dbg('clColTau', 1), dbg('clQuilt', 1), dbg('clPouch', 1), 0);
+    U.uClDet5.value.set(dbg('clGrad', 1), 0, 0, 0);
+    U.uClDet4.value.set(dbg('clColTau', 1), dbg('clQuilt', 1), dbg('clPouch', 1), dbg('clCb', 1));
     U.uClDet2.value.set(dbg('clDetA', 0.5), dbg('clDetF', 4), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
   }
 

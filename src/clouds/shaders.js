@@ -83,7 +83,8 @@ uniform vec4 uClCell2;     // x = smallest cell diameter (m), y = log2(largest /
 uniform vec4 uClProf;      // cumulus width profile g(h) of shallow cells (LES fit, tools/neural/les_fit.py): x = width at the base, y = height of the widest point, z = rise exponent, w = dome exponent
 uniform vec4 uClDet;       // round four: x = detail cascade (0 = single round-three octave), y = detailed light samples near the camera, z = crease occlusion strength, w = surface refinement
 uniform vec4 uClDet3;      // x = debug shading (0 = off; 1 = direct sun only, 2 = crease pattern, 3 = depth below the surface, 4 = surface / sun cosine), y = strength of the surface-orientation term, z = 1: light samples fetch the weather map under an anvil, w = share of the horizon band in the sky ambient
-uniform vec4 uClDet4;      // x = decks: sky visibility from the column optical depth of the shadow map, y = quilted deck tops, z = pouches under the deck base
+uniform vec4 uClDet5;      // x = gradient-normalised erosion of cumulus turrets (0 = round three)
+uniform vec4 uClDet4;      // x = decks: sky visibility from the column optical depth of the shadow map, y = quilted deck tops, z = pouches under the deck base, w = stepped cumulonimbus towers
 uniform vec4 uClDet2;      // x = amplitude ratio between detail octaves, y = frequency ratio, z = sharpest density ramp (shape units), w = wisp warp
 uniform vec4 uClProf2;     // the same for developed cells (congestus); uClShape3.z = turret amplitude (x radius)
 
@@ -92,6 +93,7 @@ float clSat(float x) { return clamp(x, 0.0, 1.0); }
 float clDecay = 0.0;       // 0 = growing / mature cell (crisp edges) .. 1 = decaying fragment (soft, frayed)
 float clRadius = 1000.0;   // radius of the cell at this sample (m): erosion scales with the cloud (self-similar turrets)
 float clDetailK = 1.0;     // frequency factor of the detail noise for this cell
+float clGradK = 1.0;       // estimated |gradient| of the shape excess relative to the nominal 1 / km (see clShape)
 float clCav = 0.2;         // side output of clDensityFull: 0 = tip of a lobe .. 1 = bottom of a crease (0.2 = mean / unresolved)
 float clMu0 = 2.0;         // side output of clTauLight: cos between the local surface normal and the sun, estimated from the detail field (2 = not available)
 float clSurf = 0.0;        // side output of clDensityFull: depth of the sample below the eroded surface (shape units, ~km)
@@ -115,6 +117,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float dev = smoothstep(uClShape2.x, uClShape2.y, wx.g);
   float topN = mix(uClShape.z, 1.0, dev);          // nominal depth of this cell as a fraction of the layer
   float hRel = hN / topN;
+  float devRaw = dev;
   // anvil: around fully developed cells the cloud spreads out under the tropopause, far wider than the tower,
   // thick and solid near the core, thinning into ragged patches outward; the lid undulates and bulges over the
   // core (overshooting top)
@@ -145,6 +148,14 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // the mip LOD, so distant clouds keep their size while losing detail)
   float s = n.r * (1.0 + (n.g - 0.48) * uClDebug.x + (n.b - 0.48) * uClDebug.y);
   lid += 0.05 * (n.a - 0.5);
+  // Cumulonimbus (round four): in convective weather the depth does not follow the development smoothly (that gave
+  // broad noise mountains) but in two steps with narrow, noise-broken transitions: a shoulder of congestus at half
+  // height around the storm (flanking towers) and the main tower with near-vertical cauliflower walls to the lid.
+  if (uClShape2.z * uClDet4.w > 0.0) {
+    float dn_ = devRaw + 0.3 * (n.r - 0.5) + 0.12 * (n.g - 0.5);
+    float tN = uClShape.z + (0.5 - uClShape.z) * smoothstep(0.15, 0.4, dn_) + 0.5 * smoothstep(0.5, 0.7, dn_);
+    topN = mix(topN, tN, uClShape2.z); hRel = hN / topN;
+  }
   // Vertical profile. Flat base: the shape fades in over a few tens of metres above the condensation level.
   // Top: a height penalty is SUBTRACTED from the shape, so every cell's height follows the strength of its
   // noise peak (big cells are tall, small ones stay humilis) and the outline is a dome: r(h) ~ peak - k h^2.
@@ -162,6 +173,8 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float vig = clSat((sel - cl.b) * 8.0);
   float grow = mix(0.55, 1.0, vig) + 1.4 * max(cov - 0.62, 0.0);
   float H = min(2.0 * rad * mix(uClCell2.z, uClCell2.w, dev) * mix(0.75, 1.25, cl.a) * (0.6 + 0.4 * vig), 0.8 * lid * uClLayer.w);   // (room under the lid for the turrets)
+  // stratocumulus weather (round four): the cells are low humps embedded in the sheet, only developed ones tower
+  H *= mix(1.0, 0.4, uClCell.w * (1.0 - dev) * uClDet4.y);
   float hc = h / max(H, 1.0);
   vec4 pf = mix(uClProf, uClProf2, dev);
   float g = (pf.x + (1.0 - pf.x) * (1.0 - pow(1.0 - min(hc / pf.y, 1.0), pf.z)))
@@ -170,7 +183,16 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // (inverted Worley is a cone around each feature point; sqrt(2w - w^2) turns the cones into spherical caps, so the
   //  turrets are round bubbles separated by sharp creases instead of soft pyramids)
   float bil = (sqrt(clSat(2.0 * wb - wb * wb)) - 0.8) * uClShape3.z + (n.r - 0.5) * uClShape3.w;
-  float rS = rad * grow * (g + bil * mix(0.35, 1.0, clSat(hc * 1.6)));
+  float turK = rad * grow * mix(0.35, 1.0, clSat(hc * 1.6));
+  float rS = rad * grow * g + turK * bil;
+  // Round four: how steep is this field? The turret term multiplies a Worley bubble by the cell radius, so on the wall
+  // of a turret the excess rises 3-8 times faster than the nominal 1 unit / km. The detail erosion, which subtracts
+  // from the excess, moved such a wall by a tenth of what it moves a plain flank: big cumulus were smooth balloons
+  // up close. Estimate of |gradient| (m / m): the turret amplitude x d(cap)/dw x the Worley slope (~1.2 / cell,
+  // cells of period / 8), plus ~1.2 for the radial and profile terms; the detail stage divides the excess by it.
+  float wbc = clSat(wb), capD = min((1.0 - wbc) / sqrt(max(2.0 * wbc - wbc * wbc, 1e-3)), 2.5);
+  float gT = turK * uClShape3.z * capD * (1.2 * 8.0 * uClNoise.x * kS);
+  float gradC = min(sqrt(1.44 + gT * gT), 8.0) / 1.2;
   float d = rad * (1.0 - (2.0 * cl.r - 1.0));                    // distance from the cell centre (m)
   float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - max(hc - 1.0, 0.0) * H * 3e-3;   // turrets may overshoot the dome a little, never reach the lid
   exC = vig > 0.0 ? mix(exC, -1.0, layerW) : -1.0;
@@ -194,22 +216,24 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   vec4 infoL = vec4(clSat(hRel), uClLayer.x + min(topN * 1.15, 1.0) * uClLayer.w, n.g, 1.0);
   // stratocumulus: a sheet ~600 m deep at the base, cells and gaps from the same noise, flat top under the inversion
   float scTop = min(620.0 * uClLayer.z, 1.0), hs = hN / scTop;
-  float exS = s * bottom - max(1.05 - cov, 0.12) - (smoothstep(0.55, 1.0, hs) * 0.6 + 4.0 * max(hs - 1.0, 0.0)) * 0.5;
+  float exS = s * bottom - max(1.05 - cov, 0.12) - (smoothstep(0.55, 1.0, hs) * 0.6 + 4.0 * max(hs - 1.0, 0.0)) * 0.5
+            + uClDet4.y * 0.3 * (capW - 0.78);       // closed cells: thick centres, thin edges that open into gaps
   // the cumulonimbus core of developed cells in convective weather (columnar by nature) and the decks
-  float ex = exC; info = infoC;
-  if (uClCell.w > 0.0 && exS * uClCell.w > ex) { ex = mix(-0.4, exS, uClCell.w); info = vec4(clSat(hs), uClLayer.x + scTop * uClLayer.w, n.g, 1.0); decay = 0.0; }
+  float ex = exC; info = infoC; bool isCell = true;
+  if (uClCell.w > 0.0 && exS * uClCell.w > ex) { ex = mix(-0.4, exS, uClCell.w); info = vec4(clSat(hs), uClLayer.x + scTop * uClLayer.w, n.g, 1.0); decay = 0.0; isCell = false; }
   if (layerW > 0.0) {
     float exLw = mix(-0.4, exL, layerW);
-    if (exLw > ex || uClShape.w > 0.5) { ex = mix(ex, exL, uClShape.w > 0.5 ? uClShape.w : 1.0); info = infoL; decay = 0.0; }
+    if (exLw > ex || uClShape.w > 0.5) { ex = mix(ex, exL, uClShape.w > 0.5 ? uClShape.w : 1.0); info = infoL; decay = 0.0; isCell = false; }
   }
   // water content grows with height above the base (adiabatic), decaying fragments and glaciated anvils are thinner
   info.w = mix(0.45, 1.0, clSat(info.x * 2.5 + 0.1)) * mix(1.0, mix(0.05, 0.45, am * am), anvil) * mix(0.75, 1.15, wx.a)
          * mix(1.0, 0.6, decay);
-  clDecay = decay; clRadius = rad * grow;
+  clGradK = isCell ? mix(1.0, gradC, uClDet.x * uClDet5.x) : 1.0;
+  clDecay = decay; clRadius = isCell ? rad * grow : 1000.0;      // (layer clouds: no cell, nominal size)
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
   // toward the rim through its density (info.w), not through a soft threshold (which would reveal texel facets)
   ex = mix(ex, s - (1.0 - 0.95 * am), anvil);
-  if (anvil > 0.5) { info.x = clSat(hRel); info.y = uClLayer.y; clDecay = 0.0; }
+  if (anvil > 0.5) { info.x = clSat(hRel); info.y = uClLayer.y; clDecay = 0.0; clRadius = 1000.0; clGradK = 1.0; }
   return ex - 3.0 * clSat((hN - lid) * 14.0);                    // lid at the tropopause / inversion
 }
 // Cheap density (no detail), used by the light march and the shadow map.
@@ -232,6 +256,7 @@ float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
 #define CL_EROSION_LO (CL_EROSION_BIAS + 0.225 * uClDet2.x * (1.0 + uClDet2.x))   // most negative erosion value with the cascade, in units of uClNoise.z * size factor
 float clCap(float w) { return sqrt(clSat(2.0 * w - w * w)); }     // inverted Worley cone -> spherical cap (round lobes, sharp creases)
 float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
+  excess /= clGradK;                                         // ~ signed distance to the un-eroded surface (km)
   float kD = uClNoise.y * clDetailK;
   vec3 q = pa * kD;
   vec2 curl = textureLod(tClCurl, pa.xz * 1.9e-4, 0.0).xy * 2.0 - 1.0;
@@ -566,6 +591,7 @@ void main() {
           // conservative column test on the (mip-filtered, smooth) weather fields
           float covC = uClShape.x + (wx.r - 0.5) * uClShape.y + 0.06;
           float devC = smoothstep(uClShape2.x, uClShape2.y, wx.g + 0.07);
+          if (uClShape2.z * uClDet4.w > 0.0) devC = smoothstep(0.0, 0.25, devC) ;      // stepped Cb towers (clShape)
           // highest altitude the strongest possible noise peak (s ~ 1.25) can reach in this column
           float reach = sqrt(max(0.25 + covC, 0.0) / mix(uClShape3.x, uClShape3.y, devC));
           float topC = uClLayer.x + min(mix(uClShape.z, 1.0, devC) * reach, 1.0) * uClLayer.w + 100.0;
@@ -605,7 +631,9 @@ void main() {
         float lod = clamp(log2(ds / (voxel * 2.0)), 0.0, 2.5);
         vec4 info;
         float exLo = (uClDet.x > 0.5 ? CL_EROSION_LO : CL_EROSION_BIAS) * CL_EROSION_MAXK * uClNoise.z;
-        float ex = clShape(pa, wx, lod, info) + exLo;                 // conservative: erosion can also add
+        float exS_ = clShape(pa, wx, lod, info);
+        exLo *= clGradK;
+        float ex = exS_ + exLo;                                       // conservative: erosion can also add
         if (!fine && !farField) {
           if (ex > 0.0) { fine = true; zeros = 0; continue; }     // hit: re-march this interval with fine steps
           t += ds; continue;
