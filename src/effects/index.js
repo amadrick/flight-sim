@@ -68,7 +68,8 @@ export async function createEffects(ctx) {
     const lowBypass = isAB || ['fighter', 'attack', 'recon'].includes(def.category);
     const group = new THREE.Group(); group.name = 'fx-body';
     player.visual.object3D.add(group);
-    const engines = (g.engines || []).map((en, i) => {
+    const engines = (g.engines || []).map((en0, i) => {
+      const en = { ...en0, nozzle: en0.nozzle || [0, 0, g.tailZ ?? 6], nozzleRadius: en0.nozzleRadius || 0.5 };
       const plume = new Plume(plumeGeo, createPlumeMaterial(shared, header), en, isAB, lowBypass, i * 3.7 + 1.3);
       group.add(plume.mesh);
       const trail = new Trail(ctx, shared, header, anchor, 2048, { life: 60, diff: 10, sink: 1.8, formStart: 0.04, formEnd: 0.3, sigma: 5, albedo: [1, 1, 1], g: 0.72, mergeTau: 14, wobble: 1, spacingMin: 3, spacingMax: 60, maxDt: 0.4 });
@@ -176,6 +177,7 @@ export async function createEffects(ctx) {
     const gType = ground.type, gH = ground.height;
     const overWater = gType === 'water';
     const hum = humidity(alt, overWater);
+    if (s.crashed && !P.crashed) onCrash({ reason: s.crashReason });   // physics flagged a crash without the event
     const crashed = s.crashed || P.crashed;
     if (force('ab')) ctx.controls.throttle = 1;
     if (raw.fxthr != null) ctx.controls.throttle = +raw.fxthr;
@@ -192,7 +194,7 @@ export async function createEffects(ctx) {
     let abSum = 0;
     for (let i = 0; i < P.engines.length; i++) {
       const e = P.engines[i], en = s.engines?.[i];
-      e.plume.update(en, s, camPos, q, dt, now);
+      e.plume.update(crashed ? null : en, s, camPos, q, dt, now);
       abSum += e.plume.ab;
       const thr = clamp((en?.thrust ?? 0) / thrustRef, 0, 1.6);
       const running = en ? en.running !== false : true;
@@ -243,10 +245,13 @@ export async function createEffects(ctx) {
     const wingV = force('vapor') ? 1 : clamp(hum * 1.4 - 0.1, 0, 1) * smooth(3.5 - hum * 1.8, 7.5 - hum * 2.5, gl) * smooth(3000, 12000, qbar);
     const lerxV = !fighter ? 0 : force('vapor') ? 1 : clamp(hum * 1.5, 0, 1) * smooth(14 * DEG, 24 * DEG, aoa) * smooth(2500, 8000, qbar);
     const m = s.mach || 0;
-    const coneV = force('cone') ? 1 : clamp(hum * 1.6 - 0.05, 0, 1) * Math.exp(-(((m - 0.99) / 0.035) ** 2)) * smooth(0, 1500, alt < 6000 ? 1500 : 0);
-    if ((P.prevMach < 1 && m >= 1) && !force('boom')) { /* physics normally emits sonicBoom */ }
+    const coneV = force('cone') ? 1 : clamp(hum * 1.6 - 0.05, 0, 1) * Math.exp(-(((m - 0.99) / 0.035) ** 2)) * smooth(9000, 5000, alt);
+    if (P.prevMach < 1 && m >= 1 && !sawBoomEvent && !crashed) onBoom();   // fallback until physics emits 'sonicBoom'
     P.prevMach = m;
-    P.vapor.update(dt, crashed ? 0 : wingV, crashed ? 0 : lerxV, crashed ? 0 : coneV, s, camPos, q);
+    // airliner/transport high-lift vapour over the wing on humid approaches / rotation
+    let wingV2 = wingV;
+    if (!fighter) wingV2 = Math.max(wingV, clamp((hum - 0.6) * 2.5, 0, 1) * smooth(0.2, 0.8, s.surfaces?.flaps || 0) * smooth(7 * DEG, 12 * DEG, aoa) * smooth(1500, 4000, qbar) * 0.8);
+    P.vapor.update(dt, crashed ? 0 : wingV2, crashed ? 0 : lerxV, crashed ? 0 : coneV, s, camPos, q);
 
     // ---- ground interaction ----
     const gear = P.g.gear || [];
@@ -286,6 +291,8 @@ export async function createEffects(ctx) {
 
   // mark that physics emits real touchdown events, so the fallback doesn't double up
   offs.push(ctx.events.on('touchdown', () => { if (P) P.sawTouchdownEvent = true; }));
+  let sawBoomEvent = false;
+  offs.push(ctx.events.on('sonicBoom', () => { sawBoomEvent = true; }));
 
   let debugFired = false, frameN = 0;
   function debugActions() {
@@ -297,6 +304,16 @@ export async function createEffects(ctx) {
       if (force('crash')) { s.crashed = true; s.crashReason = 'test'; ctx.events.emit('crash', { reason: 'test' }); s.velocity.set(0, 0, 0); }
       if (force('touchdown')) { onTouchdown({ verticalSpeed: -3 }); }
       if (force('boom')) ctx.events.emit('sonicBoom');
+      if (raw.fxwater === '1') {   // teleport over the nearest water at very low height (spray testing)
+        const g0 = {};
+        for (let r = 200; r < 60000; r *= 1.25) for (let a = 0; a < 6.283; a += 0.3) {
+          const x = s.position.x + Math.cos(a) * r, z = s.position.z + Math.sin(a) * r;
+          ctx.world.groundAt(x, z, g0);
+          if (g0.type === 'water' && ctx.world.groundAt(x + Math.sin(s.heading) * 300, z - Math.cos(s.heading) * 300, {}).type === 'water') {
+            s.position.set(x, (P.g.cgHeight || 1.5) + (+raw.fxagl || 6), z); P.levelAlt = s.position.y; r = 1e9; break;
+          }
+        }
+      }
     }
     if (force('lightning') && frameN % 20 === 3) {
       const cam = ctx.camera, f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));

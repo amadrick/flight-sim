@@ -212,7 +212,7 @@ void main() {
   // lumpy, cauliflower structure: noise in tube space (along-trail distance, offset/r), evolving slowly
   vec3 nq = vec3(dist / (6.0 + r * 3.0), 0.0, age * 0.01) + off * ir * 0.3 + vec3(0.0, fract(vR.z * 1e-4), 0.0);
   vec4 nz = fxNoise(nq * 0.25);
-  float lump = mix(1.0, 0.35 + 1.3 * nz.r * (0.6 + 0.8 * nz.a), clamp(age * 0.25, 0.25, 1.0));
+  float lump = mix(1.0, 0.45 + 1.1 * nz.r * (0.6 + 0.8 * nz.a), clamp(age / 50.0, 0.2, 0.85));
   float edge = smoothstep(1.9, 0.4, sqrt(dmin2) * ir + (nz.g - 0.5) * 0.9);
   tau *= sig * lump * edge;
   float a = 1.0 - exp(-tau);

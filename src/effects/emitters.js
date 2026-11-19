@@ -64,19 +64,19 @@ export function dust(ps, pos, vel, rate, dt, q, acc, color, sizeK = 1) {
 }
 
 export function waterSpray(ps, pos, vel, back, intensity, dt, q, acc) {
-  // white mist + rooster tail thrown up and back
-  acc.v += intensity * 90 * dt * q;
+  // white mist sheet + rooster tail thrown up and back (falls ballistically, then mists out)
+  acc.v += intensity * 160 * dt * q;
   const p = ps.p;
   while (acc.v >= 1) {
     acc.v -= 1;
-    const tail = rnd() < 0.5;
-    p.life = tail ? 1.4 + rnd() : 2.5 + rnd() * 2; p.size0 = tail ? 0.6 : 1.5; p.size1 = tail ? 3 + rnd() * 3 : 7 + rnd() * 6;
-    p.drag = tail ? 0.5 : 1.5; p.buoy = tail ? -14 : 0.3; p.kind = KIND.VAPOR; p.emissive = 0; p.delay = 0;
-    p.r = 0.92; p.g = 0.95; p.b = 1.0; p.opacity = (tail ? 0.6 : 0.35) * Math.min(1, intensity * 1.5);
-    _v.copy(vel).multiplyScalar(tail ? 0.35 : 0.15);
-    if (tail) { _v.addScaledVector(back, 4 + rnd() * 8); _v.y += 6 + rnd() * 10 * intensity; }
+    const tail = rnd() < 0.55;
+    p.life = tail ? 1.6 + rnd() * 1.2 : 2.5 + rnd() * 2.5; p.size0 = tail ? 0.8 : 2.0; p.size1 = tail ? 4 + rnd() * 4 : 9 + rnd() * 8;
+    p.drag = tail ? 0.35 : 1.4; p.buoy = tail ? -24 : 0.2; p.kind = KIND.VAPOR; p.emissive = 0; p.delay = 0;
+    p.r = 0.95; p.g = 0.97; p.b = 1.0; p.opacity = (tail ? 0.7 : 0.4) * Math.min(1, intensity * 1.5);
+    _v.copy(vel).multiplyScalar(tail ? 0.45 : 0.2);
+    if (tail) { _v.addScaledVector(back, 6 + rnd() * 10); _v.y += (8 + rnd() * 14) * Math.min(1.3, intensity + 0.3); }
     _v.x += sgn() * 3; _v.z += sgn() * 3; _v.y += rnd() * 2;
-    _p.copy(pos); _p.x += sgn() * 2; _p.z += sgn() * 2;
+    _p.copy(pos); _p.x += sgn() * 1.5; _p.z += sgn() * 1.5;
     ps.spawn(_p, _v);
   }
 }

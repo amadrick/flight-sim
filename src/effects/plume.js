@@ -133,7 +133,7 @@ export class Plume {
     this.ab += (abT - this.ab) * Math.min(1, dt * 10);
     const ab = this.ab;
     const egt = en?.egt ?? 400, n1 = en?.n1 ?? 0;
-    const dry = this.lowBypass && en?.running !== false ? Math.max(0, Math.min(1, (egt - 350) / 500)) * 0.6 + Math.max(0, n1 - 0.6) * 1.2 : 0;
+    const dry = this.lowBypass && en && en.running !== false ? Math.max(0, Math.min(1, (egt - 350) / 500)) * 0.6 + Math.max(0, n1 - 0.6) * 1.2 : 0;
     const u = this.u, r0 = this.r0;
     const alt = state?.altitude || 0;
     const expand = 1 + Math.min(0.6, alt / 20000);
