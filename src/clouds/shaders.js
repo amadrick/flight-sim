@@ -81,28 +81,39 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   info = vec4(0.0, uClLayer.y, 0.5, 1.0);
   if (hN <= 0.0 || hN >= 1.0) return -1.0;
   float cov = clSat(uClShape.x + (wx.r - 0.5) * uClShape.y);
+  if (cov < 0.01) return -1.0;
   float dev = smoothstep(uClShape2.x, uClShape2.y, wx.g);
-  float topN = mix(uClShape.z, 1.0, dev);
-  if (cov < 0.01 || hN >= topN) return -1.0;
+  float topN = mix(uClShape.z, 1.0, dev);          // nominal depth of this cell as a fraction of the layer
   float hRel = hN / topN;
-  // anvil: fully developed cells spread out under the tropopause
-  float anvil = uClShape2.z * smoothstep(0.7, 1.0, dev) * smoothstep(0.62, 0.88, hRel);
-  cov = pow(cov, mix(1.0, 0.35, anvil));
+  // anvil: around fully developed cells the cloud spreads out under the tropopause, far wider than the tower,
+  // thick and solid near the core, thinning into ragged patches outward; the lid undulates and bulges over the
+  // core (overshooting top)
+  float am = uClShape2.z * smoothstep(uClShape2.x - 0.17, uClShape2.x + 0.03, wx.g);
+  float lid = 0.89 + 0.06 * (wx.a - 0.5) + 0.05 * smoothstep(0.8, 1.0, dev);
+  float aThick = 0.035 + 0.15 * am * am;
+  float anvil = step(0.001, am) * smoothstep(lid - aThick - 0.025, lid - aThick + 0.025, hN);
   vec3 q = pa * uClNoise.x * vec3(1.0, uClDebug.w, 1.0) + uClNoiseOfs.xyz;
   vec4 n = textureLod(tClBase, q, lod);
   // billows: the volume's own mid / high Worley fbm bulges the low-frequency shape (they fade to their mean with
   // the mip LOD, so distant clouds keep their size while losing detail)
   float s = n.r * (1.0 + (n.g - 0.48) * uClDebug.x + (n.b - 0.48) * uClDebug.y);
-  // vertical profile. Flat base: the shape fades in over a few tens of metres above the condensation level.
+  lid += 0.05 * (n.a - 0.5);
+  // Vertical profile. Flat base: the shape fades in over a few tens of metres above the condensation level.
   // Top: a height penalty is SUBTRACTED from the shape, so every cell's height follows the strength of its
   // noise peak (big cells are tall, small ones stay humilis) and the outline is a dome: r(h) ~ peak - k h^2.
+  // Nothing is cut at a height-field: tops and flanks are always noise surfaces (cauliflower, not mountains).
   float bottom = clSat(hN * uClLayer.w / uClShape2.w);
-  float prof = mix(hRel * hRel, smoothstep(0.65, 1.0, hRel), uClShape.w);        // cumulus dome / flat stratus deck
-  prof = prof * mix(uClShape3.x, uClShape3.y, dev) * (1.0 - anvil) + 2.0 * clSat((hRel - 0.9) * 10.0);
-  info = vec4(hRel, uClLayer.x + topN * uClLayer.w, n.g, 1.0);
+  float prof = mix(hRel * hRel, smoothstep(0.65, 1.0, hRel) + 4.0 * max(hRel - 1.0, 0.0), uClShape.w);   // dome / flat deck
+  prof *= mix(uClShape3.x, uClShape3.y, dev);
+  info = vec4(clSat(hRel), uClLayer.x + min(topN * 1.15, 1.0) * uClLayer.w, n.g, 1.0);
   // water content grows with height above the base (adiabatic), glaciated anvils are thinner
-  info.w = mix(0.45, 1.0, clSat(hRel * 2.5 + 0.1)) * mix(1.0, 0.45, anvil) * mix(0.75, 1.15, wx.a);
-  return s * bottom - (1.0 - cov) - prof;
+  info.w = mix(0.45, 1.0, clSat(hRel * 2.5 + 0.1)) * mix(1.0, mix(0.05, 0.45, am * am), anvil) * mix(0.75, 1.15, wx.a);
+  // stratus decks keep a minimum threshold so the long base ramp turns the noise into an undulating, ragged base
+  float ex = s * bottom - max(1.0 - cov, 0.22 * uClShape.w) - prof;
+  // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
+  // toward the rim through its density (info.w), not through a soft threshold (which would reveal texel facets)
+  ex = mix(ex, s - (1.0 - 0.95 * am), anvil);
+  return ex - 3.0 * clSat((hN - lid) * 14.0);                    // lid at the tropopause / inversion
 }
 // Cheap density (no detail), used by the light march and the shadow map.
 float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
@@ -237,7 +248,7 @@ float clTauLight(vec3 pa, float lod, float jit) {
     float u = (float(j) + 1.0) / float(CL_LIGHT_STEPS);
     float d1 = 1000.0 * u * u;                                     // segment ends: 62, 250, 562, 1000 m (4 steps)
     float dl = d1 - d0;
-    vec3 pl = pa + uClLightDir * (d0 + dl * (0.3 + 0.4 * jit));
+    vec3 pl = pa + uClLightDir * (d0 + dl * jit);
     vec4 wx = clWeather(pl.xz, max(lod - 1.0, 0.0));
     float d = clDensityBase(pl, wx, lod + 1.0 + float(j) * 0.5, info);
     tau += d * info.w * dl;
@@ -318,19 +329,22 @@ void main() {
       float cosT = dot(rd, uClLightDir);
       float voxel = 1.0 / (uClNoise.x * 128.0), voxelD = 1.0 / (uClNoise.y * 32.0);
 
-      // step sizes: fine steps ~ Kf * distance inside cloud, coarse steps in empty space; the relative coarse step
-      // is widened per ray so that the whole interval fits the step budget (long grazing rays through the layer).
+      // Step sizes. Inside cloud: fine steps ~ Kf * distance. Searching for cloud: coarse steps (~3 Kf * distance),
+      // widened as the step budget is consumed so long grazing rays still reach the far field. Where the weather
+      // map says the whole column is empty at this altitude (clear patch, or above the local tops): big free steps.
       float Kf = uClStep.x;
-      float Kc = max(3.0 * Kf, log(max(t1, 3000.0) / max(t0, 1500.0)) / (0.5 * float(CL_STEPS)));
       float t = t0;
       bool fine = false; int zeros = 0;
 
       for (int i = 0; i < CL_STEPS; i++) {
         if (t >= t1 || T < 0.004) break;
+        float left = float(CL_STEPS - i);
+        float need = log(min(t1, max(40000.0, 8.0 * t)) / max(t, 1500.0)) / (0.8 * left);
+        float Kc = max(3.0 * Kf, need);
         float dsC = max(uClStep.z, Kc * t);
         // far field (coarse step larger than a cloud): point-testing would miss clouds, so every step integrates
-        // (unbiased optical depth); the fine step also widens as the step budget runs out.
-        float farK = max(smoothstep(700.0, 1800.0, dsC), smoothstep(0.55, 1.0, float(i) / float(CL_STEPS)));
+        // (unbiased optical depth) with steps blending from fine to coarse.
+        float farK = smoothstep(700.0, 1800.0, dsC);
         float dsF = max(uClStep.y, mix(Kf, Kc, farK) * t);
         bool farField = dsF > 0.6 * dsC;
         float ds = min((fine || farField) ? dsF : dsC, t1 - t);
@@ -339,7 +353,22 @@ void main() {
         vec3 pr = uCameraPos + rd * ts;
         vec3 pa = vec3(pr.x + uClOriginAir.x, h, pr.z + uClOriginAir.z);
         float fadeFar = 1.0 - smoothstep(0.75 * uClStep.w, uClStep.w, ts);
-        vec4 wx = clWeather(pa.xz, clamp(log2(ds * uClWx.w) - 1.0, 0.0, 4.0));
+        vec4 wx = clWeather(pa.xz, clamp(log2(ds * uClWx.w), 0.0, 5.0));
+        if (!fine && h >= uClLayer.x) {
+          // conservative column test on the (mip-filtered, smooth) weather fields
+          float covC = uClShape.x + (wx.r - 0.5) * uClShape.y + 0.06;
+          float devC = smoothstep(uClShape2.x, uClShape2.y, wx.g + 0.07);
+          // highest altitude the strongest possible noise peak (s ~ 1.25) can reach in this column
+          float reach = sqrt(max(0.25 + covC, 0.0) / mix(uClShape3.x, uClShape3.y, devC));
+          float topC = uClLayer.x + min(mix(uClShape.z, 1.0, devC) * reach, 1.0) * uClLayer.w + 100.0;
+          if (uClShape2.z * smoothstep(uClShape2.x - 0.17, uClShape2.x + 0.03, wx.g + 0.07) > 0.0) topC = uClLayer.y;   // anvil overhead
+          if (covC <= 0.0 || h > topC) {
+            float big = max(ds, 0.14 * t);
+            float dhdt = rd.y + ts / CL_R;                           // d(altitude)/dt along the ray
+            if (covC > 0.0 && dhdt < 0.0) big = min(big, max((h - topC) / -dhdt, ds));   // do not dive through the tops
+            t += min(big, t1 - t) ; continue;
+          }
+        }
 
         if (h < uClLayer.x) {
           // ---- below the base: rain shafts / virga (smooth, so coarse steps integrate directly) ----
@@ -461,22 +490,26 @@ void main() {
   vec4 pc = uPrevViewProj * vec4(wp, 1.0);
   vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
   bool ok = uClTemporal.x > 0.5 && pc.w > 0.0 && all(greaterThan(puv, vec2(0.0))) && all(lessThan(puv, vec2(1.0)));
-  float alpha = 1.0;
+  float alpha = 1.0, count = 1.0;
   if (ok) {
     vec4 h = texture(tClHist, puv); vec4 ha = texture(tClHistAux, puv);
     // disocclusion: the scene surface in front of / behind the cloud changed (aircraft edges, terrain silhouettes)
     float dz = abs(log2(max(ha.x, 1e-4) / max(dFull, 1e-4)));
+    float reject = smoothstep(0.15, 0.5, dz);
     float exact = max(f.x, 1.0 - f.x) * max(f.y, 1.0 - f.y);   // 1 when this pixel is one of this frame's samples
     exact *= exact; exact *= exact;
     alpha = mix(uClTemporal.y, uClTemporal.z, exact);
+    // young history (after a cut / disocclusion) converges as a running mean instead of an exponential one
+    alpha = max(alpha, 1.0 / (1.0 + ha.z));
     // parallax the single-depth reprojection cannot represent (flying fast past/through near cloud): trust history less
     float par = uClTemporal.w / max(cloudKm * 1000.0, 1.0) * uClWindVel.w;
     alpha = max(alpha, clamp(par * 0.06 - 0.1, 0.0, 0.6));
-    alpha = mix(alpha, 1.0, smoothstep(0.15, 0.5, dz));
+    alpha = mix(alpha, 1.0, reject);
     cur = mix(h, cur, alpha);
+    count = mix(min(ha.z + 1.0, 48.0), 1.0, reject);
   }
   oColor = max(cur, vec4(0.0));
-  oAux = vec4(dFull, cloudKm, 0.0, 1.0);
+  oAux = vec4(dFull, cloudKm, count, 1.0);
 }`;
 }
 

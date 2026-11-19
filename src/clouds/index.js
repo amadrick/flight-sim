@@ -80,7 +80,8 @@ export async function createClouds(ctx) {
   });
 
   const WX_RES = ctx.quality.level === 'low' ? 512 : 1024;
-  const weatherRT = mkRT(WX_RES, WX_RES, { type: THREE.UnsignedByteType, minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true });
+  // half float: 8 bits would quantise the smooth fields into visible contour lines along anvil / deck edges
+  const weatherRT = mkRT(WX_RES, WX_RES, { minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true });
   const cirrusRT = mkRT(512, 512, { type: THREE.UnsignedByteType, minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true,
     wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping });
   let shadowRes = 0, shadowFront = null, shadowBack = null;
@@ -113,7 +114,7 @@ export async function createClouds(ctx) {
 
   // ------------------------------------------------------------------------------------------------ passes
   let scatterModel = null;
-  let N = 2, steps = 80, lightSteps = 4, shadowSteps = 16, shadowStrips = 8, maxDist = 200000;
+  let N = 2, steps = 80, lightSteps = 4, shadowSteps = 16, shadowStrips = 8, maxDistQ = 200000;
   let marchPass = null, resolvePass = null, shadowPass = null;
   const outputPass = mkPass(OUTPUT_FRAG);
   const weatherPass = mkPass(weatherBakeFragment(WEATHER_FIELD_GLSL));
@@ -128,7 +129,7 @@ export async function createClouds(ctx) {
     shadowRes = lvl === 'low' ? 256 : lvl === 'medium' ? 512 : 1024;
     shadowSteps = lvl === 'low' ? 10 : lvl === 'medium' ? 14 : 20;
     shadowStrips = 8;
-    maxDist = dbg('cloudDist', lvl === 'low' ? 150000 : 200000);
+    maxDistQ = dbg('cloudDist', lvl === 'low' ? 150000 : 200000);
   }
 
   function buildMaterials() {
@@ -327,6 +328,8 @@ export async function createClouds(ctx) {
     const tanHalf = Math.tan((cam.fov || 60) * Math.PI / 360);
     const focalPx = fullH / (2 * tanHalf);
     U.uClFullRes.value.set(fullW, fullH, N / focalPx, 0);
+    // nothing is visible far beyond the haze: shorter rays in murky weather (the expensive presets)
+    const maxDist = Math.min(maxDistQ, Math.max(60000, (ctx.weather.visibility || 60000) * 8));
     U.uClStep.value.set(dbg('clKf', 0.9 / steps), dbg('clMinFine', 1200 / steps), dbg('clMinCoarse', 110), maxDist);
     const j = jitterSeq[jitterIdx % jitterSeq.length];
     // blue-noise phase: stratified inside one NxN cycle (the neighbours blended by the upsample get evenly spaced
@@ -381,7 +384,7 @@ export async function createClouds(ctx) {
     const write = histA, read = histB;
     U.tClMarch.value = marchRT.textures[0]; U.tClMarchAux.value = marchRT.textures[1];
     U.tClHist.value = read.textures[0]; U.tClHistAux.value = read.textures[1];
-    U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.07), dbg('clAlphaExact', 0.2), Math.min(moved, 600));
+    U.uClTemporal.value.set(historyValid ? 1 : 0, dbg('clAlpha', 0.06), dbg('clAlphaExact', 0.12), Math.min(moved, 600));
     resolvePass.render(r, write);
     // 3. output
     U.tClHist.value = write.textures[0];
