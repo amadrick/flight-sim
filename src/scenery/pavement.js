@@ -7,7 +7,7 @@ import { CURVATURE_GLSL } from '../core/glsl.js';
 import { glyphUV } from './textures.js';
 
 const DEG = Math.PI / 180;
-export const KIND_ID = { rwy: 0, rwyConcrete: 1, twy: 2, apron: 3, shoulder: 4, blast: 5, road: 6, lot: 7 };
+export const KIND_ID = { rwy: 0, rwyConcrete: 1, twy: 2, apron: 3, shoulder: 4, blast: 5, road: 6, lot: 7, apronA: 8 };
 export const LAYER_Y = { 0: 0.01, 1: 0.015, 2: 0.02, 3: 0.025, 4: 0.03 };
 export const PAINT_Y = 0.032;
 export const MAX_POOLS = 24;
@@ -144,7 +144,7 @@ export function makePavementMaterial(ctx, shared, pools) {
             rough = 0.84 + 0.1 * aggr - 0.3 * stain - 0.25 * ob;
           } else {
             // asphalt: aggregate, paving-lane seams, patches (fresh = dark, old = grey), tar-sealed crack network
-            float base = kind < 0.5 ? 0.12 : kind < 2.5 ? 0.125 : kind < 4.5 ? 0.15 : kind < 5.5 ? 0.115 : kind < 6.5 ? 0.1 : 0.11;
+            float base = kind < 0.5 ? 0.12 : kind < 2.5 ? 0.125 : kind < 4.5 ? 0.15 : kind < 5.5 ? 0.115 : kind < 6.5 ? 0.1 : kind < 7.5 ? 0.11 : 0.135;
             col = vec3(base) * vec3(1.0, 0.985, 0.955) * (0.7 + 0.6 * aggr) * (0.84 + 0.32 * nB.g) * (0.88 + 0.24 * nC.b);
             float lane = kind < 2.5 ? 7.5 : 5.0;
             float seam = scnLines(sl.y + 0.06, lane, 0.12);
@@ -397,7 +397,7 @@ export function buildFringeGeometry(L) {
     }
   };
   for (const r of L.pave) {
-    const w = r.kind === 'rwy' || r.kind === 'rwyConcrete' ? 5 : r.kind === 'shoulder' ? 7 : r.kind === 'apron' ? 5 : r.kind === 'blast' ? 6 : 4;
+    const w = r.kind === 'rwy' || r.kind === 'rwyConcrete' ? 5 : r.kind === 'shoulder' ? 7 : r.kind === 'apron' || r.kind === 'apronA' ? 5 : r.kind === 'blast' ? 6 : 4;
     ring(r.x, r.z, r.hdg, r.len, r.wid, w);
   }
   for (const R of L.roads) for (let i = 0; i + 1 < R.pts.length; i++) {

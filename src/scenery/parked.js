@@ -85,7 +85,7 @@ class PB {
 const COL = {
   white: lin(0xf2f2f0), belly: lin(0xb9bdc1), wing: lin(0xb4b8bc), dark: lin(0x1e2125), tyre: lin(0x101010),
   win: lin(0x15191e), metal: lin(0x8a8f95), intake: lin(0x2a2d31), fan: lin(0x45484c), black: lin(0x0b0b0b),
-  milGrey: lin(0x7d858c), milGreyD: lin(0x5f676e), canopy: lin(0x2c3a33), red: lin(0xa01818),
+  milGrey: lin(0x8c8e8f), milGreyD: lin(0x6c6f71), canopy: lin(0x2c3a33), red: lin(0xa01818),
 };
 const A1 = [1, 0], A2 = [0, 1], A0 = [0, 0];
 

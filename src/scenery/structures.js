@@ -234,7 +234,13 @@ function building(B, b, L) {
       const fs = b.faceSide;
       B.box({ pa: 'office', na: 'office', pr: fs > 0 ? 'glass' : 'office', nr: fs < 0 ? 'glass' : 'office', top: isl ? null : 'roof' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, isl ? C.white : C.offwhite);
       if (isl) B.gable('plain', 'plain', b.x, b.h, b.z, b.hdg, b.len + 3, b.wid + 4, 4.5, C.terracotta, C.white);
-      else { B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 0.4, b.wid + 0.4, 0.8, C.offwhite); rooftop(B, b, 3, b.h); }
+      else {
+        // alpine regional terminal: stone plinth, deep-eaved slate gable roof with timber gable ends and a glazed gable
+        B.box('concrete', b.x, 0, b.z, b.hdg, b.len + 0.3, b.wid + 0.3, 1.2, lin(0x8f8a80));
+        B.gable('roof', 'plain', b.x, b.h, b.z, b.hdg, b.len + 5, b.wid + 7, 6.5, lin(0x3a3d42), lin(0x7a5a3c));
+        B.box({ bottom: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 5, b.wid + 7, 0.01, lin(0x7a5a3c));
+        B.box('plain', b.x + d.dx * (b.len * 0.3), b.h + 3.5, b.z + d.dz * (b.len * 0.3), b.hdg, 1.4, 1.4, 4.2, lin(0x8f8a80));   // chimney
+      }
       // airside canopy
       B.box({ top: 'plain', bottom: 'plain', pr: 'plain', nr: 'plain', pa: 'plain', na: 'plain' }, b.x + d.rx * fs * (b.wid / 2 + 3), 3.4, b.z + d.rz * fs * (b.wid / 2 + 3), b.hdg, b.len * 0.6, 6, 0.4, C.white);
       break;

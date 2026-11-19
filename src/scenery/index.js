@@ -120,7 +120,7 @@ export async function createScenery(ctx) {
   const sockGeo = makeWindsockGeometry();
   const sockMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }));
 
-  const parkedMat = addPools(addCurvature(makeParkedMaterial({ roughness: 0.32, metalness: 0.15 })));
+  const parkedMat = addPools(addCurvature(makeParkedMaterial({ roughness: 0.42, metalness: 0.1 })));
   const vehMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.1 })));
   const GEO = { narrow: makeAirliner(), wide: makeWidebody(), tanker: makeTanker(), prop: makeTurboprop(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
   // fictional airlines: [tail / engines, belly / cheatline]

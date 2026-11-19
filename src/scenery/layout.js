@@ -327,7 +327,7 @@ function layoutHub(L, F, spec) {
         L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: k === 1 ? 'medium' : 'heavy', paint: true, number: 70 + k, cargo: true, leadFrom: F.P(a, cgLane) });
       }
       L.buildings.push({ type: 'cargo', ...F.P(aCg, cIn + s * (cgDep + 32)), hdg: F.H, len: 230, wid: 56, h: 15, faceSide: -s });
-      L.pave.push(rect(F, aCg, cIn + s * (cgDep + 82), 240, 40, 'apron', 'apron', { layer: 1 }));   // truck yard
+      L.pave.push(rect(F, aCg, cIn + s * (cgDep + 82), 240, 40, 'road', 'apron', { layer: 1 }));   // truck yard
       for (let k = 0; k < 3; k++) { const p = F.P(aCg - 100 + k * 100, cIn + s * (cgDep - 4)); L.floods.push({ x: p.x, z: p.z, h: 25, aim: { x: F.r.x * -s, z: F.r.z * -s } }); }
     }
     // maintenance hangar at one end of the apron
@@ -492,7 +492,7 @@ function layoutSmall(L, F, spec, kind) {
   const cIn = R.twyC + s * (tw / 2 + tsh);
   const dep = spec.apronDepth, len = kind === 'island' ? 380 : 320, aC = R.a + 30;
   const cm = cIn + s * dep / 2, cOut = cIn + s * dep;
-  L.pave.push(rect(F, aC, cm, len, dep, 'apron', 'apron', { layer: 2 }));
+  L.pave.push(rect(F, aC, cm, len, dep, 'apronA', 'apron', { layer: 2 }));
   L.aprons.push({ a: aC, c: cm, len, dep, side: s, cIn, cOut });
   const cLane = cIn + s * 22;
   L.taxiLines.push({ pts: [F.P(aC - len / 2 + 15, cLane), F.P(aC + len / 2 - 15, cLane)], kind: 'cl' });
@@ -514,11 +514,11 @@ function layoutSmall(L, F, spec, kind) {
   L.tower = { x: tp.x, z: tp.z, h: kind === 'island' ? 16 : 18, cab: 5, kind: 'small', hdg: F.H };
   // hangars (T-hangar row + a maintenance hangar)
   const aHg = aC + len / 2 + 90;
-  L.pave.push(rect(F, aHg, cIn + s * 45, 150, 90, 'apron', 'apron', { layer: 2 }));
+  L.pave.push(rect(F, aHg, cIn + s * 45, 150, 90, 'apronA', 'apron', { layer: 2 }));
   L.buildings.push({ type: 'hangar', ...F.P(aHg - 30, cIn + s * 112), hdg: norm360(F.H + (s > 0 ? 0 : 180)), len: 40, wid: 36, h: 10, doorSide: -s });
   L.buildings.push({ type: 'thangar', ...F.P(aHg + 45, cIn + s * 112), hdg: F.H, len: 70, wid: 18, h: 4.5 });
   L.buildings.push({ type: 'firestation', ...F.P(aC - len / 2 - 40, cIn + s * 40), hdg: F.H, len: 26, wid: 18, h: 7 });
-  L.pave.push(rect(F, aC - len / 2 - 40, cIn + s * 12, 30, 24, 'apron', 'apron', { layer: 2 }));
+  L.pave.push(rect(F, aC - len / 2 - 40, cIn + s * 12, 30, 24, 'apronA', 'apron', { layer: 2 }));
   L.props.push({ type: 'fuelfarm', ...F.P(aC - len / 2 - 40, cOut + s * 30), hdg: F.H, n: 2, r: 4, h: 6 });
   L.props.push({ type: 'mast', ...F.P(aC + 140, cOut + s * 60), h: 22 });
   // car park + access road
