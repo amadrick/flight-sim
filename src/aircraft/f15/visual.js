@@ -85,7 +85,6 @@ export function createVisual(ctx, opts = {}) {
   const cSB = atlas.chart('stabBot', { type: 'plan', x: [1.85, 4.4], z: [3.6, 7.35], view: 'bottom', mirror: true, density: 0.6 });
   const cFin = { L: atlas.chart('finLV', { type: 'side', z: [1.7, 6.9], y: [0.45, 3.95], view: 'left', density: 0.95 }), R: atlas.chart('finRV', { type: 'side', z: [1.7, 6.9], y: [0.45, 3.95], view: 'right', density: 0.95 }) };
   const cBoom = atlas.chart('boom', { type: 'unwrap', z: [1.8, 7.5], girth: 1.5, vScale: 0.9, density: 0.7 });
-  const cPanel = atlas.chart('panel', { type: 'rect', w: 0.9, h: 0.9, density: 2.2 });
   const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.8, h: 0.95, density: 0.7 });
   atlas.pack();
   const U = {
@@ -292,11 +291,9 @@ export function createVisual(ctx, opts = {}) {
     stat.add(K.box(0.9, 0.62, 0.05, U.interior).translate(0, 0.52, -6.24));
     for (const [x, z, w, h, d] of [[-0.22, -5.9, 0.3, 0.1, 0.42], [0.2, -5.75, 0.34, 0.08, 0.5], [0, -5.0, 0.6, 0.07, 0.4]]) stat.add(K.box(w, h, d, U.dark).translate(x, 0.87 + h / 2, z));
   }
-  // glareshield coaming: a shallow curved hood over the instrument panel
-  stat.add(K.loft({ stations: [{ z: -8.22, y: 0.74, w: 0.36, top: 0.04, bot: 0.01, kTop: 0.7 }, { z: -7.95, y: 0.75, w: 0.43, top: 0.075, bot: 0.01, kTop: 0.7 }, { z: -7.73, y: 0.75, w: 0.44, top: 0.07, bot: 0.01, kTop: 0.7 }],
-    segments: 24, step: 0.1, tRange: [0.25, 0.75], uv: U.console, capEnd: 'flat', capUV: U.console }).mesh);
-  const panelQuad = (z, y0, y1, hw, b0, b1) => { const i0 = stat.vertexCount; for (const [x, y, b] of [[-hw, y0, b1], [hw, y0, b1], [hw, y1, b0], [-hw, y1, b0]]) { const uv = cPanel.uv(x + 0.45, b); stat.vert(x, y, z, 0, 0.25, 1, uv[0], uv[1]); } stat.quad(i0, i0 + 1, i0 + 2, i0 + 3); };
-  panelQuad(-7.76, 0.36, 0.8, 0.43, 0.0, 0.44);
+  // instrument panel + glareshield (kit): top of the coaming at ≈ 0.83 as on the real jet; the F-15C keeps its radar scope (VSD)
+  // and an attitude indicator, the E multi-purpose displays
+  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.62, drop: 0.51, height: 0.42, width: 0.8, pages: isE ? ['mfdSA', 'mfdRadar'] : ['mfdRadar', 'standby'], uv: U.console }));
   stat.add(K.box(0.22, 0.32, 0.45, U.console).translate(0, 0.16, -7.5));                   // centre pedestal
   for (const sx of [-1, 1]) stat.add(K.box(0.15, 0.1, 1.2, U.console).translate(sx * 0.38, 0.52, -6.95));   // side consoles
   stat.add(K.stick({ base: [0, 0.32, -7.42], height: 0.32, uv: U.black, uvGrip: U.dark }));
@@ -316,8 +313,7 @@ export function createVisual(ctx, opts = {}) {
   const pilotUV = { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove };
   const pilotMesh = K.pilot({ eye, recline: 14, stick: [0, -0.43, -0.3], throttle: [-0.34, -0.42, -0.08], uv: pilotUV });
   if (isE) {   // WSO cockpit
-    panelQuad(-6.71, 0.6, 1.0, 0.36, 0.48, 0.88);
-    stat.add(K.box(0.8, 0.44, 0.05, U.console).translate(0, 0.8, -6.69));
+    stat.add(K.instrumentPanel({ eye: eye2, kind: 'fighter', dist: 0.56, drop: 0.45, height: 0.36, width: 0.72, mfd: 0.15, pages: ['mfdStores', 'mfdSA'], uv: U.console }));
     for (const sx of [-1, 1]) stat.add(K.stick({ base: [sx * 0.33, 0.66, -6.35], height: 0.14, uv: U.black, uvGrip: U.dark }));
     stat.add(aces(eye2));
     stat.add(K.pilot({ eye: eye2, recline: 14, stick: [0.33, -0.42, -0.18], throttle: [-0.33, -0.42, -0.18], uv: pilotUV }));
@@ -507,7 +503,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- materials ----------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, isE, fus, nacPB, W, fins, cFus, cNac, cCft, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, paintF, T_SB, T_SILL, cft });
+  paint(atlas, { SC, isE, fus, nacPB, W, fins, cFus, cNac, cCft, cWT, cWB, cST, cSB, cFin, cBoom, cNoz, paintF, T_SB, T_SILL, cft });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
@@ -618,7 +614,7 @@ export function createVisual(ctx, opts = {}) {
     setStab.R(sf.elevatorR * 25 * DEG); setStab.L(sf.elevatorL * 25 * DEG);
     rud.R.set(sf.rudder * 25 * DEG); rud.L.set(sf.rudder * 25 * DEG);
     setSB(sf.speedbrake * 45 * DEG);
-    for (let i = 0; i < 2; i++) { const e = S.eng[i] || S.eng[0]; nozNodes[i].morphTargetInfluences[0] = e.nozzle ?? 0; K.abGlowColor(glowMat[i].color, e, S.night); if (!(e.afterburner > 0.02)) glowMat[i].color.multiplyScalar(0.18 + 0.5 * S.night); }
+    for (let i = 0; i < 2; i++) { const e = S.eng[i] || S.eng[0]; nozNodes[i].morphTargetInfluences[0] = e.nozzle ?? 0; K.abGlowColor(glowMat[i].color, e, S.night); }
     // variable-capture intakes: full down (+11°) parked / slow, schedule with AoA in flight, −4° supersonic
     const raw = S.raw || {}, aoa = Number.isFinite(raw.aoa) ? raw.aoa / DEG : 0, mach = Number.isFinite(raw.mach) ? raw.mach : 0;
     let target;
@@ -675,7 +671,7 @@ const CAMO = {
 };
 
 function paint(atlas, o) {
-  const { SC, isE, fus, nacPB, W, fins, cFus, cNac, cCft, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, paintF, T_SB, T_SILL } = o, F = K.FINISH;
+  const { SC, isE, fus, nacPB, W, fins, cFus, cNac, cCft, cWT, cWB, cST, cSB, cFin, cBoom, cNoz, paintF, T_SB, T_SILL } = o, F = K.FINISH;
   const light = paintF(SC.light), dark = paintF(SC.dark), mark = SC.mark, wx = SC.weather;
   const camo = SC.camo ? CAMO[SC.camo] : null;
   const slime = { color: '#c4cc95', rough: 0.35, metal: 0 };
@@ -929,26 +925,6 @@ function paint(atlas, o) {
     }
     Q.fill((g) => g.rect(0, 0.62, 3.8, 0.33), { color: '#3e3632', rough: 0.6, metal: 0.7 }, { alpha: 0.55, feather: 8 });
     Q.noise({ alpha: 0.12, scale: 0.8, stretch: [1, 2] });
-  }
-  // ================= instrument panel(s) (front: top half, rear WSO: bottom half) =================
-  {
-    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#22262a', rough: 0.65, metal: 0 });
-    const scr = (a, b, w, h, col) => { Q.fill((g) => g.rect(a - 0.012, b - 0.012, w + 0.024, h + 0.024), { color: '#2c3034', rough: 0.6, metal: 0 }); Q.fill((g) => g.rect(a, b, w, h), { color: '#050607', rough: 0.15, metal: 0 }); Q.fill((g) => g.rect(a + 0.008, b + 0.008, w - 0.016, h - 0.016), { color: col, rough: 0.12, metal: 0, emissive: col }); };
-    const gauge = (a, b, r) => { Q.fill((g) => { g.arc(a, b, r + 0.008, 0, Math.PI * 2); }, { color: '#33373b', rough: 0.5, metal: 0.2 }); Q.fill((g) => { g.arc(a, b, r, 0, Math.PI * 2); }, { color: '#0b0c0d', rough: 0.1, metal: 0 }); Q.stroke((g) => { for (let k = 0; k < 12; k++) { const t = k / 12 * Math.PI * 2; g.moveTo(a + Math.cos(t) * r * 0.75, b + Math.sin(t) * r * 0.75); g.lineTo(a + Math.cos(t) * r * 0.92, b + Math.sin(t) * r * 0.92); } }, 0.004, { color: '#d8d8d0' }); Q.stroke((g) => { g.moveTo(a, b); g.lineTo(a + r * 0.6, b - r * 0.5); }, 0.005, { color: '#e8e8e0' }); };
-    if (!isE) {
-      // F-15C: radar VSD (left), ADI / HSI (centre), TEWS (right), engine gauges, armament panel strip across the top
-      scr(0.05, 0.12, 0.2, 0.18, '#0c2a12'); scr(0.66, 0.13, 0.17, 0.16, '#0b2210');
-      gauge(0.45, 0.18, 0.07); gauge(0.45, 0.34, 0.065); gauge(0.31, 0.32, 0.035); gauge(0.59, 0.32, 0.035);
-      for (let i = 0; i < 6; i++) gauge(0.67 + (i % 2) * 0.09, 0.32 + Math.floor(i / 2) * 0.045, 0.02);
-      for (let i = 0; i < 4; i++) gauge(0.08 + (i % 2) * 0.1, 0.35 + Math.floor(i / 2) * 0.045, 0.02);
-      Q.fill((g) => g.rect(0.04, 0.02, 0.82, 0.07), { color: '#2a2e32', rough: 0.55, metal: 0 });
-      for (let i = 0; i < 9; i++) Q.fill((g) => g.rect(0.07 + i * 0.088, 0.035, 0.05, 0.035), { color: i === 4 ? '#3a2c10' : '#1a1c1e', rough: 0.3, metal: 0, emissive: i === 4 ? '#2a1c04' : undefined });
-    } else {
-      scr(0.06, 0.15, 0.2, 0.2, '#0c2a14'); scr(0.64, 0.15, 0.2, 0.2, '#0c2a14'); scr(0.33, 0.2, 0.24, 0.2, '#14301c');
-      Q.fill((g) => g.rect(0.33, 0.03, 0.24, 0.13), { color: '#202326', rough: 0.5, metal: 0 }); scr(0.36, 0.05, 0.18, 0.05, '#2a3a12');
-      scr(0.04, 0.52, 0.19, 0.19, '#0c2a14'); scr(0.25, 0.5, 0.19, 0.19, '#2a2410'); scr(0.46, 0.5, 0.19, 0.19, '#0c2a14'); scr(0.67, 0.52, 0.19, 0.19, '#0c2a14');
-      scr(0.33, 0.73, 0.24, 0.12, '#0c1e2a');
-    }
   }
 }
 
