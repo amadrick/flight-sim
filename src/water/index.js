@@ -8,6 +8,7 @@ import { createOceanFFT } from './fft.js';
 import * as Spectrum from './spectrum.js';
 const { makeSeaState, varianceTables, componentsFor, evalHeight, LEVELS } = Spectrum;
 import { waterVertexShader, waterFragmentShader } from './shaders.js';
+import * as Classic from './shaders-classic.js';
 import { makeNoiseTexture, makeFoamTexture } from './textures.js';
 
 const EARTH_R = 6371000;
@@ -68,6 +69,8 @@ export async function createWater(ctx) {
     software = /swiftshader|llvmpipe|software/i.test(String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)));
   } catch { /* ignore */ }
   const aniso = () => (ctx.params.raw?.waniso ? +ctx.params.raw.waniso : software ? 1 : Math.min(16, ctx.quality.anisotropy || 4));
+  // water=classic restores the original look (A/B comparison); anything else = the current shading
+  const classic = String(ctx.params.raw?.water || '') === 'classic';
   const noiseTex = makeNoiseTexture(256, (ctx.params.seed | 0) + 11);
   const foamTex = makeFoamTexture(256, (ctx.params.seed | 0) + 23);
   noiseTex.anisotropy = foamTex.anisotropy = Math.min(8, aniso());
@@ -99,15 +102,41 @@ export async function createWater(ctx) {
     uSlickOff: { value: new THREE.Vector2() },
     uDispScale: { value: ctx.params.raw?.wdisp !== undefined ? +ctx.params.raw.wdisp : 1 },
     uDebug: { value: +(ctx.params.raw?.wdebug || 0) },
+    uShore: { value: new THREE.Vector4(0.8, 10, 1.6, 0.5) },
+    uWaveDir: { value: new THREE.Vector2(1, 0) },
+    uCatOff: { value: new THREE.Vector2() },
+    uWeather: { value: new THREE.Vector4(0, 200, 1, 0) },
+    uWash: { value: new THREE.Vector4() },
+    uWashV: { value: new THREE.Vector4(1, 0, 100, 10) },
   };
 
   const material = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
     uniforms,
-    vertexShader: waterVertexShader(terrainGLSL, atm.glsl),
-    fragmentShader: waterFragmentShader(terrainGLSL, atm.glsl),
+    vertexShader: (classic ? Classic.waterVertexShader : waterVertexShader)(terrainGLSL, atm.glsl),
+    fragmentShader: (classic ? Classic.waterFragmentShader : waterFragmentShader)(terrainGLSL, atm.glsl),
   });
   material.fog = false; material.toneMapped = false;
+  if (!classic) {
+    // premultiplied output: alpha = 1 - transmittance (the shallow seabed / wet beach show through); the target's own
+    // alpha is left untouched
+    material.blending = THREE.CustomBlending;
+    material.blendEquation = THREE.AddEquation;
+    material.blendSrc = THREE.OneFactor; material.blendDst = THREE.OneMinusSrcAlphaFactor;
+    material.blendSrcAlpha = THREE.ZeroFactor; material.blendDstAlpha = THREE.OneFactor;
+  }
+  // Reflected clouds need the clouds module's shadow-map GLSL; clouds are created after the ocean, so the fragment
+  // shader is rebuilt once when they appear (before the first frame in the sim, so it compiles only once).
+  let cloudsHooked = classic;
+  function hookClouds() {
+    const cl = ctx.clouds;
+    if (cloudsHooked || !cl || typeof cl.shadowGLSL !== 'string' || !cl.shadowGLSL.includes('cloudShadowTau')) return;
+    cloudsHooked = true;
+    if (ctx.params.raw?.wclouds === '0') return;
+    Object.assign(uniforms, cl.shadowUniforms);
+    material.fragmentShader = waterFragmentShader(terrainGLSL, atm.glsl, { cloudsGLSL: cl.shadowGLSL });
+    material.needsUpdate = true;
+  }
 
   let cfg = null, fft = null, mesh = null, meshInfo = null;
   const object3D = new THREE.Group();
@@ -141,7 +170,8 @@ export async function createWater(ctx) {
   let sea = null;
   function windState() {
     const w = ctx.weather.wind;
-    const U = Math.max(0.5, ctx.weather.windSpeed ?? Math.hypot(w.x, w.z));
+    const forced = ctx.params.raw?.wwind;     // wwind=<m/s>: force the sea state (debug / glassy calm tests)
+    const U = forced !== undefined && isFinite(+forced) ? Math.max(0.2, +forced) : Math.max(0.5, ctx.weather.windSpeed ?? Math.hypot(w.x, w.z));
     const angle = Math.hypot(w.x, w.z) > 1e-3 ? Math.atan2(w.z, w.x) : 0;
     return { U, angle };
   }
@@ -171,7 +201,15 @@ export async function createWater(ctx) {
     uniforms.uWindDir.value.set(Math.cos(angle), Math.sin(angle));
     const hs = 4 * Math.sqrt(Math.max(1e-6, estimateVarH(sea)));
     uniforms.uSea.value.set(U, hs, 0.35 + 0.65 * smooth(2, 14, U), aniso());
-    uniforms.uShoreFade.value = Math.max(4, 2.2 * hs);
+    uniforms.uShoreFade.value = classic ? Math.max(4, 2.2 * hs) : Math.max(1.5, 1.3 * hs);
+    // surf: breaker height from the incoming sea (swell + wind sea), period of the swell, run-up and wet beach
+    const Hb = Math.min(3.5, 0.35 + 0.7 * hs);
+    const Tp = Math.min(14, Math.max(5, (2 * Math.PI) / Math.max(sea.swell.wp, 1e-3)));
+    const runup = 0.12 + 0.45 * Hb;
+    uniforms.uShore.value.set(Hb, Tp, runup + 0.45 + 0.25 * Hb, runup);
+    uniforms.uWaveDir.value.set(Math.cos(sea.swellAngle), Math.sin(sea.swellAngle));
+    uniforms.uWeather.value.y = 0.6 * U;           // facets per m² that mirror the sun disc at the lobe peak
+    uniforms.uWeather.value.w = 1 - smooth(1, 4, U);
     // Crest foam threshold from statistics: linearised J = 1 + chop·(Dxx + Dzz) and Dxx + Dzz = |k| h~, so
     // var(J) = chop² × slope variance of each cascade (weights as in the shader). Threshold at m standard deviations,
     // m(U) chosen so the Gaussian tail matches Monahan's whitecap fraction (0.3 % @ 7 m/s, 1.8 % @ 12, 6 % @ 17).
@@ -202,7 +240,9 @@ export async function createWater(ctx) {
 
   const camW = new THREE.Vector3();
   const dispU = [uniforms.tDisp0, uniforms.tDisp1, uniforms.tDisp2], slopeU = [uniforms.tSlope0, uniforms.tSlope1, uniforms.tSlope2];
+  const washPos = new THREE.Vector3();
   function update(dt) {
+    hookClouds();
     build();
     refreshSea(false);
     fft.update(ctx.time.now, dt || 0);
@@ -218,6 +258,13 @@ export async function createWater(ctx) {
       uniforms.uSlickOff.value.set(mod(su, 16384), mod(sv, 16384));
       uniforms.uStreak.value.set(mod(su, 2048), mod(sv, 2048), 0.9 * smooth(9, 17, uniforms.uSea.value.x));
     }
+    {
+      const wd = uniforms.uWindDir.value, U = uniforms.uSea.value.x, t = ctx.time.now;
+      uniforms.uCatOff.value.set(mod(wd.x * U * 0.6 * t, 4096), mod(wd.y * U * 0.6 * t, 4096));
+      uniforms.uWeather.value.x = Math.min(1, Math.max(0, ctx.weather.precipitation || 0));
+      uniforms.uWeather.value.z = ctx.env.exposure || 1;
+    }
+    updateWash();
     uniforms.uOriginWrap.value.set(mod(o.x, 4096), mod(o.z, 4096), mod(o.x, 32768), mod(o.z, 32768));
     const cam = ctx.camera;
     camW.setFromMatrixPosition(cam.matrixWorld);
@@ -228,6 +275,22 @@ export async function createWater(ctx) {
     const moonUp = smooth(-0.02, 0.1, ctx.env.moonDir.y);
     const night = ctx.env.nightFactor ?? 0;
     uniforms.uMoonK.value = moonUp * night;
+  }
+
+  // downwash / wake streak under a very low aircraft over water
+  function updateWash() {
+    const st = ctx.player?.state, u = uniforms.uWash.value;
+    u.z = 0;
+    if (!st || classic) return;
+    const p = st.position, th = ctx.world.terrainHeightAt ? ctx.world.terrainHeightAt(p.x, p.z) : -100;
+    const hw = p.y - Math.max(0, th);
+    if (th > -0.5 || hw > 45) return;
+    ctx.world.toRender(p, washPos);
+    const v = st.velocity, gs = Math.hypot(v.x, v.z);
+    const span = ctx.player.def?.geometry?.span || 12;
+    u.set(washPos.x, washPos.z, Math.min(1, (1 - hw / 45) * 1.4), hw);
+    const k = gs > 1 ? 1 / gs : 0;
+    uniforms.uWashV.value.set(gs > 1 ? v.x * k : 1, gs > 1 ? v.z * k : 0, Math.min(1500, 15 + gs * 6), 0.6 * span + 0.3 * hw);
   }
 
   function heightAt(x, z) {
