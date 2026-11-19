@@ -109,7 +109,7 @@ export function createVisual(ctx, opts = {}) {
   let fair = K.loft(fairOpts);
   const fAtX = (x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(1.14, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
   fair = K.loft({ ...fairOpts, cutouts: [{ name: 'bay', z: [0.44, 1.84], t: [fAtX(0.85), fAtX(2.38)], mirror: true }] });
-  stA.add(fair.mesh).add(K.well(fair.patches.bayR, 1.2, UA.well, [0, 1, 0])).add(K.well(fair.patches.bayL, 1.2, UA.well, [0, 1, 0]));
+  stA.add(fair.mesh).add(K.well(fair.patches.bayR, 1.1, UA.well, [-0.33, 0.94, 0])).add(K.well(fair.patches.bayL, 1.1, UA.well, [0.33, 0.94, 0]));
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
   // windows on the right side in (z, t); the left side is the mirror (t → 1 − t)
@@ -304,7 +304,7 @@ export function createVisual(ctx, opts = {}) {
   });
   const mains = [];
   for (const [i, sx, key] of [[1, -1, 'L'], [2, 1, 'R']]) {
-    const c = gp[i].pos, P = [sx * 3.5, -0.4, c[2]], to = [sx * 1.45, -1.55, c[2]];
+    const c = gp[i].pos, P = [sx * 3.5, -0.62, c[2]], to = [sx * 1.45, -1.55, c[2]];
     const sw = K.swing(P, [c[0], c[1] + gp[i].wheelRadius, c[2]], to);
     mains.push({ sw, g: K.buildGear(rig, A, {
       name: 'main' + key, index: i, contact: c, wheels: [-0.46, 0.46], wheelRadius: gp[i].wheelRadius, wheelWidth: 0.36, pivot: P, stroke: 0.4, staticFrac: 0.4,
