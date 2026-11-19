@@ -74,7 +74,7 @@ vec2 matSoil(vec2 uv) {
   vec4 w1 = worley(uv * 37.0, ivec2(37), 23u), w2 = worley(uv * 9.0, ivec2(9), 25u);
   float clod = (1.0 - smoothstep(0.0, 0.55, w1.x)) * step(0.5, w1.z) * (0.4 + 0.6 * w1.w);
   float crack = 1.0 - smoothstep(0.0, 0.07, w2.y - w2.x);
-  float h = 0.45 + 0.7 * low + 0.30 * clod - 0.18 * crack + 0.10 * fbm(uv, 64, 2, 27u, 0.5);
+  float h = 0.45 + 0.7 * low + 0.30 * clod - 0.05 * crack + 0.10 * fbm(uv, 64, 2, 27u, 0.5);
   float tint = 0.5 + 0.8 * fbm(uv, 8, 3, 29u, 0.5) + 0.35 * clod * (w1.w - 0.3);
   return vec2(h, tint);
 }
