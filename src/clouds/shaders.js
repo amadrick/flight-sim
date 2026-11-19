@@ -19,31 +19,45 @@ uniform sampler2D tCloudShadowMap;
 uniform vec4 uCloudShadowA;   // xy = map centre (air-mass metres), z = 1 / map size, w = reference altitude (cloud base, m)
 uniform vec4 uCloudShadowB;   // xy = light slope (L.xz / L.y), z = 1 / layer thickness, w = optical depth assumed beyond the map
 uniform vec4 uCloudShadowC;   // xy = world - air-mass offset (accumulated wind, m), z = strength (0 = no clouds), w = unused
-// Optical depth of cloud between a point (world XZ in metres, altitude y) and the sun.
-float cloudShadowTau(vec2 worldXZ, float y) {
+// Cubic B-spline filtered fetch of the shadow map from 4 bilinear taps: C2-smooth, so the ~80 m texels of the map no
+// longer print square / diamond facets along shadow edges on the ground (plain bilinear is only C0).
+vec3 cloudShadowFetchSmooth(vec2 uv) {
+  vec2 sz = vec2(textureSize(tCloudShadowMap, 0));
+  vec2 p = uv * sz - 0.5, i = floor(p), f = p - i, f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0, w3 = f3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 c0 = (i - 0.5 + w1 / g0) / sz, c1 = (i + 1.5 + w3 / g1) / sz;
+  return g0.y * (g0.x * textureLod(tCloudShadowMap, vec2(c0.x, c0.y), 0.0).rgb + g1.x * textureLod(tCloudShadowMap, vec2(c1.x, c0.y), 0.0).rgb)
+       + g1.y * (g0.x * textureLod(tCloudShadowMap, vec2(c0.x, c1.y), 0.0).rgb + g1.x * textureLod(tCloudShadowMap, vec2(c1.x, c1.y), 0.0).rgb);
+}
+// Optical depth of cloud between a point (world XZ in metres, altitude y) and the sun. smooth = B-spline filtering
+// (4 fetches, for surfaces seen up close: the ground, aircraft); the march uses the single bilinear fetch.
+float cloudShadowTauF(vec2 worldXZ, float y, bool smoothF) {
   vec2 q = worldXZ - uCloudShadowC.xy + uCloudShadowB.xy * (uCloudShadowA.w - y);
   vec2 uv = (q - uCloudShadowA.xy) * uCloudShadowA.z + 0.5;
   vec2 e = abs(uv - 0.5) * 2.0;
   float edge = smoothstep(0.8, 0.98, max(e.x, e.y));
-  vec3 s = textureLod(tCloudShadowMap, uv, 0.0).rgb;
+  vec3 s = smoothF ? cloudShadowFetchSmooth(uv) : textureLod(tCloudShadowMap, uv, 0.0).rgb;
   float hN = (y - uCloudShadowA.w) * uCloudShadowB.z;
   float k = 1.73 * s.b + 0.015;                                   // uniform distribution with the stored variance
   float f = clamp((s.g + k - hN) / (2.0 * k), 0.0, 1.0);          // fraction of the optical depth that lies above y
   float far = uCloudShadowB.w * (1.0 - smoothstep(0.0, 0.25, hN));
   return mix(s.r * f, far, edge) * uCloudShadowC.z;
 }
+float cloudShadowTau(vec2 worldXZ, float y) { return cloudShadowTauF(worldXZ, y, false); }
 // Direct-sun transmittance through the cloud layer to a render-space point (1 = unshadowed).
 float cloudShadow(vec3 renderPos) {
   vec2 d = renderPos.xz - uCameraPos.xz;
   float y = renderPos.y + dot(d, d) * 7.848e-8;                   // undo the fake earth-curvature drop d^2 / 2R
-  return exp(-cloudShadowTau(renderPos.xz + uOrigin.xz, y));
+  return exp(-cloudShadowTauF(renderPos.xz + uOrigin.xz, y, true));
 }
 // Diffuse (multiply scattered) light transmitted by the cloud layer, for scaling sky/ambient light under clouds:
 // two-stream estimate T = 1 / (1 + 0.75 (1 - g) tau). Always >= cloudShadow().
 float cloudDiffuseTransmittance(vec3 renderPos) {
   vec2 d = renderPos.xz - uCameraPos.xz;
   float y = renderPos.y + dot(d, d) * 7.848e-8;
-  return 1.0 / (1.0 + 0.11 * cloudShadowTau(renderPos.xz + uOrigin.xz, y));
+  return 1.0 / (1.0 + 0.11 * cloudShadowTauF(renderPos.xz + uOrigin.xz, y, true));
 }
 `;
 
@@ -135,13 +149,17 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, f
   q.xz += curl * (1.0 - info.x) * 0.07;
   q.y -= uClNoiseOfs.w; q.x += uClNoiseOfs.w * 0.4;
   vec4 dn = textureLod(tClDetail, q, lodD);
-  float hf = dn.r;
+  // all three octaves of the detail volume from the one fetch (R: 3-6-12 cell Worley fbm, G: 6-12, B: 12): the
+  // finer octaves cut the small sub-turrets / ragged bits into the edge that the single R channel left smooth
+  float hf = dn.r * 0.62 + dn.g * 0.23 + dn.b * 0.15;
   if (nearK > 0.0) {                         // extra octave close to the camera (flying through cloud)
     float fine = textureLod(tClDetail, q * 3.7 + 0.37, 0.0).g;
     hf = mix(hf, hf * 0.7 + fine * 0.3, nearK);
   }
   float m = mix(hf, 1.0 - hf, clSat(info.x * 5.0));
-  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z;
+  // keep the condensation level flat: little erosion in the lowest ~8 % of the cell (cumulus bases are flat and
+  // sharp; the wisps belong to the flanks)
+  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z * mix(0.35, 1.0, clSat(info.x * 12.0));
   return clSat((excess - m) / edge);
 }
 
@@ -255,7 +273,8 @@ float clTauLight(vec3 pa, float lod, float jit) {
     float dl = d1 - d0;
     vec3 pl = pa + uClLightDir * (d0 + dl * (0.25 + 0.5 * jit));    // half-cell jitter: hides the sample planes at half the variance
     vec4 wx = clWeather(pl.xz, max(lod - 1.0, 0.0));
-    float d = clDensityBase(pl, wx, lod + 1.0 + float(j) * 0.5, info);
+    // the first segments at full-ish resolution: the shadow of one turret on the next (the dark creases) is ~100 m scale
+    float d = clDensityBase(pl, wx, lod + 0.5 + float(j) * 0.6, info);
     tau += d * info.w * dl;
     d0 = d1;
   }
@@ -412,7 +431,7 @@ void main() {
         float d = 0.0;
         if (ex > 0.0) {
           float lodD = clamp(log2(ds / voxelD), 0.0, 4.0);
-          float edge = clamp(ds * 0.0007, 0.012, 0.06);
+          float edge = clamp(ds * 0.0005, 0.009, 0.05);              // density ramp: crisp near, soft far
           d = clDensityFull(pa, ex - CL_EROSION_BIAS * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
         }
         if (d > 0.0) {
@@ -438,9 +457,15 @@ void main() {
           #endif
           vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
           // ambient: sky light diffusing down from the cloud top, ground bounce coming up through the base
+          #ifdef CL_AMBIENT_VIS
+          // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
+          vec2 vis = cloudAmbientVis(tauUp, tauDn);
+          vec3 S = E * J + ambUp * vis.x + ambDn * vis.y;
+          #else
           float visUp = 0.35 * exp(-0.6 * tauUp) + 0.65 / (1.0 + 0.2 * tauUp);
           float visDn = 0.35 * exp(-0.6 * tauDn) + 0.65 / (1.0 + 0.2 * tauDn);
           vec3 S = E * J + 0.5 * (ambUp * visUp + ambDn * visDn);
+          #endif
           // energy-conserving integration over the step [Hillaire16]
           float Ts = exp(-sig * ds), w = T * (1.0 - Ts);
           L += w * S;

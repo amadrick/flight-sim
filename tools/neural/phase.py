@@ -15,7 +15,11 @@ Everything here is plain python/numpy + numba-jitted scalar versions.
 """
 import math
 import numpy as np
-from numba import njit
+try:
+    from numba import njit
+except ImportError:          # numpy-only machines: the jitted scalar versions run as plain python
+    def njit(*a, **k):
+        return (lambda f: f) if not (len(a) == 1 and callable(a[0])) else a[0]
 
 DROPLET_DIAMETER_UM = 10.0
 

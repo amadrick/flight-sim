@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import * as WEIGHTS from './weights.js';
 import { decodeModel, mlpForward, cloudPhase } from './mlp.js';
+import { createNeuralCloudLight } from './cloud-light.js';
 
 const CLOUD_SCATTER_MODEL = WEIGHTS.CLOUD_SCATTER_MODEL;
 
@@ -104,7 +105,7 @@ const glf = (v) => {
 };
 
 /** GLSL for the phase function shared by the neural model and the analytic fallback (guarded against redefinition). */
-function phaseGLSL(ph) {
+export function phaseGLSL(ph) {
   const g1 = ph.gHG, g2 = ph.gD;
   const k1 = (1 - ph.wD) * (1 - g1 * g1) / (4 * Math.PI);
   const k2 = ph.wD * (1 - g2 * g2) / (4 * Math.PI) / (1 + ph.alpha * (1 + 2 * g2 * g2) / 3);
@@ -219,6 +220,12 @@ export function createAnalyticCloudScatter(opts = {}) {
  *            info: object, sample: (tauSun:number, tauUp:number, cosTheta:number) => number, dispose: () => void }}
  */
 export function createNeuralCloudScatter(opts = {}) {
+  // Round two (default): networks trained on the game's own clouds and features, plus the learned sky / ground
+  // ambient (cloudAmbientVis), see cloud-light.js. { version: 1 } builds the round-one network below.
+  if ((opts.version ?? 2) >= 2) {
+    const m = createNeuralCloudLight(opts);
+    return { ...m, texture: m.textures.j, info: { ...m.info, params: m.info.paramsJ + m.info.paramsV } };
+  }
   const n = opts.lutSize || CLOUD_SCATTER_LUT_SIZE;
   const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
   const t0 = now();
@@ -354,6 +361,10 @@ export function bakeScatterFactors4(net = getCloudScatterNet4(), bodySize = CLOU
  *            sample: (tauSun:number, tauUp:number, cosTheta:number, tauDown:number) => number, dispose: () => void }}
  */
 export function createNeuralCloudScatter4(opts = {}) {
+  // Round two folds the column-thickness information into the retrained default model (createNeuralCloudScatter):
+  // trained on the march's own features, a tauDown input no longer helps (cross-field error 0.693 vs 0.688), so
+  // there is no separate 4-feature model by default. { version: 1 } returns the round-one 4-feature network.
+  if ((opts.version ?? 2) >= 2) return null;
   const net = getCloudScatterNet4();
   const model = WEIGHTS.CLOUD_SCATTER_MODEL4;
   const R = net.rank;
