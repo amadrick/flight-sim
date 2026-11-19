@@ -217,7 +217,7 @@ export function pilot(o) {
 
   if (o.headTurn !== false) {
     // head turn as ONE linear morph target (a small rotation about the neck: influence = angle in radians, either sign)
-    m.enableMorph();
+    m.enableMorph(); m.morphOptional = true;
     const px = 0, pz = 0.07, yLo = tp(0, -0.262, 0)[1], yHi = H[1] - 0.1;
     for (let i = head0; i < hose1; i++) {
       const x = m.p[i * 3], y = m.p[i * 3 + 1], z = m.p[i * 3 + 2], w = i < head1 ? 1 : clamp((y - yLo) / (yHi - yLo), 0, 1) ** 2;

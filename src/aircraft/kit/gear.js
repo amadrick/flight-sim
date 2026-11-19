@@ -43,7 +43,7 @@ export function wheel(o) {
       const a = (k + 0.5) / nb * Math.PI * 2, x = Math.cos(a) * rr * 0.62, y = Math.sin(a) * rr * 0.62;
       hub.add(tube([x, y, z0 - sz * 0.002], [x, y, z0 + sz * bl], br, br * 0.9, { segments: 6, uv: uvB }));
     }
-    hub.add(tube([0, 0, z0 - sz * 0.002], [0, 0, z0 + sz * rr * 0.12], rr * 0.2, rr * 0.17, { segments: 12, uv: uvB }));   // bearing cap
+    hub.add(tube([0, 0, z0 - sz * 0.002], [0, 0, z0 + sz * rr * 0.07], rr * 0.15, rr * 0.12, { segments: 16, uv: uvB }));   // bearing cap
   }
   if (o.valve !== false) { const a = 0.3, x = Math.cos(a) * rr * 0.86, y = Math.sin(a) * rr * 0.86; hub.add(tube([x, y, hw * 0.4], [x, y, hw * 0.4 + rr * 0.14], br * 0.7, br * 0.6, { segments: 5, uv: uvB })); }
   return tyre.add(hub).rotateY(Math.PI / 2);

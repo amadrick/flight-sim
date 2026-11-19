@@ -157,8 +157,13 @@ export function createAtlas(o = {}) {
       let uv = swatches.get(key);
       if (uv) return uv;
       if (!finish) throw new Error('atlas: unknown swatch ' + key);
-      const i = swatchN++; if (i >= swatchCols * swatchRows) throw new Error('atlas: out of swatches (raise swatchRows)');
-      const x = swatchRect.x + (i % swatchCols) * SW, y = swatchRect.y + Math.floor(i / swatchCols) * SW;
+      let x, y; const i = swatchN++;
+      if (i < swatchCols * swatchRows) { x = swatchRect.x + (i % swatchCols) * SW; y = swatchRect.y + Math.floor(i / swatchCols) * SW; }
+      else {                                                         // overflow into the kit's rows rather than fail the whole visual
+        const c = kitCells(1, 1); if (!c) throw new Error('atlas: out of swatches (raise swatchRows)');
+        if (!overflowWarned) { overflowWarned = true; console.warn(`[kit] atlas: more than ${swatchCols * swatchRows} swatches; using the kit's spare rows (raise swatchRows)`); }
+        x = c.x; y = c.y;
+      }
       for (const L of [layers.color, layers.orm, layers.height]) {
         const g = L.ctx, k = L.scale; g.setTransform(1, 0, 0, 1, 0, 0);
         g.fillStyle = L === layers.color ? finish.color : L === layers.orm ? ormStyle(finish.rough ?? 0.5, finish.metal ?? 0) : '#808080';
@@ -297,7 +302,7 @@ export function createAtlas(o = {}) {
       for (const k in layers) { layers[k].canvas.width = layers[k].canvas.height = 1; }
     },
   };
-  let targets = null, pending = null, tex = null; const strips = new Map();
+  let targets = null, pending = null, tex = null, overflowWarned = false; const strips = new Map();
   // kit rows: a shelf allocator over KIT_ROWS × swatchCols cells below the visual's own swatch rows
   const kitUsed = []; for (let r = 0; r < KIT_ROWS; r++) kitUsed.push(new Uint8Array(swatchCols));
   function kitCells(cells, rows) {

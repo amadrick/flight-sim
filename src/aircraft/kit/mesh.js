@@ -39,7 +39,10 @@ export class Mesh {
     if (!o) return this;
     if (matrix) o = o.clone().transform(matrix);
     const base = this.vertexCount;
-    if (o.p2 && !this.p2) this.enableMorph();
+    // an optional morph (the pilot's head turn) is kept only by a mesh that starts with it or already morphs; merged into
+    // plain static geometry it is dropped, so it never turns a whole static mesh into a morphing one
+    if (o.p2 && !this.p2 && (!o.morphOptional || base === 0)) { this.enableMorph(); if (base === 0 && o.morphOptional) this.morphOptional = true; }
+    else if (o.p2 && this.p2 && !o.morphOptional) this.morphOptional = false;
     const { p, n, uv, idx } = this;
     for (let i = 0; i < o.p.length; i++) { p.push(o.p[i]); n.push(o.n[i]); }
     for (let i = 0; i < o.uv.length; i++) uv.push(o.uv[i]);
@@ -60,6 +63,7 @@ export class Mesh {
     const m = new Mesh();
     m.p = this.p.slice(); m.n = this.n.slice(); m.uv = this.uv.slice(); m.idx = this.idx.slice(); m.p2 = this.p2 ? this.p2.slice() : null; m.occ = this.occ ? this.occ.slice() : null;
     if (this.onPart) m.onPart = this.onPart;
+    if (this.morphOptional) m.morphOptional = true;
     if (this.side) { m.side = {}; for (const k in this.side) m.side[k] = this.side[k].clone(); }
     return m;
   }

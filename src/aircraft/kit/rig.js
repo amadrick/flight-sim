@@ -189,7 +189,7 @@ export function createRig(ctx, o = {}) {
       if (built) throw new Error('rig: build() called twice'); built = true;
       let firstStatic = null;
       for (const [key, m] of statics) {
-        m.p2 = null;                                                    // static geometry never morphs (a pilot merged into it keeps still)
+        if (m.morphOptional) m.p2 = null;                               // only an optional morph (a merged pilot's head turn): static keeps still
         const info = mats.get(key), obj = setupMesh(new THREE.Mesh(m.toGeometry(), info.mat), info);
         obj.name = 'static:' + key; root.add(obj); tris += m.triCount; if (!firstStatic && info.layer === undefined) firstStatic = obj;
         if (info.cockpitOnly) cockpitOnly.push(obj);
