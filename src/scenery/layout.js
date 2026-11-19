@@ -64,7 +64,7 @@ export function buildLayout(airport) {
     id: airport.id, kind: airport.kind, spec, frame: F, elevation: airport.elevation,
     radius: airport.flattenRadius,
     runways: [], pave: [], taxiLines: [], holds: [], stands: [], buildings: [], props: [],
-    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [],
+    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [], dirSigns: [], trees: [],
   };
 
   // ---------------- runways ----------------
@@ -152,6 +152,14 @@ export function buildLayout(airport) {
       const ph = F.P(a, R.c + s * spec.hold);
       L.holds.push({ x: ph.x, z: ph.z, hdg: norm360(F.H + (s > 0 ? 90 : -90)), wid: tw, rwy: R.i, rwyName: R.id, twyName });
       L.connectors.push({ rwy: R.i, a, isEnd, name: twyName });
+      // taxiway direction signs (black on yellow, arrow toward the connector) with the location sign of the parallel
+      // taxiway, on the left of each direction of travel, ~40 m before the junction
+      for (const t of [-1, 1]) {
+        if (isEnd && Math.sign(a - R.a) === t) continue;          // nothing beyond the last connector
+        const cL = ct - t * (tw / 2 + tsh + 9);
+        const ps = F.P(a - t * (tw / 2 + 40), cL);
+        L.dirSigns.push({ x: ps.x, z: ps.z, hdg: norm360(F.H + (t > 0 ? 180 : 0)), txt: twyName, arrow: -s * t > 0 ? 'R' : 'L', loc: letter });
+      }
       // junction fillets (triangles) where the connector meets the runway shoulder and the parallel taxiway
       const f = airport.kind === 'international' || airport.kind === 'military' ? 24 : 14;
       const cR = R.c + s * (R.wid / 2 + R.shoulder), cT = ct - s * (tw / 2 + tsh);
@@ -199,6 +207,7 @@ export function buildLayout(airport) {
 
   // ---------------- runway-side objects shared by all kinds ----------------
   for (const R of L.runways) runwayFurniture(L, F, R, spec);
+  if (airport.kind === 'international' || airport.kind === 'military') perimeter(L, F);
 
   return L;
 }
@@ -282,11 +291,14 @@ function layoutHub(L, F, spec) {
       const sc = big ? 1.55 : 1;
       const noseC = cOut - s * (big ? 9 : 7);
       const p = F.P(a, noseC);
-      L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: big ? 'heavy' : 'medium', paint: true, number: k + 1 + (s > 0 ? 0 : 20), bridge: true, leadFrom: F.P(a, cLanePier) });
+      const stand = { x: p.x, z: p.z, hdg: towardPier, size: big ? 'heavy' : 'medium', paint: true, number: k + 1 + (s > 0 ? 0 : 20), bridge: true, leadFrom: F.P(a, cLanePier) };
+      L.stands.push(stand);
       // jet bridge: rotunda just off the pier face, tunnel to the forward left door
       const rot = F.P(a + leftA * (big ? 15 : 11), cOut - s * 3);
       const door = F.P(a + leftA * (2.0 * sc + 1.6), noseC + s * (4.6 - 6.2) * sc);
-      L.props.push({ type: 'jetbridge', x: rot.x, z: rot.z, ex: door.x, ez: door.z });
+      // parked (retracted) position: tunnel swung back along the pier face, cab clear of the stand
+      const park = F.P(a + leftA * (big ? 15 : 11) - leftA * 6, cOut - s * 15);
+      L.props.push({ type: 'jetbridge', x: rot.x, z: rot.z, ex: door.x, ez: door.z, px: park.x, pz: park.z, stand });
     }
     // remote stands at the two ends of the pier
     for (const e of [-1, 1]) {
@@ -302,6 +314,22 @@ function layoutHub(L, F, spec) {
       const a = aC - apronLen / 2 + 30 + (apronLen - 60) * k / (nf - 1);
       const p = F.P(a, cOut - s * (k === 0 || k === nf - 1 ? 60 : 3));
       L.floods.push({ x: p.x, z: p.z, h: 28, aim: { x: F.r.x * -s, z: F.r.z * -s } });
+    }
+    // cargo area at the other end of the first apron: freighter stands, a cargo shed with truck docks behind
+    if (R === R0) {
+      const aCg = aC + apronLen / 2 + 170, cgDep = 150;
+      L.pave.push(rect(F, aCg, cIn + s * cgDep / 2, 280, cgDep, 'apron', 'apron', { layer: 2 }));
+      L.aprons.push({ a: aCg, c: cIn + s * cgDep / 2, len: 280, dep: cgDep, side: s, cIn, cOut: cIn + s * cgDep, cargo: true });
+      const cgLane = cIn + s * 30;
+      L.taxiLines.push({ pts: [F.P(aCg - 120, cgLane), F.P(aCg + 120, cgLane)], kind: 'cl' });
+      L.taxiLines.push({ pts: [F.P(aCg, R.twyC), F.P(aCg, cgLane)], kind: 'cl' });
+      for (let k = 0; k < 3; k++) {
+        const a = aCg - 80 + k * 80, p = F.P(a, cIn + s * 112);
+        L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: k === 1 ? 'medium' : 'heavy', paint: true, number: 70 + k, cargo: true, leadFrom: F.P(a, cgLane) });
+      }
+      L.buildings.push({ type: 'cargo', ...F.P(aCg, cIn + s * (cgDep + 32)), hdg: F.H, len: 230, wid: 56, h: 15, faceSide: -s });
+      L.pave.push(rect(F, aCg, cIn + s * (cgDep + 82), 240, 40, 'road', 'apron', { layer: 1 }));   // truck yard
+      for (let k = 0; k < 3; k++) { const p = F.P(aCg - 100 + k * 100, cIn + s * (cgDep - 4)); L.floods.push({ x: p.x, z: p.z, h: 25, aim: { x: F.r.x * -s, z: F.r.z * -s } }); }
     }
     // maintenance hangar at one end of the apron
     const hp = F.P(aC - apronLen / 2 - 110, cIn + s * 95);
@@ -350,6 +378,27 @@ function layoutHub(L, F, spec) {
       L.fences.push({ pts: [F.P(aC - 420, cF), F.P(aC - 220, cF)] });
     }
     L.landside = { a: aLand, c: cMid };
+    // landside: airport hotel (glazed tower), second garage, rental-car lot, office park along the access road
+    const cEdge = gap / 2 - 30;
+    L.buildings.push({ type: 'hotel', ...F.P(aLand + 20, cMid + Math.min(cEdge, lotW / 2 + 45)), hdg: F.H, len: 46, wid: 22, h: 48 });
+    L.buildings.push({ type: 'garage', ...F.P(aLand + 10, cMid - Math.min(cEdge, lotW / 2 + 45)), hdg: F.H, len: 90, wid: 50, h: 16 });
+    L.parkingLots.push({ ...F.P(aLand - 190, cMid - lotW * 0.2), hdg: F.H, len: 120, wid: lotW * 0.5 });
+    for (let k = 0; k < 4; k++) {
+      const a = aLand - 360 - k * 150, cs = (k % 2 ? 1 : -1) * 70;
+      L.buildings.push({ type: 'office', ...F.P(a, cMid + lotW * 0.25 + cs), hdg: F.H, len: 60 + (k % 2) * 20, wid: 30, h: 14 + (k % 3) * 6 });
+    }
+    // street trees along the access road and around the lots
+    for (let k = 0; k < 40; k++) {
+      const a = aLand - 110 - k * 26;
+      for (const e of [-1, 1]) { const p = F.P(a, cMid + lotW * 0.25 + e * 18); L.trees.push({ x: p.x, z: p.z, s: 0.85 + 0.3 * ((k * 7 + e * 3) % 5) / 5, kind: 'broad' }); }
+    }
+    for (const P of L.parkingLots) {
+      const h = P.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+      for (let k = 0; k <= 10; k++) for (const e of [-1, 1]) {
+        const a = -P.len / 2 + (k / 10) * P.len, c = e * (P.wid / 2 + 5);
+        L.trees.push({ x: P.x + dx * a + rx * c, z: P.z + dz * a + rz * c, s: 0.8 + 0.4 * ((k * 5) % 7) / 7, kind: 'broad' });
+      }
+    }
   }
 }
 
@@ -379,7 +428,11 @@ function layoutMilitary(L, F, spec) {
     for (let k = 0; k < 14; k++) {
       const a = aC - 560 + k * 38 + row * 19;
       const p = F.P(a, c);
-      L.stands.push({ x: p.x, z: p.z, hdg: norm360(F.H + (s > 0 ? -90 : 90)), size: 'fighter', paint: true });
+      const hd = norm360(F.H + (s > 0 ? -90 : 90));
+      L.stands.push({ x: p.x, z: p.z, hdg: hd, size: 'fighter', paint: true });
+      // desert sun shade over each flight-line jet (centred on the airframe, which extends ~13 m behind the nose wheel)
+      const hc = F.P(a, c + s * 5.5);
+      L.buildings.push({ type: 'sunshade', x: hc.x, z: hc.z, hdg: hd, len: 22, wid: 17, h: 7.5 });
     }
   }
   // heavy stands (tankers/transports) at the +a end of the ramp
@@ -440,7 +493,7 @@ function layoutSmall(L, F, spec, kind) {
   const cIn = R.twyC + s * (tw / 2 + tsh);
   const dep = spec.apronDepth, len = kind === 'island' ? 380 : 320, aC = R.a + 30;
   const cm = cIn + s * dep / 2, cOut = cIn + s * dep;
-  L.pave.push(rect(F, aC, cm, len, dep, 'apron', 'apron', { layer: 2 }));
+  L.pave.push(rect(F, aC, cm, len, dep, 'apronA', 'apron', { layer: 2 }));
   L.aprons.push({ a: aC, c: cm, len, dep, side: s, cIn, cOut });
   const cLane = cIn + s * 22;
   L.taxiLines.push({ pts: [F.P(aC - len / 2 + 15, cLane), F.P(aC + len / 2 - 15, cLane)], kind: 'cl' });
@@ -462,11 +515,11 @@ function layoutSmall(L, F, spec, kind) {
   L.tower = { x: tp.x, z: tp.z, h: kind === 'island' ? 16 : 18, cab: 5, kind: 'small', hdg: F.H };
   // hangars (T-hangar row + a maintenance hangar)
   const aHg = aC + len / 2 + 90;
-  L.pave.push(rect(F, aHg, cIn + s * 45, 150, 90, 'apron', 'apron', { layer: 2 }));
+  L.pave.push(rect(F, aHg, cIn + s * 45, 150, 90, 'apronA', 'apron', { layer: 2 }));
   L.buildings.push({ type: 'hangar', ...F.P(aHg - 30, cIn + s * 112), hdg: norm360(F.H + (s > 0 ? 0 : 180)), len: 40, wid: 36, h: 10, doorSide: -s });
   L.buildings.push({ type: 'thangar', ...F.P(aHg + 45, cIn + s * 112), hdg: F.H, len: 70, wid: 18, h: 4.5 });
   L.buildings.push({ type: 'firestation', ...F.P(aC - len / 2 - 40, cIn + s * 40), hdg: F.H, len: 26, wid: 18, h: 7 });
-  L.pave.push(rect(F, aC - len / 2 - 40, cIn + s * 12, 30, 24, 'apron', 'apron', { layer: 2 }));
+  L.pave.push(rect(F, aC - len / 2 - 40, cIn + s * 12, 30, 24, 'apronA', 'apron', { layer: 2 }));
   L.props.push({ type: 'fuelfarm', ...F.P(aC - len / 2 - 40, cOut + s * 30), hdg: F.H, n: 2, r: 4, h: 6 });
   L.props.push({ type: 'mast', ...F.P(aC + 140, cOut + s * 60), h: 22 });
   // car park + access road
@@ -481,6 +534,14 @@ function layoutSmall(L, F, spec, kind) {
   const aE = R.len / 2 + R.blast + 90, cNear = R.c - s * (R.wid / 2 + 140), cFar = cOut + s * 40;
   L.fences.push({ pts: [F.P(-aE, cFar), F.P(aC - 110 - 20, cFar)] });
   L.fences.push({ pts: [F.P(aC + 30 + 20, cFar), F.P(aE, cFar), F.P(aE, cNear), F.P(-aE, cNear), F.P(-aE, cFar)] });
+  if (kind !== 'island') {
+    // alpine strip: stands of conifers beyond the car park and along the access road
+    for (let k = 0; k < 34; k++) {
+      const a = aC - 140 + k * 9 + Math.sin(k * 7.3) * 3, c = cOut + s * (125 + Math.sin(k * 3.1) * 8 + (k % 3) * 7);
+      const p = F.P(a, c); L.trees.push({ x: p.x, z: p.z, s: 0.8 + 0.5 * ((k * 7) % 5) / 5, kind: 'conifer' });
+    }
+    for (let k = 0; k < 10; k++) { const p = F.P(aC - 120 + k * 12, cOut + s * 44); L.trees.push({ x: p.x, z: p.z, s: 0.7, kind: 'conifer' }); }
+  }
   if (kind === 'island') {
     L.palms = [];
     for (let k = 0; k < 26; k++) {
@@ -489,6 +550,55 @@ function layoutSmall(L, F, spec, kind) {
     }
     for (let k = 0; k < 10; k++) L.palms.push(F.P(aC - 120 + k * 9, cOut + s * 42 + s * (k % 2) * 3));
   }
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+/** Airside perimeter: security fence with a gate where each landside road leaves, and a service road inside it. */
+function perimeter(L, F) {
+  let aMax = 0, cMin = Infinity, cMax = -Infinity;
+  for (const R of L.runways) { aMax = Math.max(aMax, Math.abs(R.a) + R.len / 2 + R.blast + 260); cMin = Math.min(cMin, R.c - 330); cMax = Math.max(cMax, R.c + 330); }
+  for (const b of L.buildings) { const p = F.toAC(b.x, b.z); cMin = Math.min(cMin, p.c - 120); cMax = Math.max(cMax, p.c + 120); }
+  // stay inside the flattened area
+  const lim = L.radius * 0.9;
+  const fit = () => Math.hypot(aMax, Math.max(-cMin, cMax)) > lim;
+  while (fit() && aMax > 500) aMax -= 25;
+  const corners = [[-aMax, cMin], [aMax, cMin], [aMax, cMax], [-aMax, cMax]];
+  // gates: where a road polyline crosses the fence rectangle
+  const gates = [];
+  for (const R of L.roads) for (let i = 0; i + 1 < R.pts.length; i++) {
+    const p0 = F.toAC(R.pts[i].x, R.pts[i].z), p1 = F.toAC(R.pts[i + 1].x, R.pts[i + 1].z);
+    for (const [ax, val] of [['a', -aMax], ['a', aMax], ['c', cMin], ['c', cMax]]) {
+      const t = (val - p0[ax]) / ((p1[ax] - p0[ax]) || 1e-9);
+      if (t <= 0 || t >= 1) continue;
+      const q = { a: p0.a + (p1.a - p0.a) * t, c: p0.c + (p1.c - p0.c) * t };
+      const other = ax === 'a' ? 'c' : 'a';
+      if (q[other] < (other === 'a' ? -aMax : cMin) || q[other] > (other === 'a' ? aMax : cMax)) continue;
+      gates.push({ ax, val, at: q[other], w: R.wid + 10, q });
+    }
+  }
+  for (let k = 0; k < 4; k++) {
+    const [a0, c0] = corners[k], [a1, c1] = corners[(k + 1) % 4];
+    const ax = a0 === a1 ? 'a' : 'c', other = ax === 'a' ? 'c' : 'a';
+    const val = ax === 'a' ? a0 : c0, from = ax === 'a' ? c0 : a0, to = ax === 'a' ? c1 : a1;
+    const cuts = gates.filter((g) => g.ax === ax && g.val === val).map((g) => [g.at - g.w / 2, g.at + g.w / 2]).sort((x, y) => x[0] - y[0]);
+    const lo = Math.min(from, to), hi = Math.max(from, to);
+    let s0 = lo;
+    const segs = [];
+    for (const [u0, u1] of cuts) { if (u0 > s0) segs.push([s0, u0]); s0 = Math.max(s0, u1); }
+    if (s0 < hi) segs.push([s0, hi]);
+    const P = (u) => (ax === 'a' ? F.P(val, u) : F.P(u, val));
+    for (const [u0, u1] of segs) L.fences.push({ pts: [P(u0), P(u1)], perimeter: true });
+    void other;
+  }
+  for (const g of gates) {
+    const inward = g.ax === 'a' ? -Math.sign(g.val) : -Math.sign(g.val - (cMin + cMax) / 2);
+    const p = g.ax === 'a' ? F.P(g.val + inward * 14, g.at + g.w / 2 + 6) : F.P(g.at + g.w / 2 + 6, g.val + inward * 14);
+    L.buildings.push({ type: 'gatehouse', x: p.x, z: p.z, hdg: F.H, len: 8, wid: 6, h: 3.6 });
+  }
+  // inside service road (no centre markings), a few metres in from the fence
+  const ins = 9, rp = [[-aMax + ins, cMin + ins], [aMax - ins, cMin + ins], [aMax - ins, cMax - ins], [-aMax + ins, cMax - ins], [-aMax + ins, cMin + ins]];
+  L.roads.push({ pts: rp.map(([a, c]) => F.P(a, c)), wid: 6, lanes: 1, service: true });
+  L.perimeter = { aMax, cMin, cMax };
 }
 
 // --------------------------------------------------------------------------------------------------------------------

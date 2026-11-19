@@ -55,8 +55,10 @@ export function buildLightPlan(L, heightFn = () => 0) {
           const p = P(u, sg * (W / 2 + 1.2));
           const c0 = full && Lr - u <= 600 ? COLORS.yellow : COLORS.white;   // seen by a pilot using end 0
           const c1 = full && u <= 600 ? COLORS.yellow : COLORS.white;        // seen by a pilot using end 1
-          push(p.x, 0.36, p.z, c0, 1, toward0, 0.0, 0, 0, 0, 0.22, 0);
-          push(p.x, 0.36, p.z, c1, 1, toward1, 0.0, 0, 0, 0, 0.22, 0);
+          // main beam aimed along the runway, toed in 3.5° toward the centreline, ±14° wide (plus the omni leak)
+          const ti = -sg * 0.061;
+          push(p.x, 0.36, p.z, c0, 1, [toward0[0] + rt.x * ti, 0.06, toward0[2] + rt.z * ti], 0.97, 0, 0, 0, 0.22, 0);
+          push(p.x, 0.36, p.z, c1, 1, [toward1[0] + rt.x * ti, 0.06, toward1[2] + rt.z * ti], 0.97, 0, 0, 0, 0.22, 0);
         }
       }
       tally('edge');
@@ -116,18 +118,18 @@ export function buildLightPlan(L, heightFn = () => 0) {
         for (let j = 0; j < nl; j++) {
           const v = (j - (nl - 1) / 2) * spacing;
           const p = Q(u, v);
-          push(p.x, lift(p.x, p.z, 0.8), p.z, col, I, aim, 0.9, 0, 0, 0, 0.26, 0.5);
+          push(p.x, lift(p.x, p.z, 0.8), p.z, col, I, aim, 0.9, 0, 0, 0, 0.26, 0.2);
         }
       };
       if (full) {
         // ALSF-2: 720 m, barrettes every 30 m, 1000 ft and 500 ft crossbars, red side rows in the inner 300 m,
         // sequenced flashers (the "rabbit") from 330 m to 720 m, twice per second toward the threshold
         for (let u = 30; u <= 720; u += 30) bar(-u, 5, 1.05, COLORS.white, 1.6);
-        for (const sg of [-1, 1]) for (let j = 0; j < 8; j++) { const p = Q(-300, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.5); }
-        for (const sg of [-1, 1]) for (let j = 0; j < 4; j++) { const p = Q(-150, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.5); }
+        for (const sg of [-1, 1]) for (let j = 0; j < 8; j++) { const p = Q(-300, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.2); }
+        for (const sg of [-1, 1]) for (let j = 0; j < 4; j++) { const p = Q(-150, sg * (4.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.6, aim, 0.9, 0, 0, 0, 0.26, 0.2); }
         for (let u = 30; u <= 270; u += 30) for (const sg of [-1, 1]) for (let j = 0; j < 3; j++) {
           const p = Q(-u, sg * (11 + j * 1.5));
-          push(p.x, lift(p.x, p.z, 0.6), p.z, COLORS.red, 1.2, aim, 0.9, 0, 0, 0, 0.24, 0.3);
+          push(p.x, lift(p.x, p.z, 0.6), p.z, COLORS.red, 1.2, aim, 0.9, 0, 0, 0, 0.24, 0.15);
         }
         const nF = 14;
         for (let k = 0; k < nF; k++) {
@@ -138,7 +140,7 @@ export function buildLightPlan(L, heightFn = () => 0) {
       } else if (ei === 0) {
         // MALSR: steady barrettes every 60 m to 420 m, 1000 ft crossbar, runway alignment indicator flashers beyond
         for (let u = 60; u <= 420; u += 60) bar(-u, 5, 1.05, COLORS.white, 1.4);
-        for (const sg of [-1, 1]) for (let j = 0; j < 5; j++) { const p = Q(-300, sg * (3.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.4, aim, 0.9, 0, 0, 0, 0.26, 0.5); }
+        for (const sg of [-1, 1]) for (let j = 0; j < 5; j++) { const p = Q(-300, sg * (3.5 + j * 1.5)); push(p.x, lift(p.x, p.z, 0.8), p.z, COLORS.white, 1.4, aim, 0.9, 0, 0, 0, 0.26, 0.2); }
         const nF = 5;
         for (let k = 0; k < nF; k++) {
           const u = 720 - k * 60;
@@ -238,9 +240,9 @@ export function buildLightPlan(L, heightFn = () => 0) {
   tally('guard');
   // ---- apron floodlights (lamp heads on masts), street lights
   for (const f of L.floods) {
-    for (const j of [-1, 0, 1]) {
+    for (const j of [-2, -1, 0, 1, 2]) {
       const rx = -f.aim.z, rz = f.aim.x;
-      push(f.x + rx * j * 1.2, f.h + 0.4, f.z + rz * j * 1.2, COLORS.led, 2.2, [f.aim.x * 0.6, -0.8, f.aim.z * 0.6], -0.2, 0, 0, 0, 0.5, 0);
+      push(f.x + rx * j * 0.9 + f.aim.x * 0.75, f.h - 0.05, f.z + rz * j * 0.9 + f.aim.z * 0.75, COLORS.led, 1.6, [f.aim.x * 0.6, -0.8, f.aim.z * 0.6], -0.2, 0, 0, 0, 0.45, 0);
     }
   }
   for (const s of L.streetLights) push(s.x, s.h, s.z, COLORS.sodium, 1.0, [0, -1, 0], -0.3, 0, 0, 0, 0.35, 0);

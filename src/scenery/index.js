@@ -11,15 +11,17 @@ import { buildMarkings } from './markings.js';
 import { buildLightPlan } from './lightplan.js';
 import { createSurfaceProvider } from './surface.js';
 import { makePavementNoise, makeGlyphAtlas, makeFacades, makeSignAtlas, makeFenceTexture } from './textures.js';
-import { createPaveShared, makePavementMaterial, buildPavementGeometry, buildPaintGeometry, makePaintMaterial } from './pavement.js';
+import { createPaveShared, makePavementMaterial, buildPavementGeometry, buildPaintGeometry, makePaintMaterial, buildFringeGeometry, makeFringeMaterial } from './pavement.js';
 import { createLightSystem } from './lights.js';
+import { makeCurtainMaterial } from './curtain.js';
 import { MultiBuilder, lin } from './builder.js';
 import { buildStructures } from './structures.js';
 import { setupDebugCamera } from './debugcam.js';
-import { makeAirliner, makeFighter, makeLightPlane, makeVehicles, instances } from './parked.js';
+import { makeAirliner, makeWidebody, makeTanker, makeTurboprop, makeFighter, makeLightPlane, makeVehicles, instances, aircraftInstances, makeParkedMaterial } from './parked.js';
 
 const DEG = Math.PI / 180;
 const RANGE = { pavement: 70000, buildings: 26000, props: 9000, lights: 110000 };
+const DETAIL_BUILD_RANGE = 40000;   // m: an airport's buildings/aircraft/GSE are built when the camera first comes this close
 
 /** Inject the earth-curvature drop into a built-in material (keeps far scenery seated on the curved terrain). */
 export function addCurvature(mat) {
@@ -74,12 +76,15 @@ export function addPools(mat) {
 
 export async function createScenery(ctx) {
   const t0 = performance.now();
-  const noise = makePavementNoise(ctx);
-  const atlas = makeGlyphAtlas(ctx);
-  const facades = makeFacades(ctx);
+  const tm = {}; let tl = t0;
+  const lap = (k) => { const t = performance.now(); tm[k] = +(t - tl).toFixed(1); tl = t; };
+  const noise = makePavementNoise(ctx); lap('noise');
+  const atlas = makeGlyphAtlas(ctx); lap('glyphs');
+  const facades = makeFacades(ctx); lap('facades');
   const fenceTex = makeFenceTexture(ctx);
   const shared = createPaveShared(ctx, noise, atlas);
   const lights = createLightSystem(ctx);
+  const fringeMat = makeFringeMaterial(ctx, shared);
 
   // ---- layouts first (pure), so the sign atlas can collect every text it needs
   const heightAt = (ap) => (x, z) => ctx.world.terrainHeightAt(ap.position.x + x, ap.position.z + z) - ap.elevation;
@@ -91,13 +96,15 @@ export async function createScenery(ctx) {
     for (const p of L.props) if (p.type === 'drsign') { signTexts.add('dr:' + p.a); signTexts.add('dr:' + p.b); }
     for (const R of L.runways) signTexts.add('hold:' + R.ends.map((e) => e.digits + e.letter).join('-'));
     for (const h of L.holds) signTexts.add('loc:' + h.twyName);
+    for (const g of L.dirSigns) { signTexts.add('dir:' + g.txt + ':' + g.arrow); signTexts.add('loc:' + g.loc); }
   }
-  const signs = makeSignAtlas(ctx, [...signTexts]);
+  lap('layout');
+  const signs = makeSignAtlas(ctx, [...signTexts]); lap('signs');
 
   // ---- shared materials
   const std = (o) => addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, ...o })));
   const M = {
-    glass: std({ map: facades.glass.map, emissiveMap: facades.glass.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.15, metalness: 0.15 }),
+    glass: addPools(addCurvature(makeCurtainMaterial(facades.glass.map))),
     office: std({ map: facades.office.map, emissiveMap: facades.office.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.8 }),
     garage: std({ map: facades.garage.map, emissiveMap: facades.garage.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.9 }),
     cab: std({ map: facades.cab.map, emissiveMap: facades.cab.emissive, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.08, metalness: 0.5 }),
@@ -111,17 +118,24 @@ export async function createScenery(ctx) {
     leaf: std({ side: THREE.DoubleSide, roughness: 0.8 }),
   };
   const tiles = Object.fromEntries(Object.entries(facades).map(([k, v]) => [k, v.tile]));
-  const emissiveMats = [M.glass, M.office, M.garage, M.cab, M.sign];
+  const emissiveMats = [M.office, M.garage, M.cab, M.sign];
   const carMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.6 })));
   const carGeo = makeCarGeometry();
   const sockGeo = makeWindsockGeometry();
   const sockMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }));
 
-  const parkedMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 })));
+  const parkedMat = addPools(addCurvature(makeParkedMaterial({ roughness: 0.42, metalness: 0.1 })));
   const vehMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.1 })));
-  const GEO = { airliner: makeAirliner(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
-  const LIVERY = [0x0b3d91, 0xc8102e, 0x00843d, 0xf2a900, 0x5b2c83, 0x0093b2, 0x1d1d1b, 0xe35205, 0x7a1f2b, 0x2e6db4];
+  const GEO = { narrow: makeAirliner(), wide: makeWidebody(), tanker: makeTanker(), prop: makeTurboprop(), fighter: makeFighter(), light: makeLightPlane(), veh: makeVehicles() };
+  // fictional airlines: [tail / engines, belly / cheatline]
+  const LIVERY = [[0x0b3d91, 0x9aa4b0], [0xc8102e, 0x2a2d34], [0x00843d, 0xc9ccd0], [0xf2a900, 0x1f3a68], [0x5b2c83, 0xb9bdc1], [0x0093b2, 0x0b3d5c],
+    [0x1d1d1b, 0xc8102e], [0xe35205, 0xd8dadc], [0x7a1f2b, 0xc2b59b], [0x2e6db4, 0xe8e8e8], [0x0f6b5c, 0x0f6b5c], [0xd0d3d6, 0x1a4d8f]];
 
+  const treeMat = addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })));
+  const treeGeo = {
+    broad: (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.18, 2.6, 6, lin(0x5a4a3a)); B.dome('b', 0, 2.2, 0, 2.6, lin(0x3d5a2a), -0.6, 8, 3); B.dome('b', 0.6, 3.6, 0.3, 1.8, lin(0x46642f), -0.5, 7, 2); return B.build().b; })(),
+    conifer: (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.2, 1.6, 6, lin(0x4a3a2c)); for (let k = 0; k < 3; k++) B.cylinder('b', 0, 1.2 + k * 2.6, 0, 2.4 - k * 0.6, 3.6, 8, lin(0x24402a), null, 0.05); return B.build().b; })(),
+  };
   const fixtureGeo = (() => { const B = new MultiBuilder(); B.cylinder('b', 0, 0, 0, 0.035, 0.28, 6, lin(0x9a9a40)); B.cylinder('b', 0, 0.28, 0, 0.07, 0.09, 8, [1, 1, 1], 'b', 0.05); return B.build().b; })();
   const fixtureMat = addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.1 }));
 
@@ -139,89 +153,137 @@ export async function createScenery(ctx) {
     const paveMat = makePavementMaterial(ctx, shared, pools);
     const pave = new THREE.Mesh(buildPavementGeometry(L), paveMat);
     pave.receiveShadow = true; far.add(pave);
+    const fringe = new THREE.Mesh(buildFringeGeometry(L), fringeMat);
+    fringe.receiveShadow = true; fringe.renderOrder = -1; fringe.userData.scnLowOff = true; mid.add(fringe);
     const paint = new THREE.Mesh(buildPaintGeometry(L, markings[i]), makePaintMaterial(ctx, shared, paveMat.userData.pools));
     paint.receiveShadow = true; paint.renderOrder = 1; far.add(paint);
     if (ctx.params.raw?.shide?.includes('paint')) paint.visible = false;
     if (ctx.params.raw?.shide?.includes('mid')) mid.visible = false;
-    // structures
-    const B = new MultiBuilder(tiles);
-    buildStructures(L, B, signs.index, plans[i].poles);
-    const geos = B.build();
-    const nearKeys = new Set(['fence', 'sign', 'leaf']);
-    for (const [k, g] of Object.entries(geos)) {
-      const m = new THREE.Mesh(g, M[k] || M.plain);
-      m.castShadow = k !== 'fence'; m.receiveShadow = true;
-      (nearKeys.has(k) ? near : mid).add(m);
-    }
-    // cars in the car parks
-    const bays = L.parkingLots.flatMap((p) => p.bays || []);
-    const rnd = mulberry(ap.id.charCodeAt(1) * 97 + ap.id.charCodeAt(2));
-    const carList = bays.filter(() => rnd() < 0.72);
-    if (carList.length) {
-      const cars = new THREE.InstancedMesh(carGeo, carMat, carList.length);
-      const palette = [0xf2f2f2, 0x1a1a1a, 0x8a8f95, 0x2f4f7f, 0x8b1e1e, 0xc0c4c8, 0x3c3c3c, 0x5d6b3a, 0xd8d0b8, 0x234a6e];
-      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
-      carList.forEach((b, k) => {
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (90 - b.hdg) * DEG + (rnd() - 0.5) * 0.08);
-        m4.compose(new THREE.Vector3(b.x, 0.02, b.z), q, new THREE.Vector3(1, 1, 0.9 + rnd() * 0.25));
-        cars.setMatrixAt(k, m4);
-        cars.setColorAt(k, col.set(palette[Math.floor(rnd() * palette.length)]));
-      });
-      cars.castShadow = true; cars.receiveShadow = true;
-      cars.computeBoundingSphere();
-      near.add(cars);
-    }
-    // parked aircraft on ~70 % of the stands, ground vehicles around the occupied gates
+    // stand occupancy (decided before the structures so empty gates get their jet bridge retracted)
     {
-      const occ = L.stands.filter(() => rnd() < 0.7);
-      const lists = { airB: [], airA: [], ftr: [], gaB: [], gaA: [], tug: [], belt: [], fuel: [], cart: [] };
-      for (const st of occ) {
-        const h = st.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
-        if (st.size === 'heavy' || st.size === 'medium') {
-          const sc = st.size === 'heavy' ? 1.55 : 1;
-          const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
-          lists.airB.push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: rnd() < 0.85 ? 0xf4f4f2 : 0xd0d4d8 });
-          lists.airA.push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: liv });
-          if (st.bridge || rnd() < 0.5) {
-            const at = (fwd, right) => ({ x: st.x + dx * fwd * sc + rx * right * sc, z: st.z + dz * fwd * sc + rz * right * sc });
-            if (rnd() < 0.6) lists.tug.push({ ...at(5.5, 0), hdg: st.hdg + 180, color: 0xe8e8e0 });
-            if (rnd() < 0.8) lists.belt.push({ ...at(-7, 3.4), hdg: st.hdg - 20, color: 0xf0c020 });
-            if (rnd() < 0.5) lists.fuel.push({ ...at(-15, 9.5), hdg: st.hdg + 90, color: 0xdddddd });
-            if (rnd() < 0.7) for (let k = 0; k < 3; k++) lists.cart.push({ ...at(-12 - k * 3.6, 7 + k * 0.2), hdg: st.hdg + 180, color: 0x6a7a8a });
-          }
-        } else if (st.size === 'fighter') lists.ftr.push({ x: st.x, z: st.z, hdg: st.hdg, color: ap.kind === 'military' ? 0x9aa1a8 : 0xb0b0b0 });
-        else if (st.size === 'light') {
-          lists.gaB.push({ x: st.x, z: st.z, hdg: st.hdg, color: 0xf2f2f2 });
-          lists.gaA.push({ x: st.x, z: st.z, hdg: st.hdg, color: LIVERY[Math.floor(rnd() * LIVERY.length)] });
-        }
-      }
-      const add = (geo, list, mat, grp) => { if (geo && list.length) grp.add(instances(geo, mat, list)); };
-      add(GEO.airliner.b, lists.airB, parkedMat, mid); add(GEO.airliner.a, lists.airA, parkedMat, mid);
-      add(GEO.fighter.b, lists.ftr, parkedMat, mid);
-      add(GEO.light.b, lists.gaB, parkedMat, near); add(GEO.light.a, lists.gaA, parkedMat, near);
-      for (const k of ['tug', 'belt', 'fuel', 'cart']) add(GEO.veh[k], lists[k], vehMat, near);
+      const orng = mulberry(ap.id.charCodeAt(0) * 131 + ap.id.charCodeAt(3) * 7 + 17);
+      for (const st of L.stands) st.occupied = orng() < (st.bridge ? 0.88 : st.size === 'light' ? 0.65 : ap.kind === 'regional' || ap.kind === 'island' ? 0.85 : 0.72);
     }
-    // windsocks (animated)
+    // Detail (buildings, aircraft, GSE, cars, trees, furniture) is built for the start airport at boot and for the
+    // others when the camera first comes within DETAIL_BUILD_RANGE (one airport per frame), which keeps boot short.
     const socks = [];
-    for (const p of L.props) if (p.type === 'windsock') {
-      const s = new THREE.Mesh(sockGeo, sockMat);
-      s.position.set(p.x, 5.75, p.z); s.rotation.order = 'YZX'; s.castShadow = true;
-      near.add(s); socks.push(s);
-    }
-    // lights
-    // elevated edge-light fixtures (runway + taxiway), visible by day
-    {
-      const d = plans[i].data, seen = new Set(), list = [];
-      for (let k = 0; k < plans[i].count; k++) {
-        const o = k * 16, y = d[o + 1];
-        if (d[o + 11] !== 0 || y < 0.3 || y > 0.4) continue;
-        const key = Math.round(d[o] * 10) + ',' + Math.round(d[o + 2] * 10);
-        if (seen.has(key)) continue; seen.add(key);
-        const blue = d[o + 5] > d[o + 3];
-        list.push({ x: d[o], z: d[o + 2], hdg: 0, color: blue ? 0x3050ff : 0xfff2c0 });
+    const buildDetail = () => {
+      // structures
+      const B = new MultiBuilder(tiles);
+      buildStructures(L, B, signs.index, plans[i].poles);
+      const geos = B.build();
+      const nearKeys = new Set(['fence', 'sign', 'leaf']);
+      for (const [k, g] of Object.entries(geos)) {
+        const m = new THREE.Mesh(g, M[k] || M.plain);
+        m.castShadow = k !== 'fence'; m.receiveShadow = true;
+        (nearKeys.has(k) ? near : mid).add(m);
       }
-      if (list.length) near.add(instances(fixtureGeo, fixtureMat, list));
-    }
+      // cars in the car parks
+      const bays = L.parkingLots.flatMap((p) => p.bays || []);
+      const rnd = mulberry(ap.id.charCodeAt(1) * 97 + ap.id.charCodeAt(2));
+      const carList = bays.filter(() => rnd() < 0.72);
+      if (carList.length) {
+        const cars = new THREE.InstancedMesh(carGeo, carMat, carList.length);
+        const palette = [0xf2f2f2, 0x1a1a1a, 0x8a8f95, 0x2f4f7f, 0x8b1e1e, 0xc0c4c8, 0x3c3c3c, 0x5d6b3a, 0xd8d0b8, 0x234a6e];
+        const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+        carList.forEach((b, k) => {
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (90 - b.hdg) * DEG + (rnd() - 0.5) * 0.08);
+          m4.compose(new THREE.Vector3(b.x, 0.02, b.z), q, new THREE.Vector3(1, 1, 0.9 + rnd() * 0.25));
+          cars.setMatrixAt(k, m4);
+          cars.setColorAt(k, col.set(palette[Math.floor(rnd() * palette.length)]));
+        });
+        cars.castShadow = true; cars.receiveShadow = true;
+        cars.computeBoundingSphere();
+        near.add(cars);
+      }
+      // parked aircraft on the occupied stands (types by airport role), ground support equipment around airline gates
+      {
+        const occ = L.stands.filter((st) => st.occupied);
+        const lists = { narrow: [], wide: [], tanker: [], prop: [], fighter: [], light: [] };
+        const veh = { tug: [], belt: [], fuel: [], cart: [], stairs: [], bus: [], catering: [], gpu: [], follow: [], arff: [], cone: [], chock: [] };
+        const vcol = { tug: 0xe9e6dc, belt: 0xf0c020, fuel: 0xdcdcd6, cart: 0x6a7a8a, stairs: 0xe9e6dc, bus: 0xe6e8ea, catering: 0xe8e8e2, gpu: 0xf0c020, follow: 0xf0c020, arff: 0xd8d4c8, cone: 0xffffff, chock: 0xffffff };
+        const mil = ap.kind === 'military';
+        if (mil) { vcol.tug = vcol.belt = vcol.gpu = 0x9a9a7a; vcol.fuel = 0x8a8f7a; vcol.follow = 0x8a8f7a; vcol.arff = 0xd8d0b0; }
+        const vadd = (k, p, hdg) => veh[k].push({ x: p.x, z: p.z, hdg, color: vcol[k] });
+        for (const st of occ) {
+          const h = st.hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+          const at = (fwd, right) => ({ x: st.x + dx * fwd + rx * right, z: st.z + dz * fwd + rz * right });
+          if (st.size === 'heavy' || st.size === 'medium') {
+            let type = st.size === 'heavy' ? 'wide' : 'narrow';
+            if (mil) type = 'tanker';
+            else if (ap.kind === 'regional') type = 'prop';
+            else if (ap.kind === 'island') type = rnd() < 0.5 ? 'prop' : 'narrow';
+            const liv = st.cargo ? [[0x5a3417, 0x5a3417], [0xf2a900, 0x3a3a3a], [0x1d1d1b, 0xd9dcdf]][Math.floor(rnd() * 3)] : LIVERY[Math.floor(rnd() * LIVERY.length)];
+            const sc = type === 'narrow' ? (rnd() < 0.3 ? 0.88 : 1) : 1;
+            lists[type].push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: mil ? 0xffffff : liv[0], color2: mil ? 0x7d858c : liv[1] });
+            const k = type === 'wide' ? 1.7 : type === 'prop' ? 0.72 : sc;
+            // chocks at the nose gear, cones at the wingtips and engines (safety zone)
+            vadd('chock', at(0, 0), st.hdg + 90);
+            const span = type === 'wide' ? 31 : type === 'prop' ? 13.6 : type === 'tanker' ? 20 : 17.5 * sc;
+            for (const sg of [-1, 1]) { vadd('cone', at(-(type === 'wide' ? 34 : 15 * k), sg * (span + 1.5)), 0); vadd('cone', at(-3 * k, sg * 6 * k), 0); }
+            vadd('cone', at(-36 * k, 0), 0);
+            if (mil) { if (rnd() < 0.5) vadd('fuel', at(-14, 12), st.hdg + 90); continue; }
+            if (rnd() < 0.85) vadd('gpu', at(3.5, 2.5), st.hdg + 90);
+            if (st.bridge || rnd() < 0.6) {
+              if (rnd() < 0.55) vadd('tug', at(6.5, 0), st.hdg + 180);
+              vadd('belt', at(-6 * k, 3.6 * k), st.hdg - 25);
+              if (rnd() < 0.7) vadd('belt', at(-22 * k, 3.6 * k), st.hdg + 25);
+              if (rnd() < 0.6) vadd('catering', at(-26 * k, 4.8 * k), st.hdg + 90);
+              if (rnd() < 0.5) vadd('fuel', at(-13 * k, 11 * k), st.hdg + 180);
+              const nc = 2 + Math.floor(rnd() * 3);
+              for (let c = 0; c < nc; c++) vadd('cart', at(-10 * k - c * 3.5, 9 * k + c * 0.3), st.hdg + 180);
+            }
+            if (!st.bridge && type !== 'prop') {
+              vadd('stairs', at(-3.5 * k, -4.2 * k), st.hdg + 180);
+              if (rnd() < 0.6) vadd('bus', at(-3 * k, -16 * k), st.hdg);
+            }
+          } else if (st.size === 'fighter') {
+            lists.fighter.push({ x: st.x, z: st.z, hdg: st.hdg, color: 0xffffff, color2: 0x7d858c });
+            vadd('chock', at(0, 0), st.hdg + 90);
+            if (rnd() < 0.35) vadd('gpu', at(-2, -3.5), st.hdg + 90);
+          } else if (st.size === 'light') {
+            const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
+            lists.light.push({ x: st.x, z: st.z, hdg: st.hdg, color: liv[0], color2: 0xf2f2f2 });
+          }
+        }
+        // a follow-me car near the apron entrance, crash tenders at the fire station
+        if (L.aprons[0]) { const a0 = L.aprons[0], p = L.frame.P(a0.a - a0.len / 2 + 30, a0.cIn + a0.side * 12); vadd('follow', p, L.frame.H + 90); }
+        for (const b of L.buildings) if (b.type === 'firestation') {
+          const d = { x: Math.sin(b.hdg * DEG), z: -Math.cos(b.hdg * DEG) }, r = { x: Math.cos(b.hdg * DEG), z: Math.sin(b.hdg * DEG) };
+          const n = ap.kind === 'international' || mil ? 3 : 1;
+          for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * 6; vadd('arff', { x: b.x + d.x * off - r.x * (b.wid / 2 + 9), z: b.z + d.z * off - r.z * (b.wid / 2 + 9) }, b.hdg + 90); }
+        }
+        for (const [k, list] of Object.entries(lists)) if (list.length) (k === 'light' ? near : mid).add(aircraftInstances(GEO[k], parkedMat, list));
+        // GSE is static: bake every vehicle into one merged mesh per airport (one draw call instead of one per type)
+        const gse = bakeStatic(Object.entries(veh).filter(([k, l]) => l.length && GEO.veh[k]).map(([k, l]) => [GEO.veh[k], l]));
+        if (gse) { const m = new THREE.Mesh(gse, vehMat); m.castShadow = true; m.receiveShadow = true; near.add(m); }
+      }
+      // trees (landside planting; conifers at the alpine strip)
+      for (const kind of ['broad', 'conifer']) {
+        const list = L.trees.filter((t) => t.kind === kind).map((t, k) => ({ x: t.x, z: t.z, hdg: (k * 137.5) % 360, scale: t.s * (kind === 'conifer' ? 1.6 : 1.2), color: new THREE.Color().setHSL(0.2 + 0.06 * Math.sin(k * 1.7), 0.3, 0.8 + 0.12 * Math.sin(k * 2.3)).getHex() }));
+        if (list.length) { const m = instances(treeGeo[kind], treeMat, list); m.userData.scnLowOff = true; mid.add(m); }
+      }
+      // windsocks (animated)
+      for (const p of L.props) if (p.type === 'windsock') {
+        const s = new THREE.Mesh(sockGeo, sockMat);
+        s.position.set(p.x, 5.75, p.z); s.rotation.order = 'YZX'; s.castShadow = true;
+        near.add(s); socks.push(s);
+      }
+      // lights
+      // elevated edge-light fixtures (runway + taxiway), visible by day
+      {
+        const d = plans[i].data, seen = new Set(), list = [];
+        for (let k = 0; k < plans[i].count; k++) {
+          const o = k * 16, y = d[o + 1];
+          if (d[o + 11] !== 0 || y < 0.3 || y > 0.4) continue;
+          const key = Math.round(d[o] * 10) + ',' + Math.round(d[o + 2] * 10);
+          if (seen.has(key)) continue; seen.add(key);
+          const blue = d[o + 5] > d[o + 3];
+          list.push({ x: d[o], z: d[o + 2], hdg: 0, color: blue ? 0x3050ff : 0xfff2c0 });
+        }
+        if (list.length) near.add(instances(fixtureGeo, fixtureMat, list));
+      }
+    };
     const lightMesh = lights.build(plans[i]);
     root.add(lightMesh);
     if (ctx.params.raw?.shide?.includes('lights')) lightMesh.layers.set(5);
@@ -230,23 +292,41 @@ export async function createScenery(ctx) {
     const towerPosition = L.tower ? new THREE.Vector3(ap.position.x + L.tower.x, ap.elevation + L.tower.h + 1.7, ap.position.z + L.tower.z) : null;
     const parking = L.stands.map((s) => ({
       position: new THREE.Vector3(ap.position.x + s.x, ap.elevation, ap.position.z + s.z),
-      heading: s.hdg, size: s.size, number: s.number ?? null,
+      heading: s.hdg, size: s.size, number: s.number ?? null, occupied: !!s.occupied,
     }));
     airports.push({
       id: ap.id, name: ap.name, kind: ap.kind, data: ap, layout: L, root, far, mid, near, lightMesh, socks,
-      towerPosition, towerHeading: F.H, parking, plan: plans[i], paveMat, pools,
+      towerPosition, towerHeading: F.H, parking, plan: plans[i], paveMat, pools, buildDetail, detail: false,
     });
     stats.lights += plans[i].count;
   });
 
+  lap('airports');
+  const startId = ctx.params.raw?.sap || ctx.params.airport || AIRPORTS[0].id;
+  const ensureDetail = (A) => {
+    if (A.detail) return;
+    A.detail = true; A.buildDetail();
+    A.root.traverse((o) => { if (o.isMesh && o.castShadow && o.userData.scnCaster === undefined) o.userData.scnCaster = true; });
+    applyQualityTo(A);
+  };
+  for (const A of airports) if (A.id === startId || ctx.params.raw?.sbuildall === '1') ensureDetail(A);
+  lap('detail');
   // ---- physics surface
   const surfaceAt = createSurfaceProvider(AIRPORTS, layouts, () => Math.min(1, (ctx.weather.precipitation || 0) * 1.6));
   ctx.world.addSurfaceProvider(surfaceAt);
 
   // quality: shadow casting from scenery only when the preset has shadows
+  let rangeK = 1;
+  function applyQualityTo(A) {
+    const sh = ctx.quality.shadows !== false, low = ctx.quality.level === 'low';
+    A.root.traverse((o) => {
+      if (o.userData.scnLowOff) o.visible = !low;
+      if (o.isMesh && o.userData.scnCaster) o.castShadow = sh;
+    });
+  }
   const applyQuality = () => {
-    const sh = ctx.quality.shadows !== false;
-    for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.userData.scnCaster) o.castShadow = sh; });
+    rangeK = { low: 0.35, medium: 0.7, high: 1, ultra: 1.25 }[ctx.quality.level] ?? 1;
+    for (const A of airports) applyQualityTo(A);
   };
   for (const A of airports) A.root.traverse((o) => { if (o.isMesh && o.castShadow) o.userData.scnCaster = true; });
   applyQuality();
@@ -266,7 +346,9 @@ export async function createScenery(ctx) {
     const res = ctx.uniforms.frame.uResolution.value;
     shared.uPixAngle.value = (2 * Math.tan((ctx.camera.fov * DEG) / 2)) / Math.max(1, res.y);
     const winK = THREE.MathUtils.smoothstep(night, 0.1, 0.8);
-    M.glass.emissiveIntensity = 0.55 * winK; M.office.emissiveIntensity = 0.9 * winK;
+    M.glass.userData.curtain.uIntNight.value = winK;
+    M.glass.userData.curtain.uIntDay.value = 0.07 * (1 - THREE.MathUtils.smoothstep(night, 0.0, 0.6)) * (0.4 + 0.6 * Math.max(0, Math.min(1, (ctx.env.sunDir?.y ?? 0.5) * 2)));
+    M.office.emissiveIntensity = 0.9 * winK;
     M.garage.emissiveIntensity = 0.7 * winK; M.cab.emissiveIntensity = 0.8 * winK; M.sign.emissiveIntensity = 1.5 * Math.max(winK, on * 0.6);
     ctx.world.toWorld(ctx.camera.position, camW);
     const w = ctx.weather.wind, ws = Math.hypot(w.x, w.z);
@@ -280,13 +362,15 @@ export async function createScenery(ctx) {
       objPools.uObjPoolCount.value = n;
       objPools.uObjNight.value = on;
     }
+    let built = false;
     for (const A of airports) {
       A.root.visible = !hideAll;
       const dx = camW.x - A.data.position.x, dz = camW.z - A.data.position.z;
       const dist = Math.hypot(dx, dz);
+      if (!A.detail && !built && dist < DETAIL_BUILD_RANGE) { ensureDetail(A); built = true; stats = computeStats(airports, stats); Object.assign(info, stats); }
       A.far.visible = dist < RANGE.pavement;
-      A.mid.visible = dist < RANGE.buildings;
-      A.near.visible = dist < RANGE.props;
+      A.mid.visible = dist < RANGE.buildings * Math.max(0.5, rangeK);
+      A.near.visible = dist < RANGE.props * rangeK;
       A.lightMesh.visible = dist < RANGE.lights;
       if (A.near.visible) {
         const yaw = Math.atan2(-w.z, w.x);
@@ -300,7 +384,8 @@ export async function createScenery(ctx) {
   }
 
   stats = computeStats(airports, stats);
-  const info = { bootMs: performance.now() - t0, ...stats };
+  const texMB = textureBytes([noise, atlas, fenceTex, signs.tex, ...Object.values(facades).flatMap((f) => [f.map, f.emissive])]) / 1048576;
+  const info = { bootMs: performance.now() - t0, bootBreakdown: tm, textureMB: +texMB.toFixed(2), ...stats };
   if (ctx.params.raw?.sdebug) console.info('scenery', JSON.stringify(info));
 
   return {
@@ -314,18 +399,64 @@ export async function createScenery(ctx) {
 
 function computeStats(airports, base) {
   let draws = 0, tris = 0, inst = 0;
+  const perAirport = [];
   for (const A of airports) {
+    const pa = { id: A.id, draws: 0, triangles: 0, lowDraws: 0, lowTriangles: 0 };
     A.root.traverse((o) => {
       if (!o.isMesh) return;
-      draws++;
       const g = o.geometry;
       const n = g.index ? g.index.count / 3 : g.attributes.position.count / 3;
-      if (o.isInstancedMesh) { tris += n * o.count; inst += o.count; }
-      else if (g.isInstancedBufferGeometry) { tris += n * g.instanceCount; inst += g.instanceCount; }
-      else tris += n;
+      let t = n;
+      if (o.isInstancedMesh) { t = n * o.count; inst += o.count; }
+      else if (g.isInstancedBufferGeometry) { t = n * g.instanceCount; inst += g.instanceCount; }
+      draws++; tris += t; pa.draws++; pa.triangles += t;
+      if (!o.userData.scnLowOff) { pa.lowDraws++; pa.lowTriangles += t; }
     });
+    pa.triangles = Math.round(pa.triangles); pa.lowTriangles = Math.round(pa.lowTriangles);
+    perAirport.push(pa);
   }
-  return { ...base, drawables: draws, drawablesPerAirport: +(draws / airports.length).toFixed(1), triangles: Math.round(tris), instances: inst };
+  return { ...base, drawables: draws, drawablesPerAirport: +(draws / airports.length).toFixed(1), triangles: Math.round(tris), instances: inst, perAirport };
+}
+
+/** Bytes of GPU texture memory for the scenery's generated textures (RGBA8, + 1/3 for mip chains). */
+function textureBytes(texs) {
+  let b = 0;
+  for (const t of texs) { const im = t?.image; if (!im) continue; b += (im.width * im.height * 4) * (t.generateMipmaps !== false ? 4 / 3 : 1); }
+  return Math.round(b);
+}
+
+/** Merge transformed, colour-tinted copies of small static geometries: [[geometry, [{ x, z, y?, hdg, color, scale }]]]. */
+function bakeStatic(groups) {
+  let nv = 0, ni = 0;
+  for (const [g, list] of groups) { nv += g.attributes.position.count * list.length; ni += g.index.count * list.length; }
+  if (!nv) return null;
+  const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), col = new Float32Array(nv * 3), idx = new Uint32Array(ni);
+  const c = new THREE.Color();
+  let vo = 0, io = 0;
+  for (const [g, list] of groups) {
+    const P = g.attributes.position.array, N = g.attributes.normal.array, C = g.attributes.color.array, I = g.index.array, n = g.attributes.position.count;
+    for (const o of list) {
+      const h = -o.hdg * DEG, ch = Math.cos(h), sh = Math.sin(h), s = o.scale || 1, y0 = o.y || 0;
+      c.set(o.color ?? 0xffffff);
+      for (let v = 0; v < n; v++) {
+        const x = P[v * 3] * s, y = P[v * 3 + 1] * s, z = P[v * 3 + 2] * s, k = (vo + v) * 3;
+        // rotation about +Y by h (same convention as instances(): heading 0 = -Z)
+        pos[k] = o.x + x * ch + z * sh; pos[k + 1] = y0 + y; pos[k + 2] = o.z - x * sh + z * ch;
+        const nx = N[v * 3], nz = N[v * 3 + 2];
+        nrm[k] = nx * ch + nz * sh; nrm[k + 1] = N[v * 3 + 1]; nrm[k + 2] = -nx * sh + nz * ch;
+        col[k] = C[v * 3] * c.r; col[k + 1] = C[v * 3 + 1] * c.g; col[k + 2] = C[v * 3 + 2] * c.b;
+      }
+      for (let i = 0; i < I.length; i++) idx[io + i] = I[i] + vo;
+      vo += n; io += I.length;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeBoundingSphere();
+  return g;
 }
 
 function mulberry(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }

@@ -11,16 +11,24 @@ export class MultiBuilder {
   part(key) { return this.parts[key] || (this.parts[key] = { pos: [], nrm: [], uv: [], col: [], idx: [] }); }
   /** Quad a(bl) b(br) c(tl) d(tr); n = outward normal; uv rect in metres [u0, v0, u1, v1] (or explicit uvs array). */
   quad(key, a, b, c, d, n, col, uvr, explicitUV) {
+    // hot path at boot (tens of thousands of quads): no temporary arrays
     const P = this.part(key), base = P.pos.length / 3;
-    const t = this.tiles[key] || [1, 1];
-    const uvs = explicitUV || [[uvr[0] / t[0], uvr[1] / t[1]], [uvr[2] / t[0], uvr[1] / t[1]], [uvr[0] / t[0], uvr[3] / t[1]], [uvr[2] / t[0], uvr[3] / t[1]]];
-    for (const [i, p] of [a, b, c, d].entries()) {
-      P.pos.push(p[0], p[1], p[2]); P.nrm.push(n[0], n[1], n[2]); P.uv.push(uvs[i][0], uvs[i][1]); P.col.push(col[0], col[1], col[2]);
+    const pos = P.pos, nrm = P.nrm, uv = P.uv, cl = P.col;
+    pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]);
+    const nx = n[0], ny = n[1], nz = n[2];
+    nrm.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    if (explicitUV) uv.push(explicitUV[0][0], explicitUV[0][1], explicitUV[1][0], explicitUV[1][1], explicitUV[2][0], explicitUV[2][1], explicitUV[3][0], explicitUV[3][1]);
+    else {
+      const t = this.tiles[key], tu = t ? t[0] : 1, tv = t ? t[1] : 1;
+      const u0 = uvr[0] / tu, v0 = uvr[1] / tv, u1 = uvr[2] / tu, v1 = uvr[3] / tv;
+      uv.push(u0, v0, u1, v0, u0, v1, u1, v1);
     }
+    const r = col[0], g = col[1], bb = col[2];
+    cl.push(r, g, bb, r, g, bb, r, g, bb, r, g, bb);
     // winding: make the face front-facing along n
-    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    const cx = e1[1] * e2[2] - e1[2] * e2[1], cy = e1[2] * e2[0] - e1[0] * e2[2], cz = e1[0] * e2[1] - e1[1] * e2[0];
-    if (cx * n[0] + cy * n[1] + cz * n[2] >= 0) P.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2], e2x = c[0] - a[0], e2y = c[1] - a[1], e2z = c[2] - a[2];
+    const cx = e1y * e2z - e1z * e2y, cy = e1z * e2x - e1x * e2z, cz = e1x * e2y - e1y * e2x;
+    if (cx * nx + cy * ny + cz * nz >= 0) P.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
     else P.idx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
   tri(key, a, b, c, n, col, uva, uvb, uvc) {
