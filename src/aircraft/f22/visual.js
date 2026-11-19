@@ -25,9 +25,9 @@ const DEG = Math.PI / 180;
 export const LIVERIES = ['langley', 'elmendorf', 'lowvis'];
 
 const SCHEMES = {
-  langley: { name: '1st FW Langley (FF)', base: '#757a80', camo: '#63686e', under: '#787d83', mark: '#53575d', code: 'FF', serial: 'AF 12-4219', unit: '1 FW', band: 'langley', sheen: 0.2 },
-  elmendorf: { name: '3rd Wing Elmendorf (AK)', base: '#70757b', camo: '#5c6167', under: '#73787e', mark: '#4c5056', code: 'AK', serial: 'AF 11-4207', unit: '3 WG', band: 'ak', sheen: 0.26 },
-  lowvis: { name: 'Low-vis test scheme', base: '#7c8085', camo: '#6d7176', under: '#7e8287', mark: '#666a6f', code: '', serial: 'AF 13-4231', unit: '', band: null, sheen: 0.14 },
+  langley: { name: '1st FW Langley (FF)', base: '#767b81', camo: '#6a6f75', under: '#7f848a', mark: '#53575d', code: 'FF', serial: 'AF 12-4219', unit: '1 FW', band: 'langley', sheen: 0.16 },
+  elmendorf: { name: '3rd Wing Elmendorf (AK)', base: '#71767c', camo: '#63686e', under: '#7a7f85', mark: '#4c5056', code: 'AK', serial: 'AF 11-4207', unit: '3 WG', band: 'ak', sheen: 0.2 },
+  lowvis: { name: 'Low-vis test scheme', base: '#7c8085', camo: '#73777c', under: '#84888d', mark: '#666a6f', code: '', serial: 'AF 13-4231', unit: '', band: null, sheen: 0.1 },
 };
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -95,7 +95,7 @@ export function createVisual(ctx, opts = {}) {
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
   const G = geometry, F = K.FINISH, lap = K.stopwatch();
   const seg = Math.max(32, Math.round(76 * detail / 4) * 4);
-  const coat = (c, k = 1) => ({ color: c, rough: 0.5, metal: SC.sheen * k });     // LO coating with a metallic sheen
+  const coat = (c, k = 1) => ({ color: c, rough: 0.6 - 0.06 * Math.min(1, k), metal: SC.sheen * k });     // LO coating with a metallic sheen
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
   const atlas = K.createAtlas({ size: atlasSize, base: coat(SC.base) });
@@ -113,8 +113,8 @@ export function createVisual(ctx, opts = {}) {
   const cPanel = atlas.chart('panel', { type: 'rect', w: 0.9, h: 0.42, density: 2.5 });
   atlas.pack();
   const U = {
-    base: atlas.swatch('base', coat(SC.base)), camo: atlas.swatch('camo', coat(SC.camo)), under: atlas.swatch('under', coat(SC.under)),
-    duct: atlas.swatch('duct', { color: '#7d8186', rough: 0.55, metal: 0.1 }), ductDark: atlas.swatch('ductDark', { color: '#3a3d40', rough: 0.6, metal: 0 }),
+    base: atlas.swatch('base', coat(SC.base)), camo: atlas.swatch('camo', coat(SC.camo)), under: atlas.swatch('under', coat(SC.under, 0.2)),
+    duct: atlas.swatch('duct', { color: '#5e6267', rough: 0.6, metal: 0.1 }), ductDark: atlas.swatch('ductDark', { color: '#3a3d40', rough: 0.6, metal: 0 }),
     dark: atlas.swatch('dark', F.darkGrey), black: atlas.swatch('black', F.black),
     exhaust: atlas.swatch('exhaust', F.exhaust), flap: atlas.swatch('flap', { color: '#6a6e73', rough: 0.5, metal: 0.55 }), flapIn: atlas.swatch('flapIn', { color: '#5a524c', rough: 0.55, metal: 0.8 }),
     side: atlas.swatch('nozSide', { color: '#64686d', rough: 0.5, metal: 0.45 }), heat: atlas.swatch('heat', F.heatStained),
@@ -143,10 +143,11 @@ export function createVisual(ctx, opts = {}) {
     [-6.80, 0.030, 0.920, 0.750, 0.520, 0.62, 0.64, 36, 34],
     [-6.10, 0.015, 1.000, 0.780, 0.580, 0.62, 0.68, 38, 40],
     [-5.50, 0.000, 1.050, 0.790, 0.640, 0.62, [0.75, 0.75], 40, 52, [1.06, 0, 0.16, 0.12, 0.08, 1]],
-    [-4.90, -0.010, 0.980, 0.800, 0.730, 0.6, [0.9, 0.85], 44, 80, [1.42, 0, 0.18, 0.14, 0.08, 1]],
-    [-4.30, -0.020, 0.940, 0.815, 0.775, 0.6, [0.9, 0.85], 46, 86, [1.76, -0.02, 0.20, 0.14, 0.08, 1]],
-    [-3.60, -0.025, 0.950, 0.830, 0.785, 0.6, [0.9, 0.85], 44, 86, [1.84, -0.03, 0.24, 0.14, 0.08, 1]],
-    [-2.90, -0.055, 1.060, 0.800, 0.765, [0.5, 0.75], [0.9, 0.85], 34, 84, [1.86, -0.04, 0.26, 0.14, 0.08, 1]],
+    [-4.90, -0.010, 0.980, 0.800, 0.730, 0.6, [0.9, 0.85], 44, 80, [1.24, 0, 0.18, 0.14, 0.08, 1]],
+    [-4.30, -0.020, 0.940, 0.815, 0.775, 0.6, [0.9, 0.85], 46, 86, [1.52, -0.02, 0.20, 0.14, 0.08, 1]],
+    [-3.95, -0.022, 0.940, 0.822, 0.780, 0.6, [0.9, 0.85], 45, 86, [1.78, -0.025, 0.22, 0.14, 0.08, 1]],
+    [-3.60, -0.025, 0.950, 0.830, 0.785, 0.6, [0.9, 0.85], 44, 86, [1.87, -0.03, 0.24, 0.14, 0.08, 1]],
+    [-2.90, -0.055, 1.060, 0.800, 0.765, [0.5, 0.75], [0.9, 0.85], 34, 84, [1.9, -0.04, 0.26, 0.14, 0.08, 1]],
     [-2.20, -0.075, 1.500, 0.770, 0.745, [0.5, 0.75], [0.9, 0.85], 26, 78, [1.84, -0.03, 0.24, 0.12, 0.08, 1]],
     [-1.50, -0.090, 1.860, 0.755, 0.730, [0.5, 0.78], [0.9, 0.86], 20, 74, [1.9, -0.02, 0.2, 0.1, 0.08, 1]],
     [-1.00, -0.100, 1.900, 0.745, 0.722, [0.45, 0.8], [0.9, 0.86], 16, 74],
@@ -169,11 +170,11 @@ export function createVisual(ctx, opts = {}) {
 
   // canopy plan / profile
   const CZ = [-7.62, -7.45, -7.2, -6.9, -6.5, -6.0, -5.6, -5.0, -4.5, -4.0, -3.7, -3.45];
-  const CW = [0.02, 0.15, 0.27, 0.355, 0.435, 0.495, 0.515, 0.505, 0.475, 0.425, 0.375, 0.32];
+  const CW = [0.02, 0.16, 0.29, 0.385, 0.47, 0.53, 0.55, 0.54, 0.505, 0.45, 0.39, 0.33];
   const CT = [0, 0.88, 1.04, 1.175, 1.31, 1.395, 1.42, 1.39, 1.29, 1.11, 0.98, 0.87];
   const cwAt = K.pchip(CZ, CW);
   const CUT = { z0: -6.95, z1: -3.8 };
-  const tSillAt = (z) => tTopAtX(z, cwAt(z) - 0.03);
+  const sillCache = new Map(), tSillAt = (z) => { const k = Math.round(z * 100); let v = sillCache.get(k); if (v === undefined) sillCache.set(k, v = tTopAtX(z, cwAt(z) - 0.03)); return v; };
   let tCutMin = 0.5; for (let z = CUT.z0; z <= CUT.z1; z += 0.1) tCutMin = Math.min(tCutMin, tSillAt(z));
 
   // gear bays
@@ -181,7 +182,7 @@ export function createVisual(ctx, opts = {}) {
   const tNG = tAtX(-6.3, NG.x), tMG0 = tAtX(0.2, MG.x[0]), tMG1 = tAtX(0.2, MG.x[1]);
 
   const fus = K.loft({
-    stations: FS, segments: seg, step: 0.1 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.dark,
+    stations: FS, segments: seg, step: 0.13 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.dark,
     cutouts: [
       { name: 'cockpit', z: [CUT.z0, CUT.z1], t: [tCutMin, 1 - tCutMin], shape: (z, t) => { const tt = t < 0.5 ? t : 1 - t; return tt >= tSillAt(z) - 0.002; } },
       { name: 'ng', z: NG.z, t: [0, tNG], mirror: true },
@@ -190,9 +191,10 @@ export function createVisual(ctx, opts = {}) {
   });
   cFus.body = fus;
   stat.add(fus.mesh);
+  lap('fuselage');
 
   // ---- intakes: caret inlets, one fold-over skin each (duct → sharp lip → outer wall), raked lips ---------------------------
-  const INT = { z: -4.3, TI: [1.0, -0.07], TO: [1.86, -0.1], BO: [1.64, -0.80], BI: [0.95, -0.80], rakeY: 0.55, rakeX: 0.62, r: 0.05 };
+  const INT = { z: -4.3, TI: [1.0, -0.11], TO: [1.86, -0.14], BO: [1.64, -0.80], BI: [0.95, -0.80], rakeY: 0.55, rakeX: 0.62, r: 0.05 };
   const lipZ = (x, y) => INT.z + INT.rakeY * (INT.TI[1] - y) + INT.rakeX * (x - INT.TI[0]);
   const NI = Math.max(32, Math.round(48 * detail / 4) * 4);
   const ringBase = roundedRing([INT.BI, INT.BO, INT.TO, INT.TI], INT.r, NI);
@@ -222,6 +224,7 @@ export function createVisual(ctx, opts = {}) {
     return K.merge(mI, mO, cap);
   };
   stat.add(intakeMesh(1)).add(intakeMesh(-1));
+  lap('intakes');
 
   // ---- canopy -------------------------------------------------------------------------------------------------------------
   const canSt = CZ.map((z, i) => {
@@ -274,6 +277,7 @@ export function createVisual(ctx, opts = {}) {
   });
   const W = { R: mkWing(1), L: mkWing(-1) };
   stat.add(W.R.mesh).add(W.L.mesh);
+  lap('wings');
 
   // ---- stabilators ---------------------------------------------------------------------------------------------------------
   const ST = { xr: 1.86, zr: 4.3, cr: 3.7, xt: 4.42, ct: 0.9, y: -0.04, pivotZ: 6.0 };
@@ -374,14 +378,14 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.bladeAntenna({ pos: [0, fus.botAt(-2.5) + 0.02, -2.5], height: 0.16, chord: 0.24, sweep: 0.12, down: true, uv: U.under, thickness: 0.012 }));
 
   // ---- paint ----------------------------------------------------------------------------------------------------------------------
-  lap('geometry');
+  lap('details');
   paint(atlas, { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cInt, cNac, cPanel, coat, INT, lipZ, NG, MG, cwAt, ST, FN });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
   rig.material('paint', mat, { shared: true });
   rig.disposables.push(atlas);
-  rig.glass('canopy', K.glassMaterial(ctx, K.GLASS.gold));
+  rig.glass('canopy', K.glassMaterial(ctx, { tint: '#6e5a30', opacity: 0.16, edgeOpacity: 0.78, metalness: 0.55, roughness: 0.04, reflect: 1 }));
   rig.glass('hud', K.glassMaterial(ctx, K.GLASS.hud));
   const glowM = [rig.material('glow0', K.glowMaterial(), { shadow: false }), rig.material('glow1', K.glowMaterial(), { shadow: false })];
 
@@ -426,7 +430,7 @@ export function createVisual(ctx, opts = {}) {
   const doorOf = (patch, edge, inner = U.well) => ({ mesh: K.thicken(patch, 0.02, inner), hinge: { a: edge[0], b: edge[1] }, ref: K.centroid(patch) });
   K.buildGear(rig, atlas, {
     name: 'nose', index: 0, contact: gp[0].pos, wheelRadius: gp[0].wheelRadius, wheelWidth: 0.17, pivot: [0, -0.2, -5.72], stroke: 0.22, staticFrac: 0.35,
-    strutR: 0.05, fork: 'fork', steer: true, links: 'front', retract: { to: [0, -0.32, -6.85] }, window: [0.22, 0.88],
+    strutR: 0.065, fork: 'fork', steer: true, links: 'front', retract: { to: [0, -0.32, -6.85] }, window: [0.22, 0.88],
     brace: [0, -0.25, -5.2],
     doors: [
       { name: 'noseDoorR', ...doorOf(P.ngR, fus.edges.ngR.tHi), open: 88, toward: [0, -1, 0] },
@@ -488,7 +492,7 @@ export function createVisual(ctx, opts = {}) {
 // ---- paint ------------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
   const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cInt, cNac, cPanel, coat, cwAt, ST, FN } = o, F = K.FINISH;
-  const base = coat(SC.base), camo = coat(SC.camo), under = coat(SC.under);
+  const base = coat(SC.base), camo = coat(SC.camo), under = coat(SC.under, 0.2);
   const ram = { color: '#93958f', rough: 0.55, metal: 0.12 };          // RAM tape / edge treatment (slightly lighter, warmer)
   const mark = SC.mark, lowVis = mark;
   const rnd = (() => { let a = 777; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
@@ -528,7 +532,7 @@ function paint(atlas, o) {
   const zMinF = -10.9, zMaxF = 7.4;
   for (const b of blobs) {
     const pts = dens(b, 5).filter(p => p[1] > zMinF && p[1] < zMaxF).map(p => { const hw = fus.halfWidthAt(p[1]) * 0.995; return upT(Math.max(-hw, Math.min(hw, p[0])), p[1]); });
-    if (pts.length > 3) P.fill(pts, camo, { feather: 5 });
+    if (pts.length > 3) P.fill(pts, camo, { feather: 9 });
   }
   // radome joint, frames (few: LO aircraft), longitudinal seams
   P.ring(-8.33, 0, 1, { px: 1.5, depth: 0.45, dark: 0.22 });
@@ -587,7 +591,7 @@ function paint(atlas, o) {
     for (const [chart, fin0, top] of [[cWT[key], base, true], [cWB[key], under, false]]) {
       const Q = atlas.pen(chart);
       Q.fill('all', fin0);
-      if (top) for (const b of blobs) Q.fill(b, camo, { feather: 5 });
+      if (top) for (const b of blobs) Q.fill(b, camo, { feather: 9 });
       // control surfaces
       Q.line([at(1.9, 1), at(1.9, hTE(1.9)), at(3.65, hTE(3.65)), at(3.65, 1)], gapL);
       Q.line([at(3.7, 1), at(3.7, hTE(3.7)), at(6.1, hTE(6.1)), at(6.1, 1)], gapL);
@@ -616,7 +620,7 @@ function paint(atlas, o) {
   // ================= stabilators =================
   for (const [chart, f0, top, sx] of [[cST.R, base, true, 1], [cST.L, base, true, -1], [cSB, under, false, 1]]) {
     const Q = atlas.pen(chart); Q.fill('all', f0);
-    if (top) for (const b of blobs) Q.fill(b, camo, { feather: 5 });
+    if (top) for (const b of blobs) Q.fill(b, camo, { feather: 9 });
     const le = (x) => ST.zr + (x - ST.xr) * tLE42, ch = (x) => ST.cr + (ST.ct - ST.cr) * (x - ST.xr) / (ST.xt - ST.xr);
     for (const f of [0.3, 0.6]) Q.line([[sx * (ST.xr + 0.05), le(ST.xr) + ch(ST.xr) * f], [sx * (ST.xt - 0.05), le(ST.xt) + ch(ST.xt) * f]], panelL);
     Q.stroke([[sx * ST.xr, le(ST.xr) + 0.02], [sx * ST.xt, le(ST.xt) + 0.02]], 0.06, coat('#70757b', 0.8), { alpha: 0.6 });
