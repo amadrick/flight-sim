@@ -67,10 +67,10 @@ export function createVisual(ctx, opts = {}) {
   //        z      yc     w      top    bot    kTop  kBot  aTop aBot
   const FS = [
     [-9.25, 0.150, 0.000, 0.000, 0.000, 0.5, 0.45, 30, 26],
-    [-9.05, 0.150, 0.050, 0.050, 0.050, 0.5, 0.45, 30, 26],
-    [-8.70, 0.150, 0.140, 0.160, 0.160, 0.52, 0.47, 32, 28],
-    [-8.10, 0.160, 0.270, 0.330, 0.310, 0.55, 0.5, 34, 30],
-    [-7.40, 0.180, 0.410, 0.510, 0.480, 0.58, 0.55, 36, 34],
+    [-9.08, 0.150, 0.055, 0.060, 0.055, 0.52, 0.47, 30, 26],
+    [-8.70, 0.150, 0.165, 0.190, 0.180, 0.55, 0.5, 32, 28],
+    [-8.10, 0.160, 0.305, 0.370, 0.340, 0.57, 0.52, 34, 30],
+    [-7.40, 0.180, 0.440, 0.540, 0.500, 0.59, 0.56, 36, 34],
     [-6.70, 0.210, 0.560, 0.650, 0.670, 0.6, 0.6, 38, 40],
     [-6.00, 0.250, 0.710, 0.710, 0.830, 0.62, 0.64, 38, 42],
     [-5.20, 0.300, 0.870, 0.780, 0.980, 0.64, 0.68, 36, 40],
@@ -85,7 +85,7 @@ export function createVisual(ctx, opts = {}) {
     [4.20, 0.100, 1.100, 0.730, 0.700, [0.9, 0.78], 0.72, 64, 70],
     [5.00, 0.100, 0.640, 0.620, 0.620, 0.5523, 0.5523, 90, 90],
   ].map(r => ({ z: r[0], y: r[1], w: r[2], top: r[3], bot: r[4], kTop: r[5], kBot: r[6], aTop: r[7], aBot: r[8] }));
-  const T_SILL = 0.36, T_NG = 0.05, T_MLG = [0.07, 0.16];
+  const T_SILL = 0.345, T_NG = 0.05, T_MLG = [0.07, 0.16];
   const fus = K.loft({
     stations: FS, segments: seg, step: 0.09 / detail, chart: cFus, creases: ['side'], capEnd: 'flat', capUV: U.exhaust,
     cutouts: [
@@ -111,7 +111,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- canopy (one-piece, forward hinged, thick bow frame) ---------------------------------------------------------------------
   const CZ0 = -6.45, CZ1 = -3.5;
-  const canTop = K.pchip([-6.45, -6.2, -5.95, -5.65, -5.35, -5.05, -4.7, -4.35, -4.0, -3.75, -3.5], [fus.topAt(-6.45) + 0.005, 1.08, 1.26, 1.43, 1.545, 1.605, 1.625, 1.61, 1.565, 1.49, fus.topAt(-3.5) + 0.012]);
+  const canTop = K.pchip([-6.45, -6.2, -5.95, -5.65, -5.35, -5.05, -4.7, -4.35, -4.0, -3.75, -3.5], [fus.topAt(-6.45) + 0.005, 1.1, 1.29, 1.46, 1.575, 1.635, 1.655, 1.64, 1.59, 1.505, fus.topAt(-3.5) + 0.012]);
   const canZ = []; for (let z = CZ0; z < CZ1 - 1e-6; z += 0.15) canZ.push(z); canZ.push(CZ1);
   const canSt = canZ.map(z => { const s = fus.at(z, T_SILL).p; return { z, y: s[1], w: s[0], top: Math.max(0.004, canTop(z) - s[1]), bot: 0.01, kTop: [0.7, 0.62] }; });
   const cseg = Math.max(16, Math.round(32 * detail / 4) * 4), ct = 1 / cseg;
@@ -126,26 +126,26 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- cockpit -----------------------------------------------------------------------------------------------------------------
   const eye = G.pilotEye, tubX = 0.42;
-  stat.add(K.tub({ x: tubX, y0: 0.17, y1: 0.74, z0: -6.35, z1: -3.6, uv: U.interior, taper: 0.8 }));
+  stat.add(K.tub({ x: tubX, y0: 0.17, y1: 0.64, z0: -6.35, z1: -3.6, uv: U.interior, taper: 0.8 }));
   {  // sill ledge between the skin cut-out and the tub
     const zs = []; for (let z = CZ0; z <= CZ1 + 1e-6; z += 0.2) zs.push(z); if (zs[zs.length - 1] < CZ1 - 1e-6) zs.push(CZ1);
     for (const sx of [1, -1]) {
       let prev = null;
       for (const z of zs) {
-        const o = fus.at(z, sx > 0 ? T_SILL : 1 - T_SILL).p, a = stat.vert(o[0], o[1], z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]), b = stat.vert(sx * tubX * 0.92, 0.72, z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]);
+        const o = fus.at(z, sx > 0 ? T_SILL : 1 - T_SILL).p, a = stat.vert(o[0], o[1], z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]), b = stat.vert(sx * tubX * 0.92, 0.62, z, -sx * 0.6, 0.8, 0, U.interior[0], U.interior[1]);
         if (prev) { if (sx > 0) stat.quad(prev[0], a, b, prev[1]); else stat.quad(prev[0], prev[1], b, a); }
         prev = [a, b];
       }
     }
   }
   {  // wide flat glare shield over the panoramic display
-    const gs = K.prism([[-6.32, 0.77], [-6.32, 0.91], [-5.95, 1.005], [-5.86, 1.0], [-5.86, 0.96], [-5.9, 0.77]], -0.34, 0.34, U.black);
+    const gs = K.prism([[-6.32, 0.77], [-6.32, 0.91], [-5.95, 0.995], [-5.86, 0.99], [-5.86, 0.975], [-5.9, 0.95], [-5.9, 0.77]], -0.34, 0.34, U.black);
     for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.62 + 0.38 * Math.min(1, (gs.p[i + 2] + 6.32) / 0.46);
     stat.add(gs);
   }
   {  // one large panoramic cockpit display (painted chart, emissive), side consoles, side stick, throttle
-    const z = -5.9, i0 = stat.vertexCount, q = [[-0.3, 0.72], [0.3, 0.72], [0.3, 0.98], [-0.3, 0.98]];
-    for (const p of q) { const uv = cPanel.uv((p[0] + 0.3) * 1.2, (0.98 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + (0.98 - p[1]) * 0.25, 0, 0.24, 1, uv[0], uv[1]); }
+    const z = -5.9, i0 = stat.vertexCount, q = [[-0.3, 0.67], [0.3, 0.67], [0.3, 0.93], [-0.3, 0.93]];
+    for (const p of q) { const uv = cPanel.uv((p[0] + 0.3) * 1.2, (0.93 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + 0.02 + (0.93 - p[1]) * 0.3, 0, 0.24, 1, uv[0], uv[1]); }
     stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
     stat.add(K.box(0.62, 0.5, 0.08, U.console).translate(0, 0.47, -5.93));
     for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.12, 1.3, U.console).translate(sx * 0.33, 0.63, -4.95));
@@ -170,7 +170,7 @@ export function createVisual(ctx, opts = {}) {
     uvFn: (x, y, z, t, ring) => (ring.run === 0 ? (ring.k < 1.6 ? U.duct : U.skin) : ring.k < 4.3 ? U.tape : cCowl.uv3(x, y, z)),
   });
   const shear = new THREE.Matrix4().set(1, 0.25, 0, -0.25 * IY, 0, 1, 0, 0, -0.38, -0.25, 1, 0.38 * 0.7 + 0.25 * IY, 0, 0, 0, 1);
-  const intakeR = intake.mesh.transform(shear);
+  const intakeR = intake.mesh.translate(-IX, -0.3, 0).scale(1.07, 1.07, 1).translate(IX, 0.3, 0).transform(shear);   // grow downward, keep the top under the chine
   stat.add(intakeR).add(intakeR.clone().mirrorX());
 
   // ---- wings ---------------------------------------------------------------------------------------------------------------------
