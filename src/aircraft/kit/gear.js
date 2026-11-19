@@ -10,7 +10,8 @@ const A = (v) => [v.x, v.y, v.z];
 
 /**
  * A wheel (tyre + hub) centred at the origin with its axle along X.
- * opts: { radius, width, rim = .56 (fraction), uvTyre, uvHub, segments, tyreStrip, hubStrip (atlas strips from tyreStrips()) }
+ * opts: { radius, width, rim = .56 (fraction), uvTyre, uvHub, segments, tyreStrip, hubStrip (atlas strips from tyreStrips()),
+ *         bolts = 12 (tie bolts on both hub faces, 0 = none), uvBolt, valve = true }
  * With the strips the tyre gets tread grooves, a scuffed crown and a satin sidewall, the hub a shaded dish and hub cap; the
  * dish is also occluded per vertex so it stays dark whatever colour the hub is.
  */
@@ -34,6 +35,17 @@ export function wheel(o) {
   const hub = lathe(hp, { segments: seg, uv: HS ? (k) => HS.uv(hp[k][0] / rr) : o.uvHub });
   const dish = [0.1, 0.2, 0.42, 0.34, 0.12, 0.05];                     // occlusion by profile point: the dish between cap and rim is shaded
   hub.occlude((x, y) => { const r = Math.hypot(x, y) / rr; return r < 0.26 ? dish[1] : r < 0.5 ? dish[2] : r < 0.88 ? dish[3] : dish[4]; });
+  // tie bolts that clamp the split hub halves (both faces), the inflation valve on the outer face
+  const nb = o.bolts ?? 12, uvB = o.uvBolt || o.uvHub, br = Math.max(0.004, rr * 0.045), bl = Math.max(0.004, rr * 0.05);
+  if (nb > 0) for (const sz of [-1, 1]) {
+    const z0 = sz * hw * 0.3;
+    for (let k = 0; k < nb; k++) {
+      const a = (k + 0.5) / nb * Math.PI * 2, x = Math.cos(a) * rr * 0.62, y = Math.sin(a) * rr * 0.62;
+      hub.add(tube([x, y, z0 - sz * 0.002], [x, y, z0 + sz * bl], br, br * 0.9, { segments: 6, uv: uvB }));
+    }
+    hub.add(tube([0, 0, z0 - sz * 0.002], [0, 0, z0 + sz * rr * 0.12], rr * 0.2, rr * 0.17, { segments: 12, uv: uvB }));   // bearing cap
+  }
+  if (o.valve !== false) { const a = 0.3, x = Math.cos(a) * rr * 0.86, y = Math.sin(a) * rr * 0.86; hub.add(tube([x, y, hw * 0.4], [x, y, hw * 0.4 + rr * 0.14], br * 0.7, br * 0.6, { segments: 5, uv: uvB })); }
   return tyre.add(hub).rotateY(Math.PI / 2);
 }
 
@@ -108,6 +120,10 @@ export function buildGear(rig, atlas, spec) {
   const custom = spec.uv || {}, strips = spec.plainWheels ? {} : tyreStrips(atlas);
   const tyreStrip = custom.tyre ? null : strips.tyre, hubStrip = custom.hub ? null : strips.hub;
   const uvBrake = atlas.swatch('gear.brake', { color: '#2c2724', rough: 0.58, metal: 0.8 }), uvHose = atlas.swatch('gear.hose', { color: '#17181a', rough: 0.55, metal: 0.35 });
+  // kit-owned extras (own swatch rows; fall back to the visual's swatches when the atlas has no room)
+  const uvBolt = atlas.kitSwatch?.('gear.bolt', { color: '#6a6d70', rough: 0.38, metal: 0.9 }) || uvBrake;
+  const uvSeal = atlas.kitSwatch?.('gear.seal', { color: '#121314', rough: 0.5, metal: 0 }) || uvHose;
+  const uvDisc = atlas.kitSwatch?.('gear.disc', { color: '#4a4440', rough: 0.45, metal: 0.85 }) || uvBrake;
   const braked = spec.brakes ?? (rig.geometry?.gear?.[spec.index ?? 0]?.braked !== false && !spec.steer);
   const bogie = axlesZ.length > 1;
   // strut layout along the axis: P ... B (bottom of the outer cylinder) ... piston ... C
@@ -126,6 +142,12 @@ export function buildGear(rig, atlas, spec) {
   outer.add(tube(A(P), A(B), strutR, strutR, { segments: 14, uv: uv.strut }));
   outer.add(tube(A(B.clone().addScaledVector(d, -0.05)), A(B.clone().addScaledVector(d, 0.012)), strutR * 1.18, strutR * 1.18, { segments: 14, uv: uv.strut }));
   outer.add(tube(A(P.clone().addScaledVector(d, 0.02)), A(P.clone().addScaledVector(d, 0.12)), strutR * 1.3, strutR * 1.15, { segments: 14, uv: uv.strut }));
+  // gland nut + wiper seal where the chrome piston leaves the cylinder
+  outer.add(tube(A(B.clone().addScaledVector(d, 0.006)), A(B.clone().addScaledVector(d, 0.02)), Math.max(pistonR * 1.12, strutR * 0.92), pistonR * 1.04, { segments: 14, uv: uvSeal }));
+  for (let k = 0; k < 6; k++) {                                         // gland nut lock bolts on the collar's lower face
+    const a = k / 6 * Math.PI * 2, r = strutR * 1.04, o = new THREE.Vector3().addScaledVector(ax, Math.cos(a) * r).addScaledVector(fwd, Math.sin(a) * r);
+    outer.add(tube(A(B.clone().addScaledVector(d, 0.008).add(o)), A(B.clone().addScaledVector(d, 0.022).add(o)), strutR * 0.1, strutR * 0.1, { segments: 5, uv: uvBolt }));
+  }
   // trunnion cross tube along the retraction axis
   let rAxis = null, rAngle = 0;
   const rt = spec.retract || {};
@@ -189,10 +211,17 @@ export function buildGear(rig, atlas, spec) {
   for (const z of axlesZ) {
     const c = axleAt(z), wm = new Mesh();
     for (const x of wheelsX) {
-      const one = wheel({ radius: R, width: wW, uvTyre: uv.tyre, uvHub: uv.hub, segments: spec.wheelSegments ?? 24, tyreStrip, hubStrip });
+      const one = wheel({ radius: R, width: wW, uvTyre: uv.tyre, uvHub: uv.hub, uvBolt, segments: spec.wheelSegments ?? 32, tyreStrip, hubStrip, bolts: spec.bolts ?? (R < 0.3 ? 8 : 12) });
       if (braked && Math.abs(x) > 1e-3) {                               // brake stack on the strut side of the wheel
-        const sg = -Math.sign(x), rb = R * 0.56 * 0.7, x0 = sg * wW * 0.28, x1 = sg * Math.min(wW * 0.62, Math.abs(x) - pistonR * 0.6);
-        if (Math.abs(x1) > Math.abs(x0) + 0.01) one.add(lathe([[rb * 0.45, 0], [rb, 0, 1], [rb, Math.abs(x1 - x0) * 0.75], [rb * 0.8, Math.abs(x1 - x0), 1], [rb * 0.45, Math.abs(x1 - x0)]], { segments: 14, uv: uvBrake }).rotateY(sg * Math.PI / 2).translate(x0, 0, 0));
+        const sg = -Math.sign(x), rb = R * 0.56 * 0.7, x0 = sg * wW * 0.28, x1 = sg * Math.min(wW * 0.62, Math.abs(x) - pistonR * 0.6), L = Math.abs(x1 - x0);
+        if (L > 0.01) {
+          // housing with its piston bosses, the visible edge of the rotor / stator stack and the torque tube
+          one.add(lathe([[rb * 0.45, 0], [rb, 0, 1], [rb, L * 0.75], [rb * 0.8, L, 1], [rb * 0.45, L]], { segments: 14, uv: uvBrake }).rotateY(sg * Math.PI / 2).translate(x0, 0, 0));
+          const nd = Math.max(3, Math.min(7, Math.round(L / 0.012)));
+          for (let k = 0; k < nd; k++) { const xa = x0 + sg * L * (0.08 + 0.6 * k / nd); one.add(tube([xa, 0, 0], [xa + sg * L * 0.04, 0, 0], rb * 1.07, rb * 1.07, { segments: 18, uv: uvDisc, caps: false })); }
+          for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; one.add(tube([x0 + sg * L * 0.72, Math.cos(a) * rb * 0.9, Math.sin(a) * rb * 0.9], [x0 + sg * L * 1.02, Math.cos(a) * rb * 0.9, Math.sin(a) * rb * 0.9], rb * 0.13, rb * 0.13, { segments: 6, uv: uvBrake })); }
+          one.add(pipe([[x0 + sg * L * 0.9, rb * 0.95, 0], [x0 + sg * L * 1.15, rb * 1.1, rb * 0.25], [x0 + sg * L * 1.3, rb * 0.6, rb * 0.6]], Math.max(0.004, rb * 0.04), { segments: 5, uv: uvHose }));
+        }
       }
       // align the wheel's X axle with `axW`
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), axW);
@@ -225,6 +254,11 @@ export function buildGear(rig, atlas, spec) {
         const a = pts[i], b = pts[(i + 1) % 4], e = b.clone().sub(a), n = new THREE.Vector3().crossVectors(e, w).normalize(), i0 = m.vertexCount;
         for (const [p, sg] of [[a, -1], [b, -1], [b, 1], [a, 1]]) { const pp = p.clone().addScaledVector(w, sg * wd * 0.5); m.vert(pp.x, pp.y, pp.z, n.x, n.y, n.z, uv.link[0], uv.link[1]); }
         m.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+      }
+      // pins and lugs: a bolt through each end (along w) and a heavier apex pin
+      for (const [pt, r, l] of [[from, 0.012, wd * 0.75], [apex, 0.014, wd * 0.62]]) {
+        const a = pt.clone().addScaledVector(w, -l), b = pt.clone().addScaledVector(w, l);
+        m.add(tube(A(a), A(b), Math.max(0.006, strutR * r / 0.05), Math.max(0.006, strutR * r / 0.05), { segments: 8, uv: uvBolt }));
       }
       return m;
     };

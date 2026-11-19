@@ -9,6 +9,7 @@
 // hazard stripes, headbox fabric…) are kit swatches made on the same atlas (found through the UV's `.atlas` tag) and can be
 // overridden through additional optional `uv` keys.
 import { Mesh, ellipsoid, tube, box, boxBetween, lathe, prism, shell, rbox, limb } from './mesh.js';
+import { displayUV } from './displays.js';
 
 const DEG = Math.PI / 180;
 const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -341,7 +342,130 @@ export function hud(o) {
   const rl = Math.min(w * 0.4, 0.07);
   frame.add(lathe([[rl * 1.16, -0.002], [rl * 1.16, 0.007, 1], [rl * 1.03, 0.007, 1], [rl, 0.002]], { segments: 16, uv }).rotateX(-Math.PI / 2).translate(e[0], yT, zb - 0.055));
   frame.add(lathe([[rl, 0.002], [rl * 0.72, 0.008], [rl * 0.36, 0.012], [0, 0.013]], { segments: 16, uv: uvLens }).rotateX(-Math.PI / 2).translate(e[0], yT, zb - 0.055));
+  // symbology: drawn additively on the pilot's side of the combiner (kit 'hud' material, POST layer, seen only from the cockpit)
+  if (o.symbology !== false) {
+    const sym = frame.sidecar('hud'), sw = w * 0.94, sh = h * 0.94, i0 = sym.vertexCount;
+    for (const [x, yy, u, v] of [[-sw / 2, -sh / 2, 0, 1], [sw / 2, -sh / 2, 1, 1], [sw / 2, sh / 2, 1, 0], [-sw / 2, sh / 2, 0, 0]]) { const q = displayUV('hud', u, v); sym.vert(x, yy, 0.0045, 0, 0, 1, q[0], q[1]); }
+    sym.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+    sym.rotateX(tl).translate(e[0], y, z);
+  }
   return { glass, frame };
+}
+
+/**
+ * A display unit (MFD / PFD / ND / EICAS…): bezel and housing in the visual's atlas colour, the screen on the kit 'display'
+ * material (emissive page from the shared display texture, dimmed at night by the rig). Faces +Z (toward the pilot) before
+ * the tilt. opts: { centre: [x, y, z], width = .2, height = width, tilt = 12 (deg, top leaning away from the pilot), yaw = 0 (deg,
+ *   + turns the screen toward +X), page = 'mfdRadar' (see DISPLAY_TILES), bezel = .022, buttons = auto (OSB rows on fighter MFD
+ *   pages), uv (bezel), uvButton }
+ */
+export function display(o) {
+  const c = o.centre, w = o.width ?? 0.2, h = o.height ?? w, b = o.bezel ?? Math.max(0.012, w * 0.11), uv = o.uv, A = atlasOf(uv);
+  const page = o.page || 'mfdRadar', uvBtn = o.uvButton || ksw(A, 'cockpit.button', { color: '#3a3d40', rough: 0.6, metal: 0 }, uv), m = new Mesh();
+  m.add(rbox(w + 2 * b, h + 2 * b, 0.022, 0.006, { segments: 12, n: 8, uv }).translate(0, 0, -0.011));                        // bezel
+  m.add(box(w * 0.9, h * 0.9, 0.05, uv).translate(0, 0, -0.045));                                                            // housing
+  const btn = o.buttons ?? /^mfd/.test(page);
+  if (btn) for (let i = 0; i < 5; i++) {
+    const x = (i - 2) * w * 0.19;
+    for (const sy of [-1, 1]) m.add(box(w * 0.11, b * 0.45, 0.008, uvBtn).translate(x, sy * (h / 2 + b * 0.5), 0.003));
+    if (i < 4) for (const sx of [-1, 1]) m.add(box(b * 0.45, h * 0.1, 0.008, uvBtn).translate(sx * (w / 2 + b * 0.5), (i - 1.5) * h * 0.22, 0.003));
+  }
+  const scr = m.sidecar('display'), i0 = scr.vertexCount;
+  for (const [x, y, u, v] of [[-w / 2, -h / 2, 0, 1], [w / 2, -h / 2, 1, 1], [w / 2, h / 2, 1, 0], [-w / 2, h / 2, 0, 0]]) { const q = displayUV(page, u, v); scr.vert(x, y, 0.0015, 0, 0, 1, q[0], q[1]); }
+  scr.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+  m.rotateX(-(o.tilt ?? 12) * DEG); if (o.yaw) m.rotateY((o.yaw) * DEG);
+  return m.translate(c[0], c[1], c[2]);
+}
+
+/** A flat face on the kit 'panel' material (dark-grey panel with backlit legends + night flood), tiled in ~cell-sized squares so
+ *  the lettering keeps a real size (≈ 8 mm). Faces +Z before placement. */
+function panelFace(w, h, cell = 0.24, legends = true) {
+  const m = new Mesh(), f = m.sidecar('panel'), nx = Math.max(1, Math.round(w / cell)), ny = Math.max(1, Math.round(h / cell));
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const i0 = f.vertexCount, x0 = -w / 2 + w * i / nx, x1 = -w / 2 + w * (i + 1) / nx, y0 = -h / 2 + h * j / ny, y1 = -h / 2 + h * (j + 1) / ny;
+    for (const [x, y, u, v] of [[x0, y0, 0, 1], [x1, y0, 1, 1], [x1, y1, 1, 0], [x0, y1, 0, 0]]) { const q = legends ? displayUV('legends', u, v) : displayUV('legends', 0.02, 0.985); f.vert(x, y, 0, 0, 0, 1, q[0], q[1]); }
+    f.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+  }
+  return m;
+}
+
+/**
+ * Glareshield: the padded coaming over the instrument panel — a hood whose top follows a shallow arc, a rounded padded lip
+ * toward the pilot and side cheeks. opts: { eye (or centre: [x, y, z] of the lip middle), dist = .6 (lip ahead of the eye),
+ *   drop = .2 (lip below the eye), width = .62, depth = .22 (hood length, forward from the lip), rise = .03 (crown height),
+ *   mcp = false (airliner mode-control panel on the lip face), uv, uvPad }
+ */
+export function glareshield(o) {
+  const e = o.eye || [0, 0, 0], c = o.centre || [e[0], e[1] - (o.drop ?? 0.2), e[2] - (o.dist ?? 0.6)];
+  const w = o.width ?? 0.62, dp = o.depth ?? 0.22, rise = o.rise ?? 0.03, uv = o.uv, A = atlasOf(uv), uvP = o.uvPad || ksw(A, 'cockpit.pad', KF.pad, uv), m = new Mesh();
+  const nx = 10, nz = 4, hw = w / 2, top = (x, f) => c[1] + 0.02 + rise * (1 - (x / hw) ** 2) * (0.5 + 0.5 * f), i0 = m.vertexCount;
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {                                     // hood top (f: 0 lip … 1 windscreen)
+    const x = -hw + w * i / nx, f = j / nz, y = top(x, f), z = c[2] - dp * f, s = -2 * rise * x / (hw * hw) * (0.5 + 0.5 * f), l = Math.hypot(s, 1);
+    m.vert(c[0] + x, y, z, -s / l, 1 / l, 0, uv[0], uv[1]);
+  }
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const q = i0 + j * (nx + 1) + i; m.quad(q, q + 1, q + nx + 2, q + nx + 1); }
+  const lip = []; for (let i = 0; i <= nx; i++) { const x = -hw + w * i / nx; lip.push([c[0] + x, top(x, 0) - 0.012, c[2] + 0.004]); }
+  m.add(limb(lip, lip.map(() => [0.018, 0.016]), { segments: 8, sub: 1, side: [0, 1, 0], caps: 'round', uv: uvP }));        // padded roll
+  for (const sx of [-1, 1]) m.add(prism([[c[2] + 0.01, c[1] - 0.1], [c[2] + 0.01, top(sx * hw, 0)], [c[2] - dp, top(sx * hw, 1)], [c[2] - dp, c[1] - 0.1]], c[0] + sx * hw - 0.008, c[0] + sx * hw + 0.008, uv));
+  const face = panelFace(w - 0.02, 0.07, 0.07, !!o.mcp);
+  face.translate(c[0], c[1] - 0.03, c[2] + 0.011); m.add(face);                                                                // lip face
+  m.add(box(w - 0.01, 0.075, 0.012, uv).translate(c[0], c[1] - 0.03, c[2] + 0.004));
+  if (o.mcp) {                                                                                                                 // MCP knobs and windows
+    const sc = m.sidecar('display');
+    for (let i = 0; i < 6; i++) {
+      const x = c[0] + (i - 2.5) * (w - 0.1) / 6;
+      m.add(tube([x + 0.035, c[1] - 0.03, c[2] + 0.012], [x + 0.035, c[1] - 0.03, c[2] + 0.03], 0.011, 0.01, { segments: 10, uv: ksw(A, 'stick.boot', KF.rubber, uv) }));
+      const j0 = sc.vertexCount;
+      for (const [dx, dy, u, v] of [[-0.022, -0.009, 0.05, 0.3], [0.022, -0.009, 0.95, 0.3], [0.022, 0.009, 0.95, 0.12], [-0.022, 0.009, 0.05, 0.12]]) { const q = displayUV('ufc', u, v); sc.vert(x + dx - 0.01, c[1] - 0.012 + dy, c[2] + 0.0125, 0, 0, 1, q[0], q[1]); }
+      sc.quad(j0, j0 + 1, j0 + 2, j0 + 3);
+    }
+  }
+  return m;
+}
+
+/**
+ * Instrument panel with displays, placed from the eye point(s): fighter = two MFDs either side of an up-front control
+ * display under the HUD, a standby instrument and a caution panel; airline = per pilot a PFD (outboard) and ND (inboard),
+ * EICAS + standby in the centre, an MCP glareshield across. Panel faces use the kit 'panel' material (backlit legends and a dim
+ * flood at night), screens the kit 'display' material; the visual registers nothing extra.
+ * opts: { eye: [x, y, z] | eyes: [[x, y, z], …], kind = 'fighter' | 'airline', dist = .68 / .78 (panel ahead of the eye),
+ *   drop = .3 / .34 (panel centre below the eye), width = .6 / auto, height = .3 / .32, tilt = 14 (deg), glareshield = true,
+ *   mfd = .135 / .2 (screen size), pages: [left, right] (fighter MFD pages), uv (structure / bezels), uvPad }
+ * Returns a Mesh; add it to the static mesh with the rest of the cockpit.
+ */
+export function instrumentPanel(o) {
+  const eyes = o.eyes || [o.eye], airline = o.kind === 'airline', uv = o.uv, m = new Mesh(), tl = (o.tilt ?? 14) * DEG;
+  const dist = o.dist ?? (airline ? 0.78 : 0.68), drop = o.drop ?? (airline ? 0.34 : 0.3), H = o.height ?? (airline ? 0.32 : 0.3);
+  const xs = eyes.map(q => q[0]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, ey = eyes[0][1], ez = eyes[0][2];
+  const W = o.width ?? (airline ? Math.max(0.9, Math.max(...xs) - Math.min(...xs) + 0.75) : 0.6);
+  const y0 = ey - drop, z0 = ez - dist;                                       // panel face centre
+  const onFace = (x, y, dz = 0) => [x, y0 + y * Math.cos(tl), z0 - y * Math.sin(tl) + dz];
+  // board: housing box behind, panel face in front
+  m.add(box(W, H, 0.05, uv).rotateX(-tl).translate(cx, y0, z0 - 0.03));
+  const face = panelFace(W, H, 0.24, true); face.rotateX(-tl).translate(cx, y0, z0 - 0.004); m.add(face);
+  const S = o.mfd ?? (airline ? 0.2 : 0.135), tdeg = o.tilt ?? 14;
+  if (!airline) {
+    const pages = o.pages || ['mfdRadar', 'mfdSA'];
+    for (const [k, sx] of [[0, -1], [1, 1]]) m.add(display({ centre: onFace(cx + sx * (W / 2 - S * 0.68), -H * 0.08, 0.004), width: S, page: pages[k], tilt: tdeg, yaw: -sx * 8, uv, uvButton: o.uvButton }));
+    m.add(display({ centre: onFace(cx, H * 0.24, 0.004), width: S * 0.95, height: S * 0.42, page: 'ufc', tilt: tdeg, uv, bezel: 0.012, buttons: false }));
+    m.add(display({ centre: onFace(cx, -H * 0.12, 0.004), width: S * 0.55, page: 'standby', tilt: tdeg, uv, bezel: 0.01 }));
+    m.add(display({ centre: onFace(cx, -H * 0.38, 0.004), width: S * 0.62, height: S * 0.32, page: 'annunciators', tilt: tdeg, uv, bezel: 0.008 }));
+  } else {
+    for (const e of eyes) {
+      const out = e[0] < cx ? -1 : 1;                                         // PFD outboard, ND inboard
+      m.add(display({ centre: onFace(e[0] + out * S * 0.56, 0.0, 0.004), width: S, page: 'pfd', tilt: tdeg, uv }));
+      m.add(display({ centre: onFace(e[0] - out * S * 0.56, 0.0, 0.004), width: S, page: 'nd', tilt: tdeg, uv }));
+    }
+    if (eyes.length > 1 || o.centre) {
+      m.add(display({ centre: onFace(cx, 0.0, 0.004), width: S, page: 'eicas', tilt: tdeg, uv }));
+      m.add(display({ centre: onFace(cx, -H * 0.36, 0.004), width: S * 0.42, page: 'standby', tilt: tdeg, uv, bezel: 0.008 }));
+    }
+  }
+  if (o.glareshield !== false) {
+    const lipY = y0 + H / 2 * Math.cos(tl) + 0.03, lipZ = z0 - H / 2 * Math.sin(tl) + 0.06;
+    m.add(glareshield({ centre: [cx, lipY, lipZ], width: W + 0.04, depth: airline ? 0.34 : 0.24, rise: airline ? 0.015 : 0.035, mcp: airline, uv, uvPad: o.uvPad }));
+  }
+  return m;
 }
 
 /**

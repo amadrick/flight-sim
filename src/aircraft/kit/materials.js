@@ -172,10 +172,21 @@ export function glowMaterial() {
         float gSpokes = 0.62 + 0.38 * pow( abs( cos( ga * 8.0 ) ), 8.0 );
         float gCone = smoothstep( 0.1, 0.34, gr );
         float gLiner = ( 0.74 + 0.26 * sin( ga * 24.0 + gx * 9.0 ) * sin( ga * 7.0 + 1.3 ) ) * ( 0.55 + 0.45 * gx );
-        diffuseColor.rgb *= mix( gLiner, gRings * gSpokes * gCone * 1.3, gDisc );
+        vec3 gAB = vec3( mix( gLiner, gRings * gSpokes * gCone * 1.3, gDisc ) );
+        // dry thrust (dim, set by abGlowColor): the light comes from the turbine exit behind a cold flame holder — a hot ring
+        // between the tail cone and the casing, crossed by the exit guide vanes; the liner cools quickly toward the exit
+        float gVanes = 0.35 + 0.65 * smoothstep( 0.55, 0.95, abs( cos( ga * 7.0 ) ) );
+        float gRing = smoothstep( 0.22, 0.42, gr ) * ( 1.0 - 0.55 * smoothstep( 0.75, 1.0, gr ) );
+        float gHolder = 1.0 - 0.6 * pow( abs( sin( gr * 9.42 ) ), 12.0 ) * step( 0.4, gr );            // cold V-gutters in silhouette
+        vec3 gDry = vec3( mix( gLiner * ( 0.25 + 0.75 * gx * gx ) * 1.4, gRing * gHolder * gVanes * 1.6, gDisc ) );
+        float gAbK = smoothstep( 0.1, 0.6, diffuse.r );
+        diffuseColor.rgb *= mix( gDry, gAB, gAbK );
       }`);
   };
   m.customProgramCacheKey = () => 'kit-glow';
+  // drawn on LAYERS.POST (after the atmosphere composite): an additive MAIN-layer emitter cannot write the emissive mask, so
+  // the night grade would desaturate the flame (src/render/INTEGRATION.md, "Emissive contributors")
+  m.userData.kitLayer = 1; m.userData.kitRenderOrder = 4;
   const dispose = m.dispose.bind(m); m.dispose = () => { map.dispose(); dispose(); };
   return m;
 }

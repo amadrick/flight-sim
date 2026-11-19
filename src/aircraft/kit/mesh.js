@@ -6,7 +6,7 @@ import * as THREE from 'three';
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m3 = new THREE.Matrix3(), _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion();
 
 export class Mesh {
-  constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; this.p2 = null; this.occ = null; }
+  constructor() { this.p = []; this.n = []; this.uv = []; this.idx = []; this.p2 = null; this.occ = null; this.side = null; }
   get vertexCount() { return this.p.length / 3; }
   get triCount() { return this.idx.length / 3; }
   /** Add a vertex, return its index. */
@@ -47,12 +47,20 @@ export class Mesh {
     if (this.p2) { const s = o.p2 || o.p; for (let i = 0; i < s.length; i++) this.p2.push(s[i]); }
     if (o.occ || this.occ) { if (!this.occ) this.occ = []; const d = this.occ, so = o.occ, nb = o.p.length / 3; while (d.length < base) d.push(0); d.length = base; for (let i = 0; i < nb; i++) d.push(so ? so[i] || 0 : 0); }
     if (o.onPart && !this.onPart) this.onPart = o.onPart;             // animation hook of a kit part (e.g. the pilot's head) travels with it
+    if (o.side) for (const k in o.side) this.sidecar(k).add(o.side[k]);
     return this;
   }
+  /**
+   * Geometry that belongs with this mesh but needs a kit-owned material the visual never registered (cockpit displays,
+   * HUD symbology…). It follows every transform / add / clone of this mesh; rig.addStatic / rig.part draw it with the rig's
+   * own material for that kind. sidecar(kind) → the Mesh for that kind (created empty).
+   */
+  sidecar(kind) { if (!this.side) this.side = {}; return this.side[kind] || (this.side[kind] = new Mesh()); }
   clone() {
     const m = new Mesh();
     m.p = this.p.slice(); m.n = this.n.slice(); m.uv = this.uv.slice(); m.idx = this.idx.slice(); m.p2 = this.p2 ? this.p2.slice() : null; m.occ = this.occ ? this.occ.slice() : null;
     if (this.onPart) m.onPart = this.onPart;
+    if (this.side) { m.side = {}; for (const k in this.side) m.side[k] = this.side[k].clone(); }
     return m;
   }
   /** Apply a Matrix4 in place (normals use the normal matrix; winding flips for mirroring transforms). */
@@ -65,9 +73,10 @@ export class Mesh {
       if (p2) { _v.set(p2[i], p2[i + 1], p2[i + 2]).applyMatrix4(m); p2[i] = _v.x; p2[i + 1] = _v.y; p2[i + 2] = _v.z; }
     }
     if (m.determinant() < 0) this.flipWinding();
+    if (this.side) for (const k in this.side) this.side[k].transform(m);
     return this;
   }
-  translate(x, y, z) { const { p, p2 } = this; for (let i = 0; i < p.length; i += 3) { p[i] += x; p[i + 1] += y; p[i + 2] += z; if (p2) { p2[i] += x; p2[i + 1] += y; p2[i + 2] += z; } } return this; }
+  translate(x, y, z) { const { p, p2 } = this; for (let i = 0; i < p.length; i += 3) { p[i] += x; p[i + 1] += y; p[i + 2] += z; if (p2) { p2[i] += x; p2[i + 1] += y; p2[i + 2] += z; } } if (this.side) for (const k in this.side) this.side[k].translate(x, y, z); return this; }
   scale(x, y = x, z = x) { return this.transform(_m4.makeScale(x, y, z)); }
   rotateX(a) { return this.transform(_m4.makeRotationX(a)); }
   rotateY(a) { return this.transform(_m4.makeRotationY(a)); }
@@ -86,6 +95,7 @@ export class Mesh {
     const m = this.clone();
     for (let i = 0; i < m.p.length; i += 3) { m.p[i] = -m.p[i]; m.n[i] = -m.n[i]; if (m.p2) m.p2[i] = -m.p2[i]; }
     m.flipWinding();
+    if (m.side) for (const k in m.side) m.side[k] = m.side[k].mirrorX();
     if (fixUV) for (let i = 0, k = 0; i < m.p.length; i += 3, k += 2) { const r = fixUV(m.p[i], m.p[i + 1], m.p[i + 2], i / 3); if (r) { m.uv[k] = r[0]; m.uv[k + 1] = r[1]; } }
     return m;
   }

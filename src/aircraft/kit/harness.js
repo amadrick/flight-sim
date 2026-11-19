@@ -31,12 +31,16 @@ function boot() {
   const canvas = document.getElementById('view'), hudCanvas = document.getElementById('hud');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(1); renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = num('exposure', 1);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.5, 5000);
   camera.layers.enable(1);                                            // LAYERS.POST (glass)
   const night = num('night', 0), day = 1 - night;
+  // review lighting: the sim's night is moonlit and its auto-exposure rises up to 40×; emulate both so a night sheet shows the
+  // airframe faintly and the lamps / displays / cockpit flood at their real relative levels (exposure= overrides)
+  const autoExp = 1 / (day + night * 0.035);
+  renderer.toneMappingExposure = num('exposure', Math.min(28, autoExp));
 
   // ---- studio sky: gradient dome → PMREM environment ------------------------------------------------------------------
   const sunAz = (q.get('sun') || '-50,42').split(',').map(Number);
@@ -51,7 +55,7 @@ function boot() {
         vec3 zen = vec3(0.16, 0.34, 0.78), hor = vec3(0.75, 0.86, 1.0), gnd = vec3(0.19, 0.185, 0.175);
         vec3 c = h > 0.0 ? mix(hor, zen, pow(h, 0.45)) : mix(hor * 0.55, gnd, smoothstep(0.0, 0.12, -h));
         c += vec3(1.0, 0.92, 0.8) * (pow(max(dot(d, uSun), 0.0), 600.0) * 30.0 + pow(max(dot(d, uSun), 0.0), 24.0) * 0.35);
-        c *= mix(0.02, 1.0, uDay); if (uDark > 0.5) c = mix(c, vec3(dot(c, vec3(0.333))) * 0.35, 0.8);
+        c *= mix(0.003, 1.0, uDay); if (uDark > 0.5) c = mix(c, vec3(dot(c, vec3(0.333))) * 0.35, 0.8);
         gl_FragColor = vec4(c, 1.0); }`,
   });
   const skyScene = new THREE.Scene(); skyScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
@@ -61,6 +65,11 @@ function boot() {
   const sun = new THREE.DirectionalLight(0xfff4e6, SUN_ILLUMINANCE * day);
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
+  if (night > 0) {                                                    // moonlight (≈ 0.4 % of the sun, cool) + a faint sky fill
+    const moon = new THREE.DirectionalLight(0xb8c8ff, SUN_ILLUMINANCE * 0.004 * night);
+    moon.position.set(-sunDir.x, Math.max(0.35, -sunDir.y), -sunDir.z); scene.add(moon);
+    scene.add(new THREE.HemisphereLight(0x4a5c80, 0x16161a, SUN_ILLUMINANCE * 0.0012 * night));
+  }
 
   // ---- mock ctx ---------------------------------------------------------------------------------------------------------
   const level = q.get('quality') || 'high';
@@ -69,7 +78,7 @@ function boot() {
     quality: { level, anisotropy: 8, shadows: true },
     env: { sunDir, moonDir: sunDir.clone().negate(), sunColor: new THREE.Color(SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day, SUN_ILLUMINANCE * day), ambientSky: new THREE.Color(0.25 * day, 0.4 * day, 0.7 * day), ambientGround: new THREE.Color(0.1 * day, 0.09 * day, 0.08 * day), sunLight: sun, exposure: 1, nightFactor: night },
     world: { origin: new THREE.Vector3(), groundHeightAt: () => 0, groundAt: (x, z, out = {}) => { out.height = 0; out.type = 'runway'; return out; }, toRender: (w, out = new THREE.Vector3()) => out.copy(w), toWorld: (r, out = new THREE.Vector3()) => out.copy(r) },
-    events: { on: () => () => {}, emit: () => {} }, time: { now: 0, dt: 0 }, uniforms: { frame: { uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) } } }, player: null,
+    events: { on: () => () => {}, emit: () => {} }, time: { now: num('t', 0), dt: 0 }, uniforms: { frame: { uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) } } }, player: null,
   };
   sim.ctx = ctx;
 
@@ -82,8 +91,9 @@ function boot() {
       proto[k] = function (...a) { if (depth++) { try { return fn.apply(this, a); } finally { depth--; } } const t = performance.now(); try { return fn.apply(this, a); } finally { depth--; const e = (prof[k] = prof[k] || [0, 0]); e[0] += performance.now() - t; e[1]++; } };
     }
   }
+  if (q.get('halofix') === '0') globalThis.__kitNoHaloFix = true;
   const t0 = performance.now();
-  const visual = def.createVisual(ctx, { livery: q.get('livery') || undefined });
+  const visual = q.has('kitdemo') ? kitDemo(ctx, def, q.get('kitdemo')) : def.createVisual(ctx, { livery: q.get('livery') || undefined });
   const buildMs = performance.now() - t0;
   scene.add(visual.object3D);
   const airborne = q.get('air') === '1' || q.has('comp');
@@ -142,6 +152,7 @@ function boot() {
     VIEWS.cgear = { az: 305, el: 3, dist: Math.max(3.5, g.cgHeight * 3.2), fov: 30, tgt: [gm.pos[0] * 0.6, gm.pos[1] + y0 + g.cgHeight * 0.45, (gm.pos[2] * 2 + gn.pos[2]) / 3] };
     VIEWS.cwheel = { az: 252, el: 5, dist: Math.max(1.3, gm.wheelRadius * 5.2), fov: 30, tgt: [gm.pos[0], gm.pos[1] + y0 + gm.wheelRadius * 1.15, gm.pos[2]] };
     VIEWS.cnwheel = { az: 300, el: 5, dist: Math.max(1.2, gn.wheelRadius * 6), fov: 30, tgt: [gn.pos[0], gn.pos[1] + y0 + gn.wheelRadius * 1.3, gn.pos[2]] };
+    VIEWS.cpanel = { az: 180, el: 14, dist: 0.9, fov: 50, near: 0.05, tgt: [e[0], e[1] - 0.28 + y0, e[2] - 0.62] };
     VIEWS.ccrew = { az: 298, el: 9, dist: 2.3, fov: 30, tgt: [e[0], e[1] - 0.28 + y0, e[2] - 0.05] };
     VIEWS.cwell = { az: 262, el: -28, dist: Math.max(2.2, gm.wheelRadius * 7), fov: 34, noGround: true, tgt: [gm.pos[0] * 0.8, y0 - g.cgHeight * 0.25, gm.pos[2]] };
     VIEWS.cnoz = { az: 158, el: 10, dist: Math.max(3, (en.nozzleRadius || 0.5) * 9), fov: 30, tgt: [en.nozzle[0] * 0.8, en.nozzle[1] + y0, en.nozzle[2] - 0.5] };
@@ -156,7 +167,7 @@ function boot() {
       const look = (q.get('look') || '0,-6').split(',').map(Number);
       camera.rotation.set(look[1] * DEG, -look[0] * DEG, 0, 'YXZ');
     } else {
-      camera.near = 0.5;
+      camera.near = v.near ?? 0.5;
       const tgt = centre.clone(); if (v.tz) tgt.z += v.tz * g.length; if (v.tgt) tgt.fromArray(v.tgt);
       if (q.has('tgt')) { const t = q.get('tgt').split(',').map(Number); tgt.set(t[0], t[1] + state.position.y, t[2]); }
       const fit = Math.max(size, 2.2 * g.height) / (2 * Math.tan(camera.fov * DEG / 2));
@@ -218,5 +229,27 @@ function boot() {
     const loop = (now) => { const dt = Math.min(0.1, (now - last) / 1000); last = now; az += dt * 12; if (list.length === 1 && !q.has('view')) { VIEWS.quarter.az = az; } ctx.time.now += dt; visual.update(state, dt); render(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
+}
+/**
+ * kitdemo=fighter|airline: the kit's shared cockpit parts alone (instrument panel + glareshield + HUD, seat, crew) built at the
+ * aircraft's eye point(s), with a grey stand-in material — previews what an aircraft gets by opting in (views cpanel, ccrew, cockpit).
+ */
+function kitDemo(ctx, def, kind) {
+  const g = def.geometry, e = g.pilotEye, airline = kind === 'airline';
+  const rig = K.createRig(ctx, { geometry: g, name: 'kitdemo' });
+  const atlas = K.createAtlas({ size: 512, base: K.FINISH.matte('#5d6166') }); atlas.pack();
+  const sw = (n, c, r = 0.6, mt = 0) => atlas.swatch(n, { color: c, rough: r, metal: mt });
+  const U = { panel: sw('panel', '#3b3f44'), seat: sw('seat', '#2b2d30'), cushion: sw(airline ? 'sheep' : 'cushion', airline ? '#c9bfae' : '#4f5444', 0.9), suit: sw('suit', airline ? '#1b202b' : '#5d6649', 0.85), helmet: sw('helmet', '#d9dad6', 0.4), visor: sw('visor', '#14161a', 0.1), dark: sw('dark', '#1c1d1f'), glove: sw('glove', '#3a3326', 0.8), accent: sw('accent', '#d8b21c') };
+  rig.material('paint', atlas.material(ctx, { envMapIntensity: 1 }));
+  const st = new K.Mesh(), eyes = airline ? [[-Math.abs(e[0] || 0.53), e[1], e[2]], [Math.abs(e[0] || 0.53), e[1], e[2]]] : [e];
+  st.add(K.instrumentPanel({ eyes, kind: airline ? 'airline' : 'fighter', uv: U.panel }));
+  if (!airline) st.add(K.hud({ eye: e, uv: U.panel }).frame);
+  for (const q of eyes) st.add(airline ? K.crewSeat({ eye: q, uv: { frame: U.seat, cushion: U.cushion } }) : K.ejectionSeat({ eye: q, recline: 17, uv: { frame: U.seat, cushion: U.cushion, accent: U.accent } }));
+  rig.addStatic(st);
+  const crew = new K.Mesh();
+  for (const q of eyes) crew.add(K.pilot({ eye: q, kind: airline ? 'airline' : 'fighter', recline: airline ? 8 : 15, stick: airline ? 'yoke' : 'centre', uv: { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove } }));
+  const pilotNode = rig.part('pilot', crew, { pivot: e });
+  rig.onUpdate(() => { pilotNode.visible = !rig.cameraInCockpit; });
+  return rig.build();
 }
 try { boot(); } catch (e) { console.error(e); sim.error = String(e?.stack || e); }
