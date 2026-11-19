@@ -83,7 +83,7 @@ uniform vec4 uClCell2;     // x = smallest cell diameter (m), y = log2(largest /
 uniform vec4 uClProf;      // cumulus width profile g(h) of shallow cells (LES fit, tools/neural/les_fit.py): x = width at the base, y = height of the widest point, z = rise exponent, w = dome exponent
 uniform vec4 uClDet;       // round four: x = detail cascade (0 = single round-three octave), y = detailed light samples near the camera, z = crease occlusion strength, w = surface refinement
 uniform vec4 uClDet3;      // x = debug shading (0 = off; 1 = direct sun only, 2 = crease pattern, 3 = depth below the surface, 4 = surface / sun cosine), y = strength of the surface-orientation term, z = 1: light samples fetch the weather map under an anvil, w = share of the horizon band in the sky ambient
-uniform vec4 uClDet5;      // x = gradient-normalised erosion of cumulus turrets (0 = round three)
+uniform vec4 uClDet5;      // x = gradient-normalised erosion of cumulus turrets (0 = round three), y = near-field GT calibration of the lighting networks, z = softness of marginal cells (1 = round three), w = stronger cirrus fibres
 uniform vec4 uClDet4;      // x = decks: sky visibility from the column optical depth of the shadow map, y = quilted deck tops, z = pouches under the deck base, w = stepped cumulonimbus towers
 uniform vec4 uClDet2;      // x = amplitude ratio between detail octaves, y = frequency ratio, z = sharpest density ramp (shape units), w = wisp warp
 uniform vec4 uClProf2;     // the same for developed cells (congestus); uClShape3.z = turret amplitude (x radius)
@@ -200,7 +200,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  a crisp growing cell and a soft decaying one would otherwise meet in a visible vertical seam)
   float phase = cl.a;
   if (uClDet.x > 0.5 && lod < 1.5) phase = mix(textureLod(tClCells, pc * uClCell.x, lod + 3.5).a, phase, clSat(lod * 2.0 - 2.0));
-  float decay = max(smoothstep(0.65, 0.92, phase), 0.6 * (1.0 - vig)) * (1.0 - uClShape.w);
+  float decay = max(smoothstep(0.65, 0.92, phase), 0.6 * uClDet5.z * (1.0 - vig)) * (1.0 - uClShape.w);
   vec4 infoC = vec4(clSat(hc), uClLayer.x + H, n.g, 1.0);
 
   // ---- (2) layer clouds from the 3-D shape noise: stratus / nimbostratus deck, stratocumulus sheet, Cb core -----
@@ -490,10 +490,11 @@ vec4 clCirrusLayer(vec3 rd, float c, float sceneD, out float tHit) {
   // a second, finer and slightly turned octave of the same fibres (the bundles split into strands up close)
   float fib2 = textureLod(tClCirrus, vec2(0.995 * x.x + 0.1 * x.y, -0.1 * x.x + 0.995 * x.y) / 9100.0 + 0.37, lod + 2.2).r;
   fib = fib * (0.55 + 0.75 * fib2);
+  fib = mix(fib, min(2.4 * fib * fib, 1.3), 0.65 * uClDet5.w);                   // round four: bright strands, clearer gaps
   vec4 big = textureLod(tClCirrus, vec2(0.83 * x.x - 0.56 * x.y, 0.56 * x.x + 0.83 * x.y) / 167000.0, max(lod - 2.0, 0.0));
   float patches = smoothstep(1.0 - uClCirrus.y * 1.25, 1.25 - uClCirrus.y * 1.1, big.g * 0.75 + big.b * 0.45);
   float d = patches * (0.08 + 0.92 * fib) * smoothstep(0.04, 0.4, fib + patches * 0.15);   // fibres, little haze between
-  float tauV = d * (0.12 + 0.5 * uClCirrus.y);                                   // vertical optical depth
+  float tauV = d * (0.12 + 0.5 * uClCirrus.y) * (1.0 + 0.7 * uClDet5.w);                                   // vertical optical depth
   float tau = min(tauV / mu, 3.0) * (1.0 - smoothstep(2.0e5, 3.2e5, t));
   if (tau <= 1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
   float T = exp(-tau), op = 1.0 - T;
@@ -692,6 +693,16 @@ void main() {
           float J = cloudSunScatter(tauSun, tauUp, cosT);
           #endif
           vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
+          #ifdef CL_AMBIENT_VIS
+          // Round four, calibration of the round-three network against a path-traced 10 m cumulus at the new
+          // extinction (tools/neural/gt_near.py, 9600 points): with a low sun the light enters through the flanks
+          // and the shaded interior is 1.4-2.2 x brighter than the network (trained on coarser, thinner fields)
+          // says, 1.2 x at the lit skin; at 70 deg it is within 10 %. Without this the inside of a cloud at low sun
+          // is lit by the blue sky term alone and reads cold grey.
+          float muS_ = max(uClLightDir.y, 0.0);
+          J *= 1.0 + uClDet5.y * (mix(0.22, -0.08, smoothstep(0.5, 0.95, muS_))
+                                  + mix(1.0, 0.2, smoothstep(0.26, 0.71, muS_)) * clSat((tauSun - 4.0) / 20.0));
+          #endif
           // Crease occlusion (round four): in the lobe / crease pattern of the detail cascade the tips of the lobes see
           // the whole sky and their multiply scattered light leaves freely; the creases between them are enclosed.
           // cav = where the sample sits in that pattern (0.2 = mean of the billow profile); x: sun term, y: ambient.
@@ -699,7 +710,7 @@ void main() {
           // ambient: sky light diffusing down from the cloud top, ground bounce coming up through the base
           #ifdef CL_AMBIENT_VIS
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
-          vec2 vis = cloudAmbientVis(tauUp, tauDn);
+          vec2 vis = cloudAmbientVis(tauUp, tauDn) * mix(vec2(1.0), vec2(0.84, 1.17), uClDet5.y);   // (same calibration)
           vec3 S = E * J * (occ.x * lam) + (ambUp * vis.x + ambDn * vis.y) * occ.y;
           #else
           float visUp = 0.35 * exp(-0.6 * tauUp) + 0.65 / (1.0 + 0.2 * tauUp);

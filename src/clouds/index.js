@@ -65,7 +65,7 @@ export async function createClouds(ctx) {
   // ------------------------------------------------------------------------------------------------ textures
   const noise2 = createNoise2D(ctx.params?.seed ?? 1337);
   const noise3 = createNoise3D(renderer);
-  const cells = createCellField({ seed: ctx.params?.seed ?? 1337 });
+  const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(ctx.params?.clBorder ?? 1) !== '0' });
   const weatherField = makeWeatherFieldJS(noise2);
 
   const atmGLSL = ctx.pipeline?.atmosphere?.glsl || FALLBACK_ATMOSPHERE_GLSL;
@@ -100,7 +100,7 @@ export async function createClouds(ctx) {
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
     tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture },
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
-    uClDet: v4(1, 1, 0.6, 1), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
+    uClDet: v4(1, 1, 1, 1), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
     uClLayer: v4(1500, 3000, 1 / 1500, 1500), uClShape: v4(), uClShape2: v4(), uClShape3: v4(), uClNoise: v4(), uClNoiseOfs: v4(), uClRain: v4(),
     uClJitter: v4(), uClFullRes: v4(1, 1, 0.001, 0), uClStep: v4(), uClOriginAir: { value: new THREE.Vector3() },
@@ -388,7 +388,10 @@ export async function createClouds(ctx) {
       // the ground under a cloud field: sunlit where the clouds let the sun through, plus the sky ambient
       const lit = mu * (1 - 0.8 * Math.pow(P.coverage, 1.5)) * sunW;
       U.uClAmbUp.value.set(a.x, a.y, a.z, 1);
-      U.uClAmbDn.value.set((sE.x * lit + a.x) * 0.14, (sE.y * lit + a.y) * 0.15, (sE.z * lit + a.z) * 0.13, 1);
+      // (round four: the sky light reaching the ground is attenuated by a deck as well; with the full sky term the
+      //  ground bounce flooded the underside of an overcast and hid its thickness variations)
+      const skyT = 1 - 0.7 * Math.pow(P.coverage, 1.5) * dbg('clColTau', 1);
+      U.uClAmbDn.value.set((sE.x * lit + a.x * skyT) * 0.14, (sE.y * lit + a.y * skyT) * 0.15, (sE.z * lit + a.z * skyT) * 0.13, 1);
     } else U.uClAmbUp.value.w = 0;
     const cirrusAlt = Math.max(9800, P.top + 1500);
     U.uClCirrus.value.set(cirrusAlt, P.cirrus, o.x - cirrusOffset.x, o.z - cirrusOffset.y);
@@ -409,9 +412,9 @@ export async function createClouds(ctx) {
     U.uClWindVel.value.set(wind.x * (frame.dt || 0), 0, wind.z * (frame.dt || 0), focalPx);
     U.uClTemporal2.value.set(dbg('clYoung', 1), 0, dbg('clClamp', 1), dbg('clCR', detailLevel > 0 ? 1 : 0));
     // detail cascade, detailed light samples (not at `low`), crease occlusion, surface refinement
-    U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 0.6), dbg('clRef', 1));
+    U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 1.0), dbg('clRef', 1));
     U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', 0), dbg('clWxL', 1), dbg('clAmbSide', 0.5));
-    U.uClDet5.value.set(dbg('clGrad', 1), 0, 0, 0);
+    U.uClDet5.value.set(dbg('clGrad', 1), dbg('clCal', 1), dbg('clSoft', 0.35), dbg('clCirK', 1));
     U.uClDet4.value.set(dbg('clColTau', 1), dbg('clQuilt', 1), dbg('clPouch', 1), dbg('clCb', 1));
     U.uClDet2.value.set(dbg('clDetA', 0.5), dbg('clDetF', 4), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
   }
