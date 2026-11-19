@@ -34,9 +34,11 @@ export default {
       clMax: [1.00,   0.98,   0.95,   0.92,   0.90,   0.88,   0.86,   0.84,   0.80,   0.74,   0.67,   0.62,   0.55,   0.50,   0.48,   0.47,   0.45],
       cd0:   [0.0115, 0.0115, 0.0118, 0.0135, 0.0175, 0.0255, 0.0295, 0.0305, 0.0300, 0.0280, 0.0245, 0.0212, 0.0172, 0.0140, 0.0132, 0.0129, 0.0124],
       k:     [0.28,   0.28,   0.28,   0.29,   0.30,   0.31,   0.33,   0.35,   0.38,   0.42,   0.47,   0.52,   0.58,   0.63,   0.66,   0.67,   0.70],
+      // ctrl: trailing-edge elevon / fin effectiveness falls with linear supersonic theory (∝ 1/√(M²−1)) faster than
+      // the wing lift slope -> ~0.2 of the subsonic value at M3.2 (roll ~25–30 °/s, ~2 g with full column at cruise)
       // aerodynamic centre moves aft supersonically by ~0.10 c; fuel transfer moves the CG aft by ~0.03 c (§2) -> net
       xac:   [0,      0,      0.005,  0.01,   0.02,   0.035,  0.05,   0.06,   0.07,   0.075,  0.075,  0.075,  0.075,  0.075,  0.075,  0.075,  0.075],
-      ctrl:  [1,      1,      0.98,   0.96,   0.94,   0.90,   0.87,   0.85,   0.82,   0.77,   0.71,   0.67,   0.61,   0.56,   0.54,   0.53,   0.51],
+      ctrl:  [1,      1,      0.98,   0.96,   0.93,   0.88,   0.84,   0.80,   0.72,   0.60,   0.48,   0.40,   0.31,   0.25,   0.22,   0.21,   0.20],
     },
     drag: {
       clMinDrag: 0.01, gear: 0.018, beta: 1.0, elevator: 0.08,
@@ -49,7 +51,7 @@ export default {
     pitch: { cm0: 0.02, staticMargin: 0.04, cmq: -3.2, cmde: 0.40, clde: 0.55, cmPostStall: -0.25, cmGear: -0.004 },
     side: { cyb: -0.55, cydr: 0.12 },
     // clp includes the roll damper; clda: elevons only (no ailerons), modest roll power on the thin (3 % t/c) wing
-    roll: { clb: -0.06, clbCl: -0.10, clp: -0.30, clr: 0.03, clrCl: 0.12, clda: 0.040, cldr: 0.008 },
+    roll: { clb: -0.06, clbCl: -0.10, clp: -0.30, clr: 0.03, clrCl: 0.12, clda: 0.046, cldr: 0.008 },
     // twin all-moving canted fins; directional stability fades supersonically (cnbMach) — the yaw SAS is essential
     yaw: { cnb: 0.12, cnbMach: 0.45, cnp: -0.01, cnpCl: -0.05, cnr: -0.22, cnda: 0.002, cndaCl: 0.008, cndr: 0.075, alphaDir: [18, 32], cnbPostStall: -0.02 },
     stall: { wingDrop: 0.004, clpPost: 0.01, buffetMargin: 5, warnMargin: 3, aileronLoss: 0.4 },
@@ -69,7 +71,7 @@ export default {
     // Net installed thrust, factor of sea-level static (mil: of 111 kN, ab: of 144.6 kN). Generated from the
     // afterburning-turbojet lapse 1 − 0.34(θ0 − 1) − 0.1√M on the ram pressure ratio with mixed-compression inlet
     // recovery 1 − 0.075 (M − 1)^1.35, a 1.45 burner-pressure (q) cap at low altitude, and a fuel trim-back above
-    // M3.3 (compressor-inlet temperature limit 427 °C) — so thrust per unit pressure rises ~16× from static to M3.2
+    // M3.3 (compressor-inlet temperature limit 427 °C), and a low-Reynolds-number loss (δ/δ20km)^0.2 above 20 km — so thrust per unit pressure rises ~16× from static to M3.2
     // (the "turbo-ramjet" bypass), and the dry share falls from 77 % to ~30 % at cruise (cruise is in AB).
     thrustTable: {
       mach: [0, 0.3, 0.6, 0.8, 0.9, 1, 1.1, 1.2, 1.4, 1.7, 2, 2.3, 2.6, 2.9, 3.1, 3.2, 3.3, 3.35, 3.4, 3.5],
@@ -83,9 +85,9 @@ export default {
         [0.1517, 0.1481, 0.1660, 0.1891, 0.2045, 0.2188, 0.2348, 0.2526, 0.2946, 0.3773, 0.4813, 0.5579, 0.4407, 0.3310, 0.2631, 0.2309, 0.2004, 0.1114, 0.0342, 0.0000],   // 14000 m
         [0.0948, 0.0925, 0.1037, 0.1181, 0.1277, 0.1367, 0.1466, 0.1578, 0.1840, 0.2356, 0.3006, 0.3753, 0.4407, 0.3310, 0.2631, 0.2309, 0.2004, 0.1114, 0.0342, 0.0000],   // 17000 m
         [0.0592, 0.0578, 0.0648, 0.0738, 0.0798, 0.0854, 0.0916, 0.0986, 0.1150, 0.1472, 0.1878, 0.2345, 0.2841, 0.3234, 0.2631, 0.2309, 0.2004, 0.1114, 0.0342, 0.0000],   // 20000 m
-        [0.0370, 0.0361, 0.0405, 0.0461, 0.0498, 0.0533, 0.0572, 0.0615, 0.0717, 0.0917, 0.1168, 0.1455, 0.1757, 0.1989, 0.2056, 0.2050, 0.1941, 0.1076, 0.0330, 0.0000],   // 23000 m
-        [0.0233, 0.0227, 0.0254, 0.0290, 0.0313, 0.0335, 0.0359, 0.0386, 0.0450, 0.0575, 0.0731, 0.0908, 0.1093, 0.1231, 0.1265, 0.1257, 0.1230, 0.0724, 0.0236, 0.0000],   // 26000 m
-        [0.0147, 0.0144, 0.0161, 0.0183, 0.0198, 0.0212, 0.0227, 0.0244, 0.0284, 0.0363, 0.0460, 0.0570, 0.0684, 0.0766, 0.0783, 0.0775, 0.0754, 0.0443, 0.0144, 0.0000],   // 29000 m
+        [0.0338, 0.0330, 0.0369, 0.0421, 0.0455, 0.0487, 0.0522, 0.0561, 0.0654, 0.0837, 0.1066, 0.1328, 0.1603, 0.1815, 0.1877, 0.1871, 0.1771, 0.0982, 0.0301, 0.0000],   // 23000 m
+        [0.0194, 0.0189, 0.0212, 0.0241, 0.0261, 0.0279, 0.0299, 0.0322, 0.0375, 0.0479, 0.0608, 0.0756, 0.0910, 0.1024, 0.1053, 0.1046, 0.1024, 0.0603, 0.0196, 0.0000],   // 26000 m
+        [0.0112, 0.0109, 0.0122, 0.0139, 0.0151, 0.0161, 0.0173, 0.0186, 0.0216, 0.0276, 0.0350, 0.0434, 0.0520, 0.0582, 0.0595, 0.0589, 0.0574, 0.0337, 0.0109, 0.0000],   // 29000 m
       ],
       ab: [
         [1.000, 0.9996, 1.145, 1.257, 1.233, 1.206, 1.179, 1.149, 1.085, 0.9760, 0.8505, 0.7085, 0.5497, 0.3738, 0.2472, 0.1810, 0.1128, 0.0468, 0.0086, 0.0000],   // 0 m
@@ -96,9 +98,9 @@ export default {
         [0.1516, 0.1526, 0.1763, 0.2051, 0.2243, 0.2471, 0.2731, 0.3030, 0.3769, 0.5307, 0.7474, 0.9603, 0.8374, 0.7019, 0.6046, 0.5538, 0.5016, 0.2850, 0.0896, 0.0000],   // 14000 m
         [0.0947, 0.0953, 0.1101, 0.1281, 0.1400, 0.1543, 0.1705, 0.1892, 0.2354, 0.3315, 0.4668, 0.6460, 0.8374, 0.7019, 0.6046, 0.5538, 0.5016, 0.2850, 0.0896, 0.0000],   // 17000 m
         [0.0592, 0.0595, 0.0688, 0.0800, 0.0875, 0.0964, 0.1066, 0.1182, 0.1471, 0.2071, 0.2917, 0.4036, 0.5399, 0.6857, 0.6046, 0.5538, 0.5016, 0.2850, 0.0896, 0.0000],   // 20000 m
-        [0.0370, 0.0372, 0.0430, 0.0500, 0.0546, 0.0602, 0.0665, 0.0738, 0.0917, 0.1290, 0.1813, 0.2503, 0.3338, 0.4218, 0.4725, 0.4917, 0.4857, 0.2753, 0.0863, 0.0000],   // 23000 m
-        [0.0233, 0.0234, 0.0270, 0.0314, 0.0343, 0.0378, 0.0418, 0.0463, 0.0576, 0.0808, 0.1135, 0.1563, 0.2076, 0.2609, 0.2907, 0.3014, 0.3078, 0.1854, 0.0617, 0.0000],   // 26000 m
-        [0.0147, 0.0148, 0.0171, 0.0199, 0.0217, 0.0239, 0.0264, 0.0293, 0.0364, 0.0510, 0.0715, 0.0982, 0.1300, 0.1624, 0.1799, 0.1858, 0.1888, 0.1134, 0.0376, 0.0000],   // 29000 m
+        [0.0338, 0.0340, 0.0392, 0.0456, 0.0499, 0.0549, 0.0607, 0.0673, 0.0837, 0.1177, 0.1655, 0.2285, 0.3046, 0.3850, 0.4313, 0.4488, 0.4434, 0.2513, 0.0788, 0.0000],   // 23000 m
+        [0.0194, 0.0195, 0.0225, 0.0262, 0.0286, 0.0315, 0.0348, 0.0386, 0.0479, 0.0673, 0.0945, 0.1301, 0.1729, 0.2172, 0.2420, 0.2509, 0.2562, 0.1543, 0.0514, 0.0000],   // 26000 m
+        [0.0112, 0.0113, 0.0130, 0.0151, 0.0165, 0.0182, 0.0201, 0.0223, 0.0276, 0.0388, 0.0543, 0.0747, 0.0988, 0.1235, 0.1368, 0.1413, 0.1436, 0.0862, 0.0286, 0.0000],   // 29000 m
       ],
     },
     n1Idle: 0.40, n2Idle: 0.62, spoolUp: 5.5, spoolDown: 4.0, idleThrust: 0.025, idleFuelFlow: 0.28,
@@ -109,7 +111,7 @@ export default {
   gear: {
     nose: { travel: 0.30 }, main: { travel: 0.38 },
     retractTime: 8, steerMax: 40, steerLatG: 0.25,
-    brakeMu: 0.38,                                   // small high-pressure tyres, brakes limited at high speed
+    brakeMu: 0.33,                                   // small high-pressure tyres, brakes limited at high speed
     maxSinkRate: 3.05, crashSinkRate: 6,            // 10 ft/s design touchdown sink (not a carrier gear)
   },
   structure: { tailStrikeDeg: 12.5, bellyY: -1.0 },
@@ -125,8 +127,8 @@ export default {
     type: 'conventional',
     // irreversible hydraulic elevons with artificial feel; pitch / roll / yaw SAS (dampers in cmq / clp, yaw SAS
     // here at high authority); trim follow-up stands in for the Mach-trim / autopilot pitch trim
-    feelQ: 5000, feelMin: 0.12, rollFeelQ: 16000, trimFollowUp: 0.2,
-    yawDamper: 1, sasAuthority: 0.5, betaGain: 3, ari: 0.10, yawBandwidth: 2.5,
+    feelQ: 5000, feelMin: 0.12, rollFeelQ: 12000, trimFollowUp: 0.2,
+    yawDamper: 1, sasAuthority: 0.8, betaGain: 3, ari: 0.10, yawBandwidth: 2.5,
     pitchBandwidth: 3.5, pitchIntegral: 1.5, pitchGainMax: 4,    // autopilot pitch servo (heavy-aircraft values: Iyy ~ 2.6e6 kg·m²)
     rotationRate: 4, rotationPitchMax: 11,
   },
@@ -134,7 +136,7 @@ export default {
   targets: {
     stallSpeedClean: [73, 0.10],              // m/s CAS: ~70 m/s published at 42 t, scaled to 46 t
     stallSpeedLanding: [73, 0.10],            // no flaps: gear down only
-    takeoffRoll: [1250, 0.30],                // m, max AB; ~1,500 m at 63 t published, ∝ W² -> ~1,050–1,250 m at 52 t
+    takeoffRoll: [1100, 0.30],                // m, max AB; ~1,500 m at ~63 t, rotating at a fixed 100 m/s -> ∝ W -> ~1,100 m at 46 t
     rotateSpeed: 100, rotatePitch: 10, climbPitch: 12,   // 195 kt rotation to 10° pitch, lift-off ~205–210 kt
     landingRoll: [1100, 0.35],                // m, chute + brakes (~1,100 m published at ~40 t)
     climbRate: [60, 0.30], climbSpeed: 130,   // 12,000 ft/min initial climb (≈ 250 kt climb-out, gear up)
