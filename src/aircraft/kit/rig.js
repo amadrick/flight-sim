@@ -83,7 +83,9 @@ export function createRig(ctx, o = {}) {
       tris += m.triCount;
       const obj = setupMesh(new THREE.Mesh(m.toGeometry(), info.mat), info);
       if (m.p2) obj.morphTargetInfluences = [0];
-      return attach(obj, name, opt.parent, pivot);
+      attach(obj, name, opt.parent, pivot);
+      if (mesh.onPart) mesh.onPart(obj, rig);                         // kit parts that animate themselves (pilot head, …)
+      return obj;
     },
     hinge(node, a, b, opt = {}) {
       const axis = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize();
@@ -116,6 +118,7 @@ export function createRig(ctx, o = {}) {
       if (built) throw new Error('rig: build() called twice'); built = true;
       let firstStatic = null;
       for (const [key, m] of statics) {
+        m.p2 = null;                                                    // static geometry never morphs (a pilot merged into it keeps still)
         const info = mats.get(key), obj = setupMesh(new THREE.Mesh(m.toGeometry(), info.mat), info);
         obj.name = 'static:' + key; root.add(obj); tris += m.triCount; if (!firstStatic && info.layer === undefined) firstStatic = obj;
       }

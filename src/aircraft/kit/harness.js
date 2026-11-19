@@ -140,7 +140,10 @@ function boot() {
     VIEWS.ccanopy = { az: 292, el: 12, dist: Math.max(3.2, nl * 1.1), fov: 30, tgt: [e[0], e[1] - 0.1 + y0, e[2] + 0.3] };
     VIEWS.croot = { az: 62, el: 24, dist: Math.max(5, g.length * 0.3), fov: 30, tgt: [g.span * 0.11, y0 + 0.1, (g.noseZ + g.tailZ) / 2 * 0.3] };
     VIEWS.cgear = { az: 305, el: 3, dist: Math.max(3.5, g.cgHeight * 3.2), fov: 30, tgt: [gm.pos[0] * 0.6, gm.pos[1] + y0 + g.cgHeight * 0.45, (gm.pos[2] * 2 + gn.pos[2]) / 3] };
-    VIEWS.cwheel = { az: 250, el: 6, dist: Math.max(1.6, gm.wheelRadius * 7), fov: 30, tgt: [gm.pos[0], gm.pos[1] + y0 + gm.wheelRadius * 1.6, gm.pos[2]] };
+    VIEWS.cwheel = { az: 252, el: 5, dist: Math.max(1.3, gm.wheelRadius * 5.2), fov: 30, tgt: [gm.pos[0], gm.pos[1] + y0 + gm.wheelRadius * 1.15, gm.pos[2]] };
+    VIEWS.cnwheel = { az: 300, el: 5, dist: Math.max(1.2, gn.wheelRadius * 6), fov: 30, tgt: [gn.pos[0], gn.pos[1] + y0 + gn.wheelRadius * 1.3, gn.pos[2]] };
+    VIEWS.ccrew = { az: 298, el: 9, dist: 2.3, fov: 30, tgt: [e[0], e[1] - 0.28 + y0, e[2] - 0.05] };
+    VIEWS.cwell = { az: 262, el: -28, dist: Math.max(2.2, gm.wheelRadius * 7), fov: 34, noGround: true, tgt: [gm.pos[0] * 0.8, y0 - g.cgHeight * 0.25, gm.pos[2]] };
     VIEWS.cnoz = { az: 158, el: 10, dist: Math.max(3, (en.nozzleRadius || 0.5) * 9), fov: 30, tgt: [en.nozzle[0] * 0.8, en.nozzle[1] + y0, en.nozzle[2] - 0.5] };
     VIEWS.cwing = { az: 300, el: 32, dist: Math.max(4, g.span * 0.22), fov: 30, tgt: [-g.span * 0.27, y0 + 0.2, (g.noseZ + g.tailZ) / 2 * 0.3 + g.length * 0.05] };
   }
@@ -168,7 +171,7 @@ function boot() {
   }
   const viewParam = q.get('view') || 'quarter';
   const list = q.has('views') ? q.get('views').split(',') : viewParam === 'sheet' ? ['quarter', 'side', 'top', 'front', 'rearq', 'below'] : viewParam === 'closeups' ? ['cnose', 'croot', 'cgear', 'cnoz'] : [viewParam];
-  const hud = hudCanvas.getContext('2d');
+  const hud = hudCanvas.getContext('2d'), _invRoot = new THREE.Matrix4(), _eyeV = new THREE.Vector3();
   function render() {
     const W = window.innerWidth, H = window.innerHeight;
     renderer.setSize(W, H, false); hudCanvas.width = W; hudCanvas.height = H; hud.clearRect(0, 0, W, H);
@@ -177,7 +180,14 @@ function boot() {
     list.forEach((name, i) => {
       const cw = Math.floor(W / cols), chh = Math.floor(H / rows), cx = (i % cols) * cw, cy = Math.floor(i / cols) * chh;
       renderer.setViewport(cx, H - cy - chh, cw, chh); renderer.setScissor(cx, H - cy - chh, cw, chh);
-      placeCamera(name, cw / chh); renderer.render(scene, camera);
+      placeCamera(name, cw / chh);
+      if (list.length > 1 && visual.rig) {                            // per-view cockpit state (pilot hidden only in the eye-point view of a sheet)
+        const R = visual.rig; R.root.updateMatrixWorld(); camera.updateMatrixWorld();
+        R.cameraBody.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_invRoot.copy(R.root.matrixWorld).invert());
+        const was = R.cameraInCockpit; R.cameraInCockpit = R.cameraBody.distanceTo(_eyeV.fromArray(g.pilotEye || [0, 0, 0])) < 0.75;
+        if (was !== R.cameraInCockpit) visual.update(state, 0);
+      }
+      renderer.render(scene, camera);
       if (list.length > 1) { hud.fillStyle = 'rgba(0,0,0,0.55)'; hud.fillRect(cx + 4, cy + 4, hud.measureText(name).width + 10, 16); hud.fillStyle = '#ffd400'; hud.font = '11px monospace'; hud.fillText(name, cx + 9, cy + 16); }
     });
     renderer.setScissorTest(false);

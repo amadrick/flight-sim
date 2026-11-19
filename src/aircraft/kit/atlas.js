@@ -103,6 +103,7 @@ class Chart {
 
 export function createAtlas(o = {}) {
   const size = o.size ?? 2048, pad = o.pad ?? 5, SW = 16, swatchCols = 16, swatchRows = o.swatchRows ?? 4;
+  const KIT_ROWS = 5;                                                  // extra swatch rows owned by the kit's own parts (crew, wheels, seats…)
   const base = o.base || FINISH.matte('#8a9096');
   const charts = [], byName = {};
   const layers = {};
@@ -115,7 +116,7 @@ export function createAtlas(o = {}) {
     pack() {
       const items = [];
       for (const c of charts) for (const s of c.strips) items.push({ s, w: s.req[0], h: s.req[1] });
-      const sw = { fixed: true, w: SW * swatchCols, h: SW * swatchRows };
+      const sw = { fixed: true, w: SW * swatchCols, h: SW * (swatchRows + KIT_ROWS) };
       const tryPack = (k) => {
         const rects = items.map(it => ({ it, w: Math.ceil(it.w * k) + 2 * pad, h: Math.ceil(it.h * k) + 2 * pad }));
         rects.push({ it: sw, w: sw.w, h: sw.h });
@@ -164,7 +165,45 @@ export function createAtlas(o = {}) {
         g.fillRect(x * k, y * k, SW * k, SW * k);
       }
       if (finish.emissive) { const L = lazyLayer('emis'), g = L.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = finish.emissive; g.fillRect(x * L.scale, y * L.scale, SW * L.scale, SW * L.scale); }
-      uv = [(x + SW / 2) / size, 1 - (y + SW / 2) / size]; swatches.set(key, uv); return uv;
+      uv = [(x + SW / 2) / size, 1 - (y + SW / 2) / size]; uv.atlas = atlas; uv.finish = finish; swatches.set(key, uv); return uv;
+    },
+    /**
+     * Kit-internal swatches and strips: they live in their own rows of the swatch block (so they never use up a visual's
+     * swatches) and return null instead of throwing when that block is full or already packed — callers fall back to a UV
+     * they were given. kitSwatch(key, finish) → [u, v] | null. kitStrip(key, cells, fn(g, layer), rows = 1) → { uv(t), uv2(t, s) } | null
+     * (a strip may be `rows` cells tall: uv2 addresses it as a small 2-D texture, s 0 = top … 1 = bottom).
+     */
+    kitSwatch(key, finish) {
+      if (!packed) return null;
+      key = 'kit:' + key;
+      let uv = swatches.get(key); if (uv !== undefined) return uv;
+      const c = kitCells(1, 1); if (!c || (tex && !pending)) { swatches.set(key, null); return null; }
+      for (const L of [layers.color, layers.orm, layers.height]) {
+        const g = L.ctx, k = L.scale; g.setTransform(1, 0, 0, 1, 0, 0);
+        g.fillStyle = L === layers.color ? finish.color : L === layers.orm ? ormStyle(finish.rough ?? 0.5, finish.metal ?? 0) : '#808080';
+        g.fillRect(c.x * k, c.y * k, SW * k, SW * k);
+      }
+      if (finish.emissive) { const L = lazyLayer('emis'), g = L.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = finish.emissive; g.fillRect(c.x * L.scale, c.y * L.scale, SW * L.scale, SW * L.scale); }
+      if (atlas.tex) atlas.tex.map.needsUpdate = true;
+      uv = [(c.x + SW / 2) / size, 1 - (c.y + SW / 2) / size]; uv.atlas = atlas; uv.finish = finish; swatches.set(key, uv); return uv;
+    },
+    kitStrip(key, cells, fn, rows = 1) {
+      if (!packed) return null;
+      key = 'kit:' + key;
+      if (strips.has(key)) return strips.get(key);
+      const c = kitCells(cells, rows); if (!c || (tex && !pending)) { strips.set(key, null); return null; }
+      const w = cells * SW, h = rows * SW;
+      for (const name of ['color', 'orm', 'height', 'emis']) {
+        if (name === 'emis' && !fn.emissive) continue;
+        const L = name === 'emis' ? lazyLayer('emis') : layers[name], g = L.ctx, k = L.scale;
+        g.save(); g.setTransform(w * k, 0, 0, h * k, c.x * k, c.y * k); g.beginPath(); g.rect(0, 0, 1, 1); g.clip();
+        g.fillStyle = name === 'height' ? '#808080' : name === 'orm' ? ormStyle(0.5, 0) : name === 'emis' ? '#000' : '#888'; g.fillRect(0, 0, 1, 1);
+        fn(g, name); g.restore();
+      }
+      if (atlas.tex) atlas.tex.map.needsUpdate = true;
+      const cl = (t) => Math.min(1, Math.max(0, t));
+      const st = { atlas, uv: (t) => [(c.x + 2 + cl(t) * (w - 4)) / size, 1 - (c.y + h / 2) / size], uv2: (t, v) => [(c.x + 2 + cl(t) * (w - 4)) / size, 1 - (c.y + 2 + cl(v) * (h - 4)) / size] };
+      strips.set(key, st); return st;
     },
     /**
      * A row of `cells` swatch cells painted as one small gradient texture (tyre cross-sections, wheel dishes, heat-stained
@@ -185,7 +224,7 @@ export function createAtlas(o = {}) {
         fn(g, name); g.restore();
       }
       if (atlas.tex) atlas.tex.map.needsUpdate = true;
-      const st = { uv: (t) => [(x + 2 + Math.min(1, Math.max(0, t)) * (w - 4)) / size, 1 - (y + SW / 2) / size] };
+      const st = { atlas, uv: (t) => [(x + 2 + Math.min(1, Math.max(0, t)) * (w - 4)) / size, 1 - (y + SW / 2) / size] };
       strips.set(key, st); return st;
     },
     ormStyle,
@@ -259,6 +298,18 @@ export function createAtlas(o = {}) {
     },
   };
   let targets = null, pending = null, tex = null; const strips = new Map();
+  // kit rows: a shelf allocator over KIT_ROWS × swatchCols cells below the visual's own swatch rows
+  const kitUsed = []; for (let r = 0; r < KIT_ROWS; r++) kitUsed.push(new Uint8Array(swatchCols));
+  function kitCells(cells, rows) {
+    for (let r = 0; r + rows <= KIT_ROWS; r++) for (let c0 = 0; c0 + cells <= swatchCols; c0++) {
+      let free = true;
+      for (let a = 0; a < rows && free; a++) for (let b = 0; b < cells; b++) if (kitUsed[r + a][c0 + b]) { free = false; break; }
+      if (!free) continue;
+      for (let a = 0; a < rows; a++) for (let b = 0; b < cells; b++) kitUsed[r + a][c0 + b] = 1;
+      return { x: swatchRect.x + c0 * SW, y: swatchRect.y + (swatchRows + r) * SW };
+    }
+    return null;
+  }
   Object.defineProperty(atlas, 'tex', { get: () => tex, set: (v) => { tex = v; }, enumerable: true });
   let tone = null;
   function lazyLayer(name = 'emis') {
