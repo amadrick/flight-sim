@@ -170,8 +170,8 @@ export function makePavementMaterial(ctx, shared, pools) {
             col *= mix(1.0, mix(1.18 + 0.1 * nD.r, 0.62 + 0.08 * nD.r, fresh), patchK);
             col = mix(col, vec3(0.035), border * 0.85);
             // sealed cracks: black, glossy tar bands following the crack network
-            float crack = smoothstep(0.5, 0.82, crackNet) * crackZone * (1.0 - patchK);
-            col = mix(col, vec3(0.032, 0.031, 0.03), crack * 0.85);
+            float crack = smoothstep(0.74, 0.93, crackNet) * smoothstep(0.55, 0.9, crackZone) * (1.0 - patchK);
+            col = mix(col, vec3(0.04, 0.039, 0.037), crack * 0.7);
             // transverse thermal cracks every few tens of metres on older surfaces
             float tcr = scnLines(sl.x + 3.0 * nB.g, 31.0, 0.05) * step(0.45, scnHash(vec2(floor(sl.x / 31.0), seed)));
             col = mix(col, vec3(0.035), tcr * 0.7 * (1.0 - patchK));
