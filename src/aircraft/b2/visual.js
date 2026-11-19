@@ -29,26 +29,26 @@ export const LIVERIES = ['operational', 'weathered', 'test', 'rollout'];
 // Skin tones: the AHSS coating is a dark, faintly blue-grey, satin finish; repaired / re-taped seams dry a shade lighter or
 // darker than the panels around them; the leading-edge treatment is a lighter grey. From below the same coating reads
 // darker and bluer (sky-lit only). Serials and names are invented.
-//   weather: kit skin weathering; patch: strength of the tonal patchwork; tape: strength of the taped seams
+//   weather: kit skin weathering; patchK: strength of the tonal patchwork; tape: strength of the taped seams
 const SCHEMES = {
   operational: {
     name: 'Operational (509th BW)', skin: '#2f343a', under: '#2b3038', le: '#4c5259', seam: '#40454d', patch: '#2d3137', tile: '#6f6b64', soot: '#2a2622',
-    rough: 0.56, metal: 0.07, weather: 0.42, patch: 1, tape: 1, noise: 0.03, chalk: 0, walk: '#272a2f',
+    rough: 0.56, metal: 0.07, weather: 0.42, patchK: 1, tape: 1, noise: 0.03, chalk: 0, walk: '#272a2f',
     code: 'WM', serial: 'AF 91-0347', acName: 'SPIRIT OF CASCADIA', unit: '509 BW', mark: '#0f1012',
   },
   weathered: {
     name: 'Weathered (field-repaired coating)', skin: '#41464d', under: '#373c44', le: '#5d636a', seam: '#4f555d', patch: '#33373d', tile: '#67635c', soot: '#221e1b',
-    rough: 0.62, metal: 0.05, weather: 0.75, patch: 1.6, tape: 1.4, noise: 0.06, chalk: 0.05, walk: '#2c2f34', repairs: 22,
+    rough: 0.62, metal: 0.05, weather: 0.75, patchK: 1.6, tape: 1.4, noise: 0.06, chalk: 0.05, walk: '#2c2f34', repairs: 22,
     code: 'WM', serial: 'AF 93-1129', acName: 'SPIRIT OF THE HIGH PLAINS', unit: '509 BW', mark: '#1c1e22',
   },
   test: {
     name: 'Test force (419th FLTS)', skin: '#32373e', under: '#2d323a', le: '#50565d', seam: '#434850', patch: '#30343a', tile: '#74706a', soot: '#2a2622',
-    rough: 0.56, metal: 0.07, weather: 0.35, patch: 0.8, tape: 0.9, noise: 0.03, chalk: 0, walk: '#292c31', test: true,
+    rough: 0.56, metal: 0.07, weather: 0.35, patchK: 0.8, tape: 0.9, noise: 0.03, chalk: 0, walk: '#292c31', test: true,
     code: 'ED', serial: 'AF 82-1071', acName: 'SPIRIT OF ANTELOPE VALLEY', unit: '419 FLTS', mark: '#16181b', av: 'AV-6',
   },
   rollout: {
     name: 'Factory rollout finish', skin: '#2e3238', under: '#2b3037', le: '#454a51', seam: '#3a3e45', patch: '#30343a', tile: '#7b7770', soot: '#3a3631',
-    rough: 0.52, metal: 0.08, weather: 0.1, patch: 0.35, tape: 0.55, noise: 0.015, chalk: 0, walk: '#2a2d32', fresh: true,
+    rough: 0.52, metal: 0.08, weather: 0.1, patchK: 0.35, tape: 0.55, noise: 0.015, chalk: 0, walk: '#2a2d32', fresh: true,
     code: '', serial: 'AF 82-1072', acName: 'SPIRIT OF PALMDALE', unit: '', mark: '#17191c',
   },
 };
@@ -784,7 +784,7 @@ function paint(atlas, o) {
     for (let k = 0; k < (top ? 95 : 70); k++) {
       const [a, z] = randomSpot(), big = rnd() < 0.25, L = big ? 3 + rnd() * 6 : 0.5 + rnd() * 2.2, W = big ? 1.5 + rnd() * 3 : 0.35 + rnd() * 1.3;
       const q = rhomb(a, z, L, W); if (!inside(q, 0.15)) continue;
-      P.fill(q, rnd() < 0.55 ? patchF : seamF, { alpha: (big ? 0.05 : 0.07 + rnd() * 0.08) * SC.patch, feather: 1.5 });
+      P.fill(q, rnd() < 0.55 ? patchF : seamF, { alpha: (big ? 0.05 : 0.07 + rnd() * 0.08) * SC.patchK, feather: 1.5 });
     }
     if (SC.repairs) for (let k = 0; k < SC.repairs; k++) {                 // fresh field repairs: crisp-edged, glossier patches
       const [a, z] = randomSpot(), q = rhomb(a, z, 0.3 + rnd() * 1.1, 0.25 + rnd() * 0.7); if (!inside(q)) continue;
