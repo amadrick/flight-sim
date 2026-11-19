@@ -19,7 +19,7 @@ try {
   const W = window.innerWidth, H = window.innerHeight;
   renderer.setSize(W, H, false);
   const scatter = createNeuralCloudScatter();
-  const scatter4 = hasCloudScatter4() ? createNeuralCloudScatter4() : null;
+  const scatter4 = hasCloudScatter4() ? createNeuralCloudScatter4({ version: 1 }) : null;   // round-one 4-feature network
   const sky = createNeuralCloudSkyVisibility();
   const common = /* glsl */`
     precision highp float;
@@ -41,14 +41,15 @@ try {
   const ratios = [0.15, 0.6, 2.0];
   const numMat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
-    uniforms: { ...scatter.uniforms, ...(scatter4 ? scatter4.uniforms : {}), ...sky.uniforms, uRatio: { value: 1 } },
+    uniforms: { ...scatter.uniforms, ...(scatter4 ? scatter4.uniforms : {}), ...sky.uniforms, uRatio: { value: 1 }, uMode: { value: 0 } },
     vertexShader: FULLSCREEN_VERT,
     fragmentShader: common + /* glsl */`
-      uniform float uRatio;
+      uniform float uRatio, uMode;
       out vec4 outColor;
       void main() {
         float ts, c; inputsFromUv(vUv, ts, c);
         float tu = ts * uRatio;
+        if (uMode > 0.5) { outColor = vec4(cloudAmbientVis(tu, ts), 0.0, 1.0); return; }   // round-two ambient
         // R: neural J, G: fitted-octave J, B: 4-feature neural J (tauDown = 0.7 tauSun), A: sky visibility V(tauUp = tu, tauDown = ts)
         outColor = vec4(cloudSunScatter(ts, tu, c), cloudSunScatterAnalytic(ts, tu, c), cloudSunScatter4(ts, tu, c, 0.7 * ts), cloudSkyVisibility(tu, ts));
       }`,
@@ -78,7 +79,21 @@ try {
       errsSky.push(Math.abs(buf[o + 3] - sky.sample(ts * ratio, ts)));
     }
   }
-  for (const a of [errs, errsA, errs4, errsSky]) a.sort((x, y) => x - y);
+  // round-two ambient visibility: GPU vs CPU twin
+  const errsAmb = [];
+  numMat.uniforms.uMode.value = 1;
+  for (const ratio of ratios) {
+    numMat.uniforms.uRatio.value = ratio;
+    pass.render(renderer, rt);
+    renderer.readRenderTargetPixels(rt, 0, 0, NX, NY, buf);
+    for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++) {
+      const ts = Math.fround(Math.exp((x + 0.5) / NX * Math.log(161)) - 1), o = 4 * (y * NX + x);
+      const v = scatter.sampleAmbient(ts * ratio, ts);
+      errsAmb.push(Math.max(Math.abs(buf[o] - v[0]), Math.abs(buf[o + 1] - v[1])));
+    }
+  }
+  numMat.uniforms.uMode.value = 0;
+  for (const a of [errs, errsA, errs4, errsSky, errsAmb]) a.sort((x, y) => x - y);
   const q = (a, p) => a[Math.min(a.length - 1, Math.floor(a.length * p))];
   sim.results = {
     samples: errs.length,
@@ -87,6 +102,7 @@ try {
     analyticGpuVsCpuPpm: { median: 1e6 * q(errsA, 0.5), p99: 1e6 * q(errsA, 0.99), max: 1e6 * errsA[errsA.length - 1] },
     neural4GpuVsCpuPpm: scatter4 ? { median: 1e6 * q(errs4, 0.5), p99: 1e6 * q(errs4, 0.99), max: 1e6 * errs4[errs4.length - 1] } : null,
     skyGpuVsCpuAbsPpm: { median: 1e6 * q(errsSky, 0.5), max: 1e6 * errsSky[errsSky.length - 1] },
+    ambientGpuVsCpuAbsPpm: { median: 1e6 * q(errsAmb, 0.5), max: 1e6 * errsAmb[errsAmb.length - 1] },
     worst,
     bakeMs: scatter.info.bakeMs, buildMs: scatter.info.buildMs, params: scatter.info.params,
     floatLinear: !!renderer.getContext().getExtension('OES_texture_float_linear'),

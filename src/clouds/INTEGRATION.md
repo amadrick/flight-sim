@@ -19,6 +19,22 @@ Owner: clouds agent. Files: `src/clouds/**` only. Nothing outside this directory
 Events: listens to `quality:change`, `weather:change`, `camera:mode`, `session:start`; emits `lightning` with
 `{ worldPos: Vector3, intensity: 0..1 }` at the first stroke of each flash (audio can delay thunder by distance / 343 m/s).
 
+## Round two (neural clouds 2) changes
+
+- `setScatterModel`: a model whose GLSL also defines `vec2 cloudAmbientVis(float tauUp, float tauDown)` replaces the
+  hand-written sky / ground-bounce visibility (`#define CL_AMBIENT_VIS`): `S = E J + ambUp V.x + ambDown V.y`. The
+  round-two neural model (src/neural/cloud-light.js) provides it; `scatter=classic` keeps the old formula.
+- `cloudShadow()` / `cloudDiffuseTransmittance()` (the pipeline-facing lookups) use a cubic B-spline filtered fetch
+  (4 bilinear taps instead of 1): no more square / diamond facets along shadow edges on the ground. The march's own
+  `cloudShadowTau()` stays at one fetch.
+- Density: all three octaves of the detail volume from the one fetch, detail period 1900 -> 1350 m, erosion 0.24 ->
+  0.28 (cumulus), almost no erosion in the lowest ~8 % of a cell (flat condensation level), crisper density ramp
+  (`edge = clamp(ds * 0.0005, 0.009, 0.05)`), light-march samples one half mip finer (sharper turret self-shadows).
+  Same step counts, no extra fetches in the march.
+- Dev harness: `sim.exportDensity({ size, nxy, find, edge })` samples the real density GLSL on a grid for the
+  ground-truth comparison (tools/neural/gt_*.py), e.g.
+  `node tools/shot.mjs --entry src/clouds/harness.js --html dist/clouds.html --frames 4 --size 320x180 --params "weather=scattered&tod=12&cy=4200" --eval "sim.exportDensity({size:5760,nxy:192})" > tools/neural/gt_data/export_scattered.txt`.
+
 ## Contract deviations / things to know
 
 1. `texture` is full resolution (the module does its own depth-aware temporal upsample), so the composite can use a

@@ -77,12 +77,12 @@ test('createNeuralCloudScatter: texture, uniforms, GLSL and build time', () => {
   let s;
   for (let r = 0; r < 5; r++) {
     const t0 = performance.now();
-    s = createNeuralCloudScatter();
+    s = createNeuralCloudScatter({ version: 1 });
     times.push(performance.now() - t0);
     if (r < 4) s.dispose();
   }
   times.sort((a, b) => a - b);
-  console.log(`  createNeuralCloudScatter(): median ${times[2].toFixed(2)} ms (bake ${s.info.bakeMs.toFixed(2)} ms), ${s.info.params} parameters`);
+  console.log(`  createNeuralCloudScatter({ version: 1 }): median ${times[2].toFixed(2)} ms (bake ${s.info.bakeMs.toFixed(2)} ms), ${s.info.params} parameters`);
   assert.ok(times[2] < 50, `build too slow: ${times[2]} ms`);
   assert.ok(s.texture instanceof THREE.Data3DTexture);
   assert.equal(s.uniforms.tCloudScatterLUT.value, s.texture);
@@ -107,7 +107,7 @@ test('createNeuralCloudScatter: texture, uniforms, GLSL and build time', () => {
 });
 
 test('LUT sampling (CPU twin of the GLSL): finite, non-negative, correct limits, close to the network', () => {
-  const s = createNeuralCloudScatter();
+  const s = createNeuralCloudScatter({ version: 1 });
   const ph = net.phase;
   // random points inside the trained range: LUT interpolation error against the direct network
   let seed = 12345;
@@ -188,7 +188,7 @@ test('4-feature model: factor textures, GLSL, CPU twin close to the network, bui
   let s;
   for (let r = 0; r < 5; r++) {
     const t0 = performance.now();
-    s = createNeuralCloudScatter4();
+    s = createNeuralCloudScatter4({ version: 1 });
     times.push(performance.now() - t0);
     if (r < 4) s.dispose();
   }
@@ -232,7 +232,7 @@ test('prior option: thick-prior network reproduces Python; it is brighter at thi
     maxLn = Math.max(maxLn, Math.abs(logJms(netT, vec.tauSun[i], vec.tauUp[i], vec.cosTheta[i]) - vec.lnJmsThickPrior[i]));
   }
   assert.ok(maxLn < 1e-4, `thick-prior ln J_ms mismatch ${maxLn}`);
-  const data = createNeuralCloudScatter(), thick = createNeuralCloudScatter({ prior: 'thick' }), mid = createNeuralCloudScatter({ prior: 0.5 });
+  const data = createNeuralCloudScatter({ version: 1 }), thick = createNeuralCloudScatter({ version: 1, prior: 'thick' }), mid = createNeuralCloudScatter({ version: 1, prior: 0.5 });
   assert.equal(data.info.prior, 'dataset');
   assert.equal(thick.info.prior, 'thick');
   assert.equal(mid.info.prior, 0.5);

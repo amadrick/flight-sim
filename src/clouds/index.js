@@ -31,7 +31,7 @@ vec3 atmAmbient(vec3 p, vec3 n) { return mix(uAmbientGround, uAmbientSky, n.y * 
 const WEATHER_MAP_SIZE_M = 409600;       // weather map covers ±204.8 km around the camera
 const SHADOW_MAP_SIZE_M = 81920;         // shadow map covers ±41 km
 const BASE_NOISE_PERIOD = 9800;          // metres per tile of the 128^3 base volume (≈ 77 m voxels)
-const DETAIL_NOISE_PERIOD = 1900;        // metres per tile of the 32^3 detail volume (≈ 59 m voxels)
+const DETAIL_NOISE_PERIOD = 1350;        // metres per tile of the 32^3 detail volume (≈ 42 m voxels): sub-turrets of ~100-450 m
 const BASE_NOISE_VSTRETCH = 0.55;      // vertical frequency of the base noise relative to horizontal (taller billows)
 const GOLDEN = 0.61803398875;
 
@@ -435,6 +435,9 @@ export async function createClouds(ctx) {
       // a model that also provides cloudSunScatter4(tauSun, tauUp, cosTheta, tauDown) is called with the column
       // thickness below the sample as well (see the march in shaders.js)
       if (scatterModel && /float\s+cloudSunScatter4\s*\(/.test(scatterModel.glsl)) scatterModel.glsl = `#define CL_SCATTER4 1\n${scatterModel.glsl}`;
+      // a model that also provides vec2 cloudAmbientVis(tauUp, tauDown) replaces the hand-written sky / ground-bounce
+      // visibility of the march (S = E J + ambUp V.x + ambDown V.y)
+      if (scatterModel && /vec2\s+cloudAmbientVis\s*\(/.test(scatterModel.glsl)) scatterModel.glsl = `#define CL_AMBIENT_VIS 1\n${scatterModel.glsl}`;
       buildMaterials();
       historyValid = false;
     },
