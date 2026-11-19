@@ -52,6 +52,18 @@ def dir_vectors(names, rd, L):
     return out
 
 
+def tap_scene(sc, desc):
+    """The field the descriptor taps: the scene itself (v1) or gain x its cheap base density (v2, see gen_tap.py)."""
+    if desc.get('tapSource', 'full') != 'base':
+        return sc
+    import pt
+    import scenes as S
+    base = getattr(sc, 'base', None)
+    if base is None:
+        base = S.base_emulation(sc.sig, sc.h, 40.0)
+    return pt.Scene(base * desc.get('tapGain', 0.8), sc.h, sc.o, periodic=sc.per, name=sc.name + ':base')
+
+
 def descriptor(sc, P, rd, L, tau_cam, tau_sun, desc):
     Dirs = dir_vectors(desc['dirs'], rd, L)
     taps = F.tap_segments(sc, P, Dirs, np.array(desc['ends']))

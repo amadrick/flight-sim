@@ -64,10 +64,17 @@ def game_field(name, scale=1.0, crop=None):
     if abs(dx - dz) > 0.5:
         a = resample(a, (dx, dz, dx), dx)
     sig = a * meta['sigma'] * scale
+    base = None
+    if 'base8' in z.files and z['base8'].shape == z['full'].shape and not np.array_equal(z['base8'], z['full']):
+        b = np.ascontiguousarray((z['base8'].astype(np.float32) / 255.0).transpose(0, 2, 1))
+        if abs(dx - dz) > 0.5:
+            b = resample(b, (dx, dz, dx), dx)
+        base = b * meta['sigma'] * scale           # the cheap base density the light march (and the taps) sample
     if crop is not None:
         sig = sig[crop]
+        base = base[crop] if base is not None else None
     return dict(sig=sig, h=float(dx), origin=(-0.5 * sig.shape[0] * dx, float(meta['base']), -0.5 * sig.shape[2] * dx),
-                name=f'{name}@{scale:g}', kind='game', sigma_ref=meta['sigma'] * scale)
+                name=f'{name}@{scale:g}', kind='game', sigma_ref=meta['sigma'] * scale, base=base)
 
 
 def les_field(case='les_bomex_hr', snap=-1, n_cm3=150.0, h=25.0, sub_adiabatic=1.0):
@@ -249,3 +256,46 @@ def column_extent(sig, h, oy):
     top = np.where(any_, oy + (top_i + 1) * h, np.nan)
     bot = np.where(any_, oy + bot_i * h, np.nan)
     return top.astype(np.float32), bot.astype(np.float32)
+
+
+def blur(a, r_vox):
+    """Separable box blur of radius r_vox voxels (zero outside)."""
+    r = int(round(r_vox))
+    if r <= 0:
+        return a.copy()
+    out = a.astype(np.float32)
+    for ax in range(3):
+        c = np.cumsum(np.pad(out, [(r + 1, r) if i == ax else (0, 0) for i in range(3)]), axis=ax)
+        hi = np.take(c, np.arange(2 * r + 1, c.shape[ax]), axis=ax)
+        lo = np.take(c, np.arange(0, c.shape[ax] - 2 * r - 1), axis=ax)
+        out = (hi - lo) / (2 * r + 1)
+    return out.astype(np.float32)
+
+
+def base_emulation(sig, h, blur_m=40.0):
+    """Stand-in for the game's cheap base density where a field has none (LES, synthetic): the field without its
+    sub-blur_m detail, mass preserving (the exported game fields show base ~ full at large scales: sum ratio 0.7-1.06)."""
+    return blur(sig, blur_m / h)
+
+
+def cumulus_field(size=6000.0, n=7, h=30.0, seed=0, sigma=(0.03, 0.12), base=1400.0):
+    """Several cumulus heaps of different size and extinction in one box: cloud-to-cloud shadowing and bounce."""
+    rng = np.random.default_rng(seed)
+    nx = int(size / h)
+    parts = []
+    hmax = 0
+    for i in range(n):
+        H = rng.uniform(500, 2200)
+        Wd = H * rng.uniform(0.8, 1.6)
+        c = cumulus(height=H, width=Wd, sigma=float(np.exp(rng.uniform(np.log(sigma[0]), np.log(sigma[1])))), h=h,
+                    seed=1000 * seed + i, base=base)
+        parts.append(c)
+        hmax = max(hmax, c['sig'].shape[1])
+    grid = np.zeros((nx, hmax, nx), np.float32)
+    for c in parts:
+        a = c['sig']
+        px = rng.integers(0, max(nx - a.shape[0], 1)); pz = rng.integers(0, max(nx - a.shape[2], 1))
+        sx, sz = min(a.shape[0], nx - px), min(a.shape[2], nx - pz)
+        grid[px:px + sx, :a.shape[1], pz:pz + sz] = np.maximum(grid[px:px + sx, :a.shape[1], pz:pz + sz], a[:sx, :, :sz])
+    pad = 6
+    return dict(sig=grid, h=h, origin=(-0.5 * nx * h, base - pad * h, -0.5 * nx * h), name=f'cufield{seed}', kind='cufield')

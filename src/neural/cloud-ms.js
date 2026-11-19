@@ -16,6 +16,8 @@
 //   float cloudMsForwardPeak(float tauSun, float phase, float cosTheta)   v2: the same plus the aureole (use this one)
 //   vec3  cloudPhaseMie(float cosTheta)                       tabulated Mie phase function, R G B (sr^-1)
 //   vec3  cloudMsTapSegments(vec3 p, vec3 dir)                (only if CLOUD_MS_SIGMA(p) is #defined before ms.glsl)
+//   #define CLOUD_MS_DESC_VERSION 2   descriptor v2: CLOUD_MS_SIGMA(p) is the cheap base density x 0.8 (the light march's
+//                                     un-eroded density, shaders.js clMsSigma), not the full eroded field (v1)
 // Source for the march:  S = E_sun * (min(p, pMax) e^-tauSun + cloudMsForwardPeak(tauSun, p) + ms.x)
 //                            + L_sky * ms.y + L_gnd * ms.z,      p = cloudPhaseMie(cosTheta) (per channel)
 import * as THREE from 'three';
@@ -196,6 +198,8 @@ export function createCloudMultiScatter(opts = {}) {
 // ---- learned cloud multiple scattering (src/neural/cloud-ms.js, ${net.params} parameters; docs/clouds/NEURAL.md) ----
 #ifndef CLOUD_MS_GLSL
 #define CLOUD_MS_GLSL
+// descriptor v${D.version || 1}: taps of the ${(D.tapSource || 'full') === 'base' ? `cheap BASE density x ${D.tapGain} (CLOUD_MS_SIGMA = the light march's un-eroded density)` : 'full eroded density'}
+#define CLOUD_MS_DESC_VERSION ${D.version || 1}
 uniform highp sampler2D tCloudMie;
 const float CLOUD_MS_F = ${glf(mie.f)};          // forward-peak fraction removed by the truncation (theta_c = ${mie.thetaC} deg)
 const float CLOUD_MS_PC = ${glf(mie.pC)};        // phase value at theta_c (sr^-1)
@@ -260,7 +264,8 @@ ${vecK} cloudMsTapSegments(vec3 p, vec3 dir) {
     glsl,
     uniforms: { tCloudMie: { value: tex } },
     texture: tex,
-    descriptor: { dirs: D.dirs.slice(), ends: ends.slice(), tauCamMax: D.tauCamMax },
+    descriptor: { version: D.version || 1, tapSource: D.tapSource || 'full', tapGain: D.tapGain ?? 1, dirs: D.dirs.slice(),
+      ends: ends.slice(), tauCamMax: D.tauCamMax },
     light: cloudMsLight,
     phase: sampleMie,
     forwardPeak,

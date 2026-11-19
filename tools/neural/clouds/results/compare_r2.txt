@@ -1,0 +1,117 @@
+--- VAL1 (round-one held-out) (48000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.288 (bias 1.02) | Vsky 0.399 (1.01) | Vgnd 0.406 (1.00) | S 0.262 (1.02) within1.25 0.64
+  v1 deployed, base taps (in game)                     J 0.281 (bias 0.97) | Vsky 0.400 (1.00) | Vgnd 0.415 (1.01) | S 0.255 (0.98) within1.25 0.63
+  shipped (round 3, calibrated)                        J 0.424 (bias 0.91) | Vsky 0.473 (0.81) | Vgnd 0.951 (1.17) | S 0.373 (0.91) within1.25 0.42
+  shipped (round 3, raw nets)                          J 0.373 (bias 0.77) | Vsky 0.544 (0.96) | Vgnd 0.788 (1.00) | S 0.334 (0.84) within1.25 0.40
+  classic analytic                                     J 0.859 (bias 1.56) | Vsky 0.714 (0.45) | Vgnd 0.706 (0.44) | S 0.728 (1.16) within1.25 0.27
+  tuned analytic, true taus                            J 0.372 (bias 0.98) | Vsky 0.942 (1.26) | Vgnd 0.935 (1.32) | S 0.400 (1.08) within1.25 0.47
+  B:e3:up,down,fwd w16 (563 params)                    J 0.284 (bias 1.03) | Vsky 0.412 (1.00) | Vgnd 0.427 (1.01) | S 0.258 (1.02) within1.25 0.65  S seeds [0.258, 0.261]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.277 (bias 1.02) | Vsky 0.396 (1.00) | Vgnd 0.406 (1.00) | S 0.252 (1.01) within1.25 0.66  S seeds [0.252, 0.248]
+--- VALM (new multi-cloud held-out) (12000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.221 (bias 0.97) | Vsky 0.306 (1.03) | Vgnd 0.256 (0.97) | S 0.205 (0.98) within1.25 0.65
+  v1 deployed, base taps (in game)                     J 0.226 (bias 0.91) | Vsky 0.320 (1.00) | Vgnd 0.273 (0.99) | S 0.210 (0.94) within1.25 0.62
+  shipped (round 3, calibrated)                        J 0.340 (bias 0.81) | Vsky 0.260 (0.90) | Vgnd 0.362 (1.09) | S 0.316 (0.87) within1.25 0.44
+  shipped (round 3, raw nets)                          J 0.285 (bias 0.65) | Vsky 0.308 (1.07) | Vgnd 0.308 (0.93) | S 0.258 (0.79) within1.25 0.46
+  classic analytic                                     J 0.477 (bias 1.32) | Vsky 0.571 (0.43) | Vgnd 0.615 (0.38) | S 0.401 (0.97) within1.25 0.33
+  tuned analytic, true taus                            J 0.298 (bias 0.96) | Vsky 0.579 (1.34) | Vgnd 0.518 (1.24) | S 0.341 (1.10) within1.25 0.45
+  B:e3:up,down,fwd w16 (563 params)                    J 0.233 (bias 1.00) | Vsky 0.288 (1.03) | Vgnd 0.247 (0.98) | S 0.215 (1.01) within1.25 0.65  S seeds [0.215, 0.215]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.237 (bias 1.01) | Vsky 0.285 (1.02) | Vgnd 0.247 (0.98) | S 0.217 (1.01) within1.25 0.65  S seeds [0.217, 0.216]
+--- VAL1 game fields (12000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.316 (bias 1.00) | Vsky 0.374 (1.02) | Vgnd 0.349 (0.98) | S 0.292 (1.00) within1.25 0.59
+  v1 deployed, base taps (in game)                     J 0.311 (bias 0.92) | Vsky 0.373 (1.00) | Vgnd 0.370 (1.00) | S 0.289 (0.95) within1.25 0.55
+  shipped (round 3, calibrated)                        J 0.332 (bias 0.73) | Vsky 0.426 (0.87) | Vgnd 0.517 (1.11) | S 0.307 (0.81) within1.25 0.41
+  shipped (round 3, raw nets)                          J 0.317 (bias 0.60) | Vsky 0.496 (1.04) | Vgnd 0.431 (0.95) | S 0.292 (0.75) within1.25 0.36
+  classic analytic                                     J 0.549 (bias 1.26) | Vsky 0.625 (0.40) | Vgnd 0.624 (0.39) | S 0.460 (0.95) within1.25 0.32
+  tuned analytic, true taus                            J 0.357 (bias 0.96) | Vsky 0.708 (1.27) | Vgnd 0.699 (1.31) | S 0.372 (1.08) within1.25 0.52
+  B:e3:up,down,fwd w16 (563 params)                    J 0.300 (bias 0.98) | Vsky 0.369 (1.02) | Vgnd 0.341 (0.99) | S 0.282 (0.99) within1.25 0.60  S seeds [0.282, 0.281]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.294 (bias 0.98) | Vsky 0.360 (1.02) | Vgnd 0.338 (0.98) | S 0.275 (0.99) within1.25 0.62  S seeds [0.275, 0.277]
+--- VALM game field r5scattered2 (6000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.226 (bias 0.94) | Vsky 0.315 (1.04) | Vgnd 0.272 (0.96) | S 0.211 (0.97) within1.25 0.64
+  v1 deployed, base taps (in game)                     J 0.244 (bias 0.86) | Vsky 0.344 (1.01) | Vgnd 0.299 (0.97) | S 0.229 (0.91) within1.25 0.58
+  shipped (round 3, calibrated)                        J 0.328 (bias 0.72) | Vsky 0.245 (0.87) | Vgnd 0.376 (1.12) | S 0.311 (0.80) within1.25 0.41
+  shipped (round 3, raw nets)                          J 0.299 (bias 0.58) | Vsky 0.279 (1.04) | Vgnd 0.306 (0.96) | S 0.271 (0.74) within1.25 0.41
+  classic analytic                                     J 0.441 (bias 1.22) | Vsky 0.554 (0.45) | Vgnd 0.590 (0.41) | S 0.394 (0.92) within1.25 0.32
+  tuned analytic, true taus                            J 0.297 (bias 0.90) | Vsky 0.549 (1.33) | Vgnd 0.534 (1.25) | S 0.327 (1.06) within1.25 0.45
+  B:e3:up,down,fwd w16 (563 params)                    J 0.243 (bias 0.97) | Vsky 0.301 (1.05) | Vgnd 0.273 (0.97) | S 0.224 (0.99) within1.25 0.63  S seeds [0.224, 0.225]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.246 (bias 0.98) | Vsky 0.293 (1.04) | Vgnd 0.269 (0.97) | S 0.225 (1.00) within1.25 0.63  S seeds [0.225, 0.225]
+--- VALM cumulus field cufield2 (6000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.215 (bias 1.00) | Vsky 0.297 (1.01) | Vgnd 0.239 (0.98) | S 0.199 (1.00) within1.25 0.66
+  v1 deployed, base taps (in game)                     J 0.205 (bias 0.96) | Vsky 0.294 (0.99) | Vgnd 0.244 (1.00) | S 0.189 (0.97) within1.25 0.67
+  shipped (round 3, calibrated)                        J 0.352 (bias 0.93) | Vsky 0.274 (0.93) | Vgnd 0.348 (1.05) | S 0.322 (0.94) within1.25 0.47
+  shipped (round 3, raw nets)                          J 0.269 (bias 0.73) | Vsky 0.335 (1.10) | Vgnd 0.311 (0.90) | S 0.244 (0.85) within1.25 0.50
+  classic analytic                                     J 0.510 (bias 1.43) | Vsky 0.587 (0.42) | Vgnd 0.639 (0.34) | S 0.407 (1.02) within1.25 0.35
+  tuned analytic, true taus                            J 0.298 (bias 1.02) | Vsky 0.607 (1.35) | Vgnd 0.501 (1.23) | S 0.355 (1.14) within1.25 0.46
+  B:e3:up,down,fwd w16 (563 params)                    J 0.223 (bias 1.04) | Vsky 0.274 (1.01) | Vgnd 0.218 (0.98) | S 0.205 (1.02) within1.25 0.67  S seeds [0.205, 0.204]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.227 (bias 1.04) | Vsky 0.276 (1.01) | Vgnd 0.223 (0.98) | S 0.208 (1.02) within1.25 0.66  S seeds [0.208, 0.207]
+--- VAL1 LES congestus (6000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.460 (bias 0.99) | Vsky 0.323 (1.00) | Vgnd 0.316 (1.00) | S 0.401 (0.99) within1.25 0.53
+  v1 deployed, base taps (in game)                     J 0.436 (bias 0.95) | Vsky 0.316 (0.99) | Vgnd 0.318 (1.02) | S 0.381 (0.97) within1.25 0.51
+  shipped (round 3, calibrated)                        J 0.610 (bias 1.02) | Vsky 0.485 (0.92) | Vgnd 0.577 (1.03) | S 0.517 (1.00) within1.25 0.37
+  shipped (round 3, raw nets)                          J 0.471 (bias 0.80) | Vsky 0.590 (1.09) | Vgnd 0.496 (0.88) | S 0.415 (0.88) within1.25 0.36
+  classic analytic                                     J 0.984 (bias 1.57) | Vsky 0.686 (0.33) | Vgnd 0.701 (0.30) | S 0.728 (1.13) within1.25 0.28
+  tuned analytic, true taus                            J 0.577 (bias 1.04) | Vsky 0.762 (1.23) | Vgnd 0.745 (1.36) | S 0.549 (1.12) within1.25 0.42
+  B:e3:up,down,fwd w16 (563 params)                    J 0.452 (bias 1.02) | Vsky 0.322 (1.00) | Vgnd 0.299 (1.01) | S 0.393 (1.01) within1.25 0.56  S seeds [0.393, 0.395]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.446 (bias 1.00) | Vsky 0.313 (0.99) | Vgnd 0.299 (1.01) | S 0.390 (1.00) within1.25 0.54  S seeds [0.39, 0.372]
+--- all held-out sun < 10 deg (13500 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.366 (bias 1.01) | Vsky 0.327 (1.04) | Vgnd 0.296 (0.97) | S 0.324 (1.01) within1.25 0.60
+  v1 deployed, base taps (in game)                     J 0.346 (bias 0.96) | Vsky 0.340 (1.02) | Vgnd 0.302 (0.98) | S 0.307 (0.98) within1.25 0.60
+  shipped (round 3, calibrated)                        J 0.488 (bias 1.04) | Vsky 0.327 (0.89) | Vgnd 0.431 (1.09) | S 0.423 (1.00) within1.25 0.47
+  shipped (round 3, raw nets)                          J 0.366 (bias 0.76) | Vsky 0.383 (1.06) | Vgnd 0.364 (0.93) | S 0.321 (0.87) within1.25 0.47
+  classic analytic                                     J 0.752 (bias 1.58) | Vsky 0.598 (0.41) | Vgnd 0.626 (0.37) | S 0.558 (1.09) within1.25 0.34
+  tuned analytic, true taus                            J 0.469 (bias 1.14) | Vsky 0.623 (1.30) | Vgnd 0.606 (1.28) | S 0.482 (1.20) within1.25 0.38
+  B:e3:up,down,fwd w16 (563 params)                    J 0.361 (bias 1.04) | Vsky 0.317 (1.03) | Vgnd 0.280 (0.98) | S 0.321 (1.03) within1.25 0.62  S seeds [0.321, 0.321]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.360 (bias 1.04) | Vsky 0.313 (1.03) | Vgnd 0.284 (0.98) | S 0.319 (1.03) within1.25 0.62  S seeds [0.319, 0.308]
+--- all held-out sun 10-30 (21000 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.228 (bias 0.99) | Vsky 0.439 (1.01) | Vgnd 0.450 (0.99) | S 0.214 (0.99) within1.25 0.66
+  v1 deployed, base taps (in game)                     J 0.226 (bias 0.95) | Vsky 0.442 (1.00) | Vgnd 0.460 (1.00) | S 0.209 (0.96) within1.25 0.66
+  shipped (round 3, calibrated)                        J 0.381 (bias 0.99) | Vsky 0.444 (0.82) | Vgnd 0.849 (1.16) | S 0.336 (0.96) within1.25 0.46
+  shipped (round 3, raw nets)                          J 0.315 (bias 0.75) | Vsky 0.510 (0.98) | Vgnd 0.703 (0.99) | S 0.288 (0.83) within1.25 0.43
+  classic analytic                                     J 0.751 (bias 1.54) | Vsky 0.684 (0.44) | Vgnd 0.684 (0.42) | S 0.634 (1.14) within1.25 0.29
+  tuned analytic, true taus                            J 0.340 (bias 1.00) | Vsky 0.854 (1.26) | Vgnd 0.863 (1.32) | S 0.379 (1.10) within1.25 0.47
+  B:e3:up,down,fwd w16 (563 params)                    J 0.240 (bias 1.02) | Vsky 0.446 (1.00) | Vgnd 0.478 (1.01) | S 0.221 (1.01) within1.25 0.67  S seeds [0.221, 0.22]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.234 (bias 1.01) | Vsky 0.435 (1.00) | Vgnd 0.447 (1.00) | S 0.215 (1.01) within1.25 0.68  S seeds [0.215, 0.213]
+--- all held-out sun >= 30 (25500 points)
+  v1 deployed, true-field taps (round-one eval)        J 0.252 (bias 1.03) | Vsky 0.358 (1.01) | Vgnd 0.356 (1.01) | S 0.235 (1.02) within1.25 0.65
+  v1 deployed, base taps (in game)                     J 0.257 (bias 0.97) | Vsky 0.355 (0.99) | Vgnd 0.368 (1.02) | S 0.238 (0.98) within1.25 0.62
+  shipped (round 3, calibrated)                        J 0.382 (bias 0.77) | Vsky 0.484 (0.79) | Vgnd 1.038 (1.19) | S 0.346 (0.82) within1.25 0.37
+  shipped (round 3, raw nets)                          J 0.383 (bias 0.73) | Vsky 0.556 (0.94) | Vgnd 0.860 (1.02) | S 0.343 (0.81) within1.25 0.36
+  classic analytic                                     J 0.855 (bias 1.47) | Vsky 0.735 (0.48) | Vgnd 0.723 (0.46) | S 0.760 (1.13) within1.25 0.25
+  tuned analytic, true taus                            J 0.297 (bias 0.88) | Vsky 1.012 (1.27) | Vgnd 0.983 (1.31) | S 0.335 (1.02) within1.25 0.51
+  B:e3:up,down,fwd w16 (563 params)                    J 0.244 (bias 1.03) | Vsky 0.375 (1.01) | Vgnd 0.376 (1.01) | S 0.227 (1.02) within1.25 0.65  S seeds [0.227, 0.233]
+  B:e3:up,down,fwd w24 (1035 params)                   J 0.238 (bias 1.02) | Vsky 0.355 (1.00) | Vgnd 0.362 (1.01) | S 0.222 (1.01) within1.25 0.66  S seeds [0.222, 0.223]
+--- VAL1 (round-one held-out) (48000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.277 (bias 1.02) | Vsky 0.413 (1.00) | Vgnd 0.424 (1.01) | S 0.252 (1.02) within1.25 0.66  S seeds [0.252, 0.252]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.271 (bias 1.02) | Vsky 0.380 (1.00) | Vgnd 0.391 (1.01) | S 0.246 (1.01) within1.25 0.68  S seeds [0.246, 0.253]
+  ALL w32 (2627 params)                                J 0.232 (bias 1.02) | Vsky 0.341 (1.00) | Vgnd 0.344 (1.01) | S 0.210 (1.01) within1.25 0.74  S seeds [0.21, 0.213]
+--- VALM (new multi-cloud held-out) (12000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.223 (bias 1.00) | Vsky 0.285 (1.02) | Vgnd 0.245 (0.97) | S 0.205 (1.00) within1.25 0.67  S seeds [0.205, 0.212]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.222 (bias 0.99) | Vsky 0.289 (1.03) | Vgnd 0.247 (0.98) | S 0.205 (1.00) within1.25 0.66  S seeds [0.205, 0.208]
+  ALL w32 (2627 params)                                J 0.189 (bias 1.03) | Vsky 0.258 (1.01) | Vgnd 0.229 (0.99) | S 0.174 (1.02) within1.25 0.74  S seeds [0.174, 0.173]
+--- VAL1 game fields (12000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.298 (bias 0.99) | Vsky 0.364 (1.01) | Vgnd 0.341 (1.00) | S 0.277 (0.99) within1.25 0.60  S seeds [0.277, 0.276]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.297 (bias 1.00) | Vsky 0.356 (1.01) | Vgnd 0.338 (0.98) | S 0.276 (1.00) within1.25 0.62  S seeds [0.276, 0.283]
+  ALL w32 (2627 params)                                J 0.245 (bias 0.99) | Vsky 0.323 (1.00) | Vgnd 0.321 (1.00) | S 0.226 (0.99) within1.25 0.70  S seeds [0.226, 0.23]
+--- VALM game field r5scattered2 (6000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.236 (bias 0.99) | Vsky 0.292 (1.03) | Vgnd 0.273 (0.97) | S 0.216 (1.00) within1.25 0.65  S seeds [0.216, 0.222]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.231 (bias 0.97) | Vsky 0.300 (1.04) | Vgnd 0.272 (0.97) | S 0.214 (0.99) within1.25 0.64  S seeds [0.214, 0.218]
+  ALL w32 (2627 params)                                J 0.177 (bias 0.98) | Vsky 0.262 (1.01) | Vgnd 0.244 (0.99) | S 0.163 (0.99) within1.25 0.75  S seeds [0.163, 0.162]
+--- VALM cumulus field cufield2 (6000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.209 (bias 1.02) | Vsky 0.279 (1.02) | Vgnd 0.213 (0.97) | S 0.194 (1.01) within1.25 0.69  S seeds [0.194, 0.201]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.213 (bias 1.03) | Vsky 0.278 (1.01) | Vgnd 0.220 (0.99) | S 0.196 (1.02) within1.25 0.69  S seeds [0.196, 0.197]
+  ALL w32 (2627 params)                                J 0.201 (bias 1.07) | Vsky 0.254 (1.00) | Vgnd 0.214 (1.00) | S 0.185 (1.04) within1.25 0.72  S seeds [0.185, 0.183]
+--- VAL1 LES congestus (6000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.458 (bias 1.02) | Vsky 0.323 (1.00) | Vgnd 0.304 (1.02) | S 0.399 (1.01) within1.25 0.56  S seeds [0.399, 0.401]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.452 (bias 1.01) | Vsky 0.308 (1.00) | Vgnd 0.289 (1.01) | S 0.394 (1.01) within1.25 0.56  S seeds [0.394, 0.394]
+  ALL w32 (2627 params)                                J 0.401 (bias 0.96) | Vsky 0.271 (0.99) | Vgnd 0.281 (1.02) | S 0.348 (0.98) within1.25 0.60  S seeds [0.348, 0.362]
+--- all held-out sun < 10 deg (13500 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.361 (bias 1.05) | Vsky 0.313 (1.02) | Vgnd 0.282 (0.98) | S 0.318 (1.03) within1.25 0.63  S seeds [0.318, 0.321]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.359 (bias 1.05) | Vsky 0.309 (1.03) | Vgnd 0.276 (0.98) | S 0.316 (1.04) within1.25 0.64  S seeds [0.316, 0.319]
+  ALL w32 (2627 params)                                J 0.317 (bias 1.06) | Vsky 0.283 (1.01) | Vgnd 0.270 (1.00) | S 0.279 (1.04) within1.25 0.69  S seeds [0.279, 0.288]
+--- all held-out sun 10-30 (21000 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.213 (bias 0.99) | Vsky 0.457 (1.01) | Vgnd 0.459 (1.01) | S 0.203 (1.00) within1.25 0.69  S seeds [0.203, 0.205]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.210 (bias 1.00) | Vsky 0.420 (1.00) | Vgnd 0.430 (1.00) | S 0.197 (1.00) within1.25 0.70  S seeds [0.197, 0.205]
+  ALL w32 (2627 params)                                J 0.197 (bias 1.02) | Vsky 0.377 (1.00) | Vgnd 0.380 (1.00) | S 0.182 (1.01) within1.25 0.74  S seeds [0.182, 0.18]
+--- all held-out sun >= 30 (25500 points)
+  B:e3:up,down,fwd,sun w16 (611 params)                J 0.245 (bias 1.03) | Vsky 0.368 (1.00) | Vgnd 0.387 (1.01) | S 0.227 (1.02) within1.25 0.66  S seeds [0.227, 0.224]
+  B:e3:up,down,fwd,sun w24 (1107 params)               J 0.235 (bias 1.01) | Vsky 0.339 (1.00) | Vgnd 0.350 (1.01) | S 0.219 (1.01) within1.25 0.67  S seeds [0.219, 0.227]
+  ALL w32 (2627 params)                                J 0.178 (bias 1.01) | Vsky 0.299 (1.00) | Vgnd 0.300 (1.01) | S 0.168 (1.01) within1.25 0.77  S seeds [0.168, 0.167]

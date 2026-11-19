@@ -53,6 +53,8 @@ SHOTS = {
     'storm_base': ('storm', dict(seed=1, sigma=0.16, height=8000.0, width=4000.0, h=60.0), 50.0, 40.0,
                    (-9000.0, 300.0, -500.0), (0.0, 3200.0, 0.0), 62.0),
     'thin_wisp': ('wisp', dict(seed=2, sigma=0.012), 55.0, 120.0, (-1500.0, 2200.0, -1400.0), (0.0, 2700.0, 0.0), 60.0),
+    # round two: a held-out multi-cloud field (8 cumuli, cloud-to-cloud shadowing and bounce) with a low sun
+    'field_low_sun': ('cumulus_field', dict(seed=2, n=8), 8.0, 20.0, (-5600.0, 1900.0, -2600.0), (0.0, 2000.0, 0.0), 62.0),
 }
 
 
@@ -177,7 +179,7 @@ def render(shot, W=160, H=90, spp=4, nA=48, nB=16, net=None):
     # ---- new model: shader-like descriptor at every step
     out = {}
     if net is not None:
-        D = M.descriptor(sc, P, rd, Ls, taus[ri, si], ts_, net['desc'])
+        D = M.descriptor(M.tap_scene(sc, net['desc']), P, rd, Ls, taus[ri, si], ts_, net['desc'])
         y = M.predict(net, D)
         S_new = y[:, 0:1] * E[None] + y[:, 1:2] * sky[None] + y[:, 2:3] * gnd[None]
         out['new'] = L_ss + acc(S_new)

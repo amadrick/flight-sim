@@ -29,6 +29,10 @@ C_FLOOR = np.array([0.01, 0.02, 0.02])          # relative-error floors (sr^-1 f
 LIGHT = dict(E=1.0, sky=0.06, gnd=0.025)       # noon-like weights for the combined source metric (game units / E_sun)
 
 
+R1_VAL = ['broken3@2.5', 'cumulus3s0.075', 'deck250s0.02h0.1', 'les_congestus[-1]N150', 'near1@1.6', 'sphere600s0.06n0.15',
+          'storm1s0.16', 'wisp2s0.012']   # round-one held-out scenes (cloud-ms-weights.js v1 meta.heldOut)
+
+
 def load(pattern='*'):
     fs = sorted(glob.glob(os.path.join(DATA, 'pts', pattern + '.npz')))
     cols = {}
@@ -41,15 +45,19 @@ def load(pattern='*'):
                    h=np.full(n, float(z['h'])), val=np.full(n, str(z['split']) == 'val'),
                    scene=np.full(n, str(z['scene'])), kind=np.full(n, str(z['kind'])),
                    cfg=np.full(n, os.path.basename(f)[:-4]), fpk=np.full(n, float(z['f'])))
-        tf = f.replace('/pts/', '/tap/')
+        tf = f.replace('/pts/', '/tap2/')
         if os.path.exists(tf):
             zt = np.load(tf)
             for k in zt.files:
-                rec[k] = zt[k]
+                if k.startswith('tap'):
+                    rec[k] = zt[k]
+            rec['has_base'] = np.full(n, bool(zt['has_base']))
         for k, v in rec.items():
             cols.setdefault(k, []).append(v)
     d = {k: np.concatenate(v) for k, v in cols.items()}
     d['mu_s'] = np.sin(np.radians(d['elev']))
+    d['val_r1'] = d['val'] & np.isin(d['scene'], R1_VAL)            # the round-one held-out scenes (same points)
+    d['val_multi'] = d['val'] & ~d['val_r1']                         # round-two held-out multi-cloud scenes
     return d
 
 
@@ -98,9 +106,10 @@ def feature_set(d, name):
     elif name == 'ALL':     # oracle: every multi-scale optical depth
         f = [enc_tau(mt[:, i, j]) for i in range(8) for j in range(5)]
         f += [d['mu_s'], enc_tau(np.minimum(d['tau_cam'], 60)), enc_tau(d['sig'] * 30)] + angle_feats(d['cos_t'])
-    elif name.startswith('T:'):    # tap descriptor T:<ends>:<dir,dir,...>[:sum]  (gen_tap.py)
+    elif name[:2] in ('T:', 'B:'):    # tap descriptor T|B:<ends>:<dir,dir,...>[:sum]  (gen_tap.py)
+        # T: taps of the true field (descriptor v1), B: taps of the cheap base density the shader samples (v2)
         _, ends, dirs = name.split(':')[:3]
-        t = d['tap_' + ends]
+        t = d[('tapb_' if name[0] == 'B' else 'tap_') + ends]
         f = [enc_tau(ts), d['mu_s'], enc_tau(np.minimum(d['tau_cam'], 60))] + angle_feats(d['cos_t'])
         for k in dirs.split(','):
             if name.endswith(':sum'):
@@ -280,22 +289,31 @@ def analytic_preds(m, d):
 
 # ------------------------------------------------------------------------------------- commands
 def ablate(d, sets, widths=(16,), steps=5000):
+    """Each set trained on the training scenes; reported on the round-one held-out scenes (VAL1), the round-two
+    held-out multi-cloud scenes (VALM) and, for a T: set, also fed the shader's base-density taps (the run-time gap)."""
     Y, V = targets(d)
-    tr, va = ~d['val'], d['val']
+    tr = ~d['val']
     W = d['opacity']
     res = {}
     for s in sets:
         X = feature_set(d, s)
+        Xb = feature_set(d, 'B' + s[1:]) if s.startswith('T:') else None
         for wd in widths:
             t0 = time.time()
             net = fit(X[tr], Y[tr], W[tr], width=wd, steps=steps)
-            pr = predict(net, X)
-            jt = d['jss'] + d['jfp'] + pr[:, 0]
-            o_va = report(s, d, va, jt, pr[:, 1], pr[:, 2])
-            o_tr = report(s, d, tr, jt, pr[:, 1], pr[:, 2])
-            res[f'{s}/w{wd}'] = dict(val=o_va, train=o_tr, nin=X.shape[1])
-            print(f'{s:8s} w{wd:<3d} nin {X.shape[1]:2d} [{time.time() - t0:4.0f}s] VAL {fmt(o_va)}', flush=True)
-            print(f'{"":17s}           TRAIN {fmt(o_tr)}', flush=True)
+            r = dict(nin=X.shape[1], params=sum(p.numel() for p in net.parameters()))
+            for tag, XX in (('', X), ('fed base taps ', Xb)):
+                if XX is None:
+                    continue
+                pr = predict(net, XX)
+                jt = d['jss'] + d['jfp'] + pr[:, 0]
+                for mk, m in (('VAL1', d['val_r1']), ('VALM', d['val_multi']), ('TRAIN', tr)):
+                    if tag and mk == 'TRAIN':
+                        continue
+                    o = report(s, d, m, jt, pr[:, 1], pr[:, 2])
+                    r[tag + mk] = o
+                    print(f'{s:22s} w{wd:<3d} nin {X.shape[1]:2d} [{time.time() - t0:4.0f}s] {tag}{mk:5s} {fmt(o)}', flush=True)
+            res[f'{s}/w{wd}'] = r
     return res
 
 
@@ -325,6 +343,12 @@ def export_final(net, setname, d, rows):
     _, ends_key, dirs = setname.split(':')[:3]
     import gen_tap
     desc = dict(dirs=dirs.split(','), ends=[float(v) for v in gen_tap.ENDS[ends_key]], tauCamMax=60.0, chordT0=0.05)
+    tkey = ('tapb_' if setname[0] == 'B' else 'tap_') + ends_key
+    if setname[0] == 'B':
+        # descriptor v2: the taps sample the cheap base density (shaders.js clMsSigma), not the full field
+        desc = dict(version=2, tapSource='base', tapGain=float(np.unique(d['tap_gain'])[0]) if 'tap_gain' in d else 0.8, **desc)
+    else:
+        desc = dict(version=1, tapSource='full', **desc)
     mu, sd = net.mu.numpy().astype(np.float64), net.sd.numpy().astype(np.float64)
     layers = []
     for i, l in enumerate(list(net.hidden) + [net.out]):
@@ -351,7 +375,7 @@ def export_final(net, setname, d, rows):
     import model as MD
     rng = np.random.default_rng(3)
     idx = rng.choice(np.nonzero(d['val'])[0], 48, replace=False)
-    t = d['tap_' + ends_key][idx][:, [DIR[k] for k in desc['dirs']], :]
+    t = d[tkey][idx][:, [DIR[k] for k in desc['dirs']], :]
     X = MD.encode(d['mt'][idx, 0, -1], d['tau_cam'][idx], d['mu_s'][idx], d['cos_t'][idx], t, desc)
     Y = MD.forward(L64, X)
     vec = dict(tauSun=d['mt'][idx, 0, -1].tolist(), tauCam=d['tau_cam'][idx].tolist(), muSun=d['mu_s'][idx].tolist(),
@@ -367,11 +391,12 @@ def main():
     print(f'{len(d["P"])} points, {len(np.unique(d["cfg"]))} configs, val points {d["val"].sum()}', flush=True)
     if cmd == 'ablate':
         sets = sys.argv[2].split(';') if len(sys.argv) > 2 else ['S3', 'S4', 'S5', 'S6cam', 'S6fwd', 'S7', 'S9', 'S7lim', 'S7near', 'ALL']
-        rows, _ = baselines_table(d, {'val': d['val']})
-        for k, v in rows['val'].items():
-            print(f'{k:32s} VAL {fmt(v)}', flush=True)
+        rows, _ = baselines_table(d, {'VAL1': d['val_r1'], 'VALM': d['val_multi']}) if os.environ.get('BASELINES', '1') == '1' else ({}, None)
+        for mk, rr in rows.items():
+            for k, v in rr.items():
+                print(f'{k:32s} {mk} {fmt(v)}', flush=True)
         res = ablate(d, sets, widths=tuple(int(v) for v in os.environ.get('WIDTHS', '16').split(',')))
-        json.dump(dict(baselines=rows, ablation=res), open(os.path.join(DATA, 'ablation.json'), 'w'), indent=1)
+        json.dump(dict(baselines=rows, ablation=res), open(os.path.join(DATA, os.environ.get('ABL_OUT', 'ablation') + '.json'), 'w'), indent=1)
     elif cmd == 'final':
         setname = sys.argv[2]
         width = int(sys.argv[3]) if len(sys.argv) > 3 else 16
@@ -392,7 +417,7 @@ def main():
         net = best[1]
         torch.save(net.state_dict(), os.path.join(DATA, 'model_final.pt'))
         pr = predict(net, X)
-        masks = {'val': va, 'train': tr}
+        masks = {'val': va, 'VAL1 (round-one held-out)': d['val_r1'], 'VALM (round-two multi-cloud held-out)': d['val_multi'], 'train': tr}
         for kd in np.unique(d['kind']):
             masks[f'val/{kd}'] = va & (d['kind'] == kd)
         for lo, hi in ((0, 10), (10, 30), (30, 90)):

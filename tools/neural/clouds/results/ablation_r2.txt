@@ -1,0 +1,33 @@
+252000 points, 168 configs, val points 60000
+shipped (round 3, calibrated)    VAL1 J 0.424 (bias 0.91) | Vsky 0.473 (0.81) | Vgnd 0.951 (1.17) | S 0.373 (0.91) within1.25 0.42
+shipped (round 3, raw nets)      VAL1 J 0.373 (bias 0.77) | Vsky 0.544 (0.96) | Vgnd 0.788 (1.00) | S 0.334 (0.84) within1.25 0.40
+classic analytic                 VAL1 J 0.859 (bias 1.56) | Vsky 0.714 (0.45) | Vgnd 0.706 (0.44) | S 0.728 (1.16) within1.25 0.27
+tuned analytic, true taus        VAL1 J 0.372 (bias 0.98) | Vsky 0.942 (1.26) | Vgnd 0.935 (1.32) | S 0.400 (1.08) within1.25 0.47
+shipped (round 3, calibrated)    VALM J 0.340 (bias 0.81) | Vsky 0.260 (0.90) | Vgnd 0.362 (1.09) | S 0.316 (0.87) within1.25 0.44
+shipped (round 3, raw nets)      VALM J 0.285 (bias 0.65) | Vsky 0.308 (1.07) | Vgnd 0.308 (0.93) | S 0.258 (0.79) within1.25 0.46
+classic analytic                 VALM J 0.477 (bias 1.32) | Vsky 0.571 (0.43) | Vgnd 0.615 (0.38) | S 0.401 (0.97) within1.25 0.33
+tuned analytic, true taus        VALM J 0.298 (bias 0.96) | Vsky 0.579 (1.34) | Vgnd 0.518 (1.24) | S 0.341 (1.10) within1.25 0.45
+T:e3:up,down,fwd       w16  nin 14 [  24s] VAL1  J 0.283 (bias 1.02) | Vsky 0.422 (1.01) | Vgnd 0.448 (1.00) | S 0.258 (1.01) within1.25 0.64
+T:e3:up,down,fwd       w16  nin 14 [  24s] VALM  J 0.224 (bias 0.99) | Vsky 0.287 (1.02) | Vgnd 0.246 (0.98) | S 0.207 (1.00) within1.25 0.66
+T:e3:up,down,fwd       w16  nin 14 [  24s] TRAIN J 0.246 (bias 1.00) | Vsky 0.432 (1.00) | Vgnd 0.470 (1.00) | S 0.225 (1.00) within1.25 0.66
+T:e3:up,down,fwd       w16  nin 14 [  24s] fed base taps VAL1  J 0.273 (bias 0.97) | Vsky 0.421 (0.98) | Vgnd 0.460 (1.01) | S 0.249 (0.98) within1.25 0.63
+T:e3:up,down,fwd       w16  nin 14 [  24s] fed base taps VALM  J 0.227 (bias 0.94) | Vsky 0.297 (1.00) | Vgnd 0.273 (1.00) | S 0.210 (0.96) within1.25 0.64
+B:e3:up,down,fwd       w16  nin 14 [  24s] VAL1  J 0.286 (bias 1.03) | Vsky 0.417 (1.00) | Vgnd 0.448 (1.00) | S 0.259 (1.02) within1.25 0.65
+B:e3:up,down,fwd       w16  nin 14 [  24s] VALM  J 0.234 (bias 1.00) | Vsky 0.289 (1.03) | Vgnd 0.248 (0.98) | S 0.215 (1.01) within1.25 0.65
+B:e3:up,down,fwd       w16  nin 14 [  24s] TRAIN J 0.244 (bias 1.00) | Vsky 0.428 (1.00) | Vgnd 0.472 (1.00) | S 0.223 (1.00) within1.25 0.67
+B:e3:up,down,fwd,sun   w16  nin 17 [  26s] VAL1  J 0.282 (bias 1.02) | Vsky 0.442 (1.01) | Vgnd 0.453 (1.00) | S 0.259 (1.02) within1.25 0.66
+B:e3:up,down,fwd,sun   w16  nin 17 [  26s] VALM  J 0.228 (bias 1.00) | Vsky 0.291 (1.02) | Vgnd 0.245 (0.98) | S 0.211 (1.00) within1.25 0.65
+B:e3:up,down,fwd,sun   w16  nin 17 [  26s] TRAIN J 0.239 (bias 1.00) | Vsky 0.448 (1.00) | Vgnd 0.474 (1.00) | S 0.221 (1.00) within1.25 0.67
+252000 points, 168 configs, val points 60000
+B:e3:up,down,fwd       w24  nin 14 [  36s] VAL1  J 0.279 (bias 1.02) | Vsky 0.410 (1.00) | Vgnd 0.422 (1.00) | S 0.253 (1.01) within1.25 0.65
+B:e3:up,down,fwd       w24  nin 14 [  36s] VALM  J 0.238 (bias 1.01) | Vsky 0.288 (1.02) | Vgnd 0.243 (0.98) | S 0.219 (1.01) within1.25 0.64
+B:e3:up,down,fwd       w24  nin 14 [  36s] TRAIN J 0.239 (bias 1.00) | Vsky 0.421 (1.00) | Vgnd 0.450 (1.00) | S 0.219 (1.00) within1.25 0.67
+B:e3:up,down,fwd       w32  nin 14 [  42s] VAL1  J 0.278 (bias 1.02) | Vsky 0.389 (1.00) | Vgnd 0.398 (1.01) | S 0.253 (1.01) within1.25 0.66
+B:e3:up,down,fwd       w32  nin 14 [  42s] VALM  J 0.234 (bias 1.00) | Vsky 0.283 (1.02) | Vgnd 0.243 (0.98) | S 0.214 (1.00) within1.25 0.65
+B:e3:up,down,fwd       w32  nin 14 [  42s] TRAIN J 0.235 (bias 1.00) | Vsky 0.401 (1.00) | Vgnd 0.429 (1.00) | S 0.215 (1.00) within1.25 0.69
+B:e3:up,down,fwd,sun   w24  nin 17 [  35s] VAL1  J 0.274 (bias 1.02) | Vsky 0.392 (1.01) | Vgnd 0.396 (1.01) | S 0.249 (1.01) within1.25 0.67
+B:e3:up,down,fwd,sun   w24  nin 17 [  35s] VALM  J 0.223 (bias 1.00) | Vsky 0.289 (1.02) | Vgnd 0.242 (0.98) | S 0.206 (1.00) within1.25 0.66
+B:e3:up,down,fwd,sun   w24  nin 17 [  35s] TRAIN J 0.233 (bias 1.00) | Vsky 0.409 (1.00) | Vgnd 0.439 (1.00) | S 0.214 (1.00) within1.25 0.69
+B:e3:up,down,fwd,sun   w32  nin 17 [  43s] VAL1  J 0.270 (bias 1.02) | Vsky 0.389 (1.00) | Vgnd 0.403 (1.01) | S 0.246 (1.01) within1.25 0.67
+B:e3:up,down,fwd,sun   w32  nin 17 [  43s] VALM  J 0.222 (bias 1.01) | Vsky 0.278 (1.02) | Vgnd 0.242 (0.98) | S 0.204 (1.01) within1.25 0.67
+B:e3:up,down,fwd,sun   w32  nin 17 [  43s] TRAIN J 0.227 (bias 1.00) | Vsky 0.402 (1.00) | Vgnd 0.433 (1.00) | S 0.209 (1.00) within1.25 0.70

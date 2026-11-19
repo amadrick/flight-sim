@@ -58,6 +58,24 @@ SCENES = [
     ('wisp', dict(seed=2, sigma=0.012), 'val'),
 ]
 SUN_ELEVS = [3.0, 8.0, 15.0, 25.0, 40.0, 60.0, 85.0]
+# round two: the game's current fields (re-exported from src/clouds/shaders.js with their base density), multi-cloud
+# boxes, more congestus, and more low sun (the weak regimes of round one)
+SCENES2 = [
+    ('game', dict(name='r5scattered', scale=1.0), 'train'),
+    ('game', dict(name='r5broken', scale=1.0), 'train'),
+    ('game', dict(name='r5near', scale=1.0), 'train'),
+    ('game', dict(name='r5overcast', scale=1.0), 'train'),
+    ('game', dict(name='r5storm', scale=1.0), 'train'),
+    ('game', dict(name='r5scattered2', scale=1.0), 'val'),
+    ('cumulus_field', dict(seed=0), 'train'),
+    ('cumulus_field', dict(seed=1, n=10, sigma=(0.05, 0.15)), 'train'),
+    ('cumulus_field', dict(seed=2, n=8), 'val'),
+    ('les', dict(case='les_congestus', snap=-6, n_cm3=300.0, h=30.0), 'train'),
+    ('les', dict(case='les_congestus', snap=-25, n_cm3=150.0, h=30.0), 'train'),
+    ('game', dict(name='near1', scale=1.0), 'train'),
+    ('game', dict(name='scattered3', scale=1.0), 'train'),
+]
+SUN_ELEVS2 = [2.0, 4.0, 6.0, 9.0, 13.0, 30.0, 55.0]
 
 
 def build(kind, kw):
@@ -69,6 +87,7 @@ def build(kind, kw):
         d = getattr(S, kind)(**kw)
     sc = pt.Scene(d['sig'], d['h'], d['origin'], periodic=d.get('periodic', False), name=d['name'])
     sc.kind = d['kind']
+    sc.base = d.get('base')
     sc.sigma_ref = float(d.get('sigma_ref', np.percentile(d['sig'][d['sig'] > 0], 99) if (d['sig'] > 0).any() else 1.0))
     return sc
 
@@ -174,22 +193,33 @@ def main():
     ap.add_argument('--suns', type=int, default=3, help='sun elevations per scene')
     ap.add_argument('--shard', default='0/1')
     ap.add_argument('--out', default='')
+    ap.add_argument('--round', type=int, default=1)
     args = ap.parse_args()
     OUT = args.out or OUT
     os.makedirs(OUT, exist_ok=True)
     si, sn = (int(v) for v in args.shard.split('/'))
     jobs = []
-    for i, (kind, kw, split) in enumerate(SCENES):
-        rng = np.random.default_rng(1000 + i)
-        el = rng.choice(SUN_ELEVS, size=args.suns, replace=False)
-        for e in el:
-            jobs.append((kind, kw, split, float(e), float(rng.random() * 360)))
+    if args.round == 1:
+        for i, (kind, kw, split) in enumerate(SCENES):
+            rng = np.random.default_rng(1000 + i)
+            el = rng.choice(SUN_ELEVS, size=args.suns, replace=False)
+            for e in el:
+                jobs.append((kind, kw, split, float(e), float(rng.random() * 360)))
+    else:
+        for i, (kind, kw, split) in enumerate(SCENES2):
+            rng = np.random.default_rng(5000 + i)
+            el = rng.choice(SUN_ELEVS2, size=args.suns, replace=False)
+            for e in el:
+                jobs.append((kind, kw, split, float(e), float(rng.random() * 360)))
     for j, (kind, kw, split, e, az) in enumerate(jobs):
         if j % sn != si:
             continue
         if args.only and args.only not in str(kw) and args.only != kind:
             continue
-        run_config(kind, kw, split, e, az, args, np.random.default_rng(zlib.crc32(f'{kw}{e}'.encode())))
+        try:
+            run_config(kind, kw, split, e, az, args, np.random.default_rng(zlib.crc32(f'{kw}{e}'.encode())))
+        except FileNotFoundError as err:
+            print('missing field, skipped:', err, flush=True)
 
 
 if __name__ == '__main__':
