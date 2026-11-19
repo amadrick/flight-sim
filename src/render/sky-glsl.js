@@ -41,13 +41,13 @@ vec3 sky_starLayer(vec3 d, float N, float density, float seed, float airmass, fl
   float flux = 0.003 + 0.20 * pow(m, 12.0) + 0.016 * m3;
   float vis = 1.0;
   if (uSkyStarMode > 0.5) {
-    // pin-sharp points (~1 px, TAA resolves them), same energy as the previous 1.3 px footprint
-    flux *= 1.9;
+    // pin-sharp points (~0.75 px radius, TAA resolves them), fewer mid-bright stars than before
+    flux = (0.003 + 0.20 * pow(m, 12.0) + 0.008 * m3) * 2.2;
     vis = smoothstep(1.5, 6.0, flux * uSkyParams.y / max(skyLum, 1e-7));
     if (vis <= 0.0) return vec3(0.0);
   }
   // footprint whatever the resolution (brighter stars slightly larger), never wider than the cell margin
-  float R = min(max(uSkyParams.x * (uSkyStarMode > 0.5 ? 0.95 : 1.3), 2.5e-4) * (1.0 + 0.6 * m3), 0.4 / N);
+  float R = min(max(uSkyParams.x * (uSkyStarMode > 0.5 ? 0.75 : 1.3), 2.5e-4) * (1.0 + 0.6 * m3), 0.4 / N);
   float k = max(1.0 - ang * ang / (R * R), 0.0);
   // scintillation: stronger through more air
   float tw = 1.0 + (0.10 + 0.5 * airmass) * sin(uTime * (5.0 + 9.0 * rnd.x) + rnd.y * 40.0) * sin(uTime * (2.3 + 3.0 * rnd.y) + rnd.x * 17.0);

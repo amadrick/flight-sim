@@ -93,7 +93,7 @@ murk-only additive cone instead of the scattering beam; `beaconlight=0` beacons 
   rain; forward-peaked aerosol phase. Faint in clear air, strong in mist/rain. Back faces of a 350 m cone proxy,
   no depth test (own depth read), drawn only while the spot is on.
 * **Beacon light**: when nothing else uses the shared fx PointLight (lightning > explosion > fire > afterburner),
-  it follows the flashing beacon (top or belly) at ~0.8 cd-units × night: a red wash on the skin and the ground.
+  it follows the flashing beacon (top or belly) at ~0.5 cd-units × night (30 m range): a red wash on the skin and the ground.
 * **Media lighting**: `fxSun()` = sun (cloud shadow) + moon; phase/wrap use `uFxKeyDir` (= `pipeline.lighting.keyDir`).
   `fxFinish/fxFinishAP` apply the pipeline night grade (`pipeline.nightGrade`) to the lit part only.
 `uFxExposure` (shared uniform) carries `ctx.env.exposure` to every effects shader.
