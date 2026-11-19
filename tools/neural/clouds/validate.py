@@ -127,7 +127,61 @@ def radiance_compare(ph, tau, mu0, nphot):
     return rows
 
 
+def aureole_compare(ph, tau, nphot=4000000, out=None):
+    """Transmitted radiance around the sun (sun at zenith) vs angle: forward full-phase photon MC against the
+    estimator with and without the analytic aureole term."""
+    cf = full_cdf(ph, 200001)
+    dth = math.radians(0.5)
+    nb = 20
+    hist = np.zeros(nb); cnt = np.zeros(1)
+    pt.forward_aureole(tau, cf, nphot, 21, dth, nb, hist, cnt)
+    rows = []
+    for b in (0, 1, 2, 3, 5, 7, 9, 13, 19):
+        a0, a1 = b * dth, (b + 1) * dth
+        dOm = 2 * math.pi * (math.cos(a0) - math.cos(a1))
+        Lf = hist[b] / (dOm * math.cos(0.5 * (a0 + a1)))
+        res = []
+        for aur in (False, True):
+            th_c = 0.5 * (a0 + a1)
+            L = adjoint_radiance_dir(ph, tau, th_c, aur)
+            res.append(L)
+        rows.append(dict(tau=tau, theta_deg=math.degrees(0.5 * (a0 + a1)), L_forward=Lf, L_deltaM=res[0], L_aureole=res[1]))
+        print(f'tau {tau:4.1f} theta {math.degrees(0.5 * (a0 + a1)):5.2f} deg: forward {Lf:9.4f} | delta-M {res[0]:9.4f} '
+              f'({(res[0] / Lf - 1) * 100:+6.1f}%) | + aureole {res[1]:9.4f} ({(res[1] / Lf - 1) * 100:+6.1f}%)', flush=True)
+    return rows
+
+
+def adjoint_radiance_dir(ph, tau, theta, aur, npts=3000, nA=16, nB=8):
+    """Radiance leaving the slab bottom at angle theta from the (zenith) sun beam."""
+    H = 1000.0
+    sc = slab_scene(tau)
+    sc.set_sun([0.0, 1.0, 0.0])
+    rng = np.random.default_rng(9)
+    mu_v = math.cos(theta)
+    sigma = tau / H
+    phi = rng.random(npts) * 2 * math.pi
+    sv = math.sin(theta)
+    D = np.stack([sv * np.cos(phi), np.full(npts, -mu_v), sv * np.sin(phi)], 1)
+    Tm = math.exp(-tau / mu_v)
+    u = rng.random(npts)
+    tt = -np.log(1 - u * (1 - Tm))
+    y = tt * mu_v / sigma
+    P = np.stack([rng.random(npts) * sc.h * 2, y, rng.random(npts) * sc.h * 2], 1)
+    out = pt.estimate(sc, ph, P, D, nA=nA, nB=nB, seed0=5)
+    tau_sun = (H - y) * sigma
+    cos_t = -D[:, 1]
+    jss, jfp = pt.deterministic_terms(ph, cos_t, tau_sun, aureole_term=aur)
+    return float(((1 - Tm) * (jss + jfp + out[:, 1])).mean())
+
+
 def main():
+    if '--aureole' in sys.argv:
+        ph = pt.Phase(10.0, 'G', 4.0)
+        rows = []
+        for tau in (0.5, 1.0, 2.0, 4.0):
+            rows += aureole_compare(ph, tau)
+        json.dump(rows, open(os.path.join(pt.DATA, 'aureole.json'), 'w'), indent=1)
+        return
     quick = '--quick' in sys.argv
     out = {}
     for tc in (2.0, 4.0, 6.0):

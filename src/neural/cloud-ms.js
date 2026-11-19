@@ -13,6 +13,7 @@
 //            y: V_sky, all orders of a uniform sky (upper hemisphere radiance 1)
 //            z: V_gnd, all orders of a uniform ground (lower hemisphere radiance 1)
 //   float cloudMsForwardPeak(float tauSun, float phase)       sunlight carried along the beam by the diffraction peak
+//   float cloudMsForwardPeak(float tauSun, float phase, float cosTheta)   v2: the same plus the aureole (use this one)
 //   vec3  cloudPhaseMie(float cosTheta)                       tabulated Mie phase function, R G B (sr^-1)
 //   vec3  cloudMsTapSegments(vec3 p, vec3 dir)                (only if CLOUD_MS_SIGMA(p) is #defined before ms.glsl)
 // Source for the march:  S = E_sun * (min(p, pMax) e^-tauSun + cloudMsForwardPeak(tauSun, p) + ms.x)
@@ -30,6 +31,7 @@ function b64ToF32(b64) {
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 2);
 }
 
+const AUR_N = 6;
 const glf = (v) => { let s = Number(v).toPrecision(8); if (!/[.e]/.test(s)) s += '.0'; if (/^-?\d+e/.test(s)) s = s.replace('e', '.0e'); return s; };
 
 // ------------------------------------------------------------------------------------------------ network
@@ -140,7 +142,8 @@ export function cloudMieTable(reff = 10) {
     const a = T.meta[i][key], c = T.meta[i + 1][key];
     return Array.isArray(a) ? a.map((v, j) => v + (c[j] - v) * t) : a + (c - a) * t;
   };
-  return { table: out, nu: T.nu, c: T.c, reff: r, g: lerpMeta('g'), f: lerpMeta('f'), pC: lerpMeta('pC'), thetaC: T.meta[i].thetaC };
+  return { table: out, nu: T.nu, c: T.c, reff: r, g: lerpMeta('g'), f: lerpMeta('f'), pC: lerpMeta('pC'), aurV: lerpMeta('aurV'),
+    thetaC: T.meta[i].thetaC };
 }
 
 const mieU = (cosTheta, C) => {
@@ -208,6 +211,22 @@ float cloudMsForwardPeak(float tauSun, float phase) {
   float t = max(tauSun, 0.0);
   return min(phase, CLOUD_MS_PC) * (exp(-(1.0 - CLOUD_MS_F) * t) - exp(-t));
 }
+// v2 (round two): plus the aureole. Sunlight scattered n times inside the diffraction peak spreads by ~sqrt(n) peak
+// widths; the 2-argument form treats it as collimated and is up to 70 % dark within ~4 deg of the sun behind a thin
+// veil. Small-angle Gaussian sum over n = 1..${AUR_N} (validated against full-phase photon Monte Carlo: within +-13 %).
+const float CLOUD_MS_AURV = ${glf(mie.aurV)};     // mean square angle per peak scattering / 2 (rad^2)
+float cloudMsForwardPeak(float tauSun, float phase, float cosTheta) {
+  float j = cloudMsForwardPeak(tauSun, phase);
+  float th2 = 2.0 * (1.0 - clamp(cosTheta, -1.0, 1.0));
+  if (th2 > ${glf(2 * (AUR_N + 1) * 12)} * CLOUD_MS_AURV) return j;            // beyond ~5 deg: nothing left
+  float t = max(tauSun, 0.0), term = exp(-t), a = 0.0;
+  for (int n = 1; n <= ${AUR_N}; n++) {
+    term *= CLOUD_MS_F * t / float(n);
+    float vn = float(n + 1) * CLOUD_MS_AURV;
+    a += term * exp(-th2 / (2.0 * vn)) / (6.2831853 * vn);
+  }
+  return j + CLOUD_MS_F * a;
+}
 vec3 cloudMsLight(float tauSun, float tauCam, float muSun, float cosTheta, ${args}) {
   float c = clamp(cosTheta, -1.0, 1.0);
 ${xs.join('\n')}
@@ -227,7 +246,16 @@ ${vecK} cloudMsTapSegments(vec3 p, vec3 dir) {
     const i = Math.min(Math.floor(x), nu - 2), f = x - i;
     return [0, 1, 2].map((b) => mie.table[b][i] * (1 - f) + mie.table[b][i + 1] * f);
   };
-  const forwardPeak = (tauSun, phase) => { const t = Math.max(tauSun, 0); return Math.min(phase, mie.pC) * (Math.exp(-(1 - mie.f) * t) - Math.exp(-t)); };
+  const forwardPeak = (tauSun, phase, cosTheta) => {
+    const t = Math.max(tauSun, 0);
+    let j = Math.min(phase, mie.pC) * (Math.exp(-(1 - mie.f) * t) - Math.exp(-t));
+    if (cosTheta === undefined) return j;
+    const th2 = 2 * (1 - Math.min(1, Math.max(-1, cosTheta)));
+    if (th2 > 2 * (AUR_N + 1) * 12 * mie.aurV) return j;
+    let term = Math.exp(-t), a = 0;
+    for (let n = 1; n <= AUR_N; n++) { term *= mie.f * t / n; const vn = (n + 1) * mie.aurV; a += term * Math.exp(-th2 / (2 * vn)) / (2 * Math.PI * vn); }
+    return j + mie.f * a;
+  };
   return {
     glsl,
     uniforms: { tCloudMie: { value: tex } },

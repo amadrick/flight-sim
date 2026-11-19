@@ -90,6 +90,11 @@ class Phase:
         self.albedo_rgb = a3.astype(np.float64)
         self.alb3 = (a3 * (1 - self.f) / (1 - a3 * self.f)).astype(np.float64)
         # full phase on a fine uniform-in-theta table for the exact single scattering (and the deterministic terms)
+        # the excised peak q = (p - p_c)+ inside theta_c (integral f): its mean square angle per scattering, for the
+        # small-angle (Gaussian) aureole of sunlight scattered several times inside the peak (deterministic_terms)
+        q = np.where(th < self.theta_c, p - pc, 0.0)
+        wq = q * np.sin(th) * 2 * math.pi
+        self.aur_v = float(np.trapezoid(wq * th ** 2, th) / np.trapezoid(wq, th) / 2.0)
         self.full_t = np.linspace(0, math.pi, 36001)
         self.full = np.interp(self.full_t, th, p)
 
@@ -495,13 +500,34 @@ def tau_to(scene, P, Dir, step=None):
     return out
 
 
-def deterministic_terms(phase, cos_t, tau_sun):
+AUR_N = 6
+
+
+def aureole(f, v, cos_t, tau_sun, n_max=AUR_N):
+    """Sunlight scattered n >= 1 times inside the narrow diffraction peak (Poisson weights e^-tau (f tau)^n / n!) has a
+    small-angle spread of variance n v per axis; the last scattering toward the viewer adds the peak once more. The
+    delta-M split treats all of it as collimated (it only keeps the broad part min(p, p_c)); this adds the peak part
+    f G_{(n+1) v}(theta), G_v(theta) = exp(-theta^2 / (2 v)) / (2 pi v) (per steradian, small angles)."""
+    th2 = 2.0 * (1.0 - np.clip(cos_t, -1, 1))          # ~ theta^2 for small angles
+    t = np.maximum(tau_sun, 0.0)
+    out = np.zeros_like(th2)
+    term = np.exp(-t)
+    for n in range(1, n_max + 1):
+        term = term * f * t / n
+        vn = (n + 1) * v
+        out = out + term * np.exp(-th2 / (2 * vn)) / (2 * math.pi * vn)
+    return f * out
+
+
+def deterministic_terms(phase, cos_t, tau_sun, aureole_term=True):
     """J_ss (exact single scattering, full phase) and J_fp (forward-peak transport), per unit E_sun."""
     th = np.arccos(np.clip(cos_t, -1, 1))
     p = np.interp(th, phase.theta, phase.p)
-    pt = np.interp(th, np.linspace(0, math.pi, NT), phase.tab) * (1 - phase.f)   # = p outside theta_c, p_c inside
+    pt_ = np.interp(th, np.linspace(0, math.pi, NT), phase.tab) * (1 - phase.f)   # = p outside theta_c, p_c inside
     jss = p * np.exp(-tau_sun)
-    jfp = pt * (np.exp(-(1 - phase.f) * tau_sun) - np.exp(-tau_sun))
+    jfp = pt_ * (np.exp(-(1 - phase.f) * tau_sun) - np.exp(-tau_sun))
+    if aureole_term:
+        jfp = jfp + aureole(phase.f, phase.aur_v, cos_t, tau_sun)
     return jss, jfp
 
 
@@ -551,3 +577,36 @@ def forward_slab(tau, mu0, pcdf, alb, nphot, seed0, nbins, hist_r, hist_t, count
         for b in range(nbins):
             hist_r[b] += hr[t, b] / tot
             hist_t[b] += ht[t, b] / tot
+
+
+@njit(parallel=True)
+def forward_aureole(tau, cdf, nphot, seed0, dth, nbins, hist, counts):
+    """Sun at zenith on a slab of optical thickness tau, FULL phase: scattered photons leaving the bottom binned by
+    their angle from the beam (bins of dth radians)."""
+    nthr = 64
+    h = np.zeros((nthr, nbins))
+    per = nphot // nthr
+    for tid in prange(nthr):
+        st = np.zeros(1, np.uint64)
+        seed(st, seed0, tid)
+        for k in range(per):
+            z = tau
+            dx, dy, dz = 0.0, 0.0, -1.0
+            nsc = 0
+            while True:
+                z += dz * (-math.log(1.0 - rnd(st)))
+                if z >= tau:
+                    break
+                if z <= 0.0:
+                    if nsc > 0:
+                        a = math.acos(min(1.0, -dz))
+                        b = int(a / dth)
+                        if b < nbins:
+                            h[tid, b] += 1.0
+                    break
+                nsc += 1
+                mu = sample_mu(cdf, rnd(st))
+                dx, dy, dz = rotate(dx, dy, dz, mu, 2.0 * math.pi * rnd(st))
+    for t in range(nthr):
+        for b in range(nbins):
+            hist[b] += h[t, b] / (per * nthr)

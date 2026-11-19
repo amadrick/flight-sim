@@ -41,7 +41,7 @@ def main():
             tables.append(np.interp(tu, th, z['P'][i, j]))
         ph = pt.Phase(re, 'G', 4.0)
         meta.append(dict(reff=re, g=[float(v) for v in z['g'][i]], albedo=[float(v) for v in z['albedo'][i]],
-                         qext=[float(v) for v in z['qext'][i]], f=ph.f, thetaC=4.0, gTrunc=ph.g_trunc, pC=ph.pc))
+                         qext=[float(v) for v in z['qext'][i]], f=ph.f, thetaC=4.0, gTrunc=ph.g_trunc, pC=ph.pc, aurV=ph.aur_v))
     arr = np.stack(tables).astype(np.float32)          # [reff*3 + band][NU]
     # accuracy of the u-grid representation (linear interpolation in u) vs the full table, energy-weighted
     errs = []

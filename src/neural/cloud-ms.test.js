@@ -83,6 +83,12 @@ test('createCloudMultiScatter: GLSL contract, uniforms, CPU twins, fast build', 
   // forward-peak term: zero without cloud, positive inside, never above the plain beam
   assert.equal(ms.forwardPeak(0, 1), 0);
   assert.ok(ms.forwardPeak(3, 0.5) > 0 && ms.forwardPeak(3, 0.5) < 0.5);
+  // v2 aureole: large within ~2 deg of the sun behind a thin veil, gone by 10 deg
+  const c1 = Math.cos(Math.PI / 180), c10 = Math.cos(10 * Math.PI / 180);
+  const p1 = ms.phase(c1)[1];
+  assert.ok(ms.forwardPeak(2, p1, c1) > 3 * ms.forwardPeak(2, p1), `aureole ${ms.forwardPeak(2, p1, c1)} vs ${ms.forwardPeak(2, p1)}`);
+  assert.equal(ms.forwardPeak(2, ms.phase(c10)[1], c10), ms.forwardPeak(2, ms.phase(c10)[1]));
+  assert.match(ms.glsl, /float cloudMsForwardPeak\(float tauSun, float phase, float cosTheta\)/);
   const p = ms.phase(1), pb = ms.phase(-1), ps = ms.phase(Math.cos(100 * Math.PI / 180));
   assert.ok(p[1] > 300 && pb[1] > 5 * ps[1]);
   assert.ok(!/\bNaN\b|Infinity/.test(ms.glsl));

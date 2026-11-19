@@ -44,7 +44,7 @@ try {
         if (row == 0) { outColor = vec4(cloudMsLight(a.x, a.y, a.z, a.w, ${tapArgs}), 1.0); return; }
         vec3 p = cloudPhaseMie(a.w);
         vec3 tap = cloudMsTapSegments(vec3(0.0), vec3(0.0, 1.0, 0.0));
-        outColor = vec4(p.g, cloudMsForwardPeak(a.x, p.g), tap.x, 1.0);
+        outColor = vec4(p.g, cloudMsForwardPeak(a.x, p.g, a.w), tap.x, 1.0);
       }`,
   });
   const rt = new THREE.WebGLRenderTarget(N, 2, { type: THREE.FloatType, depthBuffer: false,
@@ -57,7 +57,7 @@ try {
     for (let k = 0; k < 3; k++) eNet = Math.max(eNet, Math.abs(Math.log(buf[4 * i + k] / vec.out[i][k])));
     const p = ms.phase(vec.cosTheta[i])[1];
     ePh = Math.max(ePh, Math.abs(buf[4 * (N + i)] / p - 1));
-    const fp = ms.forwardPeak(vec.tauSun[i], buf[4 * (N + i)]);
+    const fp = ms.forwardPeak(vec.tauSun[i], buf[4 * (N + i)], vec.cosTheta[i]);
     eFp = Math.max(eFp, Math.abs(buf[4 * (N + i) + 1] - fp) / (fp + 1e-6));
   }
   sim.results = { vectors: N, netMaxLnDiffPpm: 1e6 * eNet, phaseMaxRelPpm: 1e6 * ePh, forwardPeakMaxRelPpm: 1e6 * eFp,
