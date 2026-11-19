@@ -149,13 +149,17 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, f
   q.xz += curl * (1.0 - info.x) * 0.07;
   q.y -= uClNoiseOfs.w; q.x += uClNoiseOfs.w * 0.4;
   vec4 dn = textureLod(tClDetail, q, lodD);
-  float hf = dn.r;
+  // all three octaves of the detail volume from the one fetch (R: 3-6-12 cell Worley fbm, G: 6-12, B: 12): the
+  // finer octaves cut the small sub-turrets / ragged bits into the edge that the single R channel left smooth
+  float hf = dn.r * 0.62 + dn.g * 0.23 + dn.b * 0.15;
   if (nearK > 0.0) {                         // extra octave close to the camera (flying through cloud)
     float fine = textureLod(tClDetail, q * 3.7 + 0.37, 0.0).g;
     hf = mix(hf, hf * 0.7 + fine * 0.3, nearK);
   }
   float m = mix(hf, 1.0 - hf, clSat(info.x * 5.0));
-  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z;
+  // keep the condensation level flat: little erosion in the lowest ~8 % of the cell (cumulus bases are flat and
+  // sharp; the wisps belong to the flanks)
+  m = (mix(m, 1.0 - info.z, 0.25) - CL_EROSION_BIAS) * uClNoise.z * mix(0.35, 1.0, clSat(info.x * 12.0));
   return clSat((excess - m) / edge);
 }
 
@@ -269,7 +273,8 @@ float clTauLight(vec3 pa, float lod, float jit) {
     float dl = d1 - d0;
     vec3 pl = pa + uClLightDir * (d0 + dl * (0.25 + 0.5 * jit));    // half-cell jitter: hides the sample planes at half the variance
     vec4 wx = clWeather(pl.xz, max(lod - 1.0, 0.0));
-    float d = clDensityBase(pl, wx, lod + 1.0 + float(j) * 0.5, info);
+    // the first segments at full-ish resolution: the shadow of one turret on the next (the dark creases) is ~100 m scale
+    float d = clDensityBase(pl, wx, lod + 0.5 + float(j) * 0.6, info);
     tau += d * info.w * dl;
     d0 = d1;
   }
@@ -426,7 +431,7 @@ void main() {
         float d = 0.0;
         if (ex > 0.0) {
           float lodD = clamp(log2(ds / voxelD), 0.0, 4.0);
-          float edge = clamp(ds * 0.0007, 0.012, 0.06);
+          float edge = clamp(ds * 0.0005, 0.009, 0.05);              // density ramp: crisp near, soft far
           d = clDensityFull(pa, ex - CL_EROSION_BIAS * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
         }
         if (d > 0.0) {
