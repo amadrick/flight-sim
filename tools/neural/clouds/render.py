@@ -8,7 +8,7 @@ Every image uses the same camera ray march through the same extinction grid; onl
   new       : same single scattering + forward-peak term + cloudMsLight(descriptor from the shader's taps)
   shipped   : the round-three networks as the game feeds them (height proxies, calibration), JD-fit phase clipped at 20
   classic   : DEFAULT_SCATTER_GLSL with its hand-written ambient
-Writes data/renders/<shot>.png (reference | new | shipped | classic, plus a x4 error strip) and <shot>.json (errors).
+Writes data/renders/<shot>.png (reference | new | shipped | classic, plus an error strip: |model - ref| / ref x 2, so full orange = 50 % error) and <shot>.json (errors).
 """
 import json
 import math
@@ -46,12 +46,12 @@ def lighting(elev):
 SHOTS = {
     # name: scene builder, kwargs, sun elevation, sun azimuth (deg), camera position, look-at, fov
     'cumulus_noon': ('cumulus', dict(seed=3, sigma=0.075, height=1400.0, width=1500.0), 65.0, 30.0,
-                     (-2600.0, 1700.0, -900.0), (0.0, 2100.0, 0.0), 55.0),
+                     (-2600.0, 1700.0, -900.0), (0.0, 2150.0, 0.0), 36.0),
     'silver_lining': ('cumulus', dict(seed=3, sigma=0.075, height=1400.0, width=1500.0), 14.0, 0.0,
-                      (-3000.0, 1900.0, 150.0), (0.0, 2050.0, 0.0), 55.0),
+                      (-3000.0, 1900.0, 150.0), (0.0, 2100.0, 0.0), 36.0),
     'low_sun': ('game', dict(name='near1', scale=1.0), 6.0, 90.0, (2200.0, 1800.0, -1600.0), (0.0, 2050.0, 0.0), 55.0),
     'storm_base': ('storm', dict(seed=1, sigma=0.16, height=8000.0, width=4000.0, h=60.0), 50.0, 40.0,
-                   (-7000.0, 300.0, -500.0), (0.0, 2600.0, 0.0), 65.0),
+                   (-9000.0, 300.0, -500.0), (0.0, 3200.0, 0.0), 62.0),
     'thin_wisp': ('wisp', dict(seed=2, sigma=0.012), 55.0, 120.0, (-1500.0, 2200.0, -1400.0), (0.0, 2700.0, 0.0), 60.0),
 }
 
@@ -161,12 +161,15 @@ def render(shot, W=160, H=90, spp=4, nA=48, nB=16, net=None):
             pp = P[a0 + k] + rds[r] * (rng.random() - 0.5) * step
             pick_P.append(pp); pick_D.append(-rds[r]); pick_pix.append(r)
     pick_P, pick_D, pick_pix = np.array(pick_P), np.array(pick_D), np.array(pick_pix)
-    res = pt.estimate(sc, ph, pick_P, pick_D, nA=nA, nB=nB, seed0=17)
-    Sms = res[:, 0:3] * E[None] + res[:, 3:6] * sky[None] + res[:, 6:9] * gnd[None]
-    L_ms = np.zeros((n, 3))
-    for c in range(3):
-        L_ms[:, c] = np.bincount(pick_pix, Sms[:, c], n) / spp
-    L_ms *= opac[:, None]
+    def mc(seed):
+        res = pt.estimate(sc, ph, pick_P, pick_D, nA=nA, nB=nB, seed0=seed)
+        Sms = res[:, 0:3] * E[None] + res[:, 3:6] * sky[None] + res[:, 6:9] * gnd[None]
+        Lm = np.zeros((n, 3))
+        for c in range(3):
+            Lm[:, c] = np.bincount(pick_pix, Sms[:, c], n) / spp
+        return Lm * opac[:, None]
+    L_ms = mc(17)
+    L_ms2 = mc(18)       # independent second estimate (same points): its difference measures the reference's noise
     t_ref = time.time() - t0
     bg = np.where(rds[:, 1:2] > 0, hor[None] + (zen - hor)[None] * np.clip(rds[:, 1:2], 0, 1) ** 0.5, gnd[None] * 0.6)
     T_tot = 1 - opac
@@ -191,10 +194,14 @@ def render(shot, W=160, H=90, spp=4, nA=48, nB=16, net=None):
     # ---- metrics (cloud pixels only, radiance-weighted)
     m = opac > 0.02
     stats = {}
+    ref2 = L_ss + L_ms2
+    den = ref[m].sum(1) + 0.02 * E.sum()
+    noise2 = np.average((np.abs(ref2[m] - ref[m]).sum(1) / den) ** 2, weights=opac[m]) / 2   # per-image noise^2 of ref
+    stats['_ref_noise_rel'] = float(math.sqrt(noise2))
     for k, img in out.items():
-        rel = np.abs(img[m] - ref[m]).sum(1) / (ref[m].sum(1) + 0.02 * E.sum())
-        stats[k] = dict(mean_abs_rel=float(np.average(rel, weights=opac[m])),
-                        rmse_rel=float(np.sqrt(np.average(rel ** 2, weights=opac[m]))),
+        rel = np.abs(img[m] - ref[m]).sum(1) / den
+        r2 = np.average(rel ** 2, weights=opac[m])
+        stats[k] = dict(rmse_rel=float(math.sqrt(r2)), rmse_rel_denoised=float(math.sqrt(max(r2 - noise2, 0.0))),
                         brightness_ratio=float(img[m].sum() / ref[m].sum()))
     stats['_ref_mc_seconds'] = t_ref
     # ---- images: composite over the background, tone map with a shared exposure
@@ -204,7 +211,7 @@ def render(shot, W=160, H=90, spp=4, nA=48, nB=16, net=None):
     tm = lambda x: np.clip(1 - np.exp(-x * expo * 1.6), 0, 1) ** (1 / 2.2)
     cols = [('reference', ref)] + [(k, out[k]) for k in ('new', 'shipped', 'classic') if k in out]
     tiles = [tm(comp(img)).reshape(H, W, 3) for _, img in cols]
-    errs = [np.zeros((H, W, 3))] + [np.clip(4 * np.abs(img - ref).sum(1) / (ref.sum(1) + 0.02 * E.sum()), 0, 1).reshape(H, W)[..., None] * np.array([1.0, 0.45, 0.1]) for _, img in cols[1:]]
+    errs = [np.zeros((H, W, 3))] + [np.clip(2 * np.abs(img - ref).sum(1) / (ref.sum(1) + 0.02 * E.sum()), 0, 1).reshape(H, W)[..., None] * np.array([1.0, 0.45, 0.1]) for _, img in cols[1:]]
     top_row = np.concatenate(tiles, 1)
     bot_row = np.concatenate(errs, 1) ** 0.5
     imgarr = (np.concatenate([top_row, bot_row], 0) * 255).astype(np.uint8)
