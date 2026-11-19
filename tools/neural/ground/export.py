@@ -21,7 +21,9 @@ def main():
     sizes = [int(v) for v in d['sizes']]
     layers = [(d[f'w{i}'].astype(np.float32), d[f'b{i}'].astype(np.float32)) for i in range(len(sizes) - 1)]
     flat = np.concatenate([np.concatenate([w.ravel(), b.ravel()]) for w, b in layers]).astype('<f4')
-    report = json.load(open(path.replace('.npz', '.json')))
+    # generalisation numbers come from the run that held whole patches out (train.py without --all), if present
+    hold = os.path.join(DATA, 'model_holdout.json')
+    report = json.load(open(hold if os.path.exists(hold) else path.replace('.npz', '.json')))
 
     def forward(x):
         for i, (w, b) in enumerate(layers):
@@ -47,6 +49,7 @@ def main():
         'sizes': sizes, 'params': int(flat.size), 'activation': 'tanh', 'output': 'logistic', 'outputs': ecosim.OUT_NAMES,
         'trained': datetime.date.today().isoformat(),
         'fit': {k: {'rmse_val': round(v['rmse_val'], 4), 'r2_val': round(v['r2_val'], 3), 'rmse_train': round(v['rmse_train'], 4)} for k, v in report['outputs'].items()},
+        'fit_note': 'rmse_val / r2_val: 7 whole terrain patches held out of training (unseen terrain); the shipped weights are then refit on all 48 patches',
         'train_samples': report['train_samples'], 'val_samples': report['val_samples'],
     }
     b64 = base64.b64encode(flat.tobytes()).decode()

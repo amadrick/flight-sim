@@ -127,8 +127,9 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   float open = (1.0 - C.pad) * (1.0 - water) * ss(1.2, 3.2, h);
 
   // ---- farmland: arable land (deep soil, gentle, moist enough, warm enough) in the districts that are farmed ----
-  float farmed = ss(0.42, 0.48, macro2 * 0.75 + n0.a * 0.25);
-  C.crop = ss(0.10, 0.22, E.c.z) * farmed * ss(0.020, 0.008, slope) * ss(6.0, 12.0, h) * (1.0 - ss(0.35, 0.55, arid)) * open;
+  // (in the mountains every scrap of level valley floor is meadow or pasture)
+  float farmed = max(ss(0.42, 0.48, macro2 * 0.75 + n0.a * 0.25), ss(500.0, 900.0, h));
+  C.crop = ss(0.30, 0.55, E.c.z) * farmed * ss(0.020, 0.008, slope) * ss(6.0, 12.0, h) * (1.0 - ss(0.35, 0.55, arid)) * open;
   C.hedge = 0.0;
   C.fld = TerrField(0.0, 0.0, vec2(1.0), vec2(0.0), vec2(0.0), vec4(0.0), vec2(0.0), 0.0);
   if (C.crop > 0.001) {
@@ -145,10 +146,14 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   float dens = E.a.x * (1.0 + 0.10 * C.tropic);
   float fthr = terrThresh(dens, 0.25);
   float stand = ss(fthr - 0.03, fthr + 0.03, fnoise) * ss(0.02, 0.10, dens);
+  float lot0 = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * step(0.5, C.crop) * ss(0.15, 0.4, dens);
   // closed forest where the simulation says so; no trees on cliffs or in the water
-  stand = max(stand, ss(0.80, 0.93, dens)) * (1.0 - ss(0.42, 0.60, slope)) * open;
-  // woods that survive in farmed country: wet hollows and stream lines, steep banks
-  float keep = max(ss(0.70, 0.84, E.b.w + 0.10 * (n2.r - 0.5)), 1.0 - C.crop);
+  stand = max(max(stand, ss(0.94, 0.99, dens)), lot0) * (1.0 - ss(0.42, 0.60, slope)) * open;
+  // woods that survive in farmed country: wet hollows and stream lines, the cores of the old stands, and whole
+  // parcels left as woodlots (straight edges along the field boundaries)
+  float lot = step(0.895, fract(C.fld.id.y * 5.37 + C.fld.id.x)) * ss(1.0, 6.0, C.fld.edge + 9.0 * (n3.g - 0.5));
+  float core = ss(fthr + 0.07, fthr + 0.12, fnoise) * ss(0.25, 0.5, dens);
+  float keep = max(max(ss(0.70, 0.84, E.b.w + 0.10 * (n2.r - 0.5)), max(lot, core)), 1.0 - C.crop);
   C.woods = stand * keep;
   C.forest = max(C.woods, C.hedge * 0.9);
   C.conifer = clamp(E.a.y + 0.35 * (n2.r - 0.5) * E.a.y * (1.0 - E.a.y) * 4.0, 0.0, 1.0);
@@ -195,14 +200,14 @@ struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; };
 const float M_GRASS = 0.0, M_SOIL = 1.0, M_GRAVEL = 2.0, M_ROCK = 3.0, M_SAND = 4.0, M_MUD = 5.0, M_CANOPY = 6.0, M_STRATA = 7.0;
 // per material: x = tint amplitude, y = cavity (height) darkening, z = detail normal strength, w = roughness
 const vec4 TERR_MATP[8] = vec4[8](
-  vec4(0.55, 0.50, 0.55, 0.93),    // grass
-  vec4(0.45, 0.40, 0.70, 0.90),    // soil
-  vec4(0.60, 0.55, 1.10, 0.84),    // gravel / scree
-  vec4(0.45, 0.55, 1.35, 0.80),    // rock
-  vec4(0.25, 0.30, 0.55, 0.86),    // sand
-  vec4(0.30, 0.55, 0.45, 0.78),    // dried mud
+  vec4(0.85, 1.00, 1.00, 0.93),    // grass
+  vec4(0.60, 0.70, 0.90, 0.90),    // soil
+  vec4(0.70, 0.80, 1.20, 0.84),    // gravel / scree
+  vec4(0.50, 0.70, 1.40, 0.80),    // rock
+  vec4(0.30, 0.40, 0.60, 0.86),    // sand
+  vec4(0.35, 0.80, 0.60, 0.78),    // dried mud
   vec4(0.60, 0.95, 1.50, 0.95),    // forest canopy
-  vec4(0.50, 0.55, 1.35, 0.80));   // bedded rock
+  vec4(0.50, 0.70, 1.40, 0.80));   // bedded rock
 
 // Coverage of a line of half width hw whose centre is dist away, seen through a pixel px wide (box filter).
 float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * hw / px + 0.15); }
@@ -210,7 +215,7 @@ float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px +
 // e = edge softness in noise units. As e grows (distance) the result converges to f itself.
 float terrPatch(float f, float nz, float sg, float e) {
   float t = terrThresh(f, sg);
-  return mix(clamp((nz - t) / (2.0 * e) + 0.5, 0.0, 1.0), clamp(f, 0.0, 1.0), clamp(e * 2.2 - 0.1, 0.0, 1.0));
+  return mix(clamp((nz - t) / (2.0 * e) + 0.5, 0.0, 1.0), clamp(f, 0.0, 1.0), clamp(e * 2.2 - 0.1, 0.0, 1.0)) * ss(0.012, 0.05, f);
 }
 
 // Lookups with explicit gradients (legal inside branches, keep anisotropic filtering). dx, dy = screen-space
@@ -239,9 +244,10 @@ void terrSide(vec3 T, vec2 off, vec3 rp, vec3 n, float layer, vec3 dpx, vec3 dpy
 // ---- farmland ------------------------------------------------------------------------------------------------------
 // Colour of the farm parcel F. wet = soil moisture, n2/n3/n4 = noise, px = metres per pixel. Returns rgb + a = surface
 // kind for the detail layers (0 crop canopy / grass, 1 bare soil, 2 gravel).
-vec4 terrFieldColor(TerrField F, vec2 w, float wet, vec4 n2, vec4 n3, vec4 n4, float px, out float rough) {
-  // regional crop mix per district, then the class of this field
+vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, vec4 n4, float px, out float rough) {
+  // regional crop mix per district, then the class of this field; mountain valleys grow grass (pasture, hay)
   float t = pow(F.id.x, mix(0.6, 1.7, terrHash2(floor(w / 4020.0) + 9000.0).x));
+  if (ss(650.0, 1250.0, h) > fract(F.id.x * 3.7 + F.id.y)) t = F.id.y < 0.55 ? 0.60 : 0.82;
   float stage = F.id.y;
   bool wide = F.size.x > F.size.y;
   float along = wide ? F.pq.x : F.pq.y, across = wide ? F.pq.y : F.pq.x, len = wide ? F.size.x : F.size.y;
@@ -250,7 +256,7 @@ vec4 terrFieldColor(TerrField F, vec2 w, float wet, vec4 n2, vec4 n3, vec4 n4, f
   float cr = mix(across, along, head);
   // growth is uneven: wetter hollows are darker and lusher, dry knolls pale; drill misses and waterlogging
   float vig = clamp(0.5 + 1.1 * (wet - 0.52) + 0.9 * (n3.r - 0.5) + 0.5 * (n2.g - 0.5) + 0.35 * (n4.g - 0.5), 0.0, 1.0);
-  vec3 soil = mix(vec3(0.165, 0.125, 0.085), vec3(0.085, 0.064, 0.045), clamp(wet * 1.3 - 0.2 + 0.5 * (n3.g - 0.5), 0.0, 1.0));
+  vec3 soil = mix(vec3(0.175, 0.135, 0.090), vec3(0.090, 0.068, 0.045), clamp(wet * 1.3 - 0.25 + 0.5 * (n3.g - 0.5), 0.0, 1.0));
   vec3 c; float rowP = 0.0, rowA = 0.0, swP = 0.0, swA = 0.0, tram = 0.0, kind = 0.0;
   rough = 0.92;
   if (t < 0.25) {            // cereal, green: from thin young growth showing soil to dense blue-green
@@ -270,10 +276,10 @@ vec4 terrFieldColor(TerrField F, vec2 w, float wet, vec4 n2, vec4 n3, vec4 n4, f
     c = mix(vec3(0.255, 0.220, 0.130), vec3(0.200, 0.170, 0.100), vig); rowP = 0.25; rowA = 0.12; swP = 7.5; swA = 0.09;
   } else if (t < 0.86) {     // hay: mown, swaths drying in rows
     c = mix(vec3(0.130, 0.160, 0.058), vec3(0.085, 0.125, 0.040), vig); swP = 5.0; swA = 0.22 * step(0.4, stage);
-  } else if (t < 0.93) {     // maize: tall, dark, strong rows
+  } else if (t < 0.94) {     // maize: tall, dark, strong rows
     c = mix(vec3(0.060, 0.115, 0.032), vec3(0.034, 0.082, 0.026), vig); rowP = 0.75; rowA = 0.28;
-  } else if (t < 0.965) {    // oilseed rape in flower
-    c = mix(vec3(0.150, 0.190, 0.040), vec3(0.420, 0.370, 0.050), ss(0.2, 0.6, stage) * (0.6 + 0.4 * vig)); tram = 1.0;
+  } else if (t < 0.962) {    // oilseed rape in flower
+    c = mix(vec3(0.120, 0.160, 0.040), vec3(0.330, 0.300, 0.060), ss(0.2, 0.6, stage) * (0.6 + 0.4 * vig)); tram = 1.0;
   } else {                   // fallow: weeds over old stubble
     c = mix(vec3(0.190, 0.160, 0.100), vec3(0.075, 0.105, 0.045), ss(0.35, 0.65, n3.r * 0.5 + n4.g * 0.5)); kind = 0.5;
   }
@@ -352,8 +358,8 @@ TerrSurf terrSurface(vec3 rp) {
   float macro = n0.r * 0.6 + n1.r * 0.4;              // 0..1 large-scale variation
   // patch noise: ~normal(0.5, 0.11) at three nested scales; the fine part fades with distance
   float bk = 0.5 + 0.55 * (n2.r - 0.5) + 0.50 * (n3.g - 0.5) + 0.45 * (n4.r - 0.5) + 0.35 * (n5.g - 0.5);
-  float bk2 = 0.5 + 0.55 * (n2.a - 0.5) + 0.50 * (n3.r - 0.5) + 0.45 * (n4.g - 0.5) + 0.35 * (n5.r - 0.5);
-  float bk3 = 0.5 + 0.55 * (n1.g - 0.5) + 0.50 * (n2.g - 0.5) + 0.40 * (n3.a - 0.5) + 0.35 * (n4.a - 0.5);
+  float bk2 = 0.5 + 0.55 * (n2.g - 0.5) + 0.50 * (n3.r - 0.5) + 0.45 * (n4.g - 0.5) + 0.35 * (n5.r - 0.5);
+  float bk3 = 0.5 + 0.45 * (n1.g - 0.5) + 0.40 * (n2.r - n2.g) + 0.36 * (n3.g - n3.r) + 0.32 * (n4.r - n4.g) + 0.25 * (n5.g - n5.r);
   float eps = 0.012 + 0.10 * ss(4.0, 400.0, px);      // edge softness of the patches
 
   TerrCover C = terrCoverEco(rp.xz, h, n, curv, arid, water, n0, n1, n2, n3, E);
@@ -367,7 +373,7 @@ TerrSurf terrSurface(vec3 rp) {
   // ---- bare ground: soil of the humid country, desert earths -------------------------------------------------
   float damp = clamp(wet * 1.25 - 0.15 + 0.3 * (n3.g - 0.5), 0.0, 1.0);
   vec3 earth = mix(vec3(0.185, 0.140, 0.098), vec3(0.092, 0.070, 0.052), damp);
-  earth = mix(earth, vec3(0.200, 0.185, 0.165), alpine * 0.6);                    // thin grey mountain soils
+  earth = mix(earth, vec3(0.185, 0.180, 0.172) * (0.8 + 0.4 * n3.g), alpine * 0.9);   // above the trees bare ground is frost-shattered rubble
   vec3 sand = mix(vec3(0.285, 0.210, 0.138), vec3(0.395, 0.318, 0.215), ss(0.3, 0.7, n1.g * 0.45 + n2.r * 0.35 + n4.g * 0.2));
   vec3 redEarth = vec3(0.315, 0.170, 0.100);
   float redness = ss(0.45, 0.7, n0.r * 0.7 + n1.r * 0.3) * 0.75;
@@ -388,6 +394,7 @@ TerrSurf terrSurface(vec3 rp) {
   vec3 col = mix(earth, desert, desertAmt);
   float rough = mix(0.90, 0.86, desertAmt);
   mat = mix(M_SOIL, M_SAND, step(0.5, desertAmt * (0.35 + 0.65 * ss(0.40, 0.60, bk3))));
+  if (alpine > 0.5) mat = M_GRAVEL;
   // desert washes and torrent beds: pale gravel and sand where the simulation routes floods
   float washAmt = terrPatch(eWash * (0.55 + 0.45 * desertAmt), bk2, 0.11, eps + 0.03);
   col = mix(col, mix(vec3(0.335, 0.315, 0.285), vec3(0.44, 0.38, 0.28), desertAmt) * (0.9 + 0.2 * n3.r), washAmt * 0.85);
@@ -430,12 +437,17 @@ TerrSurf terrSurface(vec3 rp) {
   float canopy = 0.0;
   if (forest > 0.004) {
     vec4 cn = terrMatTex(TERR_TILE3, uTerrTile[3], rp.xz, 0.035 * (n2.rg - 0.5), M_CANOPY, dxz, dyz);
-    float fine = ss(60.0, 6.0, px);                    // crowns resolve below ~10 m per pixel
+    float fine = ss(7.0, 1.6, px);                     // crowns (7 m) resolve below a few metres per pixel
     crown = mix(0.5, cn.b, fine);
     crownG = terrUnrot(TERR_TILE3, cn.rg - 0.5) * fine;
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
     fcol *= mix(1.0, 0.72 + 0.56 * cn.a, fine) * mix(1.0, 0.86, conifer);
     canopyAO = mix(1.0, 0.42 + 0.78 * crown, fine);
+    // from further off the canopy reads as an uneven, mottled surface (no cell pattern: it would show its grid)
+    float fineF = ss(40.0, 8.0, px) * (1.0 - 0.7 * fine);
+    fcol *= 1.0 + fineF * (0.9 * (n3.g - 0.5) + 0.5 * (n3.r - 0.5));
+    canopyAO *= 1.0 + fineF * 0.8 * (n3.g - 0.5);
+    fcol *= 0.84 + 0.32 * n2.g;                        // stand-to-stand variety
   }
   float floorAmt = canopy * t3d;                       // forest floor under real trees
   vec3 floorCol = mix(vec3(0.060, 0.050, 0.032), vec3(0.050, 0.072, 0.030), ss(0.4, 0.7, bk)) * (0.8 + 0.4 * n4.r);
@@ -445,7 +457,7 @@ TerrSurf terrSurface(vec3 rp) {
   float cropAmt = cropPot * (1.0 - C.hedge);
   if (cropPot > 0.001) {
     float fr;
-    vec4 fc = terrFieldColor(C.fld, w, wet, n2, n3, n4, px, fr);
+    vec4 fc = terrFieldColor(C.fld, w, h, wet, n2, n3, n4, px, fr);
     col = mix(col, fc.rgb, cropAmt);
     rough = mix(rough, fr, cropAmt);
     if (cropAmt > 0.5) mat = fc.a > 1.5 ? M_GRAVEL : fc.a > 0.75 ? M_SOIL : M_GRASS;
@@ -489,7 +501,7 @@ TerrSurf terrSurface(vec3 rp) {
   // outcrops poke through thin soils on steeper ground
   rockAmt = max(rockAmt, ss(0.80, 0.90, bk3 + 0.9 * slope + 0.35 * (1.0 - eSoil) - 0.25) * (1.0 - cropPot));
   rockAmt *= 1.0 - pad * 0.9;
-  vec3 granite = mix(vec3(0.150, 0.146, 0.142), vec3(0.275, 0.262, 0.245), ss(0.2, 0.8, n2.r * 0.6 + n3.g * 0.4));
+  vec3 granite = mix(vec3(0.120, 0.118, 0.116), vec3(0.235, 0.226, 0.212), ss(0.2, 0.8, n2.r * 0.6 + n3.g * 0.4));
   granite *= 0.86 + 0.28 * beds.r + 0.16 * (beds2.r - 0.5);                             // bedding, filtered
   granite = mix(granite, granite * vec3(0.62, 0.60, 0.58), ss(0.55, 0.85, n3.a) * 0.6);   // dark seepage / lichen
   granite = mix(granite, granite * vec3(0.80, 0.86, 0.74), ss(0.5, 0.9, wet) * (1.0 - alpine) * 0.5);   // moss, lichen in damp shade
@@ -515,7 +527,9 @@ TerrSurf terrSurface(vec3 rp) {
   // late-lying snow from the simulation (shaded faces, loaded gullies, avalanche cones); it cannot hold on the
   // steepest pixels, and drifts sit in the small hollows first
   float snowF = clamp(eSnow * 1.25 + 0.9 * clamp(conc, -0.06, 0.12) * ss(0.02, 0.3, eSnow), 0.0, 1.0);
-  float snow = terrPatch(snowF, bk, 0.11, eps + 0.01) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
+  // drifts linger in the hollows and gullies first; a little broad noise so the edges are not contour lines
+  float bkS = 0.5 + 2.2 * clamp(conc, -0.12, 0.2) + 1.4 * clamp(curv, -0.08, 0.1) + 0.45 * (n2.r - 0.5) + 0.25 * (n3.g - 0.5);
+  float snow = terrPatch(snowF, bkS, 0.14, eps + 0.03) * (1.0 - ss(0.40, 0.62, slope + 0.10 * (n3.r - 0.5)));
   snow *= 1.0 - 0.8 * paint * ss(0.9, 0.5, eSnow);
   vec3 snowCol = vec3(0.86, 0.88, 0.91) * (0.95 + 0.07 * n3.r);
   // old firn / glacier ice shows through in the big hollows; dust and debris bands near the snow margin
@@ -568,22 +582,41 @@ TerrSurf terrSurface(vec3 rp) {
   vec4 mp = TERR_MATP[int(mat)];
   vec2 dn = vec2(0.0);
   float hgt = 0.0, tint = 0.0;                         // accumulated height and tint, centred on 0
-  float fade3 = ss(90.0, 9.0, px), fade4 = ss(19.0, 1.9, px), fade5 = ss(3.4, 0.34, px), fade6 = ss(0.6, 0.06, px);
+  // a scale is shown while its features (tile / 8 .. tile / 128) are resolved; beyond that only its mean remains
+  float fade3 = ss(9.0, 2.2, px), fade4 = ss(1.9, 0.46, px), fade5 = ss(0.34, 0.08, px), fade6 = ss(0.06, 0.014, px);
   float top = 1.0;                                    // weight of the top-down projection
   vec3 dnSide = vec3(0.0);
+#if TERR_Q > 0
+  // rock and scree seen from kilometres away: crags and ledges from the 410 m scale (side-projected where steep)
+  float hard = step(M_GRAVEL - 0.5, mat) * step(mat, M_ROCK + 0.5);
+  float fade2 = ss(34.0, 8.0, px3) * hard;
+  if (fade2 > 0.0) {
+    float sd = steep;
+    if (sd > 0.0) {
+      vec4 s2; vec3 d2;
+      terrSide(TERR_TILE2, uTerrTile[2], rp, n, M_STRATA, dpx, dpy, s2, d2);
+      hgt += (s2.b - 0.5) * fade2 * sd; tint += (s2.a - 0.5) * fade2 * sd; dnSide += d2 * 1.6 * fade2 * sd;
+    }
+    if (sd < 1.0) {
+      vec4 t2 = terrMatTex(TERR_TILE2, uTerrTile[2], rp.xz, 0.03 * (n1.rg - 0.5), mat, dxz, dyz);
+      hgt += (t2.b - 0.5) * fade2 * (1.0 - sd); tint += (t2.a - 0.5) * fade2 * (1.0 - sd);
+      dn += terrUnrot(TERR_TILE2, t2.rg - 0.5) * (fade2 * (1.0 - sd));
+    }
+  }
+#endif
 #if TERR_Q > 0
   // steep rock: bedded-rock layer projected from the side at the 110 m and 23 m scales
   float sideAmt = steep * step(M_GRAVEL - 0.5, mat) * step(mat, M_ROCK + 0.5);
   if (sideAmt > 0.0 && fade3 > 0.0) {
     vec4 s3; vec3 d3;
     terrSide(TERR_TILE3, uTerrTile[3], rp, n, M_STRATA, dpx, dpy, s3, d3);
-    float a3 = sideAmt * ss(90.0, 9.0, px3);
+    float a3 = sideAmt * ss(9.0, 2.2, px3);
     hgt += (s3.b - 0.5) * a3; tint += (s3.a - 0.5) * a3; dnSide += d3 * 1.5 * a3;
 #if TERR_Q > 1
     if (fade4 > 0.0) {
       vec4 s4; vec3 d4;
       terrSide(TERR_TILE4, uTerrTile[4], rp, n, M_STRATA, dpx, dpy, s4, d4);
-      float a4 = sideAmt * ss(19.0, 1.9, px3);
+      float a4 = sideAmt * ss(1.9, 0.46, px3);
       hgt += (s4.b - 0.5) * a4 * 0.7; tint += (s4.a - 0.5) * a4 * 0.7; dnSide += d4 * 1.3 * a4;
     }
 #endif

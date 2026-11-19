@@ -4,7 +4,8 @@
 // Layers: 0 grass, 1 soil, 2 gravel / scree, 3 massive rock, 4 sand ripples (also wind-packed snow), 5 dried mud
 // (desiccation polygons), 6 forest canopy (crowns), 7 bedded rock (used side-projected on cliffs: v = up).
 // Every layer tiles exactly (periodic lattice noise); the surface shader samples it at four scales with different
-// rotations and noise-warped coordinates, so no repetition shows.
+// rotations and noise-warped coordinates. No layer holds structure larger than about 1/8 of the tile, so a tile has
+// no large-scale pattern to repeat; the next scale up supplies the larger features.
 import * as THREE from 'three';
 import { FULLSCREEN_VERT, fullscreenTriangle } from '../core/glsl.js';
 
@@ -54,22 +55,27 @@ float dome(float r, float R) { float q = r / R; return sqrt(max(0.0, 1.0 - q * q
 
 // each material returns (height, tint), both about 0..1
 vec2 matGrass(vec2 uv) {
-  vec4 w1 = worley(uv * 26.0, ivec2(26), 3u), w2 = worley(uv * 61.0, ivec2(61), 5u);
+  vec4 w1 = worley(uv * 22.0, ivec2(22), 3u), w2 = worley(uv * 53.0, ivec2(53), 5u);
   float tuft = (1.0 - smoothstep(0.0, 0.75, w1.x)) * (0.45 + 0.55 * w1.z);
-  float blade = (1.0 - smoothstep(0.0, 0.70, w2.x)) * (0.40 + 0.60 * w2.z);
-  float low = fbm(uv, 4, 4, 11u, 0.5);
-  float streak = gnoise(uv * vec2(151.0, 23.0), ivec2(151, 23), 13u) + gnoise(uv * vec2(19.0, 127.0), ivec2(19, 127), 15u);
-  float h = 0.36 + 0.55 * low + 0.30 * tuft + 0.22 * blade + 0.10 * streak;
-  float tint = 0.5 + 0.9 * fbm(uv, 3, 3, 17u, 0.5) + 0.35 * (w1.w - 0.5) + 0.25 * (w2.w - 0.5);
+  float clump = (1.0 - smoothstep(0.0, 0.70, w2.x)) * (0.40 + 0.60 * w2.z);
+  float low = fbm(uv, 9, 3, 11u, 0.55);
+  // blades: thin ridges of stretched noise in four directions (each exactly periodic)
+  float b1 = 1.0 - abs(gnoise(uv * vec2(96.0, 11.0), ivec2(96, 11), 13u)) * 3.2;
+  float b2 = 1.0 - abs(gnoise(uv * vec2(11.0, 96.0), ivec2(11, 96), 15u)) * 3.2;
+  float b3 = 1.0 - abs(gnoise(vec2((uv.x + uv.y) * 71.0, (uv.x - uv.y) * 9.0), ivec2(71, 9), 16u)) * 3.2;
+  float b4 = 1.0 - abs(gnoise(vec2((uv.x - uv.y) * 67.0, (uv.x + uv.y) * 8.0), ivec2(67, 8), 18u)) * 3.2;
+  float blade = max(max(b1, b2), max(b3, b4));
+  float h = 0.16 + 0.40 * low + 0.22 * tuft + 0.16 * clump + 0.42 * clamp(blade, 0.0, 1.0) * (0.55 + 0.45 * tuft);
+  float tint = 0.5 + 0.9 * fbm(uv, 8, 3, 17u, 0.5) + 0.35 * (w1.w - 0.5) + 0.30 * (w2.w - 0.5) + 0.25 * (clamp(blade, 0.0, 1.0) - 0.5);
   return vec2(h, tint);
 }
 vec2 matSoil(vec2 uv) {
-  float low = fbm(uv, 5, 5, 21u, 0.55);
+  float low = fbm(uv, 9, 5, 21u, 0.55);
   vec4 w1 = worley(uv * 37.0, ivec2(37), 23u), w2 = worley(uv * 9.0, ivec2(9), 25u);
   float clod = (1.0 - smoothstep(0.0, 0.55, w1.x)) * step(0.5, w1.z) * (0.4 + 0.6 * w1.w);
   float crack = 1.0 - smoothstep(0.0, 0.07, w2.y - w2.x);
   float h = 0.45 + 0.7 * low + 0.30 * clod - 0.18 * crack + 0.10 * fbm(uv, 64, 2, 27u, 0.5);
-  float tint = 0.5 + 0.8 * fbm(uv, 4, 3, 29u, 0.5) + 0.35 * clod * (w1.w - 0.3);
+  float tint = 0.5 + 0.8 * fbm(uv, 8, 3, 29u, 0.5) + 0.35 * clod * (w1.w - 0.3);
   return vec2(h, tint);
 }
 vec2 matGravel(vec2 uv) {
@@ -80,30 +86,30 @@ vec2 matGravel(vec2 uv) {
   return vec2(0.10 + 0.86 * h + 0.06 * fbm(uv, 64, 2, 37u, 0.5), mix(0.5, tint, 0.85));
 }
 vec2 matRock(vec2 uv) {
-  float low = fbm(uv, 3, 6, 41u, 0.55);
-  vec4 w1 = worley(uv * 6.0, ivec2(6), 43u), w2 = worley(uv * 15.0, ivec2(15), 45u);
+  float low = fbm(uv, 8, 5, 41u, 0.55);
+  vec4 w1 = worley(uv * 8.0, ivec2(8), 43u), w2 = worley(uv * 15.0, ivec2(15), 45u);
   float joint = 1.0 - smoothstep(0.0, 0.05, w1.y - w1.x), joint2 = 1.0 - smoothstep(0.0, 0.06, w2.y - w2.x);
   float h = 0.52 + 0.55 * low + 0.22 * (w1.z - 0.5) + 0.08 * (w2.z - 0.5) - 0.30 * joint - 0.14 * joint2 + 0.10 * fbm(uv, 48, 2, 47u, 0.5);
-  float tint = 0.5 + 0.55 * (w1.z - 0.5) + 0.25 * (w2.w - 0.5) + 0.6 * fbm(uv, 5, 3, 49u, 0.5);
+  float tint = 0.5 + 0.55 * (w1.z - 0.5) + 0.25 * (w2.w - 0.5) + 0.6 * fbm(uv, 8, 3, 49u, 0.5);
   return vec2(h, tint);
 }
 vec2 matSand(vec2 uv) {
-  float warp = fbm(uv, 3, 3, 51u, 0.5);
+  float warp = fbm(uv, 7, 3, 51u, 0.5);
   float ph = uv.y * 26.0 + warp * 3.2 + 0.6 * fbm(uv, 9, 2, 53u, 0.5);
   float r = 0.5 + 0.5 * sin(6.2831853 * ph);
   r = pow(r, 0.7) * (0.7 + 0.6 * (0.5 + fbm(uv, 7, 2, 55u, 0.5)));
-  float h = 0.22 + 0.46 * r + 0.30 * fbm(uv, 5, 3, 57u, 0.5) + 0.05 * fbm(uv, 96, 2, 59u, 0.5);
-  float tint = 0.5 + 0.30 * (r - 0.5) + 0.6 * fbm(uv, 4, 3, 58u, 0.5);
+  float h = 0.22 + 0.46 * r + 0.30 * fbm(uv, 9, 3, 57u, 0.5) + 0.05 * fbm(uv, 96, 2, 59u, 0.5);
+  float tint = 0.5 + 0.30 * (r - 0.5) + 0.6 * fbm(uv, 8, 3, 58u, 0.5);
   return vec2(h, tint);
 }
 vec2 matMud(vec2 uv) {
-  vec2 wp = vec2(fbm(uv, 4, 2, 60u, 0.5), fbm(uv, 4, 2, 62u, 0.5)) * 0.9;
+  vec2 wp = vec2(fbm(uv, 6, 2, 60u, 0.5), fbm(uv, 6, 2, 62u, 0.5)) * 0.9;
   vec4 w1 = worley(uv * 8.0 + wp, ivec2(8), 61u), w2 = worley(uv * 21.0 + wp * 2.0, ivec2(21), 63u);
   float e1 = w1.y - w1.x;
   float crack1 = 1.0 - smoothstep(0.0, 0.085, e1), crack2 = (1.0 - smoothstep(0.0, 0.07, w2.y - w2.x)) * 0.5;
   float curl = smoothstep(0.38, 0.08, e1) * 0.12;
   float h = 0.62 + 0.10 * (w1.z - 0.5) + curl - 0.55 * crack1 - 0.20 * crack2 + 0.08 * fbm(uv, 32, 2, 65u, 0.5);
-  float tint = 0.5 + 0.5 * (w1.z - 0.5) + 0.3 * fbm(uv, 5, 3, 67u, 0.5) - 0.3 * crack1;
+  float tint = 0.5 + 0.5 * (w1.z - 0.5) + 0.3 * fbm(uv, 8, 3, 67u, 0.5) - 0.3 * crack1;
   return vec2(h, tint);
 }
 vec2 matCanopy(vec2 uv) {

@@ -328,7 +328,7 @@ def simulate(H, arid, spec, x0, z0, cell=16.0, seed=0, verbose=False):
         v *= land
     forest = np.clip(B + C, 0.0, 1.0)
     conifer = C / (B + C + 1e-4)
-    arable = ss(0.45, 1.0, soil) * ss(0.09, 0.03, g) * ss(0.22, 0.40, m) * ss(11.0, 15.0, Ts) * (1.0 - wash) * land * (1.0 - playa)
+    arable = ss(0.25, 0.6, soil) * ss(0.09, 0.03, g) * ss(0.22, 0.40, m) * ss(11.0, 15.0, Ts) * (1.0 - wash) * land * (1.0 - playa)
 
     out = {
         'forest': forest, 'conifer': conifer, 'shrub': Sh, 'grass': G, 'rock': rock, 'scree': scree, 'snow': snow,
