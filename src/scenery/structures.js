@@ -4,7 +4,7 @@ import { lin } from './builder.js';
 const DEG = Math.PI / 180;
 const C = {
   white: lin(0xe8e8e4), offwhite: lin(0xd6d3cb), grey: lin(0xa9adb1), dgrey: lin(0x4b4f54), black: lin(0x161616),
-  steel: lin(0x8d949b), civil: lin(0xc9d1d8), blue: lin(0x7f97ad), mil: lin(0xa39a7d), milDark: lin(0x6f6a55), tan: lin(0xc9b48a),
+  steel: lin(0x8f9192), civil: lin(0xc9d1d8), blue: lin(0x7f97ad), mil: lin(0xa39a7d), milDark: lin(0x6f6a55), tan: lin(0xc9b48a),
   red: lin(0xb0201c), orange: lin(0xe0561b), terracotta: lin(0xa5553a), concrete: lin(0xc8c3b8), shelter: lin(0x9a9584),
   yellow: lin(0xd9a21b), glassTint: lin(0xffffff), green: lin(0x3d6b2a), trunk: lin(0x6b5a45), leaf: lin(0x3f6a2a),
 };
@@ -36,6 +36,13 @@ export function buildStructures(L, B, signIndex, poles) {
       sign(B, lx, lz, h.hdg, 1.4, 0.9, 'loc:' + h.twyName, signIndex, false);
     }
   }
+  // taxiway direction signs (black on yellow) paired with the parallel taxiway's location sign (yellow on black)
+  for (const g of L.dirSigns || []) {
+    const d = dirs(g.hdg);
+    sign(B, g.x, g.z, g.hdg, 1.9, 0.9, 'dir:' + g.txt + ':' + g.arrow, signIndex, false);
+    const sg = g.arrow === 'R' ? -1 : 1;     // location sign on the side away from the arrow
+    sign(B, g.x + d.rx * sg * 1.6, g.z + d.rz * sg * 1.6, g.hdg, 1.0, 0.9, 'loc:' + g.loc, signIndex, false);
+  }
   // approach light stanchions and crossbars
   for (const p of poles) {
     if (p.h > 0.5) B.box('plain', p.x, 0, p.z, p.hdg, 0.18, 0.18, p.h, C.steel);
@@ -43,9 +50,16 @@ export function buildStructures(L, B, signIndex, poles) {
   }
   // floodlight masts
   for (const f of L.floods) {
-    B.box('plain', f.x, 0, f.z, 0, 0.7, 0.7, f.h, C.grey);
-    const ah = Math.atan2(f.aim.x, -f.aim.z) / DEG;
-    B.box('plain', f.x, f.h - 0.2, f.z, ah, 0.8, 4.2, 1.1, C.dgrey);
+    // tapered galvanised pole on a plinth, service platform, a bank of floodlight heads tilted toward the apron
+    B.box('concrete', f.x, 0, f.z, 0, 1.6, 1.6, 0.6, C.concrete);
+    B.cylinder('plain', f.x, 0.6, f.z, 0.42, f.h - 0.6, 8, C.steel, null, 0.2);
+    const ah = Math.atan2(f.aim.x, -f.aim.z) / DEG, d = dirs(ah);
+    B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, f.x, f.h - 1.3, f.z, ah, 2.2, 4.6, 0.15, C.dgrey);
+    B.box('plain', f.x, f.h - 1.15, f.z, ah, 0.06, 4.6, 0.9, C.grey);   // rail
+    for (const row of [0, 1]) for (let k = -2; k <= 2; k++) {
+      const x = f.x + d.rx * k * 0.9 + d.dx * (0.5 + row * 0.15), z = f.z + d.rz * k * 0.9 + d.dz * (0.5 + row * 0.15);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, x, f.h - 0.4 + row * 0.75, z, ah, 0.35, 0.7, 0.55, C.dgrey, { cols: { pa: C.white } });
+    }
   }
   for (const s of L.streetLights) {
     B.box('plain', s.x, 0, s.z, 0, 0.22, 0.22, s.h, C.grey);
@@ -57,8 +71,9 @@ export function buildStructures(L, B, signIndex, poles) {
       const a = f.pts[i], b = f.pts[i + 1];
       const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
       const ux = dx / len, uz = dz / len;
-      const n = Math.max(1, Math.round(len / 3));
-      for (let k = 0; k <= n; k++) B.box('plain', a.x + ux * len * k / n, 0, a.z + uz * len * k / n, 0, 0.08, 0.08, 2.5, C.grey);
+      const n = Math.max(1, Math.round(len / (f.perimeter ? 9 : 3)));
+      const hd = Math.atan2(ux, -uz) / DEG, pk = { pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' };   // posts: no caps
+      for (let k = 0; k <= n; k++) B.box(pk, a.x + ux * len * k / n, 0, a.z + uz * len * k / n, hd, 0.08, 0.08, 2.5, C.grey);
       const nx = -uz, nz = ux;
       B.quad('fence', [a.x, 0.05, a.z], [b.x, 0.05, b.z], [a.x, 2.4, a.z], [b.x, 2.4, b.z], [nx, 0, nz], C.white, [0, 0, len, 2.35]);
     }
@@ -107,7 +122,7 @@ function building(B, b, L) {
       B.box({ pa: 'glass', na: 'glass', pr: 'glass', nr: 'glass' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h - 2, C.glassTint);
       // floating barrel-vault roof with deep overhangs + fascia slab
       B.box({ bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h - 2, b.z, b.hdg, b.len + 16, b.wid + 20, 1.2, C.offwhite);
-      B.vault('roof', { pa: 'plain', na: 'plain' }, b.x, b.h - 0.8, b.z, b.hdg, b.len + 16, b.wid + 20, 7, C.offwhite, 14, C.offwhite);
+      B.vault('metal', { pa: 'cab', na: 'cab' }, b.x, b.h - 0.8, b.z, b.hdg, b.len + 16, b.wid + 20, 7, lin(0xc4c8cc), 14, C.glassTint);
       // landside canopy and kerb on the -along side? (terminal faces landside on -along)
       B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x - d.dx * (b.len / 2 + 12), 7, b.z - d.dz * (b.len / 2 + 12), b.hdg, 20, b.wid * 0.9, 0.8, C.white);
       for (let k = -2; k <= 2; k++) B.box('plain', b.x - d.dx * (b.len / 2 + 18) + d.rx * k * b.wid * 0.2, 0, b.z - d.dz * (b.len / 2 + 18) + d.rz * k * b.wid * 0.2, b.hdg, 0.6, 0.6, 7, C.grey);
@@ -115,12 +130,31 @@ function building(B, b, L) {
       break;
     }
     case 'pier': {
+      // apron level (baggage, services: cladding + roller shutters), glazed gate-lounge level with interior,
+      // deep roof overhang with fascia, vertical sun fins on the airside face, rooftop plant and a skylight ridge
       const fs = b.faceSide; // which right-side faces the apron (+1 = +r)
-      B.box({ pa: 'glass', na: 'glass', pr: fs > 0 ? 'glass' : 'office', nr: fs < 0 ? 'glass' : 'office', top: 'roof' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, C.glassTint);
-      // parapet
-      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 0.4, b.wid + 0.4, 0.9, C.offwhite);
-      B.box('roof', b.x, b.h, b.z, b.hdg, b.len - 1, b.wid - 1, 0.92, C.grey);
-      rooftop(B, b, Math.round(b.len / 60), b.h + 0.9);
+      const base = 4.5, side = fs > 0 ? 'pr' : 'nr', land = fs > 0 ? 'nr' : 'pr';
+      B.box({ pa: 'metal', na: 'metal', [side]: 'metal', [land]: 'metal' }, b.x, 0, b.z, b.hdg, b.len, b.wid, base, C.civil);
+      B.box({ pa: 'glass', na: 'glass', [side]: 'glass', [land]: 'office', top: 'roof' }, b.x, base, b.z, b.hdg, b.len, b.wid, b.h - base, C.glassTint);
+      // roller shutters along the apron face (slightly proud of the cladding)
+      const nD = Math.floor(b.len / 22);
+      for (let k = 0; k < nD; k++) {
+        const sa = -b.len / 2 + (k + 0.5) * (b.len / nD);
+        B.box({ [side]: 'door' }, b.x + d.dx * sa, 0, b.z + d.dz * sa, b.hdg, 5.5, b.wid + 0.1, 3.6, C.grey);
+      }
+      // floor slab edge band between levels
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, base - 0.4, b.z, b.hdg, b.len + 0.3, b.wid + 0.3, 0.6, C.offwhite);
+      // roof overhang: soffit + fascia, 3 m beyond the glass
+      B.box({ bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len + 6, b.wid + 6, 1.1, C.offwhite);
+      // sun fins every 4.5 m on the glazed face
+      const nf = Math.floor(b.len / 4.5);
+      for (let k = 0; k <= nf; k++) {
+        const sa = -b.len / 2 + k * (b.len / nf), sc = fs * (b.wid / 2 + 0.35);
+        B.box('plain', b.x + d.dx * sa + d.rx * sc, base, b.z + d.dz * sa + d.rz * sc, b.hdg, 0.18, 0.7, b.h - base, C.steel);
+      }
+      // skylight ridge (dark glazing) along the roof centre, plant enclosures
+      B.box({ top: 'cab', pr: 'cab', nr: 'cab', pa: 'plain', na: 'plain' }, b.x, b.h + 1.1, b.z, b.hdg, b.len * 0.85, 5, 1.2, C.glassTint);
+      rooftop(B, b, Math.round(b.len / 45), b.h + 1.1);
       break;
     }
     case 'spine':
@@ -157,6 +191,47 @@ function building(B, b, L) {
       B.box({ pa: 'office', na: 'office', pr: 'office', top: 'roof' }, b.x + d.rx * (b.wid / 2 + 6), 0, b.z + d.rz * (b.wid / 2 + 6), b.hdg, b.len * 0.8, 12, 7, b.mil ? C.tan : C.offwhite);
       break;
     }
+    case 'sunshade': {
+      // steel portal frames carrying a shallow arched metal roof (desert flight-line shelter)
+      const n = 3;
+      for (let k = 0; k < n; k++) {
+        const sa = (k / (n - 1) - 0.5) * (b.len - 1);
+        for (const sc of [-1, 1]) B.box('plain', b.x + d.dx * sa + d.rx * sc * b.wid / 2, 0, b.z + d.dz * sa + d.rz * sc * b.wid / 2, b.hdg, 0.35, 0.35, b.h, C.steel);
+        B.box('plain', b.x + d.dx * sa, b.h - 0.5, b.z + d.dz * sa, b.hdg, 0.4, b.wid + 0.6, 0.5, C.steel);
+      }
+      B.vault('metal', null, b.x, b.h, b.z, b.hdg, b.len + 1.5, b.wid + 2, 1.6, lin(0xbab5a6), 8);
+      B.box({ bottom: 'plain' }, b.x, b.h + 0.02, b.z, b.hdg, b.len + 1.4, b.wid + 1.9, 0.01, C.dgrey);
+      break;
+    }
+    case 'cargo': {
+      // cargo terminal: big clad shed, airside ULD doors, landside truck docks under a canopy, office block at one end
+      const fs = b.faceSide, air = fs > 0 ? 'pr' : 'nr', land = fs > 0 ? 'nr' : 'pr';
+      B.box({ pa: 'metal', na: 'metal', [air]: 'metal', [land]: 'metal' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, lin(0xb9c0c6));
+      B.box({ top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len, b.wid, 0.01, C.grey);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 0.3, b.wid + 0.3, 1.0, lin(0x2f4f7f));
+      const nA = Math.floor(b.len / 26);
+      for (let k = 0; k < nA; k++) { const sa = -b.len / 2 + (k + 0.5) * b.len / nA; B.box({ [air]: 'door' }, b.x + d.dx * sa, 0, b.z + d.dz * sa, b.hdg, 12, b.wid + 0.1, 7, C.grey); }
+      const nT = Math.floor(b.len / 5.5);
+      for (let k = 1; k < nT - 1; k++) { const sa = -b.len / 2 + (k + 0.5) * b.len / nT; B.box({ [land]: 'door' }, b.x + d.dx * sa, 1.2, b.z + d.dz * sa, b.hdg, 3.0, b.wid + 0.1, 3.2, lin(0x8a8f95)); }
+      B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x - d.rx * fs * (b.wid / 2 + 3), 5.0, b.z - d.rz * fs * (b.wid / 2 + 3), b.hdg, b.len * 0.92, 6, 0.4, C.offwhite);
+      B.box({ pa: 'office', na: 'office', pr: 'office', nr: 'office', top: 'roof' }, b.x + d.dx * (b.len / 2 + 12), 0, b.z + d.dz * (b.len / 2 + 12), b.hdg, 24, b.wid * 0.7, 11, C.offwhite);
+      rooftop(B, b, 5, b.h);
+      break;
+    }
+    case 'hotel': {
+      // airport hotel: two-storey podium, glazed slab tower, plant crown
+      B.box({ pa: 'glass', na: 'glass', pr: 'glass', nr: 'glass', top: 'roof' }, b.x, 0, b.z, b.hdg, b.len + 24, b.wid + 18, 9, C.glassTint);
+      B.box({ pa: 'concrete', na: 'concrete', pr: 'glass', nr: 'glass' }, b.x, 9, b.z, b.hdg, b.len, b.wid, b.h - 9, C.glassTint);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len + 0.6, b.wid + 0.6, 1.2, C.offwhite);
+      B.box({ pa: 'metal', na: 'metal', pr: 'metal', nr: 'metal', top: 'roof' }, b.x, b.h + 1.2, b.z, b.hdg, b.len * 0.6, b.wid * 0.6, 4, C.grey);
+      break;
+    }
+    case 'gatehouse': {
+      B.box({ pa: 'office', na: 'office', pr: 'office', nr: 'office', top: 'roof' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, C.offwhite);
+      B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h + 0.6, b.z, b.hdg, b.len + 10, b.wid + 14, 0.5, C.white);
+      for (const sa of [-1, 1]) for (const sc of [-1, 1]) B.box('plain', b.x + d.dx * sa * (b.len / 2 + 4) + d.rx * sc * (b.wid / 2 + 6), 0, b.z + d.dz * sa * (b.len / 2 + 4) + d.rz * sc * (b.wid / 2 + 6), b.hdg, 0.3, 0.3, b.h + 0.6, C.grey);
+      break;
+    }
     case 'thangar': {
       B.box({ pa: 'metal', na: 'metal', pr: 'metal', nr: 'door', top: 'metal' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, C.civil, { cols: { nr: C.blue } });
       break;
@@ -173,7 +248,13 @@ function building(B, b, L) {
       const fs = b.faceSide;
       B.box({ pa: 'office', na: 'office', pr: fs > 0 ? 'glass' : 'office', nr: fs < 0 ? 'glass' : 'office', top: isl ? null : 'roof' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, isl ? C.white : C.offwhite);
       if (isl) B.gable('plain', 'plain', b.x, b.h, b.z, b.hdg, b.len + 3, b.wid + 4, 4.5, C.terracotta, C.white);
-      else { B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 0.4, b.wid + 0.4, 0.8, C.offwhite); rooftop(B, b, 3, b.h); }
+      else {
+        // alpine regional terminal: stone plinth, deep-eaved slate gable roof with timber gable ends and a glazed gable
+        B.box('concrete', b.x, 0, b.z, b.hdg, b.len + 0.3, b.wid + 0.3, 1.2, lin(0x8f8a80));
+        B.gable('roof', 'plain', b.x, b.h, b.z, b.hdg, b.len + 5, b.wid + 7, 6.5, lin(0x3a3d42), lin(0x7a5a3c));
+        B.box({ bottom: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 5, b.wid + 7, 0.01, lin(0x7a5a3c));
+        B.box('plain', b.x + d.dx * (b.len * 0.3), b.h + 3.5, b.z + d.dz * (b.len * 0.3), b.hdg, 1.4, 1.4, 4.2, lin(0x8f8a80));   // chimney
+      }
       // airside canopy
       B.box({ top: 'plain', bottom: 'plain', pr: 'plain', nr: 'plain', pa: 'plain', na: 'plain' }, b.x + d.rx * fs * (b.wid / 2 + 3), 3.4, b.z + d.rz * fs * (b.wid / 2 + 3), b.hdg, b.len * 0.6, 6, 0.4, C.white);
       break;
@@ -214,8 +295,11 @@ function tower(B, t, kind) {
 function prop(B, p, signIndex) {
   switch (p.type) {
     case 'jetbridge': {
-      // rotunda on a column at the pier, telescopic tunnel sloping to the cab at the aircraft door, drive-wheel leg
-      const dx = p.ex - p.x, dz = p.ez - p.z, len = Math.hypot(dx, dz);
+      // rotunda on a column at the pier, telescopic tunnel sloping to the cab at the aircraft door, drive-wheel leg;
+      // retracted against the pier when the stand is empty
+      const docked = !p.stand || p.stand.occupied !== false;
+      const ex0 = docked ? p.ex : p.px, ez0 = docked ? p.ez : p.pz;
+      const dx = ex0 - p.x, dz = ez0 - p.z, len = Math.hypot(dx, dz);
       const ux = dx / len, uz = dz / len, hdg = Math.atan2(ux, -uz) / DEG;
       B.cylinder('plain', p.x, 0, p.z, 0.7, 4.0, 8, C.grey);
       B.cylinder('plain', p.x, 4.0, p.z, 2.4, 3.2, 10, C.steel, 'plain');
@@ -223,9 +307,9 @@ function prop(B, p, signIndex) {
       const mx = p.x + ux * (2.2 + tl / 2), mz = p.z + uz * (2.2 + tl / 2);
       B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, mx, 4.2, mz, hdg, tl, 3.2, 2.9, C.civil);
       B.box({ pr: 'plain', nr: 'plain' }, mx, 5.2, mz, hdg, tl * 0.96, 3.25, 0.8, C.dgrey);   // window band
-      const ex = p.ex - ux * 1.2, ez = p.ez - uz * 1.2;
+      const ex = ex0 - ux * 1.2, ez = ez0 - uz * 1.2;
       B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain', top: 'plain', bottom: 'plain' }, ex, 4.0, ez, hdg, 2.6, 4.0, 3.3, C.steel);
-      const lx = p.ex - ux * 7, lz = p.ez - uz * 7, rx = -uz, rz = ux;
+      const lx = ex0 - ux * 7, lz = ez0 - uz * 7, rx = -uz, rz = ux;
       for (const s of [-1, 1]) B.box('plain', lx + rx * s * 1.2, 0.4, lz + rz * s * 1.2, hdg, 0.35, 0.35, 3.8, C.dgrey);
       B.box('plain', lx, 0.1, lz, hdg, 1.2, 3.4, 0.8, C.dgrey);
       break;

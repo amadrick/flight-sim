@@ -12,7 +12,7 @@ import { LIGHT_STRIDE } from './lightplan.js';
 const VERT = /* glsl */`
 precision highp float;
 in vec4 aA; in vec4 aB; in vec4 aC; in vec4 aD;
-uniform float uDbg, uTime, uOn, uDayK, uPixAngle, uMinPx, uVis, uGain, uManual, uDepthRev;
+uniform float uDbg, uTime, uOn, uDayK, uPixAngle, uMinPx, uVis, uGain, uManual, uDepthRev, uExposure, uCap;
 uniform mat4 uProjInv;
 uniform highp sampler2D tDepthL;
 out vec3 vCol; out vec2 vCorner;
@@ -29,12 +29,16 @@ void main() {
   vec3 toCam = cameraPosition - wp.xyz; float d = max(length(toCam), 0.01); vec3 V = toCam / d;
   float k = 1.0;
   if (cosW > -1.5) {
+    // main beam (cosine domain, soft edge) + a weak omnidirectional component: elevated fixtures leak more light
+    // sideways than flush in-pavement ones; PAPI is a sharp-cut projector with no omni component at all
     float c = dot(V, normalize(dir));
-    float soft = max(0.05, (1.0 - cosW) * 0.35);
-    k = smoothstep(cosW - soft, cosW + soft, c);
-    k *= 0.35 + 0.65 * smoothstep(cosW, 1.0, c);              // brighter in the beam centre
-    // vertical beam spread: viewed from well above the beam axis only the weak omni component remains
-    k *= mix(0.12, 1.0, 1.0 - smoothstep(0.14, 0.42, V.y - dir.y));  }
+    float soft = max(0.004, (1.0 - cosW) * 0.6);
+    float beam = smoothstep(cosW - soft, cosW + soft * 0.5, c);
+    beam *= 0.4 + 0.6 * smoothstep(cosW, 1.0, c);               // brighter in the beam centre
+    beam *= mix(0.15, 1.0, 1.0 - smoothstep(0.14, 0.42, V.y - dir.y));  // vertical spread
+    float omni = (mode > 2.5 && mode < 3.5) ? 0.0 : (lp.y > 0.2 ? 0.1 : 0.025);
+    k = omni + (1.0 - omni) * beam;
+  }
   if (mode > 0.5) {
     if (mode < 1.5) {                       // sequenced flasher (rabbit)
       float t = mod(uTime - p1, p2); k *= 1.0 - smoothstep(0.02, 0.06, t);
@@ -53,7 +57,8 @@ void main() {
   }
   float g = mix(dayK * uDayK, 1.0, uOn);
   float T = exp(-2.3 * d / uVis);
-  float bright = uGain * I * k * g * T * pow(clamp(60.0 / d, 0.0, 1.0), 0.9);
+  float rel = I * k * g * T;
+  float bright = rel;
   // occlusion (manual path) with a footprint-aware tolerance
   float tol = 0.8 + 2.0 * size + 1.5 * d * uPixAngle / max(abs(V.y), 0.03);
   vec4 vp = viewMatrix * wp;
@@ -79,11 +84,20 @@ void main() {
       }
     }
   }
-  if (bright < 1e-3) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec3(0.0); vCorner = vec2(0.0); return; }
-  float rp = size / (d * uPixAngle);
-  float minPx = uMinPx * (0.7 + 0.3 * sqrt(I));
-  float r = max(rp, minPx);
-  vCol = col * bright;
+  if (bright < 1e-4) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec3(0.0); vCorner = vec2(0.0); return; }
+  // Energy-conserving point sprite: the lamp's lens (radius ~ size/2) has a fixed radiance; once it is smaller than the
+  // minimum sprite the same flux is spread over the minimum footprint, so far lights get DIMMER, never bigger.
+  float rp = 0.5 * size / (d * uPixAngle);
+  float r = max(rp, uMinPx);
+  float cover = min(1.0, (rp * rp) / (r * r));
+  float L = uGain * rel * cover;
+  // exposure-aware soft limit: the core saturates to a crisp point instead of feeding the bloom with HDR spikes
+  float cap = uCap * ((mode > 0.5 && mode < 1.5) || (mode > 4.5 && mode < 5.5) ? 3.0 : (mode > 1.5 && mode < 2.5) ? 2.0 : 1.0);
+  float Vx = L * uExposure;
+  Vx = cap * (1.0 - exp(-Vx / cap));
+  float outL = Vx / max(uExposure, 1e-4);
+  if (outL < 1e-4) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec3(0.0); vCorner = vec2(0.0); return; }
+  vCol = col * outL;
   // pull toward the camera so the sprite is never cut by the surface it sits on (hardware depth path)
   float dv = length(vp.xyz);
   float pull = uManual > 0.5 ? 0.0 : min(tol, dv * 0.5);
@@ -108,13 +122,16 @@ export function createLightSystem(ctx) {
   const dummyDepth = new THREE.DataTexture(new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType);
   dummyDepth.minFilter = dummyDepth.magFilter = THREE.NearestFilter; dummyDepth.needsUpdate = true;
   const uniforms = {
-    uTime: { value: 0 }, uOn: { value: 0 }, uDayK: { value: 0.06 }, uPixAngle: { value: 0.001 }, uMinPx: { value: 1.0 },
+    uTime: { value: 0 }, uOn: { value: 0 }, uDayK: { value: 0.06 }, uPixAngle: { value: 0.001 }, uMinPx: { value: 0.85 },
+    uExposure: { value: 1 }, uCap: { value: 7 },
     uDbg: { value: +(ctx.params.raw?.sldbg || 0) }, uVis: { value: 60000 }, uGain: { value: 140 }, uManual: { value: 0 }, uDepthRev: { value: 1 },
     uProjInv: { value: new THREE.Matrix4() }, tDepthL: { value: dummyDepth },
   };
   const material = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, uniforms, vertexShader: VERT, fragmentShader: FRAG,
-    transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
+    transparent: true, depthWrite: false, depthTest: true,
+    // MAX blending: dozens of distant fixtures falling into the same pixels must not add up into a glowing blob
+    blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
     fog: false, toneMapped: false,
   });
   const vp = new THREE.Vector4();
@@ -163,6 +180,7 @@ export function createLightSystem(ctx) {
   function update() {
     uniforms.uTime.value = ctx.time.now;
     uniforms.uGain.value = 140 * gainMul;
+    uniforms.uExposure.value = Math.max(1e-3, ctx.env.exposure || 1);
     const night = ctx.env.nightFactor ?? 0;
     const vis = ctx.weather.visibility ?? 60000;
     const lowVis = Math.max(1 - THREE.MathUtils.smoothstep(vis, 5000, 10000), Math.min(1, (ctx.weather.precipitation || 0) * 1.2));   // on by day in low visibility / rain
