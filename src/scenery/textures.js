@@ -254,7 +254,7 @@ export function makeFacades(ctx) {
 
 /** Sign atlas: black/red/yellow sign faces with text (distance-remaining, holding position, location). */
 export function makeSignAtlas(ctx, texts) {
-  const cellW = 256, cellH = 96, cols = 8;
+  const cellW = 128, cellH = 48, cols = 16;
   const rows = Math.ceil(texts.length / cols);
   const [c, g] = canvas(cellW * cols, Math.max(1, cellH * rows));
   const index = new Map();
@@ -264,17 +264,17 @@ export function makeSignAtlas(ctx, texts) {
     const bg = kind === 'hold' ? '#c0141a' : kind === 'loc' ? '#111' : kind === 'dir' ? '#f2c21b' : '#0d0d0d';
     const fg = kind === 'hold' ? '#ffffff' : kind === 'loc' ? '#ffd21c' : kind === 'dir' ? '#0b0b0b' : '#f4f4f4';
     g.fillStyle = bg; g.fillRect(x, y, cellW, cellH);
-    if (kind === 'loc') { g.strokeStyle = '#ffd21c'; g.lineWidth = 6; g.strokeRect(x + 10, y + 10, cellW - 20, cellH - 20); }
+    if (kind === 'loc') { g.strokeStyle = '#ffd21c'; g.lineWidth = 3; g.strokeRect(x + 5, y + 5, cellW - 10, cellH - 10); }
     g.fillStyle = fg;
-    g.font = 'bold 66px "Arial Narrow","Liberation Sans Narrow",Arial,sans-serif';
+    g.font = 'bold 33px "Arial Narrow","Liberation Sans Narrow",Arial,sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     if (kind === 'dir') {
       // text + a drawn arrow (no reliance on font glyphs): arrow on the side it points to
-      const right = arrow === 'R', ax = right ? x + cellW - 62 : x + 62, ay = y + cellH / 2, dirn = right ? 1 : -1;
-      g.beginPath(); g.moveTo(ax + dirn * 40, ay); g.lineTo(ax + dirn * 6, ay - 30); g.lineTo(ax + dirn * 6, ay - 12); g.lineTo(ax - dirn * 38, ay - 12);
-      g.lineTo(ax - dirn * 38, ay + 12); g.lineTo(ax + dirn * 6, ay + 12); g.lineTo(ax + dirn * 6, ay + 30); g.closePath(); g.fill();
-      g.fillText(txt, x + cellW / 2 - dirn * 40, y + cellH / 2 + 3, cellW - 120);
-    } else g.fillText(txt, x + cellW / 2, y + cellH / 2 + 3, cellW - 30);
+      const right = arrow === 'R', ax = right ? x + cellW - 31 : x + 31, ay = y + cellH / 2, dirn = right ? 1 : -1;
+      g.beginPath(); g.moveTo(ax + dirn * 20, ay); g.lineTo(ax + dirn * 3, ay - 15); g.lineTo(ax + dirn * 3, ay - 6); g.lineTo(ax - dirn * 19, ay - 6);
+      g.lineTo(ax - dirn * 19, ay + 6); g.lineTo(ax + dirn * 3, ay + 6); g.lineTo(ax + dirn * 3, ay + 15); g.closePath(); g.fill();
+      g.fillText(txt, x + cellW / 2 - dirn * 20, y + cellH / 2 + 2, cellW - 60);
+    } else g.fillText(txt, x + cellW / 2, y + cellH / 2 + 2, cellW - 15);
     index.set(t, [x / c.width, 1 - (y + cellH) / c.height, (x + cellW) / c.width, 1 - y / c.height]);
   });
   const tex = texFrom(c, ctx);

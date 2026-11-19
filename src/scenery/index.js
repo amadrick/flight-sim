@@ -75,9 +75,11 @@ export function addPools(mat) {
 
 export async function createScenery(ctx) {
   const t0 = performance.now();
-  const noise = makePavementNoise(ctx);
-  const atlas = makeGlyphAtlas(ctx);
-  const facades = makeFacades(ctx);
+  const tm = {}; let tl = t0;
+  const lap = (k) => { const t = performance.now(); tm[k] = +(t - tl).toFixed(1); tl = t; };
+  const noise = makePavementNoise(ctx); lap('noise');
+  const atlas = makeGlyphAtlas(ctx); lap('glyphs');
+  const facades = makeFacades(ctx); lap('facades');
   const fenceTex = makeFenceTexture(ctx);
   const shared = createPaveShared(ctx, noise, atlas);
   const lights = createLightSystem(ctx);
@@ -95,7 +97,8 @@ export async function createScenery(ctx) {
     for (const h of L.holds) signTexts.add('loc:' + h.twyName);
     for (const g of L.dirSigns) { signTexts.add('dir:' + g.txt + ':' + g.arrow); signTexts.add('loc:' + g.loc); }
   }
-  const signs = makeSignAtlas(ctx, [...signTexts]);
+  lap('layout');
+  const signs = makeSignAtlas(ctx, [...signTexts]); lap('signs');
 
   // ---- shared materials
   const std = (o) => addPools(addCurvature(new THREE.MeshStandardMaterial({ vertexColors: true, ...o })));
@@ -293,6 +296,7 @@ export async function createScenery(ctx) {
     stats.lights += plans[i].count;
   });
 
+  lap('airports');
   // ---- physics surface
   const surfaceAt = createSurfaceProvider(AIRPORTS, layouts, () => Math.min(1, (ctx.weather.precipitation || 0) * 1.6));
   ctx.world.addSurfaceProvider(surfaceAt);
@@ -360,7 +364,7 @@ export async function createScenery(ctx) {
 
   stats = computeStats(airports, stats);
   const texMB = textureBytes([noise, atlas, fenceTex, signs.tex, ...Object.values(facades).flatMap((f) => [f.map, f.emissive])]) / 1048576;
-  const info = { bootMs: performance.now() - t0, textureMB: +texMB.toFixed(2), ...stats };
+  const info = { bootMs: performance.now() - t0, bootBreakdown: tm, textureMB: +texMB.toFixed(2), ...stats };
   if (ctx.params.raw?.sdebug) console.info('scenery', JSON.stringify(info));
 
   return {
