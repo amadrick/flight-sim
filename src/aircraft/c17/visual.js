@@ -87,12 +87,12 @@ export function createVisual(ctx, opts = {}) {
   const cOver = A.chart('over', { type: 'rect', w: 0.9, h: 1.1, density: 1.2, ao: false });
   A.pack();
   const UA = {
-    body: A.swatch('body', skin), dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black), well: A.swatch('well', { color: '#83888a', rough: 0.72, metal: 0.1 }),
+    body: A.swatch('body', skin), dark: A.swatch('dark', F.darkGrey), well: A.swatch('well', { color: '#83888a', rough: 0.72, metal: 0.1 }),
     liner: A.swatch('liner', { color: '#6e716c', rough: 0.85, metal: 0 }), floor: A.swatch('floor', { color: '#2f3134', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#1b1c1e', rough: 0.85, metal: 0 }),
     seat: A.swatch('seat', { color: '#3e4245', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#4f4a3e', rough: 1, metal: 0 }), stick: A.swatch('stick', { color: '#151617', rough: 0.5, metal: 0 }),
     console: A.swatch('console', { color: '#3c4043', rough: 0.75, metal: 0 }), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.matte(SC.body)), hud: A.swatch('hud', { color: '#26282a', rough: 0.5, metal: 0.3 }),
-    wiper: A.swatch('wiper', { color: '#121314', rough: 0.55, metal: 0.2 }), lens: A.swatch('lens', F.lens), recv: A.swatch('recv', { color: '#2a2c2e', rough: 0.6, metal: 0.3 }),
-    strut: A.swatch('gear.strut', F.gearWhite), hyd: A.swatch('hyd', { color: '#1d1e20', rough: 0.5, metal: 0.4 }), slime: A.swatch('slime', { color: '#b9c7a6', rough: 0.4, metal: 0 }),
+    wiper: A.swatch('wiper', { color: '#121314', rough: 0.55, metal: 0.2 }), recv: A.swatch('recv', { color: '#2a2c2e', rough: 0.6, metal: 0.3 }),
+    strut: A.swatch('gear.strut', F.gearWhite), hyd: A.swatch('hyd', { color: '#1d1e20', rough: 0.5, metal: 0.4 }),
   };
   const B = K.createAtlas({ size: atlasSize, base: skin, swatchRows: 3, skin: { ...skinOpts, weathering: SC.weather * 0.65 } });   // sun-facing wing tops chalk less than they grime
   const cWT = B.chart('wingTop', { type: 'plan', x: [0.5, 26.0], z: [-7.0, 8.4], view: 'top', mirror: true, density: 1.2 });
@@ -108,7 +108,7 @@ export function createVisual(ctx, opts = {}) {
     acoustic: B.swatch('acoustic', { color: '#5d6063', rough: 0.65, metal: 0.45 }), core: B.swatch('core', { color: '#5f6366', rough: 0.55, metal: 0.45 }), plug: B.swatch('plug', { color: '#5a5048', rough: 0.5, metal: 0.8 }),
     blade: B.swatch('blade', { color: '#6c7075', rough: 0.36, metal: 0.9 }), spinner: B.swatch('spinner', { color: '#26282b', rough: 0.35, metal: 0.4 }), swirl: B.swatch('swirl', { color: '#e8e8e4', rough: 0.4, metal: 0 }),
     inner: B.swatch('inner', { color: '#5d6264', rough: 0.75, metal: 0.15 }), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }), wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', skin),
-    hot: B.swatch('hot', { color: '#6b6158', rough: 0.45, metal: 0.85 }), soot: B.swatch('soot', { color: '#3c3d3d', rough: 0.8, metal: 0.1 }), slime: B.swatch('slime', { color: '#b9c7a6', rough: 0.4, metal: 0 }),
+    hot: B.swatch('hot', { color: '#6b6158', rough: 0.45, metal: 0.85 }),
   };
 
   // ---- fuselage -------------------------------------------------------------------------------------------------------------
@@ -283,7 +283,7 @@ export function createVisual(ctx, opts = {}) {
       stB.add(K.loft({ stations: st, segments: 14, step: 0.5, uv: UB.grey }).mesh);
       // pylon aft fairing closing the gap down onto the exposed core, with a heat-shield skin where the core exhaust passes
       { const z0 = c[2] + NAC.length - 0.15, z1 = c[2] + NAC.length + 1.45, yc = c[1];
-        stB.add(K.prism([[z0, yc + 1.13], [z1, yc + 1.13], [z1 - 0.25, yc + 0.78], [z0 + 0.95, yc + 0.6], [z0 + 0.3, yc + 0.7], [z0, yc + 0.9]], c[0] - 0.13, c[0] + 0.13, UB.soot)); } }
+        stB.add(K.prism([[z0, yc + 1.13], [z1, yc + 1.13], [z1 - 0.25, yc + 0.78], [z0 + 0.95, yc + 0.6], [z0 + 0.3, yc + 0.7], [z0, yc + 0.9]], c[0] - 0.13, c[0] + 0.13, UB.grey)); } }
     eng.push({ c, n, fanMesh: f117Fan({ radius: NAC.rFan - 0.012, hub: 0.38, uvBlade: UB.blade, uvSpinner: UB.spinner, uvSwirl: UB.swirl }) });
   }
 
@@ -397,7 +397,7 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.18, squash: [1, 0.6, 1] });
   for (const sx of [-1, 1]) rig.lamp('landing', [sx * 0.75, L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.2, squash: [1.4, 0.8, 0.5] });
   const sponLand = [['L', -1], ['R', 1]].map(([k, sx]) => { const t = spon[k].tAtY(-8.3, -1.5), q = spon[k].at(-8.3, sx > 0 ? t : 1 - t); return [q.p[0] + q.n[0] * 0.03, q.p[1], q.p[2] + q.n[2] * 0.03]; });
-  for (const p of sponLand) rig.lamp('landing', p, { color: [1, 0.97, 0.9], size: 0.18, squash: [1.2, 0.9, 0.5] });   // sponson nose lights
+  for (const p of sponLand) rig.lamp('landing', p, { color: [1, 0.97, 0.9], size: 0.12, squash: [1.2, 0.9, 0.5] });   // sponson nose lights
   // electroluminescent formation strips: forward fuselage below the flight deck, aft fuselage under the fin, winglet outer faces
   const slime = [0.18, 0.5, 0.16];
   const stripOn = (z, y, sx, len) => { const t = fus.tAtY(z, y), q = fus.at(z, sx > 0 ? t : 1 - t), m = K.box(0.012, 0.09, len, [0, 0]); m.rotateZ(Math.atan2(q.n[1], q.n[0])); return m.translate(q.p[0] + q.n[0] * 0.008, q.p[1] + q.n[1] * 0.008, q.p[2]); };
@@ -760,8 +760,9 @@ function paintSurfaces(B, o) {
     Q.line([[sF, 0.0], [NS.sMax, 0.0]], { px: 1.4, depth: 0.55, dark: 0.3 }); Q.line([[sF, 1.0], [NS.sMax, 1.0]], { px: 1.4, depth: 0.55, dark: 0.3 });
     for (let i = 0; i < 4; i++) { const s = sF + 0.3 + i * 0.4; for (const t of [0.012, 0.988]) Q.fill((g) => g.rect(s, t - 0.008, 0.16, 0.016), { color: '#3c3f42', rough: 0.6, metal: 0.3 }); }
     for (const t of [0.22, 0.78]) Q.panel(sF + 0.4, t - 0.03, sF + 0.75, t + 0.03, { px: 0.9, depth: 0.35, dark: 0.12 });
-    for (const t of [0.25, 0.75]) Q.text('NO STEP', sF + 1.1, t, 0.05, { color: mark, weight: 700, rot: 90 });
-    for (const t of [0.3, 0.7]) Q.text('DANGER', (sJ + sF) / 2, t, 0.045, { color: '#7a2622', weight: 700 });
+    const nacText = (str, s0, t, h, col, rot = 0) => Q.decalT(s0, t, { girth: 8.0, rot }, (g) => K.drawText(g, str, h, { color: col, weight: 700 }));
+    for (const t of [0.25, 0.75]) nacText('NO STEP', sF + 1.1, t, 0.05, mark, 90);
+    for (const t of [0.3, 0.7]) nacText('DANGER', (sJ + sF) / 2, t, 0.05, '#7a2622');
     Q.fill((g) => g.rect(sF + 0.2, 0.3, NS.sMax - sF, 0.4), { color: '#2e2c2a' }, { alpha: 0.08 * wx, feather: 20 });
     for (let i = 0; i < 6; i++) { const t = 0.02 + rnd() * 0.06; Q.streak(sF, t, NS.sMax, t, 0.01, { color: '40,34,26', alpha: 0.15 * wx }); }
     Q.noise({ alpha: 0.04, scale: 2, rough: 0.05 });
