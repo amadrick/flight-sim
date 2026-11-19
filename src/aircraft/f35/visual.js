@@ -318,7 +318,7 @@ export function createVisual(ctx, opts = {}) {
     rudR.set((sf.rudder * 25 + sf.speedbrake * 30) * DEG); rudL.set((sf.rudder * 25 - sf.speedbrake * 30) * DEG);   // speedbrake = toe-out rudders
     nozzle.morphTargetInfluences[0] = e.nozzle ?? 0;
     K.abGlowColor(glow.color, e, S.night);
-    setCanopy(sf.canopy * 42 * DEG);
+    setCanopy(sf.canopy * 34 * DEG);
     setHook(sf.hook * 42 * DEG);
     pilotNode.visible = !rig.cameraInCockpit;
   });
