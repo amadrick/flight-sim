@@ -43,9 +43,9 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 function reveal(el) {
   const box = el?.closest?.('.menu-scroll, .menu-sheet'); if (!box || !el.offsetParent) return;
   const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
-  if (box.scrollWidth > box.clientWidth + 2) {
-    if (r.left < b.left) box.scrollLeft -= b.left - r.left + 12;
-    else if (r.right > b.right) box.scrollLeft += r.right - b.right + 12;
+  if (box.scrollWidth > box.clientWidth + 2 && (r.left < b.left || r.right > b.right)) {
+    // horizontal carousel: centre the item
+    box.scrollLeft += (r.left + r.width / 2) - (b.left + b.width / 2);
   }
   if (box.scrollHeight > box.clientHeight + 2) {
     if (r.top < b.top) box.scrollTop -= b.top - r.top + 4;

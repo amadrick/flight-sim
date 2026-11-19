@@ -466,7 +466,7 @@ export const CSS = /* css */`
   .menu-spec-key, .menu-spec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-spec-key > .menu-kv:nth-child(3)::before { display: none; }
   .menu-sheet > .menu-flybar { position: sticky; bottom: 0; z-index: 3; margin: 6px calc(-1 * var(--gr)) 0 calc(-1 * var(--gl)); padding: 8px var(--gr) var(--gb) var(--gl) !important;
-    background: linear-gradient(to bottom, rgb(var(--glass-rgb) / 0), rgb(var(--glass-rgb) / 0.94) 22px) !important; }
+    background: linear-gradient(to bottom, rgb(var(--glass-rgb) / 0), rgb(var(--glass-rgb) / 0.96) 10px) !important; }
   .menu-fly { min-height: 54px; }
   .menu-devices { grid-template-columns: 1fr; }
   .menu-keys { columns: 1; }
