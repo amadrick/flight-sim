@@ -114,7 +114,7 @@ export function createVisual(ctx, opts = {}) {
   stA.add(K.lathe([[0.16, -0.25], [0.17, 0.12, 1], [0.13, 0.12, 1], [0.11, -0.3]], { segments: 16, uv: UA.exhaust, sx: 0.8 }).rotateY(-16 * DEG).translate(-0.16, 0.6, 37.2));
 
   // wing-to-body fairing with the main-gear bays cut into its flat bottom
-  const fairStations = [[-13.0, 2.0, 0.4, 0.85], [-10.8, 2.85, 0.75, 1.1], [-8.2, 3.35, 0.95, 1.2], [-4.0, 3.65, 1.05, 1.24], [1.0, 3.78, 1.05, 1.26], [4.6, 3.72, 1.0, 1.26], [7.0, 3.3, 0.85, 1.16], [9.4, 2.6, 0.55, 0.98], [11.6, 1.9, 0.3, 0.72]]
+  const fairStations = [[-13.5, 2.0, 0.4, 0.8], [-11.0, 2.45, 0.65, 1.04], [-8.4, 3.1, 0.88, 1.17], [-4.8, 3.55, 1.02, 1.23], [1.0, 3.78, 1.05, 1.26], [4.6, 3.72, 1.0, 1.26], [7.0, 3.3, 0.85, 1.16], [9.4, 2.6, 0.55, 0.98], [11.6, 1.9, 0.3, 0.72]]
     .map(r => ({ z: r[0], y: -2.1, w: r[1], top: r[2], bot: r[3], kTop: 0.62, kBot: [0.95, 0.5523] }));
   const fairOpts = { stations: fairStations, segments: Math.max(32, Math.round(48 * detail / 4) * 4), step: 0.8, uv: UA.fair };
   let fair = K.loft(fairOpts);
@@ -341,8 +341,8 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps ------------------------------------------------------------------------------------------------------------------
   const L = G.lights;
-  rig.lamp('nav', L.navLeft, { color: [1, 0.04, 0.02], size: 0.08, squash: [0.6, 0.6, 1.5] });
-  rig.lamp('nav', L.navRight, { color: [0.02, 1, 0.25], size: 0.08, squash: [0.6, 0.6, 1.5] });
+  rig.lamp('nav', L.navLeft, { color: [1, 0.04, 0.02], size: 0.12, squash: [0.6, 0.6, 1.5] });
+  rig.lamp('nav', L.navRight, { color: [0.02, 1, 0.25], size: 0.12, squash: [0.6, 0.6, 1.5] });
   rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.07 });
   for (const sx of [-1, 1]) rig.lamp('strobe', [sx * (Math.abs(L.navRight[0]) + 0.02), L.navRight[1], L.navRight[2] + 0.22], { color: [1, 1, 1], size: 0.07 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.07 });
