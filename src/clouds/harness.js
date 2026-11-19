@@ -105,6 +105,10 @@ async function boot() {
     updateFrameUniforms();
     ctx.terrain.update?.(dt);
     ctx.clouds.update(dt);
+    // the stub pipeline keeps its ambient constant at night; dim it like a real one would (so moonlight can be judged)
+    const day = THREE.MathUtils.smoothstep(ctx.env.sunDir.y, -0.12, 0.1);
+    ctx.env.ambientSky.setRGB(0.25, 0.4, 0.7).multiplyScalar(Math.max(day, 0.004)); ctx.env.ambientGround.setRGB(0.1, 0.09, 0.08).multiplyScalar(Math.max(day, 0.004));
+    ctx.uniforms.frame.uAmbientSky.value.copy(ctx.env.ambientSky); ctx.uniforms.frame.uAmbientGround.value.copy(ctx.env.ambientGround);
     ctx.pipeline.render(dt);
     comp.material.uniforms.tClouds.value = ctx.clouds.texture; comp.render(ctx.renderer, null);
     if (viewPass) {

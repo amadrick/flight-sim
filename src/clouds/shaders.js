@@ -93,6 +93,11 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float aThick = 0.035 + 0.15 * am * am;
   float anvil = step(0.001, am) * smoothstep(lid - aThick - 0.025, lid - aThick + 0.025, hN);
   vec3 q = pa * uClNoise.x * vec3(1.0, uClDebug.w, 1.0) + uClNoiseOfs.xyz;
+  // smoothstep the texel fraction: hardware trilinear filtering is only C0 and its creases at voxel boundaries
+  // show up as terraces / contour lines on smooth cloud surfaces (worst along the stretched vertical axis)
+  float vs = 128.0 * exp2(-floor(lod));
+  vec3 qt = q * vs - 0.5, qi = floor(qt), qf = qt - qi;
+  q = (qi + qf * qf * (3.0 - 2.0 * qf) + 0.5) / vs;
   vec4 n = textureLod(tClBase, q, lod);
   // billows: the volume's own mid / high Worley fbm bulges the low-frequency shape (they fade to their mean with
   // the mip LOD, so distant clouds keep their size while losing detail)
@@ -132,7 +137,7 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float lodD, float nearK, f
   vec4 dn = textureLod(tClDetail, q, lodD);
   float hf = dn.r;
   if (nearK > 0.0) {                         // extra octave close to the camera (flying through cloud)
-    float fine = textureLod(tClDetail, q * 5.3 + 0.37, 0.0).g;
+    float fine = textureLod(tClDetail, q * 3.7 + 0.37, 0.0).g;
     hf = mix(hf, hf * 0.7 + fine * 0.3, nearK);
   }
   float m = mix(hf, 1.0 - hf, clSat(info.x * 5.0));
@@ -304,6 +309,7 @@ void main() {
   vec3 L = vec3(0.0);
   float T = 1.0, wSum = 0.0, tSum = 0.0, flash = 0.0;
   float tFallback = 40000.0;
+  float nIter = 0.0, nDense = 0.0;            // cost counters (debug read-back through aux.a)
 
   if (uClJitter.w > 0.5) {
     // ---- marching interval through the spherical cloud shell (first crossing only) --------------------------
@@ -335,9 +341,11 @@ void main() {
       float Kf = uClStep.x;
       float t = t0;
       bool fine = false; int zeros = 0;
+      float cap = 1e9;                         // step cap while resolving an optically thick cloud surface
 
       for (int i = 0; i < CL_STEPS; i++) {
         if (t >= t1 || T < 0.004) break;
+        nIter += 1.0;
         float left = float(CL_STEPS - i);
         float need = log(min(t1, max(40000.0, 8.0 * t)) / max(t, 1500.0)) / (0.8 * left);
         float Kc = max(3.0 * Kf, need);
@@ -347,7 +355,7 @@ void main() {
         float farK = smoothstep(700.0, 1800.0, dsC);
         float dsF = max(uClStep.y, mix(Kf, Kc, farK) * t);
         bool farField = dsF > 0.6 * dsC;
-        float ds = min((fine || farField) ? dsF : dsC, t1 - t);
+        float ds = min(min((fine || farField) ? dsF : dsC, t1 - t), cap);
         float ts = t + ds * blue;
         float h = clAlt(ts, rd.y, c);
         vec3 pr = uCameraPos + rd * ts;
@@ -401,14 +409,22 @@ void main() {
           d = clDensityFull(pa, ex - CL_EROSION_BIAS * uClNoise.z, info, lodD, clSat(1.0 - ts / 2500.0), edge) * info.w * fadeFar;
         }
         if (d > 0.0) {
-          zeros = 0;
           float sig = d * uClNoise.w;
+          // Refine on hit: a step that is optically thick (tau > 1.6) cannot shade the cloud surface properly (the
+          // lit skin is ~1 mean free path deep). Back up to just before the sample and re-march with ~1 mfp steps;
+          // the cap then relaxes geometrically, so a surface costs 4-5 lit samples whatever the distance.
+          if (cap > 1e8 && sig * ds > 1.6 && ds > 1.5 * uClStep.y) {
+            cap = max(1.0 / sig, uClStep.y); t = max(t, ts - 0.5 * cap); fine = true; zeros = 0; continue;
+          }
+          zeros = 0; nDense += 1.0;
           float tauSun = clTauLight(pa, lod, blue2);
-          float tauUp = sig * max(info.y - h, 0.0) * 0.5;
+          // optical depth to the cloud top: mostly a smooth height-based estimate (using only the local density
+          // would print the density field onto the ambient term: an "x-ray" look in diffuse light)
+          float tauUp = uClNoise.w * (0.3 + 0.2 * d) * max(info.y - h, 0.0);
           float J = cloudSunScatter(tauSun, tauUp, cosT);
           vec3 E = mix(Ea, Eb, clSat((ts - t0) / max(tB - t0, 1.0)));
           // ambient: sky light diffusing down from the cloud top, ground bounce coming up through the base
-          float tauDn = sig * max(h - uClLayer.x, 0.0) * 0.5;
+          float tauDn = uClNoise.w * (0.3 + 0.2 * d) * max(h - uClLayer.x, 0.0);
           float visUp = 0.35 * exp(-0.6 * tauUp) + 0.65 / (1.0 + 0.2 * tauUp);
           float visDn = 0.35 * exp(-0.6 * tauDn) + 0.65 / (1.0 + 0.2 * tauDn);
           vec3 S = E * J + 0.5 * (ambUp * visUp + ambDn * visDn);
@@ -421,7 +437,8 @@ void main() {
             flash += w * uClFlash[k].w / (1.0 + d2 * 1.2e-6) * exp(-sqrt(d2) * 2.2e-4);
           }
           tSum += w * ts; wSum += w; T *= Ts;
-        } else if (++zeros > 5) fine = false;
+          cap *= 1.6;
+        } else if (++zeros > 5) { fine = false; cap = 1e9; }
         t += ds;
       }
     }
@@ -442,7 +459,7 @@ void main() {
   else { L = ci.rgb + ci.a * L; T *= ci.a; if (tCi > 0.0 && ci.a < 0.5) tMean = tCi; }
 
   oColor = vec4(L, T);
-  oAux = vec4(min(tMean * 1e-3, 1000.0), min(sceneD * 1e-3, 1000.0), flash, 1.0);
+  oAux = vec4(min(tMean * 1e-3, 1000.0), min(sceneD * 1e-3, 1000.0), flash, uClDebug.z > 0.5 ? nDense : nIter);
 }`;
 }
 
@@ -503,7 +520,7 @@ void main() {
     alpha = max(alpha, 1.0 / (1.0 + ha.z));
     // parallax the single-depth reprojection cannot represent (flying fast past/through near cloud): trust history less
     float par = uClTemporal.w / max(cloudKm * 1000.0, 1.0) * uClWindVel.w;
-    alpha = max(alpha, clamp(par * 0.06 - 0.1, 0.0, 0.6));
+    alpha = max(alpha, clamp(par * 0.04 - 0.1, 0.0, 0.35));
     alpha = mix(alpha, 1.0, reject);
     cur = mix(h, cur, alpha);
     count = mix(min(ha.z + 1.0, 48.0), 1.0, reject);
@@ -548,8 +565,11 @@ void main() {
     float y = uClLayer.x + hN * uClLayer.w;
     vec3 pa = vec3(q.x + uClBakeShadowB.x * (y - uClLayer.x), y, q.y + uClBakeShadowB.y * (y - uClLayer.x));
     vec4 wx = clWeather(pa.xz, 0.0);
-    float d = clDensityBase(pa, wx, 1.0, info) * info.w;
-    float dt = d * uClNoise.w * 0.8 * dy * uClBakeShadowB.z;
+    // band-limit the density to the sample spacing along the slanted ray (otherwise low sun angles alias into
+    // stripes): pick the noise mip whose voxel matches the spacing
+    float spacing = dy * uClBakeShadowB.z;
+    float d = clDensityBase(pa, wx, clamp(log2(spacing * uClNoise.x * 128.0), 1.0, 4.0), info) * info.w;
+    float dt = d * uClNoise.w * 0.8 * spacing;
     tau += dt; m1 += dt * hN; m2 += dt * hN * hN;
     y0 = y1;
   }

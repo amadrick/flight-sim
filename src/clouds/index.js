@@ -127,7 +127,7 @@ export async function createClouds(ctx) {
     lightSteps = steps >= 100 ? 6 : steps >= 50 ? 4 : 3;
     const lvl = q.level;
     shadowRes = lvl === 'low' ? 256 : lvl === 'medium' ? 512 : 1024;
-    shadowSteps = lvl === 'low' ? 10 : lvl === 'medium' ? 14 : 20;
+    shadowSteps = lvl === 'low' ? 12 : lvl === 'medium' ? 16 : 24;
     shadowStrips = 8;
     maxDistQ = dbg('cloudDist', lvl === 'low' ? 150000 : 200000);
   }
@@ -315,7 +315,7 @@ export async function createClouds(ctx) {
     const rainOn = P.precip > 0.02 && P.coverage > 0.3;
     U.uClRain.value.set(rainOn ? P.precip * 0.0011 : 0, lerp(0.75, 0.2, P.precip), lerp(1.0, 0.6, P.precip), P.precip);
     U.uClOriginAir.value.set(o.x - windOffset.x, 0, o.z - windOffset.y);
-    U.uClDebug.value.set(dbg('clA', 1.0), dbg('clB', 0.6), dbg('clC', 0.25), dbg('clD', 0.4));
+    U.uClDebug.value.set(dbg('clA', 1.0), dbg('clB', 0.6), dbg('clCount', 0), dbg('clD', 0.55));
     U.uClLightDir.value.copy(lightDir);
     U.uClLightSel.value.set(sunW, lerp(1, 0.35, P.coverage * P.coverage), 1, animTime);
     const mE = 0.05 * moonW;                         // artistic moonlight (same units as uSunColor ≈ 4 at noon)
