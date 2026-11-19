@@ -145,6 +145,8 @@ uniform vec4 uGrade;       // x: AgX look power (contrast), y: saturation, z: 8-
 uniform float uDebug;
 uniform float uNightGrade; // 0..1: rod-vision grade for dark-adapted scenes
 uniform float uAlphaMotion; // 1: pass the TAA motion (tHDR.a) through alpha for the final sharpen, 0: luma for FXAA
+uniform sampler2D tLocal;   // a coarse level of the bloom pyramid (~1/16 res): the neighbourhood the eye adapts to
+uniform float uLocalExp;    // 0..1: night local adaptation (a big bright patch such as a landing-light pool is compressed)
 ${flareGLSL()}
 
 vec3 agxContrast(vec3 x) {
@@ -211,6 +213,12 @@ void main() {
   vec3 c = max(hdr.rgb, 0.0);
   if (uTone.y > 0.0) c = mix(c, texture(tBloom, vUv).rgb, uTone.y);
   if (uLensSun.z > 0.0005) c += lens(vUv);
+  if (uLocalExp > 0.0) {
+    // only where the neighbourhood itself is displayed above white: small lights (tiny in the coarse level) and the
+    // dim landscape are untouched
+    float lb = dot(texture(tLocal, vUv).rgb, LUMA) * uTone.x;
+    c *= pow(max(lb, 1.0), -0.5 * uLocalExp);
+  }
   c *= uTone.x;
   vec2 q = (vUv - 0.5) * 2.0;
   c *= 1.0 - uTone.z * pow(dot(q, q) * 0.5, 1.4);
@@ -330,6 +338,7 @@ export function createPostPasses(ctx) {
     tHDR: { value: null }, tBloom: { value: null },
     uTone: { value: new THREE.Vector4(1, 0.05, 0.2, 1.777) }, uLensSun: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
     uLensColor: { value: new THREE.Vector3() }, uGrade: { value: new THREE.Vector4(1.18, 1.16, 0, 0) }, uDebug: { value: 0 }, uNightGrade: { value: 0 }, uAlphaMotion: { value: 0 },
+    tLocal: { value: null }, uLocalExp: { value: 0 },
     ...flare.uniforms,
   }, TONEMAP_FRAG);
   const final = mat({ tLDR: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uFinal: { value: new THREE.Vector4(0, 0.5, 0, 1 / 255) }, uFinal2: { value: new THREE.Vector4(0, 0, 0, 0) } }, FINAL_FRAG);
