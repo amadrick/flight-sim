@@ -57,7 +57,7 @@ export function createVisual(ctx, opts = {}) {
     well: atlas.swatch('well', F.gearWhite), interior: atlas.swatch('interior', { color: '#34383b', rough: 0.75, metal: 0 }), console: atlas.swatch('console', { color: '#1b1d1f', rough: 0.6, metal: 0 }),
     seat: atlas.swatch('seat', { color: '#232628', rough: 0.7, metal: 0 }), cushion: atlas.swatch('cushion', { color: '#2e3130', rough: 0.95, metal: 0 }), accent: atlas.swatch('accent', { color: '#d6b21e', rough: 0.5, metal: 0 }),
     suit: atlas.swatch('suit', { color: '#4d5540', rough: 0.9, metal: 0 }), helmet: atlas.swatch('helmet', { color: '#2b2d2f', rough: 0.4, metal: 0.1 }), visor: atlas.swatch('visor', { color: '#0a0b0d', rough: 0.05, metal: 0.5 }),
-    glove: atlas.swatch('glove', { color: '#3a3d33', rough: 0.9, metal: 0 }), frame: atlas.swatch('frame', F.ram('#4a4e51')), steel: atlas.swatch('steel', F.steel),
+    glove: atlas.swatch('glove', { color: '#3a3d33', rough: 0.9, metal: 0 }), frame: atlas.swatch('frame', F.ram('#4a4e51')), frameIn: atlas.swatch('frameIn', { color: '#26292b', rough: 0.7, metal: 0.05 }), coaming: atlas.swatch('coaming', { color: '#1a1b1c', rough: 0.85, metal: 0 }), steel: atlas.swatch('steel', F.steel),
     eots: atlas.swatch('eots', { color: '#2a2418', rough: 0.04, metal: 0.65 }), lens: atlas.swatch('lens', F.lens),
   };
 
@@ -136,9 +136,13 @@ export function createVisual(ctx, opts = {}) {
   const glassMove = canLoft([CZ0, CZ1], [0.25, 0.75], 0, [0, 0]);
   const frameMove = K.merge(
     canLoft([CZ0, CZ1], [0.25, 0.25 + ct * 0.8], 0.006, U.frame), canLoft([CZ0, CZ1], [0.75 - ct * 0.8, 0.75], 0.006, U.frame),
-    canLoft([-5.68, -5.55], [0.25, 0.75], 0.012, U.frame),                       // bow frame
+    canLoft([-5.67, -5.56], [0.25, 0.75], 0.012, U.frame),                       // bow frame
     canLoft([CZ0, CZ0 + 0.05], [0.25, 0.75], 0.006, U.frame),                    // windscreen base strip
     canLoft([CZ1 - 0.16, CZ1], [0.25, 0.75], 0.007, U.frame, { capEnd: 'flat', capUV: U.frame }),   // aft arch closing onto the spine
+    // the same frames seen from inside the cockpit (the glass is invisible from in there): bow arch, aft arch, rails
+    canLoft([-5.67, -5.56], [0.25, 0.75], -0.012, U.frameIn).flip(), canLoft([CZ1 - 0.2, CZ1], [0.25, 0.75], -0.01, U.frameIn).flip(),
+    canLoft([CZ0, CZ1], [0.25, 0.25 + ct * 0.9], -0.008, U.frameIn).flip(), canLoft([CZ0, CZ1], [0.75 - ct * 0.9, 0.75], -0.008, U.frameIn).flip(),
+    canLoft([CZ0, CZ0 + 0.06], [0.25, 0.75], -0.008, U.frameIn).flip(),
   );
 
   // ---- cockpit -----------------------------------------------------------------------------------------------------------------
@@ -156,15 +160,16 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   {  // wide flat glare shield over the panoramic display
-    const gs = K.prism([[-6.32, 0.81], [-6.32, 0.95], [-5.95, 1.035], [-5.86, 1.03], [-5.86, 1.015], [-5.9, 0.99], [-5.9, 0.81]], -0.34, 0.34, U.black);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.62 + 0.38 * Math.min(1, (gs.p[i + 2] + 6.32) / 0.46);
+    const gs = K.prism([[-6.36, 0.81], [-6.36, 0.95], [-5.95, 1.035], [-5.86, 1.03], [-5.86, 1.012], [-5.9, 0.99], [-5.9, 0.81]], -0.46, 0.46, U.coaming);
+    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.55 + 0.45 * Math.min(1, (gs.p[i + 2] + 6.36) / 0.5);
     stat.add(gs);
   }
   {  // one large panoramic cockpit display (painted chart, emissive), side consoles, side stick, throttle
-    const z = -5.9, i0 = stat.vertexCount, q = [[-0.3, 0.72], [0.3, 0.72], [0.3, 0.98], [-0.3, 0.98]];
-    for (const p of q) { const uv = cPanel.uv((p[0] + 0.3) * 1.2, (0.98 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + 0.02 + (0.98 - p[1]) * 0.3, 0, 0.24, 1, uv[0], uv[1]); }
+    const z = -5.9, i0 = stat.vertexCount, q = [[-0.34, 0.72], [0.34, 0.72], [0.34, 0.98], [-0.34, 0.98]];
+    for (const p of q) { const uv = cPanel.uv((p[0] + 0.34) / 0.68 * 0.72, (0.98 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + 0.02 + (0.98 - p[1]) * 0.3, 0, 0.24, 1, uv[0], uv[1]); }
     stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-    stat.add(K.box(0.62, 0.5, 0.08, U.console).translate(0, 0.47, -5.93));
+    stat.add(K.box(0.86, 0.66, 0.1, U.console).translate(0, 0.66, -5.96));                       // instrument panel body
+    stat.add(K.box(0.05, 0.3, 0.12, U.console).translate(0, 0.42, -5.86));                       // centre pedestal
     for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.12, 1.3, U.console).translate(sx * 0.33, 0.63, -4.95));
     stat.add(K.stick({ base: [0.33, 0.69, -4.98], height: 0.14, uv: U.black, uvGrip: U.dark }));
     stat.add(K.box(0.06, 0.08, 0.12, U.dark).translate(-0.33, 0.73, -5.0));
@@ -363,6 +368,12 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.03 });
   rig.lamp('nav', [-L.tail[0], L.tail[1], L.tail[2]], { color: [1, 1, 1], size: 0.03 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.065, squash: [1, 0.45, 1.5] });
+  // formation strips: electroluminescent tapes on the forward fuselage and the boom sides
+  for (const sx of [1, -1]) {
+    const q = fus.at(-6.3, sx > 0 ? fus.tAtY(-6.3, 0.05) : 1 - fus.tAtY(-6.3, 0.05));
+    rig.lamp('formation', [q.p[0] + q.n[0] * 0.006, q.p[1] + q.n[1] * 0.006, -6.3], { color: [0.55, 1, 0.6], size: 0.018, squash: [0.35, 1, 13] });
+    rig.lamp('formation', [sx * (BX + 0.315), 0.15, 3.4], { color: [0.55, 1, 0.6], size: 0.018, squash: [0.35, 1, 13] });
+  }
   rig.lamp('beacon', L.beacon, { color: [1, 0.08, 0.02], size: 0.07, squash: [1, 0.45, 1.5] });
 
   // ---- animation ---------------------------------------------------------------------------------------------------------------------
@@ -564,6 +575,22 @@ function paint(atlas, o) {
   P.textOn('RESCUE', -5.6, 0.32, 'both', 0.04, { color: mark });
   P.decalOn(-5.95, 0.32, 'both', (g) => { g.strokeStyle = mark; g.lineWidth = 0.014; g.beginPath(); g.moveTo(-0.12, 0); g.lineTo(0.08, 0); g.moveTo(0.02, -0.045); g.lineTo(0.09, 0); g.lineTo(0.02, 0.045); g.stroke(); });
   if (livery !== 'lowvis') P.textOn(livery === 'raaf' ? 'SQNLDR J. MORGAN' : 'MAJ T. "VAPOR" REYES', -4.6, 0.3, 'L', 0.035, { color: mark });
+  // DAS (distributed aperture system) windows: faceted dark glossy apertures with a tape surround
+  const das = (g, layer, w = 0.075, h = 0.055) => {
+    const hex = () => { g.beginPath(); g.moveTo(-w, 0); g.lineTo(-w * 0.55, -h); g.lineTo(w * 0.55, -h); g.lineTo(w, 0); g.lineTo(w * 0.55, h); g.lineTo(-w * 0.55, h); g.closePath(); };
+    if (layer === 'orm') { g.fillStyle = 'rgb(255,30,150)'; hex(); g.fill(); return; }
+    if (layer === 'height') { g.fillStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 0.014; g.strokeStyle = 'rgba(255,255,255,0.35)'; hex(); g.stroke(); return; }
+    g.strokeStyle = SC.tape; g.lineWidth = 0.016; hex(); g.stroke(); g.fillStyle = '#16191b'; hex(); g.fill();
+    g.fillStyle = 'rgba(120,110,160,0.25)'; g.beginPath(); g.ellipse(-w * 0.2, -h * 0.3, w * 0.35, h * 0.3, 0, 0, Math.PI * 2); g.fill();
+  };
+  const DL = { layers: ['color', 'orm', 'height'] };
+  P.decalOn(-6.95, 0.5, 'both', DL, (g, l) => das(g, l));                 // upper forward, either side of the windscreen
+  P.decalOn(-7.55, -0.12, 'both', DL, (g, l) => das(g, l));               // chin, looking down and sideways
+  P.decalT(-3.05, 0.5, DL, (g, l) => das(g, l));                          // dorsal, behind the canopy
+  P.decalT(2.95, 0.0, DL, (g, l) => das(g, l));                           // ventral, aft of the weapon bays
+  // weapon bay door seams (real gaps), centre keel line
+  for (const s of [0, 1]) { const a = 0.006, b = 0.068, t0 = s ? 1 - b : a, t1 = s ? 1 - a : b; for (const t of [t0, t1]) P.line([[-1.9, t], [2.7, t]], { px: 1.2, depth: 0.6, dark: 0.22 }); }
+  P.line([[-1.9, 0.0], [2.7, 0.0]], { px: 1.6, depth: 0.7, dark: 0.3 }); P.line([[-1.9, 1.0], [2.7, 1.0]], { px: 1.6, depth: 0.7, dark: 0.3 });
   // formation light strips
   for (const [z, y] of [[-6.3, 0.05], [3.4, 0.0]]) P.decalOn(z, y, 'both', { layers: ['color', 'orm'] }, (g, layer) => { g.fillStyle = layer === 'orm' ? 'rgb(255,90,0)' : '#bfc4a0'; g.fillRect(-0.25, -0.02, 0.5, 0.04); });
   // weathering: tonal variation, belly grime, exhaust staining
@@ -679,14 +706,26 @@ function paint(atlas, o) {
   }
   // ================= panoramic cockpit display (rect: a 0..0.72, b 0..0.3 down) =================
   {
-    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#141618', rough: 0.6, metal: 0 });
-    const scr = (a, b, w, h, col) => { Q.fill((g) => g.rect(a, b, w, h), { color: '#050607', rough: 0.15, metal: 0 }); Q.fill((g) => g.rect(a + 0.006, b + 0.006, w - 0.012, h - 0.012), { color: col, rough: 0.12, metal: 0, emissive: col }); };
-    scr(0.1, 0.05, 0.255, 0.2, '#10222c'); scr(0.365, 0.05, 0.255, 0.2, '#10222c');
-    Q.fill((g) => g.rect(0.12, 0.07, 0.11, 0.08), { color: '#2a6a4a', emissive: '#1a4a32', rough: 0.2 });
-    Q.fill((g) => g.rect(0.25, 0.07, 0.09, 0.08), { color: '#3d4d6a', emissive: '#28344a', rough: 0.2 });
-    Q.fill((g) => g.rect(0.385, 0.07, 0.215, 0.16), { color: '#3a3020', emissive: '#2c2416', rough: 0.2 });
-    Q.fill((g) => g.rect(0.12, 0.17, 0.22, 0.06), { color: '#1c3a5a', emissive: '#14304a', rough: 0.2 });
-    for (let i = 0; i < 6; i++) Q.fill((g) => g.rect(0.11 + i * 0.085, 0.265, 0.05, 0.016), { color: '#3a3c3e', rough: 0.5, metal: 0 });
+    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#121314', rough: 0.6, metal: 0 });
+    const em = (col, k = 0.75) => { const c = parseInt(col.slice(1), 16), f = (v) => Math.round(((c >> v) & 255) * k).toString(16).padStart(2, '0'); return '#' + f(16) + f(8) + f(0); };
+    const win = (a, b, w, h, col) => Q.fill((g) => g.rect(a, b, w, h), { color: col, rough: 0.12, metal: 0, emissive: em(col) });
+    // two 10 x 8 in portals of the panoramic display, black bezel, glass
+    for (const a0 of [0.012, 0.366]) Q.fill((g) => g.rect(a0, 0.01, 0.342, 0.275), { color: '#050506', rough: 0.1, metal: 0 });
+    // left portal: moving map (terrain + water + route) and a situation display
+    win(0.02, 0.02, 0.2, 0.19, '#3d4a2c'); win(0.06, 0.12, 0.09, 0.05, '#1f3d5a'); win(0.135, 0.03, 0.06, 0.06, '#57553a');
+    win(0.226, 0.02, 0.122, 0.12, '#07100c'); win(0.226, 0.146, 0.122, 0.064, '#0b1218'); win(0.02, 0.216, 0.328, 0.062, '#0c1116');
+    // right portal: tactical situation display + engine / fuel page
+    win(0.374, 0.02, 0.21, 0.258, '#081018'); win(0.59, 0.02, 0.108, 0.125, '#0b0f0c'); win(0.59, 0.152, 0.108, 0.126, '#101418');
+    Q.decal(0, 0, { layers: ['color', 'emis'] }, (g) => {
+      g.lineWidth = 0.0025; g.strokeStyle = '#d8e4e8'; g.beginPath(); g.moveTo(0.04, 0.19); g.lineTo(0.09, 0.1); g.lineTo(0.17, 0.08); g.lineTo(0.2, 0.04); g.stroke();
+      g.strokeStyle = '#3fd36a'; for (const r of [0.03, 0.055, 0.08]) { g.beginPath(); g.arc(0.479, 0.15, r, 0, Math.PI * 2); g.stroke(); }
+      g.beginPath(); g.moveTo(0.287, 0.04); g.lineTo(0.287, 0.13); g.moveTo(0.24, 0.08); g.lineTo(0.334, 0.08); g.stroke();
+      g.fillStyle = '#e8d24a'; for (const [x, y] of [[0.45, 0.09], [0.52, 0.12], [0.5, 0.2], [0.3, 0.06]]) { g.beginPath(); g.moveTo(x, y - 0.007); g.lineTo(x + 0.007, y + 0.006); g.lineTo(x - 0.007, y + 0.006); g.fill(); }
+      g.fillStyle = '#e04a3a'; for (const [x, y] of [[0.43, 0.06], [0.55, 0.07]]) g.fillRect(x - 0.005, y - 0.005, 0.01, 0.01);
+      g.fillStyle = '#3fd36a'; for (let i = 0; i < 4; i++) g.fillRect(0.6 + i * 0.024, 0.13 - 0.03 - i * 0.015, 0.012, 0.03 + i * 0.015);
+      g.fillStyle = '#8fd0ff'; for (let i = 0; i < 6; i++) g.fillRect(0.03 + i * 0.053, 0.235, 0.04, 0.012);
+    });
+    for (let i = 0; i < 8; i++) Q.fill((g) => g.rect(0.03 + i * 0.085, 0.286, 0.05, 0.01), { color: '#2e3032', rough: 0.5, metal: 0 });
   }
 }
 
