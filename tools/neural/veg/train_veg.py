@@ -106,13 +106,13 @@ def main():
     CE = enc_crown(CX)
     nc = len(CX)
     cval = rng.random(nc) < 0.12
-    net2 = MLP([6, 24, 24, 2], rng)
+    net2 = MLP([6, 32, 32, 2], rng)
     W2 = np.ones(nc)
     # subsample for speed
     tr = np.nonzero(~cval)[0]
-    if len(tr) > 300000:
-        tr = rng.choice(tr, 300000, replace=False)
-    train(net2, CE[tr], CY[tr], W2[tr], loss_mse, epochs=60, batch=512, lr=4e-3, rng=rng, log=log,
+    if len(tr) > 400000:
+        tr = rng.choice(tr, 400000, replace=False)
+    train(net2, CE[tr], CY[tr], W2[tr], loss_mse, epochs=110, batch=512, lr=4e-3, rng=rng, log=log,
           Xv=CE[cval], Yv=CY[cval], Wv=W2[cval])
     net2.round_f32()
     P2 = net2.forward(CE[cval])

@@ -21,13 +21,13 @@
   "lambert_rel_mae": 0.3939225625096381
  },
  "crown": {
-  "params": 818,
+  "params": 1346,
   "rows": 803328,
-  "val_rmse_tsun": 0.2143699378051722,
-  "val_rmse_sky": 0.132230688078704,
+  "val_rmse_tsun": 0.21389329215904473,
+  "val_rmse_sky": 0.1320155626652691,
   "baseline_linear_rmse_tsun": 0.3102612382126553,
   "tsun_std": 0.3268566065663745,
   "sky_std": 0.27415950073448075
  },
- "seconds": 39.82641005516052
+ "seconds": 117.25749278068542
 }
