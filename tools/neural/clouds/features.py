@@ -92,3 +92,24 @@ def tap_tau(scene, P, Dirs, K):
     _tap_tau(scene.sig, scene.o[0], scene.o[1], scene.o[2], scene.h, scene.per, np.ascontiguousarray(P, np.float64),
              np.ascontiguousarray(Dirs, np.float64), TAP_ENDS[K], out)
     return out
+
+
+@njit(parallel=True)
+def _tap_segments(sig, ox, oy, oz, h, per, P, Dirs, ends, out):
+    """out[i, d, k] = sigma(p + dir * mid_k) * len_k, segments [ends[k-1], ends[k]] (ends[-1] = 0)."""
+    n, nd, _ = Dirs.shape
+    for i in prange(n):
+        for d in range(nd):
+            prev = 0.0
+            for k in range(ends.shape[0]):
+                m = 0.5 * (prev + ends[k])
+                out[i, d, k] = sample_grid(sig, ox, oy, oz, h, per, P[i, 0] + Dirs[i, d, 0] * m,
+                                           P[i, 1] + Dirs[i, d, 1] * m, P[i, 2] + Dirs[i, d, 2] * m) * (ends[k] - prev)
+                prev = ends[k]
+
+
+def tap_segments(scene, P, Dirs, ends):
+    out = np.zeros((len(P), Dirs.shape[1], len(ends)))
+    _tap_segments(scene.sig, scene.o[0], scene.o[1], scene.o[2], scene.h, scene.per, np.ascontiguousarray(P, np.float64),
+                  np.ascontiguousarray(Dirs, np.float64), np.asarray(ends, np.float64), out)
+    return out
