@@ -357,6 +357,7 @@ void main() {
   }
 
   // ---- normal ---------------------------------------------------------------------------------------------------
+  var += vec2(0.006) * uWeather.x;                     // rain roughens the whole surface (matte, duller glitter)
   if (uWeather.x > 0.01 && dist < 120.0) grad += rainRings(wq, uTime) * uWeather.x * (1.0 - smoothstep(40.0, 120.0, dist));
   // downwash / wake: a roughened, foamy streak behind and under a very low aircraft
   float washF = 0.0;
