@@ -211,7 +211,7 @@ export function createVisual(ctx, opts = {}) {
   }
   const Z_PNL = -5.84;
   {  // instrument panel (kit: two DDIs, up-front controller, standby, cautions) under a glareshield topping out at ≈ 0.70
-    stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.64, drop: 0.43, height: 0.4, width: 0.8, pages: ['mfdStores', 'mfdRadar'], uv: U.console, uvPad: U.black }));
+    stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.64, drop: 0.43, height: 0.4, width: 0.8, centreDisplay: 'mfdHsd', pages: ['mfdStores', 'mfdRadar'], uv: U.console, uvPad: U.black }));
     stat.add(K.box(0.84, 0.04, 0.12, U.console).translate(0, 0.25, Z_PNL + 0.1));
     // side consoles with their panels, left throttles, centre stick, map case / canopy handle
     for (const sx of [-1, 1]) {
