@@ -48,7 +48,6 @@ export function createVisual(ctx, opts = {}) {
   const cBoom = atlas.chart('boom', { type: 'unwrap', z: [1.2, 6.2], girth: 1.6, vScale: 1, density: 0.8 });
   const cowlSpec = (view) => ({ type: 'side', z: [-3.95, -1.35], y: [-0.82, 0.42], view, density: 0.9 });
   const cCowl = { R: atlas.chart('cowlR', cowlSpec('right')), L: atlas.chart('cowlL', cowlSpec('left')) };
-  const cPanel = atlas.chart('panel', { type: 'rect', w: 0.72, h: 0.3, density: 3 });
   const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.8, h: 0.75, density: 0.8 });
   atlas.pack();
   const U = {
@@ -162,15 +161,12 @@ export function createVisual(ctx, opts = {}) {
       }
     }
   }
-  {  // wide flat glare shield over the panoramic display
-    const gs = K.prism([[-6.36, 0.81], [-6.36, 0.95], [-5.95, 1.035], [-5.86, 1.03], [-5.86, 1.012], [-5.9, 0.99], [-5.9, 0.81]], -0.46, 0.46, U.coaming);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.55 + 0.45 * Math.min(1, (gs.p[i + 2] + 6.36) / 0.5);
-    stat.add(gs);
-  }
-  {  // one large panoramic cockpit display (painted chart, emissive), side consoles, side stick, throttle
-    const z = -5.9, i0 = stat.vertexCount, q = [[-0.34, 0.72], [0.34, 0.72], [0.34, 0.98], [-0.34, 0.98]];
-    for (const p of q) { const uv = cPanel.uv((p[0] + 0.34) / 0.68 * 0.72, (0.98 - p[1]) / 0.26 * 0.3); stat.vert(p[0], p[1], z + 0.02 + (0.98 - p[1]) * 0.3, 0, 0.24, 1, uv[0], uv[1]); }
-    stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+  // the F-35 has no HUD: one panoramic touch display (two 10 × 8 in halves, kit display units) under a wide flat glareshield,
+  // a small standby display below it
+  stat.add(K.glareshield({ centre: [0, 0.985, -5.885], width: 0.86, depth: 0.26, rise: 0.02, uv: U.console, uvPad: U.coaming }));
+  {  // panoramic display, side consoles, side stick, throttle
+    for (const sx of [-1, 1]) stat.add(K.display({ centre: [sx * 0.128, 0.8, -5.888], width: 0.25, height: 0.2, bezel: 0.008, tilt: 0, buttons: false, page: sx < 0 ? 'mfdSA' : 'mfdRadar', uv: U.console }));
+    stat.add(K.display({ centre: [0, 0.64, -5.888], width: 0.075, bezel: 0.01, tilt: 0, page: 'standby', uv: U.console }));
     stat.add(K.box(0.86, 0.66, 0.1, U.console).translate(0, 0.66, -5.96));                       // instrument panel body
     stat.add(K.box(0.05, 0.3, 0.12, U.console).translate(0, 0.42, -5.86));                       // centre pedestal
     for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.12, 1.3, U.console).translate(sx * 0.33, 0.63, -4.95));
@@ -307,7 +303,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- paint + materials -----------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, livery, cCowl, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, skinF, NZ });
+  paint(atlas, { SC, livery, cCowl, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cNoz, skinF, NZ });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 0.8 });
   lap('textures');
@@ -512,7 +508,7 @@ function serrate(m, NZ, depth) {
 
 // ---- paint ---------------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, livery, cCowl, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cPanel, cNoz, skinF, NZ } = o, F = K.FINISH;
+  const { SC, livery, cCowl, fus, W, fins, FIN, finAt, cFus, cWT, cWB, cST, cSB, cFin, cBoom, cNoz, skinF, NZ } = o, F = K.FINISH;
   const tape = { color: SC.tape, rough: 0.52, metal: 0.12, height: 0.12 };
   const mark = SC.mark;
   const rnd = (() => { let a = 4242; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
@@ -708,29 +704,6 @@ function paint(atlas, o) {
     Q.fill((g) => g.rect(0, 0.5, 3.8, 0.25), { color: '#4a3f3a', rough: 0.6, metal: 0.8 }, { alpha: 0.45, feather: 6 });
     Q.line([[0, 0.22], [3.8, 0.22]], { px: 1.5, depth: 0.7, dark: 0.5 });
     Q.noise({ alpha: 0.12, scale: 0.8, stretch: [1, 2] });
-  }
-  // ================= panoramic cockpit display (rect: a 0..0.72, b 0..0.3 down) =================
-  {
-    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#121314', rough: 0.6, metal: 0 });
-    const em = (col, k = 0.75) => { const c = parseInt(col.slice(1), 16), f = (v) => Math.round(((c >> v) & 255) * k).toString(16).padStart(2, '0'); return '#' + f(16) + f(8) + f(0); };
-    const win = (a, b, w, h, col) => Q.fill((g) => g.rect(a, b, w, h), { color: col, rough: 0.12, metal: 0, emissive: em(col) });
-    // two 10 x 8 in portals of the panoramic display, black bezel, glass
-    for (const a0 of [0.012, 0.366]) Q.fill((g) => g.rect(a0, 0.01, 0.342, 0.275), { color: '#050506', rough: 0.1, metal: 0 });
-    // left portal: moving map (terrain + water + route) and a situation display
-    win(0.02, 0.02, 0.2, 0.19, '#3d4a2c'); win(0.06, 0.12, 0.09, 0.05, '#1f3d5a'); win(0.135, 0.03, 0.06, 0.06, '#57553a');
-    win(0.226, 0.02, 0.122, 0.12, '#07100c'); win(0.226, 0.146, 0.122, 0.064, '#0b1218'); win(0.02, 0.216, 0.328, 0.062, '#0c1116');
-    // right portal: tactical situation display + engine / fuel page
-    win(0.374, 0.02, 0.21, 0.258, '#081018'); win(0.59, 0.02, 0.108, 0.125, '#0b0f0c'); win(0.59, 0.152, 0.108, 0.126, '#101418');
-    Q.decal(0, 0, { layers: ['color', 'emis'] }, (g) => {
-      g.lineWidth = 0.0025; g.strokeStyle = '#d8e4e8'; g.beginPath(); g.moveTo(0.04, 0.19); g.lineTo(0.09, 0.1); g.lineTo(0.17, 0.08); g.lineTo(0.2, 0.04); g.stroke();
-      g.strokeStyle = '#3fd36a'; for (const r of [0.03, 0.055, 0.08]) { g.beginPath(); g.arc(0.479, 0.15, r, 0, Math.PI * 2); g.stroke(); }
-      g.beginPath(); g.moveTo(0.287, 0.04); g.lineTo(0.287, 0.13); g.moveTo(0.24, 0.08); g.lineTo(0.334, 0.08); g.stroke();
-      g.fillStyle = '#e8d24a'; for (const [x, y] of [[0.45, 0.09], [0.52, 0.12], [0.5, 0.2], [0.3, 0.06]]) { g.beginPath(); g.moveTo(x, y - 0.007); g.lineTo(x + 0.007, y + 0.006); g.lineTo(x - 0.007, y + 0.006); g.fill(); }
-      g.fillStyle = '#e04a3a'; for (const [x, y] of [[0.43, 0.06], [0.55, 0.07]]) g.fillRect(x - 0.005, y - 0.005, 0.01, 0.01);
-      g.fillStyle = '#3fd36a'; for (let i = 0; i < 4; i++) g.fillRect(0.6 + i * 0.024, 0.13 - 0.03 - i * 0.015, 0.012, 0.03 + i * 0.015);
-      g.fillStyle = '#8fd0ff'; for (let i = 0; i < 6; i++) g.fillRect(0.03 + i * 0.053, 0.235, 0.04, 0.012);
-    });
-    for (let i = 0; i < 8; i++) Q.fill((g) => g.rect(0.03 + i * 0.085, 0.286, 0.05, 0.01), { color: '#2e3032', rough: 0.5, metal: 0 });
   }
 }
 

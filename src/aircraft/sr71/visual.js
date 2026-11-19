@@ -409,6 +409,19 @@ export function createVisual(ctx, opts = {}) {
   };
   panelQuad(-13.475, -13.4, 0.12, 0.49, 0.36, 0.02, 0.42);       // pilot: leans back 11°, under the coaming lip
   panelQuad(-11.955, -11.94, 0.02, 0.385, 0.33, 0.48, 0.86);     // RSO
+  {  // the SR-71 has no glass cockpit: its painted dials (see paint()) get raised metal bezel rings so the panels read as instruments
+    const uvB = atlas.swatch('gaugeBezel', { color: '#3a3d40', rough: 0.4, metal: 0.55 });
+    const rings = (zTop, zBot, y0, y1, b0, b1, list) => {
+      const tl = Math.atan2(zBot - zTop, y1 - y0);                       // panel lean: top away from the crew member
+      for (const [a, b, r] of list) {
+        const f = (b - b0) / (b1 - b0);
+        ck.add(K.lathe([[r * 1.15, -0.002], [r * 1.15, 0.008, 1], [r * 1.02, 0.008, 1], [r, 0.002]], { segments: 20, uv: uvB }).rotateX(-tl).translate(a - 0.4, y1 + (y0 - y1) * f, zTop + (zBot - zTop) * f));
+      }
+    };
+    const eng = []; for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) eng.push([0.55 + j * 0.075, 0.06 + i * 0.075, 0.03]);
+    rings(-13.475, -13.4, 0.12, 0.49, 0.02, 0.42, [[0.4, 0.14, 0.085], [0.4, 0.31, 0.068], [0.1, 0.27, 0.042], [0.21, 0.27, 0.042], [0.1, 0.36, 0.035], [0.21, 0.36, 0.035], [0.73, 0.32, 0.034], ...eng]);
+    rings(-11.955, -11.94, 0.02, 0.385, 0.48, 0.86, [[0.4, 0.62, 0.1], [0.11, 0.66, 0.036], [0.21, 0.66, 0.036], [0.59, 0.66, 0.036], [0.69, 0.66, 0.036], [0.15, 0.77, 0.036], [0.65, 0.77, 0.036]]);
+  }
   ck.add(K.box(0.76, 0.4, 0.05, U.console).translate(0, 0.3, -13.5));                        // pilot panel housing
   ck.add(K.box(0.74, 0.03, 0.08, U.console).translate(0, 0.11, -13.4));                       // lower lip
   ck.add(K.box(0.22, 0.2, 0.34, U.console).translate(0, 0.0, -13.26));                        // centre pedestal under the panel
@@ -621,12 +634,12 @@ export function createVisual(ctx, opts = {}) {
     setCanP(sf.canopy * 42 * DEG); setCanR(sf.canopy * 42 * DEG);
     crewNode.visible = !rig.cameraInCockpit;
     // halos (night only; landing / taxi only with the gear down and locked)
-    const lt = S.lights || {}, nf = clamp((S.night ?? 0) * 1.4 - 0.2, 0, 1), t = S.t || 0;
+    const lt = S.lights || {}, nf = clamp((S.night ?? 0) * 1.4 - 0.2, 0, 1);
     HALO.forEach((h, i) => {
       let on = 0;
       if (h.k === 'nav') on = lt.nav ? 1 : 0;
-      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
-      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else if (h.k === 'strobe') on = lt.strobe ? K.lampFlash('strobe', S.tLamp) : 0;
+      else if (h.k === 'beacon') on = lt.beacon ? K.lampFlash('beacon', S.tLamp) : 0;
       else on = lt[h.k] && sf.gear > 0.98 ? 1 : 0;
       const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
     });

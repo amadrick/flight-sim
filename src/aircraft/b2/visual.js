@@ -379,7 +379,6 @@ export function createVisual(ctx, opts = {}) {
   const cBot = [wchart('botIn', [0, XN + 0.05], [-9.5, 11.6], true, 0.86), wchart('botMid', [XN - 0.05, XS + 0.05], [-9.5, -3.0], true, 0.9), wchart('botOut', [XS - 0.05, 26.3], [-9.5, -3.0], true, 0.9)];
   const cND = { R: atlas.chart('ndoorR', { type: 'rect', w: 3.4, h: 0.5, density: 2.2 }), L: atlas.chart('ndoorL', { type: 'rect', w: 3.4, h: 0.5, density: 2.2 }) };
   const cMD = { R: atlas.chart('mdoorR', { type: 'rect', w: 4.6, h: 1.05, density: 1.4 }), L: atlas.chart('mdoorL', { type: 'rect', w: 4.6, h: 1.05, density: 1.4 }) };
-  const cPanel = atlas.chart('panel', { type: 'rect', w: 2.3, h: 0.45, density: 2.4 });
   atlas.pack();
   const sw = (k, f) => atlas.swatch(k, f);
   const U = {
@@ -522,26 +521,30 @@ export function createVisual(ctx, opts = {}) {
   const cabAll = new K.Mesh().add(cab).add(cab.mirrorX());
   // instrument panel, glareshield, consoles, seats
   const eyes = [[-Math.abs(EYE[0]), EYEY, EYEZ], [Math.abs(EYE[0]), EYEY, EYEZ]];
-  const PZ = EYEZ - 0.78, PT = EYEY - 0.2, PB = FLOOR + 0.45;
+  const PZ = EYEZ - 0.78, PB = FLOOR + 0.45;
   {
-    const i0 = cabAll.vertexCount, q = [[-1.15, PB, PZ + 0.08], [1.15, PB, PZ + 0.08], [1.15, PT, PZ], [-1.15, PT, PZ]], uvs = [[0, 0.45], [2.3, 0.45], [2.3, 0], [0, 0]];
-    q.forEach((p, k) => { const uv = cPanel.uv(uvs[k][0], uvs[k][1]); cabAll.vert(p[0], p[1], p[2], 0, 0.2, 1, uv[0], uv[1]); });
-    cabAll.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-    cabAll.add(K.prism([[PZ + 0.02, PT - 0.02], [PZ - 0.02, PT + 0.06], [PZ - 0.32, PT + 0.04], [PZ - 0.32, PT - 0.08]], -1.1, 1.1, U.glareshield));   // glareshield
-    cabAll.add(K.boxBetween([-0.22, FLOOR, PZ + 0.05], [0.22, PB + 0.15, EYEZ + 0.3], U.console));                                              // centre console
+    // one kit instrument panel per pilot (displays, up-front display, standby, cautions), meeting on the centreline, under one
+    // glareshield across both (its lip where instrumentPanel would put it: 0.03 above the panel's top edge, 0.06 aft of it)
+    const pH = 0.42, pT = 14 * DEG, pY = EYEY - 0.43, pZ = EYEZ - 0.78;
+    for (const e of eyes) cabAll.add(K.instrumentPanel({ eye: e, kind: 'fighter', dist: 0.78, drop: 0.43, height: pH, width: 1.1, mfd: 0.18, glareshield: false, pages: e[0] < 0 ? ['mfdSA', 'mfdRadar'] : ['mfdEngine', 'mfdSA'], uv: U.console }));
+    cabAll.add(K.glareshield({ centre: [0, pY + pH / 2 * Math.cos(pT) + 0.03, pZ - pH / 2 * Math.sin(pT) + 0.06], width: 2.24, depth: 0.26, rise: 0.03, uv: U.console, uvPad: U.glareshield }));
+    cabAll.add(K.boxBetween([-0.22, FLOOR, PZ + 0.05], [0.22, PB - 0.03, EYEZ + 0.3], U.console));                                              // centre console
     for (const e of eyes) {
       cabAll.add(K.ejectionSeat({ eye: e, recline: 13, width: 0.5, uv: { frame: U.seat, cushion: U.cushion, accent: U.accent } }));
       cabAll.add(K.stick({ base: [e[0], FLOOR + 0.25, e[2] - 0.45], height: 0.3, uv: U.black, uvGrip: U.dark }));
       cabAll.add(K.boxBetween([e[0] - 0.3, FLOOR, e[2] - 0.7], [e[0] + 0.3, FLOOR + 0.06, e[2] - 0.2], U.console));   // rudder-pedal floor
     }
   }
-  const pilots = new K.Mesh();
-  for (const e of eyes) pilots.add(K.pilot({ eye: e, recline: 13, stick: [0, -0.5, -0.4], throttle: [e[0] < 0 ? 0.3 : -0.3, -0.5, -0.3], uv: { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove } }));
+  // crew: the pilot (left seat, the cockpit camera's eye point) is a part hidden from the cockpit camera; the mission commander
+  // (right seat) is static and stays visible from the left seat
+  const crewUV = { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove };
+  const pilots = K.pilot({ eye: eyes[0], recline: 13, stick: [0, -0.5, -0.4], throttle: [0.3, -0.5, -0.3], uv: crewUV });
+  cabAll.add(K.pilot({ eye: eyes[1], recline: 13, stick: [0, -0.5, -0.4], throttle: [-0.3, -0.5, -0.3], uv: crewUV }));
   stat.add(cabAll);
 
   // ---- materials -----------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, cTop, cBot, cND, cMD, cPanel, WIN, MB, mbF, mbA, NB, AUX, AAR, coat });
+  paint(atlas, { SC, cTop, cBot, cND, cMD, WIN, MB, mbF, mbA, NB, AUX, AAR, coat });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 0.72, emissiveIntensity: 0.8 });
   // the AHSS coating's signature: a broad, soft, slightly cool sheen that rises towards grazing angles (no sparkle)
@@ -718,12 +721,12 @@ export function createVisual(ctx, opts = {}) {
     // refuelling receptacle: the drum turns the slipway up (driven by surfaces.hook — the B-2 has no hook)
     setAar(K.smooth01(sf.hook) * Math.PI);
     // halos (night only; landing / taxi only with the gear down and locked)
-    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0;
+    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2));
     HALO.forEach((h, i) => {
       let on = 0;
       if (h.k === 'nav') on = lt.nav ? 1 : 0;
-      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
-      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else if (h.k === 'strobe') on = lt.strobe ? K.lampFlash('strobe', S.tLamp) : 0;
+      else if (h.k === 'beacon') on = lt.beacon ? K.lampFlash('beacon', S.tLamp) : 0;
       else on = lt[h.k] && sf.gear > 0.98 ? 1 : 0;
       const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
     });
@@ -756,7 +759,7 @@ function dualPen(pens) {
 }
 
 function paint(atlas, o) {
-  const { SC, cTop, cBot, cND, cMD, cPanel, WIN, MB, mbF, mbA, NB, AUX, AAR, coat } = o, F = K.FINISH;
+  const { SC, cTop, cBot, cND, cMD, WIN, MB, mbF, mbA, NB, AUX, AAR, coat } = o, F = K.FINISH;
   const rnd = (() => { let s = 4711 + (SC.repairs || 0) * 7 + (SC.test ? 131 : 0); return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
   const at = (a, f) => [a, zLE(a) + f * chord(a)];
   const lePoly = (w0, w1) => { const pts = [], n = 32; for (let k = 0; k <= n; k++) { const a = k / n * TIP; pts.push([a, zLE(a)]); } for (let k = n; k >= 0; k--) { const a = k / n * TIP; pts.push([a, zLE(a) + w0 + (w1 - w0) * Math.pow(a / TIP, 0.6)]); } return pts; };
@@ -898,17 +901,5 @@ function paint(atlas, o) {
     if (SC.test) { M.text('USAF TEST', 2.25, 0.18, 0.06, { color: SC.mark, weight: 700, spacing: 0.08 }); M.fill(disc(0.55, 0.5, 0.16, 16), { color: '#e8e8e4', rough: 0.55, metal: 0 }); M.fill([[0.55, 0.5], [0.71, 0.5], [0.55, 0.34]], { color: '#111214' }); M.fill([[0.55, 0.5], [0.39, 0.5], [0.55, 0.66]], { color: '#111214' }); }
     if (SC.fresh) M.text('REMOVE BEFORE FLIGHT TAGS ATTACHED', 2.25, 1.0, 0.03, { color: '#5a1d1a', weight: 700 });
     M.noise({ alpha: SC.noise, scale: 1.5 }); if (SC.chalk) M.noise({ alpha: SC.chalk, scale: 3, mode: 'light' });
-  }
-  { // instrument panel: eight colour MFDs with formats, standby instruments, warning lights
-    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#26292c', rough: 0.65, metal: 0 });
-    const scr = (a, b, w, h, col, k) => {
-      Q.fill((g) => g.rect(a - 0.012, b - 0.012, w + 0.024, h + 0.024), { color: '#121315', rough: 0.6, metal: 0 });
-      const dim = col === '#3fb7ff' ? '#0a1f2e' : '#0a2412';
-      Q.fill((g) => g.rect(a, b, w, h), { color: dim, rough: 0.1, metal: 0, emissive: dim });
-      const lc = col; Q.stroke((g) => { if (k % 3 === 0) { g.moveTo(a + 0.02, b + h * 0.55); g.lineTo(a + w - 0.02, b + h * 0.45); g.moveTo(a + w / 2, b + 0.02); g.lineTo(a + w / 2, b + h - 0.02); } else if (k % 3 === 1) { g.arc(a + w / 2, b + h / 2, h * 0.36, 0, Math.PI * 2); } else { for (let i = 0; i < 5; i++) { g.moveTo(a + 0.03, b + 0.04 + i * h * 0.17); g.lineTo(a + w * (0.4 + 0.1 * (i % 3)), b + 0.04 + i * h * 0.17); } } }, 0.008, { color: lc, emissive: lc }, { px: 1.4 });
-      for (let i = 0; i < 5; i++) for (const bb of [b - 0.022, b + h + 0.022]) Q.fill((g) => g.rect(a + 0.02 + i * (w - 0.04) / 4.6, bb - 0.006, 0.026, 0.012), { color: '#55585b', rough: 0.5, metal: 0 });
-    };
-    for (let k = 0; k < 4; k++) { scr(0.08 + k * 0.26, 0.1, 0.22, 0.2, k % 2 ? '#3fb7ff' : '#46e06a', k); scr(1.22 + k * 0.26, 0.1, 0.22, 0.2, k % 2 ? '#46e06a' : '#3fb7ff', k + 1); }
-    for (let i = 0; i < 16; i++) Q.fill((g) => g.rect(0.1 + i * 0.13, 0.37, 0.06, 0.028), { color: i % 4 ? '#3a3c3e' : '#7a6a2a', rough: 0.5, metal: 0, emissive: i % 4 ? undefined : '#2a2208' });
   }
 }

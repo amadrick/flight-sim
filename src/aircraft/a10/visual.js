@@ -52,7 +52,6 @@ export function createVisual(ctx, opts = {}) {
   const cFin = { L: atlas.chart('finLV', { type: 'side', z: [6.6, 9.0], y: [-0.1, 2.92], view: 'left' }), R: atlas.chart('finRV', { type: 'side', z: [6.6, 9.0], y: [-0.1, 2.92], view: 'right' }) };
   const cPod = atlas.chart('pod', { type: 'unwrap', z: [-2.3, 1.85], girth: 2.0, vScale: 0.8, density: 0.8 });
   const cNac = atlas.chart('nac', { type: 'unwrap', z: [1.6, 4.45], girth: 4.2, vScale: 0.8, density: 0.85 });
-  const cPanel = atlas.chart('panel', { type: 'rect', w: 0.9, h: 0.5, density: 2.6 });
   const cCons = atlas.chart('consoles', { type: 'rect', w: 0.52, h: 1.5, density: 1.5 });     // left console a 0..0.25, right 0.27..0.52 (a from the outboard / inboard edge, b = z + 4.3)
   atlas.pack();
   const U = {
@@ -174,32 +173,9 @@ export function createVisual(ctx, opts = {}) {
       }
     }
   }
-  // glareshield: padded coaming over the front panel, narrowing toward the windscreen
-  {
-    const gs = K.prism([[-4.92, 0.9], [-4.92, 0.965], [-4.62, 1.0], [-4.575, 0.995], [-4.56, 0.975], [-4.56, 0.9]], -0.46, 0.46, U.coaming);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.62 + 0.38 * Math.min(1, (gs.p[i + 2] + 4.92) / 0.36);
-    stat.add(gs);
-  }
-  // front instrument panel: a tilted face mapped onto the 'panel' chart (a = x + 0.45, b = 0 at the top … 0.5 at the bottom)
-  const PNL = { yT: 0.95, yB: 0.5, zT: -4.565, zB: -4.475 };
-  const pnN = (() => { const dy = PNL.yT - PNL.yB, dz = PNL.zB - PNL.zT, l = Math.hypot(dy, dz); return [0, dz / l, dy / l]; })();   // faces the pilot
-  const pnl = (a, b, d = 0) => { const f = b / 0.5; return [a - 0.45, PNL.yT + (PNL.yB - PNL.yT) * f + pnN[1] * d, PNL.zT + (PNL.zB - PNL.zT) * f + pnN[2] * d]; };
+  // front instrument panel (kit, A-10C: two MFCDs, up-front controller, standby, cautions) under a glareshield topping out at ≈ 1.0
+  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.6, drop: 0.6, height: 0.44, width: 0.86, mfd: 0.15, pages: ['mfdSA', 'mfdStores'], uv: U.bezel, uvPad: U.coaming }));
   const quadUV = (pts, uvs, nrm) => { const i0 = stat.vertexCount; pts.forEach((p, k) => stat.vert(p[0], p[1], p[2], nrm[0], nrm[1], nrm[2], uvs[k][0], uvs[k][1])); stat.quad(i0, i0 + 1, i0 + 2, i0 + 3); };
-  {
-    const A = [[0.03, 0.5], [0.87, 0.5], [0.87, 0.0], [0.03, 0.0]];
-    quadUV(A.map(([a, b]) => pnl(a, b)), A.map(([a, b]) => cPanel.uv(a, b)), pnN);
-    // MFCD bezels (two colour displays), UFC block stand proud of the panel
-    const tilt = Math.atan2(PNL.zT - PNL.zB, PNL.yT - PNL.yB);
-    const bezel = (a0, b0, w, h) => {
-      const c = pnl(a0 + w / 2, b0 + h / 2, 0.012);
-      for (const [dx, dy, sx2, sy2] of [[0, h / 2 + 0.012, w + 0.05, 0.024], [0, -h / 2 - 0.012, w + 0.05, 0.024], [w / 2 + 0.012, 0, 0.024, h], [-w / 2 - 0.012, 0, 0.024, h]])
-        stat.add(K.box(sx2, sy2, 0.026, U.bezel).translate(dx, dy, 0).rotateX(tilt).translate(c[0], c[1], c[2]));
-    };
-    bezel(0.04, 0.2, 0.2, 0.2); bezel(0.66, 0.2, 0.2, 0.2);
-    const u = pnl(0.45, 0.0725, 0.04); stat.add(K.box(0.25, 0.135, 0.08, U.bezel).rotateX(tilt).translate(u[0], u[1], u[2]));
-    const uf = [[0.335, 0.135], [0.565, 0.135], [0.565, 0.01], [0.335, 0.01]];
-    quadUV(uf.map(([a, b]) => pnl(a, b, 0.081)), uf.map(([a, b]) => cPanel.uv(a, b)), pnN);
-  }
   // side consoles with panels on top (left: throttles, fuel, comms; right: lighting, oxygen, CDU)
   for (const sx of [-1, 1]) {
     stat.add(K.box(0.25, 0.4, 1.5, U.console).translate(sx * 0.425, 0.46, -3.55));
@@ -459,7 +435,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- paint + materials ------------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, fus, W, fins, pods, cFus, cWT, cWB, cST, cSB, cFin, cPod, cNac, cPanel, cCons, paintF, wLE, wC, T_NG, Z_NG, T_SILL });
+  paint(atlas, { SC, fus, W, fins, pods, cFus, cWT, cWB, cST, cSB, cFin, cPod, cNac, cCons, paintF, wLE, wC, T_NG, Z_NG, T_SILL });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0.7 });
   lap('textures');
@@ -606,7 +582,7 @@ export function createVisual(ctx, opts = {}) {
 
 // ---- paint -------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, fus, W, fins, cFus, cWT, cWB, cST, cSB, cFin, cPod, cNac, cPanel, cCons, paintF, T_NG, Z_NG } = o, F = K.FINISH;
+  const { SC, fus, W, fins, cFus, cWT, cWB, cST, cSB, cFin, cPod, cNac, cCons, paintF, T_NG, Z_NG } = o, F = K.FINISH;
   const top = paintF(SC.top), under = paintF(SC.under), mark = SC.mark, wx = SC.weather;
   const markLow = SC.camo ? '#141514' : '#3a3e42';
   const slime = { color: '#c9cf8f', rough: 0.35, metal: 0 };
@@ -837,51 +813,6 @@ function paint(atlas, o) {
     Q.noise({ alpha: 0.08, scale: 1.0, rough: 0.05 });
     for (let i = 0; i < 12; i++) { const t = (rnd() < 0.5 ? 0.08 : 0.78) + rnd() * 0.14; Q.streak(-0.2 + rnd(), t, 1.2 + rnd() * 0.5, t, 0.01, { alpha: 0.18 * wx }); }
     Q.fill((g) => { g.rect(0.2, 0.0, 0.5, 0.12); g.rect(0.2, 0.88, 0.5, 0.12); }, oil, { alpha: 0.3 * wx, feather: 12 });   // brake dust and hydraulic grime behind the wheel slot
-  }
-  // ================= instrument panel (A-10C: two MFCDs, UFC, armament panel, standby instruments) =================
-  {
-    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#3a3f42', rough: 0.7, metal: 0 });
-    const sub = (a, b, w, h) => { Q.fill((g) => g.rect(a, b, w, h), { color: '#1b1d1f', rough: 0.6, metal: 0 }); Q.groove((g) => g.rect(a, b, w, h), { px: 1, depth: 0.4, dark: 0.3 }); };
-    const knobs = (a, b, w, h, n, m) => { for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) Q.fill((g) => g.arc(a + (i + 0.5) * w / n, b + (j + 0.5) * h / m, Math.min(w / n, h / m) * 0.22, 0, Math.PI * 2), { color: '#0a0a0b', rough: 0.4, metal: 0.2 }); };
-    const labels = (a, b, w, h, n) => { for (let i = 0; i < n; i++) Q.fill((g) => g.rect(a + 0.01, b + (i + 0.7) * h / n, w * (0.3 + (i % 3) * 0.15), 0.003), { color: '#d9d9cf', rough: 0.6, metal: 0 }, { alpha: 0.7 }); };
-    // MFCDs with the tactical-awareness map (left) and a targeting-pod picture (right), and the OSB buttons round each bezel
-    const mfcd = (a, b, right) => {
-      Q.fill((g) => g.rect(a, b, 0.2, 0.2), { color: '#050607', rough: 0.15, metal: 0 });
-      Q.fill((g) => g.rect(a + 0.008, b + 0.008, 0.184, 0.184), { color: right ? '#1c2420' : '#0b1a24', rough: 0.1, metal: 0, emissive: right ? '#26302a' : '#0d2a3a' });
-      const em = (fn, col) => Q.fill(fn, { color: col, rough: 0.1, metal: 0, emissive: col });
-      if (!right) {
-        em((g) => { g.moveTo(a + 0.03, b + 0.16); g.bezierCurveTo(a + 0.07, b + 0.1, a + 0.12, b + 0.18, a + 0.18, b + 0.06); g.lineTo(a + 0.181, b + 0.064); g.bezierCurveTo(a + 0.12, b + 0.184, a + 0.07, b + 0.104, a + 0.031, b + 0.165); g.closePath(); }, '#3aa0d8');
-        em((g) => { g.moveTo(a + 0.1, b + 0.09); g.lineTo(a + 0.11, b + 0.12); g.lineTo(a + 0.09, b + 0.12); g.closePath(); }, '#e8e8e0');
-        for (let k = 0; k < 4; k++) em((g) => g.rect(a + 0.03 + k * 0.04, b + 0.04 + (k % 2) * 0.05, 0.012, 0.012), k % 2 ? '#e03a2a' : '#30d040');
-        em((g) => { g.rect(a + 0.012, b + 0.012, 0.176, 0.006); }, '#4ad070');
-      } else {
-        em((g) => { g.rect(a + 0.098, b + 0.04, 0.004, 0.12); g.rect(a + 0.04, b + 0.098, 0.12, 0.004); }, '#d8e0d0');
-        em((g) => { g.rect(a + 0.03, b + 0.13, 0.06, 0.03); }, '#3a4438');
-        em((g) => { g.rect(a + 0.012, b + 0.012, 0.176, 0.006); }, '#c8d0c0');
-      }
-      for (let k = 0; k < 5; k++) for (const [dx, dy] of [[0.02 + k * 0.04, -0.012], [0.02 + k * 0.04, 0.212], [-0.012, 0.02 + k * 0.04], [0.212, 0.02 + k * 0.04]])
-        Q.fill((g) => g.rect(a + dx - 0.006, b + dy - 0.006, 0.012, 0.012), { color: '#2a2c2e', rough: 0.5, metal: 0 });
-    };
-    mfcd(0.04, 0.2, false); mfcd(0.66, 0.2, true);
-    // UFC: scratchpad + keypad
-    sub(0.335, 0.01, 0.23, 0.125);
-    Q.fill((g) => g.rect(0.35, 0.02, 0.2, 0.025), { color: '#0a1206', rough: 0.1, metal: 0, emissive: '#3a5a10' });
-    for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) Q.fill((g) => g.rect(0.35 + i * 0.033, 0.055 + j * 0.026, 0.026, 0.02), { color: '#2e3134', rough: 0.5, metal: 0 });
-    // standby ADI, altimeter, airspeed, AoA indexer (centre column); engine instruments (right); armament panel (bottom left)
-    sub(0.27, 0.15, 0.36, 0.33);
-    for (const [a, b, r] of [[0.33, 0.21, 0.04], [0.45, 0.21, 0.05], [0.57, 0.21, 0.04], [0.33, 0.33, 0.04], [0.45, 0.35, 0.05], [0.57, 0.33, 0.04], [0.33, 0.44, 0.03], [0.57, 0.44, 0.03]]) {
-      Q.fill((g) => g.arc(a, b, r, 0, Math.PI * 2), { color: '#070707', rough: 0.2, metal: 0 });
-      Q.stroke((g) => g.arc(a, b, r * 0.8, 0, Math.PI * 2), 0.002, { color: '#cfcfc4' });
-      Q.stroke((g) => { g.moveTo(a, b); g.lineTo(a + r * 0.7 * Math.cos(a * 40), b + r * 0.7 * Math.sin(a * 40)); }, 0.003, { color: '#f0f0e8' });
-    }
-    Q.fill((g) => { g.arc(0.45, 0.35, 0.048, Math.PI, 0); }, { color: '#4a6e94', rough: 0.3, metal: 0 });   // ADI sky half
-    Q.fill((g) => { g.arc(0.45, 0.35, 0.048, 0, Math.PI); }, { color: '#5a4126', rough: 0.3, metal: 0 });
-    sub(0.04, 0.42, 0.22, 0.07); knobs(0.04, 0.42, 0.22, 0.07, 9, 2); labels(0.04, 0.42, 0.22, 0.07, 2);   // armament panel (toggle row)
-    sub(0.64, 0.42, 0.22, 0.07); knobs(0.64, 0.42, 0.22, 0.07, 6, 2);
-    sub(0.04, 0.03, 0.26, 0.15); knobs(0.04, 0.03, 0.26, 0.15, 5, 3); labels(0.04, 0.03, 0.26, 0.15, 4);
-    sub(0.6, 0.03, 0.26, 0.15); knobs(0.6, 0.03, 0.26, 0.15, 4, 2);
-    Q.fill((g) => { g.rect(0.62, 0.15, 0.22, 0.008); }, { color: '#e2c22a', rough: 0.5, metal: 0 });
-    Q.fill((g) => { for (let k = 0; k < 4; k++) g.rect(0.29 + k * 0.012, 0.005, 0.006, 0.004); }, { color: '#e2c22a', rough: 0.5, metal: 0, emissive: '#806010' });
   }
   // ================= side consoles (a across, b = z from the front) =================
   {

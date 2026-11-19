@@ -132,7 +132,6 @@ export function createVisual(ctx, opts = {}) {
   const cFin = { RO: finChart('finRO', 1, true, 1), RI: finChart('finRI', 1, false, 0.6), LO: finChart('finLO', -1, false, 1), LI: finChart('finLI', -1, true, 0.6) };
   const cInt = { R: atlas.chart('intakeR', { type: 'side', z: [-4.4, -0.7], y: [-0.92, 0.05], view: 'right', density: 0.8 }), L: atlas.chart('intakeL', { type: 'side', z: [-4.4, -0.7], y: [-0.92, 0.05], view: 'left', density: 0.8 }) };
   const cNac = atlas.chart('nacelle', { type: 'unwrap', z: [2.9, 7.05], girth: 3.4, density: 0.7 });
-  const cPanel = atlas.chart('panel', { type: 'rect', w: 0.9, h: 0.42, density: 2.5 });
   atlas.pack();
   const U = {
     base: atlas.swatch('base', coat(SC.base)), camo: atlas.swatch('camo', coat(SC.camo)), under: atlas.swatch('under', coat(SC.under, 0.2)),
@@ -271,16 +270,8 @@ export function createVisual(ctx, opts = {}) {
   const eye = G.pilotEye;
   stat.add(K.tub({ x: 0.42, y0: 0.02, y1: 0.66, z0: -6.95, z1: -3.8, uv: U.interior, taper: 0.8 }));
   {
-    // glareshield coaming: rounded lip over the panel, tapering into the windshield; anti-glare dark grey
-    const gs = K.prism([[-6.98, 0.5], [-6.98, 0.64], [-6.86, 0.715], [-6.74, 0.77], [-6.63, 0.805], [-6.54, 0.824], [-6.47, 0.828], [-6.43, 0.818], [-6.41, 0.8], [-6.41, 0.5]], -0.4, 0.4, U.console);
-    for (let i = 0; i < gs.p.length; i += 3) { const f = Math.min(1, (gs.p[i + 2] + 6.98) / 0.5); gs.p[i] *= 0.5 + 0.5 * f; gs.p[i + 1] -= 0.035 * (gs.p[i] / 0.4) ** 2 * (gs.p[i + 1] > 0.6 ? 1 : 0); }
-    stat.add(gs);
-    // instrument panel: one flat panel carrying the six colour displays (chart), slightly reclined, with a bezel lip
-    const z = -6.42, i0 = stat.vertexCount, q = [[-0.43, 0.38], [0.43, 0.38], [0.43, 0.79], [-0.43, 0.79]];
-    for (const p of q) { const uv = cPanel.uv((p[0] + 0.43) * 0.9 / 0.86, (0.79 - p[1]) * 0.42 / 0.41); stat.vert(p[0], p[1], z + (p[1] - 0.38) * 0.15, 0, 0.15, 1, uv[0], uv[1]); }
-    stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
-    stat.add(K.box(0.9, 0.025, 0.05, U.console).translate(0, 0.795, -6.37));
-    for (const sx of [-1, 1]) stat.add(K.box(0.025, 0.42, 0.06, U.console).translate(sx * 0.44, 0.585, -6.4));
+    // instrument panel (kit: big tactical displays, up-front display, standby, cautions) with its glareshield, top at ≈ 0.83
+    stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.52, drop: 0.48, height: 0.42, width: 0.74, mfd: 0.16, pages: ['mfdSA', 'mfdRadar'], uv: U.console, uvPad: U.black }));
     // side consoles, side-stick (right) and twin throttles (left)
     for (const sx of [-1, 1]) {
       stat.add(K.box(0.15, 0.1, 1.7, U.console).translate(sx * 0.335, 0.49, -5.35));
@@ -306,6 +297,7 @@ export function createVisual(ctx, opts = {}) {
   { const y = eye[1] - 0.05, zH = eye[2] - 0.6, w = 0.27, h = 0.2, fr = new K.Mesh();
     for (const sx of [-1, 1]) fr.add(K.box(0.01, h * 1.02, 0.012, U.black).rotateX(-0.42).translate(sx * (w / 2 + 0.005), y, zH));
     fr.add(K.box(w * 1.08, 0.045, 0.15, U.console).translate(0, y - h / 2 - 0.025, zH - 0.03));
+    fr.sidecar('hud').add(hudParts.frame.sidecar('hud'));                              // keep the kit's symbology on the combiner
     hudParts.frame = fr; }
   stat.add(hudParts.frame);
   const pilotMesh = K.pilot({ eye, recline: 20, stick: [0.33, -0.42, -0.04], throttle: [-0.33, -0.42, -0.04], uv: { suit: U.suit, helmet: U.helmet, visor: U.visor, dark: U.dark, glove: U.glove } });
@@ -495,7 +487,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- paint ----------------------------------------------------------------------------------------------------------------------
   lap('details');
-  paint(atlas, { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cInt, cNac, cPanel, coat, INT, lipZ, NG, MG, cwAt, ST, FN, WG });
+  paint(atlas, { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cInt, cNac, coat, INT, lipZ, NG, MG, cwAt, ST, FN, WG });
   lap('paint');
   const mat = loCoating(atlas.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0.9 }), SC);
   lap('textures');
@@ -634,12 +626,12 @@ export function createVisual(ctx, opts = {}) {
     setHook(sf.hook * 42 * DEG);
     pilotNode.visible = !rig.cameraInCockpit;
     // halos (night only; landing / taxi only with the gear down and locked)
-    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0;
+    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2));
     HALO.forEach((h, i) => {
       let on = 0;
       if (h.k === 'nav') on = lt.nav ? 1 : 0;
-      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
-      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else if (h.k === 'strobe') on = lt.strobe ? K.lampFlash('strobe', S.tLamp) : 0;
+      else if (h.k === 'beacon') on = lt.beacon ? K.lampFlash('beacon', S.tLamp) : 0;
       else on = lt[h.k] && sf.gear > 0.98 ? 1 : 0;
       const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
     });
@@ -655,7 +647,7 @@ export function createVisual(ctx, opts = {}) {
 
 // ---- paint ------------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cInt, cNac, cPanel, coat, cwAt, ST, FN } = o, F = K.FINISH;
+  const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cInt, cNac, coat, cwAt, ST, FN } = o, F = K.FINISH;
   const base = coat(SC.base), camo = coat(SC.camo), under = coat(SC.under, 0.2);
   const ram = { color: '#93958f', rough: 0.55, metal: 0.12 };          // RAM tape / edge treatment (slightly lighter, warmer)
   const edgeF = { color: '#8c8f92', rough: 0.52, metal: 0.1 };          // leading-edge RAM treatment: lighter, less metallic
@@ -870,26 +862,4 @@ function paint(atlas, o) {
     for (const z of [4.0, 5.2, 6.3]) Q.ring(z, 0.3, 0.7, panelL);
     Q.fill((g) => g.rect(6.2, 0, 0.85, 1), { color: 'rgba(38,34,30,0.35)' }, { feather: 12 });
     Q.noise({ alpha: 0.08, scale: 1, rough: 0.05 }); }
-  // ================= instrument panel (a: 0..0.9 left → right, b: 0..0.42 top → bottom) =================
-  { const Q = atlas.pen(cPanel); Q.fill('all', { color: '#16181a', rough: 0.6, metal: 0 });
-    const scr = (a, b, w, h, col) => { Q.fill((g) => g.rect(a - 0.012, b - 0.012, w + 0.024, h + 0.024), { color: '#2a2c2e', rough: 0.5, metal: 0 }); Q.fill((g) => g.rect(a, b, w, h), { color: col, rough: 0.12, metal: 0, emissive: col });
-      for (let i = 0; i < 5; i++) { Q.fill((g) => g.rect(a + w * (0.1 + i * 0.2) - 0.006, b - 0.01, 0.012, 0.006), { color: '#55585a' }); Q.fill((g) => g.rect(a + w * (0.1 + i * 0.2) - 0.006, b + h + 0.004, 0.012, 0.006), { color: '#55585a' }); } };
-    // F-22 layout: PMFD (centre, largest), left / right secondary MFDs, two up-front displays flanking the ICP keypad
-    scr(0.335, 0.125, 0.23, 0.23, '#0d1f1a');
-    scr(0.1, 0.16, 0.19, 0.19, '#0c1c1c'); scr(0.61, 0.16, 0.19, 0.19, '#0c1c1c');
-    scr(0.13, 0.02, 0.18, 0.08, '#0f1a0a'); scr(0.59, 0.02, 0.18, 0.08, '#0f1a0a');
-    const glow = (c) => ({ color: c, rough: 0.12, metal: 0, emissive: c });
-    // PMFD: plan-view situation display (range rings, own-ship, contacts)
-    for (const r of [0.04, 0.075, 0.105]) Q.stroke((g) => { g.arc(0.45, 0.31, r, Math.PI * 1.1, Math.PI * 1.9); }, 0.0025, glow('#3d9a6a'));
-    Q.fill((g) => { g.moveTo(0.45, 0.3); g.lineTo(0.442, 0.315); g.lineTo(0.458, 0.315); g.closePath(); }, glow('#d8e6e0'));
-    for (const [x, y, c] of [[0.41, 0.2, '#d24a3c'], [0.49, 0.22, '#d24a3c'], [0.47, 0.17, '#e0c040'], [0.39, 0.25, '#46b4d8']]) Q.fill((g) => g.rect(x - 0.005, y - 0.005, 0.01, 0.01), glow(c));
-    // left MFD: engine / fuel tapes; right MFD: attitude + stores page
-    for (let i = 0; i < 4; i++) { const h = 0.05 + 0.025 * ((i * 7) % 4); Q.fill((g) => g.rect(0.13 + i * 0.035, 0.33 - h, 0.018, h), glow(i < 2 ? '#3fa36a' : '#46a0c8')); }
-    Q.fill((g) => g.rect(0.705 - 0.07, 0.255, 0.14, 0.09), glow('#2b4f8a')); Q.fill((g) => g.rect(0.705 - 0.07, 0.2, 0.14, 0.055), glow('#5a4630'));
-    Q.stroke([[0.64, 0.255], [0.77, 0.255]], 0.003, glow('#e6efe9'));
-    Q.fill((g) => g.rect(0.36, 0.0, 0.18, 0.1), { color: '#202326', rough: 0.5, metal: 0 });   // ICP keypad
-    for (let i = 0; i < 12; i++) Q.fill((g) => g.rect(0.372 + (i % 4) * 0.04, 0.012 + Math.floor(i / 4) * 0.028, 0.03, 0.02), { color: '#4a4d50', rough: 0.5, metal: 0 });
-    // up-front displays: amber/green text rows
-    for (const ax of [0.14, 0.6]) for (let r = 0; r < 3; r++) Q.fill((g) => g.rect(ax + 0.01, 0.033 + r * 0.02, 0.1 + 0.04 * ((r + ax * 10) % 2 ? 1 : 0), 0.007), glow('#7cc25a'));
-  }
 }

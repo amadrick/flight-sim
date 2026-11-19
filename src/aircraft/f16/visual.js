@@ -56,7 +56,6 @@ export function createVisual(ctx, opts = {}) {
   const cST = { R: atlas.chart('stabTopR', { type: 'plan', x: [0.9, 2.85], z: [3.9, 6.45], view: 'top', density: 0.8 }), L: atlas.chart('stabTopL', { type: 'plan', x: [-2.85, -0.9], z: [3.9, 6.45], view: 'top', density: 0.8 }) };
   const cSB = atlas.chart('stabBot', { type: 'plan', x: [0.9, 2.85], z: [3.9, 6.45], view: 'bottom', mirror: true, density: 0.6 });
   const cFin = { L: atlas.chart('finL', { type: 'side', z: [2.1, 6.12], y: [0.75, 3.4], view: 'left' }), R: atlas.chart('finR', { type: 'side', z: [2.1, 6.12], y: [0.75, 3.4], view: 'right' }) };
-  const cPanel = atlas.chart('panel', { type: 'rect', w: 0.8, h: 0.6, density: 2.6 });
   const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.5, h: 0.9, density: 0.8 });
   const cTank = load === 'combat' ? atlas.chart('tank', { type: 'rect', w: 2.1, h: 4.7, density: 0.45 }) : null;
   atlas.pack();
@@ -160,17 +159,11 @@ export function createVisual(ctx, opts = {}) {
       }
     }
   }
-  {  // glareshield / coaming (low: the F-16 pilot sees over the nose), up-front controls under the HUD
-    const gs = K.prism([[-5.62, 0.5], [-5.62, 0.68], [-5.22, 0.78], [-5.15, 0.775], [-5.15, 0.5]], -0.36, 0.36, U.coaming);
-    for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.45 + 0.55 * Math.min(1, (gs.p[i + 2] + 5.62) / 0.47);
-    stat.add(gs);
-    stat.add(K.prism([[-5.17, 0.66], [-5.17, 0.79], [-5.08, 0.79], [-5.04, 0.7], [-5.06, 0.66]], -0.1, 0.1, U.console));        // ICP
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) stat.add(K.box(0.022, 0.016, 0.01, U.consoleLt).translate(-0.045 + j * 0.035, 0.765 - i * 0.025, -5.062 + i * 0.01));
-  }
-  {  // instrument panel (painted chart, slightly tilted back) + pedestal + side consoles
-    const i0 = stat.vertexCount, q = [[-0.4, 0.22, -5.07], [0.4, 0.22, -5.07], [0.4, 0.78, -5.135], [-0.4, 0.78, -5.135]];
-    for (const p of q) { const uv = cPanel.uv(p[0] + 0.4, 0.8 - p[1]); stat.vert(p[0], p[1], p[2], 0, 0.12, 1, uv[0], uv[1]); }
-    stat.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+  // instrument panel: kit panel (two MFDs, up-front display under the HUD, standby, caution lights) and its glareshield,
+  // kept low (top ≈ 0.8) — the F-16 pilot sees over the nose
+  const panelMesh = K.instrumentPanel({ eye, kind: 'fighter', dist: 0.64, drop: 0.54, height: 0.42, width: 0.66, uv: U.console, uvPad: U.coaming });
+  stat.add(panelMesh);
+  {  // pedestal + side consoles
     stat.add(K.box(0.22, 0.3, 0.45, U.console).translate(0, 0.06, -4.86));
     for (const sx of [-1, 1]) {
       stat.add(K.box(0.15, 0.1, 1.45, U.console).translate(sx * 0.31, 0.36, -4.45));
@@ -359,7 +352,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- materials ---------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, livery, load, fus, intake, W, fin, cFus, cInt, cWT, cWB, cST, cSB, cFin, cPanel, cNoz, cTank, paintF, zLE });
+  paint(atlas, { SC, livery, load, fus, intake, W, fin, cFus, cInt, cWT, cWB, cST, cSB, cFin, cNoz, cTank, paintF, zLE });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
@@ -466,7 +459,7 @@ export function createVisual(ctx, opts = {}) {
 
 // ---- paint -------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, livery, fus, cFus, cInt, cPanel, cNoz, cTank, paintF } = o, F = K.FINISH;
+  const { SC, livery, fus, cFus, cInt, cNoz, cTank, paintF } = o, F = K.FINISH;
   const top = paintF(SC.top), mid = paintF(SC.mid), under = paintF(SC.under);
   const mark = SC.mark, lowVis = SC.demo ? false : mark, WX = SC.weather;
   const slime = { color: '#c3cb8a', rough: 0.35, metal: 0 };
@@ -705,27 +698,6 @@ function paint(atlas, o) {
     Q.text('370 GAL', 0.55, 2.4, 0.06, { color: '#3a3d40', rot: 90 }); Q.text('370 GAL', 1.55, 2.4, 0.06, { color: '#3a3d40', rot: -90 });
     Q.noise({ alpha: 0.06, scale: 0.9, rough: 0.05 });
     for (let i = 0; i < 5; i++) { const a = 0.1 + rnd() * 0.3; Q.streak(a, 0.5 + rnd() * 2, a, 3 + rnd(), 0.03, { alpha: 0.12 }); }
-  }
-  // ================= instrument panel (a = x + 0.4 → right, b = 0.8 − y → down) =================
-  {
-    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#2c2f32', rough: 0.6, metal: 0 });
-    Q.fill((g) => g.rect(0, 0, 0.8, 0.08), { color: '#1d1f21', rough: 0.6, metal: 0 });
-    const mfd = (a, b, s, col) => {
-      Q.fill((g) => g.rect(a - 0.03, b - 0.03, s + 0.06, s + 0.06), { color: '#3a3e42', rough: 0.5, metal: 0 });
-      for (let i = 0; i < 5; i++) for (const [da, db, vert] of [[0, -0.018, 0], [0, s + 0.018, 0], [-0.018, 0, 1], [s + 0.018, 0, 1]]) {
-        const p = s * (0.12 + i * 0.19); Q.fill((g) => g.rect(a + (vert ? da : p) - 0.007, b + (vert ? p : db) - 0.006, 0.014, 0.012), { color: '#b9bcb6', rough: 0.4, metal: 0 });
-      }
-      Q.fill((g) => g.rect(a, b, s, s), { color: '#050607', rough: 0.12, metal: 0 });
-      Q.fill((g) => g.rect(a + 0.006, b + 0.006, s - 0.012, s - 0.012), { color: col, rough: 0.12, metal: 0, emissive: col });
-      Q.stroke((g) => { g.moveTo(a + s * 0.5, b + s * 0.2); g.lineTo(a + s * 0.5, b + s * 0.8); g.moveTo(a + s * 0.2, b + s * 0.5); g.lineTo(a + s * 0.8, b + s * 0.5); g.rect(a + s * 0.3, b + s * 0.3, s * 0.4, s * 0.4); }, 0.002, { color: '#4fd16a', emissive: '#4fd16a' });
-    };
-    mfd(0.07, 0.26, 0.17, '#0b2412'); mfd(0.56, 0.26, 0.17, '#0b2412');
-    Q.fill((g) => g.rect(0.33, 0.1, 0.14, 0.06), { color: '#0d1a08', rough: 0.15, metal: 0, emissive: '#1d3a10' });           // DED
-    Q.fill((g) => g.arc(0.4, 0.27, 0.045, 0, Math.PI * 2), { color: '#081008', rough: 0.15, metal: 0, emissive: '#0c2a12' });   // RWR scope
-    for (let i = 0; i < 3; i++) { Q.fill((g) => g.arc(0.34 + i * 0.06, 0.39, 0.024, 0, Math.PI * 2), { color: '#0b0c0d', rough: 0.2, metal: 0 }); Q.stroke((g) => g.arc(0.34 + i * 0.06, 0.39, 0.021, 0, Math.PI * 2), 0.002, { color: '#9a9c9a' }); }
-    for (let i = 0; i < 10; i++) Q.fill((g) => g.rect(0.13 + i * 0.055, 0.5, 0.032, 0.018), { color: i % 4 === 1 ? '#7a6a2a' : i % 4 === 3 ? '#6a2a24' : '#3e4246', rough: 0.5, metal: 0 });
-    for (let i = 0; i < 6; i++) Q.fill((g) => g.arc(0.08 + (i % 2) * 0.05, 0.08 + Math.floor(i / 2) * 0.05 + 0.03, 0.012, 0, Math.PI * 2), { color: '#575b5e', rough: 0.4, metal: 0.2 });
-    Q.fill((g) => g.rect(0.0, 0.56, 0.8, 0.04), { color: '#ccb43a', rough: 0.5, metal: 0 }, { alpha: 0.5 });                    // ejection handle area
   }
 }
 
