@@ -55,7 +55,7 @@ export default {
   engines: {
     // GE90-115B, 513 kN static each. machLapse/altLapse fitted so that: 280 t climb at 250 kt is ~4000 ft/min, M0.87 at FL360 is
     // thrust-limited, and the ceiling margin is positive at 12 km (installed lapse of a BPR-9 engine; exponent < 1 = flat-rated lapse)
-    type: 'turbofan-hb', throttleRatio: 1.06, machLapse: 0.80, altLapse: 0.45,
+    type: 'turbofan-hb', thrustLineOffset: -0.1, throttleRatio: 1.06, machLapse: 0.80, altLapse: 0.45,
     n1Idle: 0.20, n2Idle: 0.58, spoolUp: 8, spoolDown: 5, idleThrust: 0.035, idleFuelFlow: 0.16,
     tsfc: [0.32, 0.28],                  // lb/lbf/h: ~0.32 static, ~0.54 at M0.84 cruise -> ~7.3 t/h total at 280 t egt: [430, 900, 900], startTime: 22,
     reverser: { fraction: 0.40, time: 2.5, power: 0.8, minSpeed: 30, stowSpeed: 26 },
