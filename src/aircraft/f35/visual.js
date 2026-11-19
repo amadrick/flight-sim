@@ -284,7 +284,7 @@ export function createVisual(ctx, opts = {}) {
   const doorOf = (patch, edge) => ({ mesh: K.thicken(patch, 0.02, U.well), hinge: { a: edge[0], b: edge[1] }, ref: K.centroid(patch) });
   K.buildGear(rig, atlas, {
     name: 'nose', index: 0, contact: gp[0].pos, wheelRadius: gp[0].wheelRadius, wheelWidth: 0.15, pivot: [0, -0.52, -4.92], stroke: 0.24, staticFrac: 0.35,
-    strutR: 0.045, fork: 'fork', steer: true, links: 'front', retract: { to: [0, -0.4, -5.85] }, window: [0.2, 0.86],
+    strutR: 0.055, fork: 'fork', steer: true, links: 'front', retract: { to: [0, -0.4, -5.85] }, window: [0.2, 0.86],
     brace: [0, -0.55, -5.6],
     doors: [
       { name: 'noseDoorR', ...doorOf(P.ngR, fus.edges.ngR.tHi), open: 88, toward: [0, -1, 0] },
@@ -296,7 +296,7 @@ export function createVisual(ctx, opts = {}) {
     const c = gp[i].pos, edge = fus.edges['mlg' + key];
     K.buildGear(rig, atlas, {
       name: 'main' + key, index: i, contact: c, wheelRadius: gp[i].wheelRadius, wheelWidth: 0.24,
-      pivot: [sx * 1.28, -0.5, 0.3], stroke: 0.3, staticFrac: 0.35, strutR: 0.058, fork: 'axle', links: 'rear',
+      pivot: [sx * 1.28, -0.5, 0.3], stroke: 0.3, staticFrac: 0.35, strutR: 0.075, fork: 'axle', links: 'rear',
       retract: { to: [sx * 0.95, -0.58, -0.5], twist: sx * 90 }, window: [0.22, 0.9], brace: [sx * 1.0, -0.6, 0.0],
       doors: [{ name: 'mainDoor' + key, ...doorOf(P['mlg' + key], sx > 0 ? edge.tHi : edge.tLo), open: 100, toward: [0, -1, 0] }],
     });
@@ -408,7 +408,7 @@ function paint(atlas, o) {
   tl([[-6.55, 0.365], [-6.55, 0.635]]);
   for (const t of both(0.47)) tl([[-3.45, t], [4.9, t]]);
   // refuelling receptacle door behind the canopy (USAF)
-  if (SC.star === 'usaf') { sawPanel(-2.65, -2.0, 0.475, 0.525, 1, 0.08); P.fill((g) => g.rect(-2.55, 0.49, 0.45, 0.02), { color: '#4a4e51', rough: 0.6, metal: 0.2 }); }
+  { sawPanel(-2.65, -2.0, 0.475, 0.525, 1, 0.08); P.fill((g) => g.rect(-2.55, 0.49, 0.45, 0.02), { color: '#4a4e51', rough: 0.6, metal: 0.2 }); }
   // upper shoulder access panels
   for (const [z0, z1, ta, tb] of [[-5.9, -5.0, 0.28, 0.34], [-4.6, -3.8, 0.28, 0.35], [-2.9, -2.1, 0.3, 0.4], [-1.6, -0.6, 0.31, 0.42], [-0.2, 0.9, 0.31, 0.43], [1.3, 2.4, 0.32, 0.44], [2.8, 3.8, 0.33, 0.44]]) for (const s of [0, 1]) sawPanel(z0, z1, s ? 1 - tb : ta, s ? 1 - ta : tb, 2, 0.1);
   // engine bay doors on the aft top
@@ -429,9 +429,6 @@ function paint(atlas, o) {
     g.strokeStyle = SC.tape; g.lineWidth = 0.02; g.beginPath(); g.ellipse(0.2, 0, 0.75, 0.09, 0, 0, Math.PI * 2); g.stroke();
   });
   // markings
-  const starAt = [-1.55, -0.12];
-  if (SC.star === 'usaf') P.decalOn(starAt[0], starAt[1], 'both', (g) => K.drawStarBar(g, 0.5, { lowVis: mark }));
-  else P.decalOn(starAt[0], starAt[1], 'both', (g) => roundel(g, 0.24, mark));
   if (SC.star === 'usaf') P.textOn('U.S.AIR FORCE', 1.6, -0.18, 'both', 0.07, { color: mark, weight: 700 });
   if (livery === 'raaf') P.textOn('ROYAL AUSTRALIAN AIR FORCE', 1.6, -0.18, 'both', 0.06, { color: mark, weight: 700 });
   P.textOn('DANGER', -3.95, 0.4, 'both', 0.04, { color: '#8d3a32', weight: 700 });
@@ -452,9 +449,9 @@ function paint(atlas, o) {
   { const Q = atlas.pen(cCowl); Q.fill('all', skinF);
     Q.stroke((g) => { g.moveTo(-3.75, 0.3); g.lineTo(-1.5, 0.36); }, 0.03, tape);
     Q.stroke((g) => { g.moveTo(-3.65, -0.58); g.lineTo(-1.5, -0.7); }, 0.03, tape);
-    const pts = []; for (let i = 0; i <= 4; i++) pts.push([-3.05 + (i % 2) * 0.08, 0.2 - i * 0.18]); for (let i = 4; i >= 0; i--) pts.push([-2.2 + (i % 2) * 0.08, 0.2 - i * 0.18]); pts.push(pts[0]);
+    const pts = []; for (let i = 0; i <= 4; i++) pts.push([-3.4 + (i % 2) * 0.07, 0.15 - i * 0.16]); for (let i = 4; i >= 0; i--) pts.push([-2.95 + (i % 2) * 0.07, 0.15 - i * 0.16]); pts.push(pts[0]);
     Q.stroke((g) => pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))), 0.025, tape);
-    Q.text('DANGER', -3.3, 0.12, 0.035, { color: '#8d3a32', weight: 700 });
+    if (SC.star === 'usaf') Q.decal(-2.5, -0.15, (g) => K.drawStarBar(g, 0.42, { lowVis: SC.mark })); else Q.decal(-2.5, -0.15, (g) => roundel(g, 0.2, SC.mark));
     Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); Q.noise({ alpha: 0.04, scale: 0.5, mode: 'light' }); }
   // ================= booms =================
   { const Q = atlas.pen(cBoom); Q.fill('all', skinF); for (const t of [0.25, 0.75]) Q.stroke((g) => { g.moveTo(1.3, t); g.lineTo(6.1, t); }, 0, tape, { px: 2 }); Q.fill((g) => g.rect(5.2, 0, 1.0, 1), { color: 'rgba(40,36,32,0.25)' }, { feather: 6 }); Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); }
