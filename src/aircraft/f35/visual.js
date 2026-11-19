@@ -165,8 +165,8 @@ export function createVisual(ctx, opts = {}) {
   // a small standby display below it
   stat.add(K.glareshield({ centre: [0, 0.985, -5.885], width: 0.86, depth: 0.26, rise: 0.02, uv: U.console, uvPad: U.coaming }));
   {  // panoramic display, side consoles, side stick, throttle
-    for (const sx of [-1, 1]) stat.add(K.display({ centre: [sx * 0.128, 0.8, -5.888], width: 0.25, height: 0.2, bezel: 0.008, tilt: 0, buttons: false, page: sx < 0 ? 'mfdSA' : 'mfdRadar', uv: U.console }));
-    stat.add(K.display({ centre: [0, 0.64, -5.888], width: 0.075, bezel: 0.01, tilt: 0, page: 'standby', uv: U.console }));
+    for (const sx of [-1, 1]) stat.add(K.display({ centre: [sx * 0.13, 0.805, -5.888], width: 0.24, height: 0.24, bezel: 0.008, tilt: 0, buttons: false, page: sx < 0 ? 'mfdTsd' : 'mfdHsd', uv: U.console }));
+    stat.add(K.display({ centre: [0, 0.625, -5.888], width: 0.075, bezel: 0.01, tilt: 0, page: 'standby', uv: U.console }));
     stat.add(K.box(0.86, 0.66, 0.1, U.console).translate(0, 0.66, -5.96));                       // instrument panel body
     stat.add(K.box(0.05, 0.3, 0.12, U.console).translate(0, 0.42, -5.86));                       // centre pedestal
     for (const sx of [-1, 1]) stat.add(K.box(0.14, 0.12, 1.3, U.console).translate(sx * 0.33, 0.63, -4.95));
