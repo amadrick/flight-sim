@@ -382,7 +382,7 @@ export function createVisual(ctx, opts = {}) {
     name: 'nose', index: 0, contact: gp[0].pos, wheelRadius: gp[0].wheelRadius, wheelWidth: 0.2, pivot: [0.3, -0.5, -4.45], stroke: 0.3, staticFrac: 0.35,
     strutR: 0.06, fork: 'fork', steer: true, links: 'front', retract: { to: [0.3, -0.28, -5.33] }, window: [0.2, 0.9], brace: [0.3, -0.55, -3.95],
     doors: [{ name: 'noseDoor', mesh: K.thicken(P.ng, 0.02, U.well), hinge: { a: ngEdge.tHi[0], b: ngEdge.tHi[1] }, ref: K.centroid(P.ng), open: 95, toward: [0, -1, 0] }],
-    lamps: [{ kind: 'landing', pos: G.lights.landing, size: 0.055, color: [1, 0.96, 0.88] }, { kind: 'taxi', pos: [0.3, -0.98, -4.6], size: 0.045, color: [1, 0.96, 0.88] }],
+    lamps: [{ kind: 'landing', pos: G.lights.landing, size: 0.055, color: [1, 0.96, 0.88] }, { kind: 'taxi', pos: [0.3, -1.0, -4.76], size: 0.045, color: [1, 0.96, 0.88] }],
   });
   const MG = { stow: [-0.85, -0.98], pivot: [-0.14, -0.62] };
   const mains = [];
