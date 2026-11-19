@@ -219,7 +219,7 @@ const float TERR_ANISO = 1.5;
 #endif
 uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
 
-struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; };
+struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
 
 const float M_GRASS = 0.0, M_SOIL = 1.0, M_GRAVEL = 2.0, M_ROCK = 3.0, M_SAND = 4.0, M_MUD = 5.0, M_CANOPY = 6.0, M_STRATA = 7.0;
 // per material: x = tint amplitude, y = cavity (height) darkening, z = detail normal strength, w = roughness
@@ -483,6 +483,13 @@ TerrSurf terrSurface(vec3 rp) {
   fcol = mix(fcol, fcol * vec3(1.30, 1.18, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.4);
   fcol = mix(fcol, fcol * vec3(1.22, 1.10, 0.80), (1.0 - lush) * 0.35);         // drier stands are paler, yellower
   fcol = mix(fcol, vec3(0.030, 0.052, 0.016), tropic * 0.5);
+#ifdef VEG_CANOPY
+  // the stand reflectance the vegetation path tracer measured (src/terrain/veg/canopy.js): the painted forest takes the
+  // stand's diffuse albedo (keeping its relative variation) and its view / sun dependence for direct light, so it
+  // matches the 3-D trees it replaces at a distance
+  VegCanopy vegK = vegCanopy(rp, clamp(forest * 1.1 - 0.05, 0.0, 1.0), conifer);
+  fcol *= vegK.albedo / mix(vec3(0.036, 0.066, 0.022), vec3(0.024, 0.045, 0.021), conifer);
+#endif
   // where 3D trees stand (trees.js) the ground shows as shaded forest floor instead of painted crowns
   float t3d = uTerrTree.x * (1.0 - ss(uTerrTree.y, uTerrTree.z, distance(rp.xz, uTerrCam.xz)));
   // painted canopy: crowns from the canopy detail layer at two scales; thin stands break up into single crowns
@@ -504,6 +511,9 @@ TerrSurf terrSurface(vec3 rp) {
     fcol *= (0.84 + 0.32 * n2.g) * (0.80 + 0.40 * C.mac.y);   // stand-to-stand variety
   }
   float floorAmt = canopy * t3d;                       // forest floor under real trees
+#ifdef VEG_CANOPY
+  floorAmt = t3d * clamp(forest * 1.1 - 0.05, 0.0, 1.0);   // as much floor as there are 3-D trees (their cell occupancy)
+#endif
   vec3 floorCol = mix(vec3(0.060, 0.050, 0.032), vec3(0.050, 0.072, 0.030), ss(0.4, 0.7, bk)) * (0.8 + 0.4 * n4.r);
   float paint = canopy * (1.0 - t3d);
 
@@ -745,6 +755,11 @@ TerrSurf terrSurface(vec3 rp) {
   ao *= 1.0 - 0.3 * shrubAmt;
   ao *= clamp(1.0 + 0.5 * hgt * soft, 0.6, 1.15);              // cavities of the micro relief
   S.albedo = col; S.rough = rough; S.n = n; S.ao = ao;
+#ifdef VEG_CANOPY
+  S.canopyK = mix(vec3(1.0), vegK.directK, paint * (1.0 - snow));
+#else
+  S.canopyK = vec3(1.0);
+#endif
   float nl = dot(ng, uSunDir);
   S.shadow = nl > 0.0 ? mix(1.0, terrShadow(rp, ng, lf, TERR_SHADOW_STEPS), ss(0.0, 0.10, nl)) : 1.0;
   return S;

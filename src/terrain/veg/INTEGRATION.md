@@ -44,36 +44,23 @@ Boot: foliage atlas 50-140 ms (JS rasteriser), meshes 30 ms, impostor bake 2 dra
 | `vegNear=<m>` | near mesh radius override (0 = impostors only) |
 | `terrTrees=0` | no vegetation at all |
 
-## Distant forest in the surface shader (needs the integrator)
+## Distant forest in the surface shader (wired in)
 
-The painted forest beyond the 3-D trees should use the learned canopy reflectance so the hand-over from impostors
-to paint keeps the forest's angular behaviour (hotspot down-sun, dark toward the sun, cover / species dependence).
-Everything it needs is exported and its uniforms are ALREADY merged into the terrain's shared `uniforms` object by
-`createTrees()` (`tVegCanopyLUT`, `uVegCanopyAlb`, `tVegCrownLUT`, `uVegNeural`) and re-baked as the sun moves.
+The painted forest beyond the 3-D trees uses the learned canopy reflectance, so the hand-over from impostors to paint
+keeps the forest's brightness and angular behaviour (hotspot down-sun, dark toward the sun, cover / species).
+The LUT uniforms (`tVegCanopyLUT`, `uVegCanopyAlb`, `tVegCrownLUT`, `uVegNeural`) are merged into the terrain's shared
+`uniforms` by `createTrees()` and re-baked as the sun moves. The hooks (neural ground only; `ground=classic` and
+`terrTrees=0` keep the Lambertian forest):
 
-1. `material.js` — include the chunks before `SURFACE_GLSL` in the fragment shader:
-   ```js
-   import { VEG_NEURAL_GLSL } from '../neural/veg.js';
-   import { VEG_CANOPY_GLSL } from './veg/canopy.js';
-   ...
-   ${COVER_GLSL}
-   ${VEG_NEURAL_GLSL}
-   ${VEG_CANOPY_GLSL}
-   ${SURFACE_GLSL}
-   ```
-2. `surface.glsl.js` — add `vec3 canopyK;` to `struct TerrSurf`; after the forest colour `fcol` is built (after the
-   crown modulation line, before the `t3d` floor mix):
-   ```glsl
-   VegCanopy vegK = vegCanopy(rp, clamp(forest * 1.1 - 0.05, 0.0, 1.0), conifer);
-   fcol *= vegK.albedo / mix(vec3(0.044, 0.078, 0.027), vec3(0.027, 0.049, 0.023), conifer);   // keep the painted variation, take the stand's albedo
-   ```
-   and when filling the struct: `S.canopyK = mix(vec3(1.0), vegK.directK, forest * (1.0 - t3d));`
-   (`clamp(forest * 1.1 - 0.05)` is exactly the tree-cell occupancy the placement uses, i.e. the network's `cover`.)
-3. `material.js` `aomap_fragment`: `reflectedLight.directDiffuse *= tSurf.shadow * tSurf.canopyK;`
+1. `material.js`: when `uniforms.tVegCanopyLUT` exists, the fragment shader gets `#define VEG_CANOPY` +
+   `VEG_NEURAL_GLSL` + `VEG_CANOPY_GLSL` between the cover and surface chunks (program cache key includes the flag),
+   and `aomap_fragment` multiplies `directDiffuse` by `tSurf.canopyK`.
+2. `surface.glsl.js`: `TerrSurf.canopyK`; after the forest colour base:
+   `fcol *= vegK.albedo / mix(vec3(0.036, 0.066, 0.022), vec3(0.024, 0.045, 0.021), conifer)` (the painted base
+   colours; change the divisor if they change), `S.canopyK = mix(1, vegK.directK, paint * (1 - snow))`, and the forest
+   floor under 3-D trees is `t3d x tree-cell occupancy` (so sparse stand edges show their meadow, not bare floor).
 
-Cost: 2 trilinear fetches of a 16 x 16 x 24 RGBA16F 3-D texture + a few ALU per forest pixel. I verified the patch in a
-scratch copy (screenshot `shots/v5_khvn_500_canopy.png` vs `shots/v3_khvn_500.png`). If the ground agent changes
-the forest colour constants, change the divisor in step 2 to the new base colour.
+Cost: 2 trilinear fetches of a 16 x 16 x 24 RGBA16F 3-D texture + a few ALU per forest pixel.
 
 ## Contract with the ground agent
 

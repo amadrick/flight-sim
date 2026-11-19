@@ -70,7 +70,7 @@ export const VEG_LIGHT_GLSL = /* glsl */`
       vTr.x = mix(vTr.x, 1.0, vegShadowMapCover(vVegWorld));
     #endif
     // + light diffused through the foliage (leaf single-scattering albedo ~0.3: a floor of a tenth of the open value)
-    vTr += (1.0 - vTr) * vec2(0.10, 0.25);
+    vTr += (1.0 - vTr) * vec2(0.08, 0.20);
     float sunV = mix(1.0, vTr.x, vVegMisc.w * 0.9 + 0.1) * vVegMisc.x;
     float skyV = mix(1.0, vTr.y, vVegMisc.w * 0.85 + 0.15);
     vegDbgOut = vec4(sunV, skyV, dot(inverseTransformDirection(normal, viewMatrix), uSunDir), 0.0);

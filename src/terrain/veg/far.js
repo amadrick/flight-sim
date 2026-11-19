@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL, vegDebug, VEG_DBG_GLSL } from './common.js';
 import { OCT_GLSL, IMP_COLS } from './impostor.js';
-import { NSPECIES } from './species.js';
+import { NSPECIES, SPECIES } from './species.js';
 
 export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) {
   const geo = new THREE.InstancedBufferGeometry();
@@ -17,6 +17,8 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
   const IU = {
     tVegImpA: { value: imp.atlasA }, tVegImpB: { value: imp.atlasB },
     uVegImp: { value: new THREE.Vector4(imp.N, imp.F, imp.W, imp.H) },
+    uVegBaseH: { value: SPECIES.map((s) => s.base) },
+    uVegProj: { value: ctx.camera.projectionMatrix }, uDepthReversed: ctx.uniforms.frame.uDepthReversed,
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0 });
   mat.defines = { VEG_IMP_BLEND: blend ? 1 : 0, VEG_SPEC_DIRECT: '0.3', VEG_SPEC_SKY: '0.1' };
@@ -28,7 +30,7 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         ${vegVertexCommon(L)}
         uniform vec3 uSunDir;
         varying vec3 vVegHD; varying vec4 vVegMisc; varying vec3 vVegTrans; varying vec3 vVegWorld;
-        varying vec3 vVegAlb; varying vec3 vVegP; varying vec2 vVegRot; varying vec2 vVegFade; flat varying int vVegS;
+        varying vec3 vVegAlb; varying vec3 vVegP; varying vec2 vVegRot; varying vec2 vVegFade; varying float vVegSize; flat varying int vVegS;
         ${transGLSL()}`)
       .replace('#include <beginnormal_vertex>', /* glsl */`
         vec2 vt = vec2(float(gl_InstanceID % int(uVegWin.z)), float(gl_InstanceID / int(uVegWin.z)));
@@ -80,6 +82,7 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         vVegMisc = vec4(mix(0.25, 1.0, vM.b), vCover, vConif, 1.0);
         vVegHD = vec3(0.0);
         vVegFade = vec2(vDist, vh2.x);
+        vVegSize = max(vSize, 1e-3);
         vec3 objectNormal = vf;
         vegPos.y -= uTerrCurv * curvatureDrop(vDist);`)
       .replace('#include <begin_vertex>', 'vec3 transformed = vegPos;');
@@ -91,12 +94,13 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         ${OCT_GLSL}
         uniform sampler2D tVegImpA; uniform sampler2D tVegImpB; uniform vec4 uVegImp; uniform vec4 uVegRange;
         uniform vec4 uVegSp[${NSPECIES}];
-        varying vec3 vVegAlb; varying vec3 vVegP; varying vec2 vVegRot; varying vec2 vVegFade; flat varying int vVegS;
+        uniform float uVegBaseH[${NSPECIES}]; uniform mat4 uVegProj; uniform float uDepthReversed;
+        varying vec3 vVegAlb; varying vec3 vVegP; varying vec2 vVegRot; varying vec2 vVegFade; varying float vVegSize; flat varying int vVegS;
         // sample one baked view (fx, fy) for the tree-local ray (P, v): returns albedo.rgb + coverage, and B channels
         void vegView(vec2 f, vec3 P, vec3 v, vec3 cc, float R, int s, float lod, out vec4 a, out vec4 b) {
           vec3 d = vegOctDec(f / (uVegImp.x - 1.0) * 2.0 - 1.0);
           vec3 r, u; vegFrameBasis(d, r, u);
-          float t = dot(cc - P, d) / dot(v, d);
+          float t = dot(cc + d * (0.45 * R) - P, d) / dot(v, d);    // plane through the typical visible crown surface (not the centre): less misregistration between views
           vec3 q = P + v * t - cc;
           vec2 l = vec2(dot(q, r), dot(q, u)) / R;
           if (max(abs(l.x), abs(l.y)) > 0.995) { a = vec4(0.0); b = vec4(0.5); return; }
@@ -157,7 +161,20 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         vec2 sunH = normalize(uSunDir.xz + 1e-4);
         float xl = length(Xw);
         vec3 vegHD = vec3(vegH, vegD, xl > 1e-3 ? dot(Xw / xl, sunH) : 0.0);
-        vec3 vegTransCol = diffuseColor.rgb * vVegTrans;`)
+        vec3 vegTransCol = diffuseColor.rgb * vVegTrans;
+        // per-pixel depth of the visible crown surface (its height from h_rel, found along the view ray), so where
+        // crowns overlap the higher foliage wins as it does on the meshes (quad depth alone would let a neighbour's
+        // low crown edge cover a crown top)
+        {
+          float bh = uVegBaseH[vS];
+          float yS = bh + vegH * (1.0 - bh);
+          float sH = clamp((P.y - yS) / max(v.y, 0.05), 0.0, 2.0 * R);
+          float sAl = mix(0.35 * R, sH, smoothstep(0.25, 0.6, v.y));
+          vec3 pv = -vViewPosition;
+          vec4 cl = uVegProj * vec4(pv * (1.0 + sAl * vVegSize / max(length(pv), 1e-3)), 1.0);
+          float zn = cl.z / cl.w;
+          gl_FragDepth = uDepthReversed > 0.5 ? zn : zn * 0.5 + 0.5;
+        }`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(mat3(viewMatrix) * nWo);')
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.6, 0.8, vVegMisc.z);')
       .replace('#include <aomap_fragment>', VEG_LIGHT_GLSL.replace(/vVegHD/g, 'vegHD').replace(/vVegTrans/g, 'vegTransCol'));

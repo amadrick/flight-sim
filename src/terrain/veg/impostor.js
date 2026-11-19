@@ -101,7 +101,7 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
         int bx = s % ${IMP_COLS}, by = s / ${IMP_COLS};
         vec2 px = (vec2(float(bx * N + fx), float(by * N + fy)) + 0.5 + 0.5 * l * (1.0 - 1.0 / uAtlas.y)) * uAtlas.y;
         vec2 ndc = px / uAtlas.zw * 2.0 - 1.0;
-        gl_Position = vec4(ndc, uDepthReversed > 0.5 ? 0.5 + 0.5 * z * 0.98 : -z * 0.98, 1.0);
+        gl_Position = vec4(ndc, uDepthReversed > 0.5 ? 0.5 + 0.2 * z : -0.4 * z, 1.0);   // |z| up to 2.5: leaves past the bounding radius are not clipped
         if (all(equal(t0, vec4(0.0)))) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // unused vertex
         vUv = vec2(t0.w, t1.w); vN = t1.xyz; vHD = t2.xy; vKind = t2.w; vS = s;
       }`,
