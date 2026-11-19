@@ -37,7 +37,7 @@ const SCHEMES = {
   },
   ghost: {
     name: 'F-15C "Compass Ghost" (FS 36375 / 36320), late 1980s, invented 77th TFW', variant: 'C', camo: 'ghost',
-    light: '#a6acb0', dark: '#878e93', radome: '#979c9f', mark: '#71777c', code: 'ZR', serial: ['AF 80', '013'],
+    light: '#969da1', dark: '#787f84', radome: '#979c9f', mark: '#71777c', code: 'ZR', serial: ['AF 80', '013'],
     band: '#a4262c', band2: '#e8e8e2', bandText: null, pilot: 'CAPT S. "FANG" MILLER', chief: 'SGT P. KOWALSKI',
     weather: 0.75, stores: { centre: true, wingTanks: true },
   },
@@ -72,7 +72,7 @@ export function createVisual(ctx, opts = {}) {
   const seg = Math.max(32, Math.round(72 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
-  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.light) });
+  const atlas = K.createAtlas({ size: atlasSize, base: paintF(SC.light), skin: { weathering: 0.45 + 0.35 * SC.weather, framePitch: 0.36 } });
   const cFus = atlas.chart('fus', { type: 'unwrap', z: [-11.95, 6.6], girth: 6.6, vScale: 0.85, strips: 2, density: 1.2 });
   const cNac = {
     R: atlas.chart('nacR', { type: 'unwrap', z: [-5.9, 2 * NSPLIT + 5.9], girth: 4.7, vScale: 0.8, strips: 2, density: 1.05 }),
@@ -201,10 +201,12 @@ export function createVisual(ctx, opts = {}) {
     const l = K.loft({ ...nopt, zRange: [ZCAP, NSPLIT], capStart: 'flat', capUV: U.black, uvFn: uvF(0),
       cutouts: [{ name: 'mlg', z: [-1.0, 0.65], t: [0, 0.1], mirror: true }] });
     const l2 = K.loft({ ...nopt, zRange: [NSPLIT, 6.4], uvFn: uvF(1) });
+    l.mesh.occlude((x, y, z) => (z < 0 && Math.abs(x - sx * IC) < IW - 0.01 && Math.abs(y - IY) < IH - 0.01 ? Math.min(0.75, Math.max(0, (z + 5.4) * 0.35)) : 0));
     stat.add(l.mesh).add(l2.mesh);
     // first ramp: hangs from the capsule roof, slopes down toward the throat; second ramp + throat in the fixed duct
     const xa = sx * IC - (IW - 0.075), xb = sx * IC + (IW - 0.075);
     const ramp1 = K.prism([[ZLIP + 0.1, IY + IH - 0.035], [ZCAP + 0.2, IY + IH - 0.035], [ZCAP + 0.2, IY + 0.5], [ZLIP + 0.16, IY + IH - 0.055]], Math.min(xa, xb), Math.max(xa, xb), U.ductMid);
+    cap.mesh.occlude((x, y, z) => (Math.abs(x - sx * IC) < IW - 0.01 && Math.abs(y - IY) < IH - 0.01 ? Math.min(0.3, Math.max(0, (z + 5.5) * 0.35)) : 0));
     capsules[key] = { mesh: rake(K.merge(cap.mesh, ramp1)), sx };
     const xa2 = sx * IC - 0.36, xb2 = sx * IC + 0.36;
     stat.add(K.prism([[ZCAP + 0.15, IY + 0.5], [-3.6, IY - 0.05], [-3.22, IY - 0.03], [-3.22, IY + 0.55], [ZCAP + 0.15, IY + 0.6]], Math.min(xa2, xb2), Math.max(xa2, xb2), U.ductDeep));
@@ -270,7 +272,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- cockpit ------------------------------------------------------------------------------------------------------------
   const eye = G.pilotEye, eye2 = [0, 1.2, -6.15];
   const tubX = 0.5, tubZ1 = isE ? -4.62 : -6.25;
-  stat.add(K.tub({ x: tubX, y0: -0.05, y1: 0.74, z0: -8.25, z1: tubZ1, uv: U.interior, taper: 0.85 }));
+  stat.add(K.tub({ x: tubX, y0: -0.05, y1: 0.74, z0: -8.25, z1: tubZ1, uv: U.interior, taper: 0.85 }).occlude((x, y) => Math.max(0, 0.55 - y * 0.6)));
   {  // sill ledge closing the gap between the skin cut-out and the tub
     const zs = []; for (let z = Z_CK[0]; z <= Z_CK[1] - 0.001; z += 0.2) zs.push(z); zs.push(Z_CK[1]);
     for (const sx of [1, -1]) {
@@ -290,11 +292,9 @@ export function createVisual(ctx, opts = {}) {
     stat.add(K.box(0.9, 0.62, 0.05, U.interior).translate(0, 0.52, -6.24));
     for (const [x, z, w, h, d] of [[-0.22, -5.9, 0.3, 0.1, 0.42], [0.2, -5.75, 0.34, 0.08, 0.5], [0, -5.0, 0.6, 0.07, 0.4]]) stat.add(K.box(w, h, d, U.dark).translate(x, 0.87 + h / 2, z));
   }
-  const glare = (z0, z1, y0, y1, hw) => { const gs = K.prism([[z0, y0], [z0, y1], [z1 - 0.05, y1 + 0.035], [z1, y1 + 0.01], [z1, y0]], -hw, hw, U.console); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * Math.min(1, (gs.p[i + 2] - z0) / (z1 - z0)); return gs; };
   // glareshield coaming: a shallow curved hood over the instrument panel
   stat.add(K.loft({ stations: [{ z: -8.22, y: 0.74, w: 0.36, top: 0.04, bot: 0.01, kTop: 0.7 }, { z: -7.95, y: 0.75, w: 0.43, top: 0.075, bot: 0.01, kTop: 0.7 }, { z: -7.73, y: 0.75, w: 0.44, top: 0.07, bot: 0.01, kTop: 0.7 }],
     segments: 24, step: 0.1, tRange: [0.25, 0.75], uv: U.console, capEnd: 'flat', capUV: U.console }).mesh);
-  void glare;
   const panelQuad = (z, y0, y1, hw, b0, b1) => { const i0 = stat.vertexCount; for (const [x, y, b] of [[-hw, y0, b1], [hw, y0, b1], [hw, y1, b0], [-hw, y1, b0]]) { const uv = cPanel.uv(x + 0.45, b); stat.vert(x, y, z, 0, 0.25, 1, uv[0], uv[1]); } stat.quad(i0, i0 + 1, i0 + 2, i0 + 3); };
   panelQuad(-7.76, 0.36, 0.8, 0.43, 0.0, 0.44);
   stat.add(K.box(0.22, 0.32, 0.45, U.console).translate(0, 0.16, -7.5));                   // centre pedestal
@@ -400,7 +400,7 @@ export function createVisual(ctx, opts = {}) {
       const a = (k + 0.2) / 5 * Math.PI * 2, cs = Math.cos(a), sn = Math.sin(a);
       stat.add(K.tube([c[0] + cs * 0.62, c[1] + sn * 0.62, 5.85], [c[0] + cs * 0.64, c[1] + sn * 0.64, 6.3], 0.03, 0.026, { segments: 6, uv: U.steel }));
     }
-    stat.add(K.lathe([[0.58, 6.3], [0.53, 5.7], [0.52, 5.1], [0, 5.1]], { segments: 24, uv: U.exhaust }).translate(c[0], c[1], 0));             // jet pipe + turbine face
+    stat.add(K.lathe([[0.58, 6.3], [0.53, 5.7], [0.52, 5.1], [0, 5.1]], { segments: 24, uv: U.exhaust }).translate(c[0], c[1], 0).occlude((x, y, z) => Math.min(0.8, (6.4 - z) * 0.6)));             // jet pipe + turbine face
     for (let k = 0; k < 10; k++) stat.add(K.box(0.025, 0.46, 0.05, U.soot).translate(0, 0.23, 0).rotateZ(k * Math.PI / 5).translate(c[0], c[1], 5.3));
     stat.add(K.lathe([[0.22, 5.24], [0.22, 5.34], [0.18, 5.34], [0.18, 5.24]], { segments: 20, uv: U.soot }).translate(c[0], c[1], 0));
     glows.push(K.afterburnerGlow({ zDeep: 5.32, zExit: 7.0, rDeep: 0.5, rExit: 0.42, centre: c }));
@@ -412,10 +412,9 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.well(P.sb, 0.16, U.wellDark, [0, -1, 0]));
   const sbEdge = fus.edges.sb.zLo;
   {  // well structure: ribs and the actuator
-    const sbC = K.centroid(P.sb), y0 = fus.topAt(-3.1) - 0.15;
+    const y0 = fus.topAt(-3.1) - 0.15;
     for (const z of [-3.9, -3.3, -2.7]) stat.add(K.box(1.05, 0.05, 0.03, U.well).translate(0, y0 + 0.03, z));
     stat.add(K.tube([0, y0 + 0.02, -2.25], [0, y0 + 0.09, -3.4], 0.04, 0.03, { segments: 8, uv: U.steel }));
-    void sbC;
   }
 
   // ---- nose gear well -------------------------------------------------------------------------------------------------------
