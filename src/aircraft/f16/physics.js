@@ -49,6 +49,7 @@ export default {
     type: 'turbofan-ab', inlet: 'pitot', throttleRatio: 0.95, milLapse: 2.3, abLapse: 1.69, pressureLimit: 1.9,   // installed thrust lapse (see SCHEMA.md)
     n1Idle: 0.32, n2Idle: 0.68, spoolUp: 3.2, spoolDown: 2.4, idleThrust: 0.022, idleFuelFlow: 0.13,
     tsfc: [0.70, 0.25], tsfcAb: [1.90, 0.25], egt: [390, 880, 955], abLightTime: 1.0, startTime: 14,
+    thrustLineOffset: 0.08,   // keeps the thrust line 0.05 m above the CG as tuned (geometry.js nozzle centre sits at 0.13 m)
   },
   gear: {
     nose: { travel: 0.26 }, main: { travel: 0.30 },
