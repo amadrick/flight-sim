@@ -9,6 +9,7 @@
 // Workflow:   const atlas = createAtlas({ size, base });   atlas.chart(...) × n;   atlas.pack();
 //             build geometry (charts and swatches now give UVs);   paint with atlas.pen(chart);   atlas.material(ctx)
 import * as THREE from 'three';
+import { skinMaterial, packTargets, packOnGPU, packOnCPU } from './skin.js';
 
 // ---- finish library ------------------------------------------------------------------------------------------------------
 // A finish is { color (CSS sRGB), rough, metal }. Functions take a colour and return a finish.
@@ -50,7 +51,7 @@ function noiseTiles() {
     const kr = 1 + Math.pow(r(), 1.6) * 21, ka = r() * Math.PI * 2, kx = Math.round(kr * Math.cos(ka)), ky = Math.round(kr * Math.sin(ka)), ph = Math.floor(r() * S);
     if (!kx && !ky) continue;
     const amp = 1 / Math.pow(Math.hypot(kx, ky), 1.1);
-    for (let y = 0; y < S; y++) { const by = ((ky * y + ph) % S + S) % S; for (let x = 0; x < S; x++) val[y * S + x] += amp * cs[(((kx * x) % S + S) % S + by) % S]; }
+    for (let y = 0, o = 0; y < S; y++) { let i = ky * y + ph; for (let x = 0; x < S; x++, o++, i += kx) val[o] += amp * cs[i & 127]; }   // S is a power of two: wrap with a mask
   }
   let mean = 0, sd = 0; for (let i = 0; i < val.length; i++) mean += val[i]; mean /= val.length;
   for (let i = 0; i < val.length; i++) sd += (val[i] - mean) ** 2; sd = Math.sqrt(sd / val.length) || 1;
@@ -142,9 +143,9 @@ export function createAtlas(o = {}) {
         else { s.sy = s.rect.h / (s.b1 - s.b0); s.ty = s.rect.y - s.b0 * s.sy; }
       }
       const mkLayer = (scale, fill, read = false) => { const c = document.createElement('canvas'); c.width = c.height = size * scale; const g = c.getContext('2d', { willReadFrequently: read }); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale }; };
-      layers.color = mkLayer(1, base.color);
-      layers.height = mkLayer(o.heightScale ?? 0.5, '#808080', true);
-      layers.orm = mkLayer(0.5, ormStyle(base.rough, base.metal));
+      layers.color = mkLayer(1, base.color, true);
+      layers.height = mkLayer(o.heightScale ?? 1, '#808080', true);
+      layers.orm = mkLayer(0.5, ormStyle(base.rough, base.metal), true);
       packed = true;
       return atlas;
     },
@@ -162,71 +163,130 @@ export function createAtlas(o = {}) {
         g.fillStyle = L === layers.color ? finish.color : L === layers.orm ? ormStyle(finish.rough ?? 0.5, finish.metal ?? 0) : '#808080';
         g.fillRect(x * k, y * k, SW * k, SW * k);
       }
-      if (finish.emissive) { const L = emisLayer(), g = L.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = finish.emissive; g.fillRect(x * L.scale, y * L.scale, SW * L.scale, SW * L.scale); }
+      if (finish.emissive) { const L = lazyLayer('emis'), g = L.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = finish.emissive; g.fillRect(x * L.scale, y * L.scale, SW * L.scale, SW * L.scale); }
       uv = [(x + SW / 2) / size, 1 - (y + SW / 2) / size]; swatches.set(key, uv); return uv;
     },
+    /**
+     * A row of `cells` swatch cells painted as one small gradient texture (tyre cross-sections, wheel dishes, heat-stained
+     * pipes…): fn(g, layerName) draws in a unit square (x 0 → 1 along the strip) on 'color', 'orm' (use atlas.ormStyle) and
+     * 'height'. Returns { uv(t) } (t 0 → 1 along the strip) or null when the swatch block is full (use a flat swatch then).
+     */
+    strip(key, cells, fn) {
+      if (!packed) throw new Error('atlas: pack() before strip()');
+      if (strips.has(key)) return strips.get(key);
+      if ((swatchN % swatchCols) + cells > swatchCols) swatchN += swatchCols - (swatchN % swatchCols);
+      if (cells > swatchCols || swatchN + cells > swatchCols * swatchRows || (tex && !pending)) { strips.set(key, null); return null; }
+      const i = swatchN; swatchN += cells;
+      const x = swatchRect.x + (i % swatchCols) * SW, y = swatchRect.y + Math.floor(i / swatchCols) * SW, w = cells * SW;
+      for (const name of ['color', 'orm', 'height']) {
+        const L = layers[name], g = L.ctx, k = L.scale;
+        g.save(); g.setTransform(w * k, 0, 0, SW * k, x * k, y * k); g.beginPath(); g.rect(0, 0, 1, 1); g.clip();
+        g.fillStyle = name === 'height' ? '#808080' : name === 'orm' ? ormStyle(0.5, 0) : '#888'; g.fillRect(0, 0, 1, 1);
+        fn(g, name); g.restore();
+      }
+      if (atlas.tex) atlas.tex.map.needsUpdate = true;
+      const st = { uv: (t) => [(x + 2 + Math.min(1, Math.max(0, t)) * (w - 4)) / size, 1 - (y + SW / 2) / size] };
+      strips.set(key, st); return st;
+    },
+    ormStyle,
     /** A pen paints one chart. */
-    pen(chart) { return new Pen(atlas, typeof chart === 'string' ? byName[chart] : chart, layers, emisLayer); },
-    layers,
-    /** Build the THREE textures (colour, normal, ORM, emissive?). normalStrength scales the height → normal conversion. */
+    pen(chart) { return new Pen(atlas, typeof chart === 'string' ? byName[chart] : chart, layers, lazyLayer); },
+    layers, skin: o.skin || null,
+    /** The lazily created layers: 'emis' (emissive, half res) and 'ao' (baked ambient occlusion, quarter res, white = open). */
+    layer: (name) => lazyLayer(name),
+    /**
+     * Build the textures: colour (sRGB canvas), the packed DETAIL map (normal.xy + roughness + metalness, full res), the AUX
+     * map (occlusion + cavity, quarter res) and the optional emissive map. With a renderer the packing is one GPU draw that
+     * runs in rig.build() (or right after createVisual returns); opts.normalStrength scales the height → normal conversion.
+     */
     textures(ctx, opts = {}) {
-      const aniso = Math.min(ctx?.quality?.anisotropy ?? 4, ctx?.renderer?.capabilities?.getMaxAnisotropy?.() ?? 4);
+      if (atlas.tex) return atlas.tex;
+      atlas.flush();
+      const renderer = ctx?.renderer;
+      const aniso = Math.min(ctx?.quality?.anisotropy ?? 4, renderer?.capabilities?.getMaxAnisotropy?.() ?? 4);
       const setup = (t, srgb) => { t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = aniso; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true; return t; };
       const map = setup(new THREE.CanvasTexture(layers.color.canvas), true);
-      const ormMap = setup(new THREE.CanvasTexture(layers.orm.canvas), false);
-      const normalMap = setup(heightToNormal(layers.height, (opts.normalStrength ?? 2.2) * layers.height.scale), false);
       const emissiveMap = layers.emis ? setup(new THREE.CanvasTexture(layers.emis.canvas), true) : null;
-      atlas.tex = { map, ormMap, normalMap, emissiveMap };
+      const sk = { ...(o.skin || {}), ...(opts.skin || {}) };
+      const pack = { strength: (opts.normalStrength ?? 2.2) * layers.height.scale, cavity: sk.cavity ?? 1 };
+      let normalMap, auxMap;
+      if (renderer?.isWebGLRenderer && renderer.capabilities?.isWebGL2 !== false && !o.cpuPack) {
+        targets = packTargets(size, aniso); normalMap = targets.detail.texture; auxMap = targets.aux.texture;
+        pending = { renderer, pack, keep: ctx?.params?.raw?.atlas !== undefined || !!o.keepLayers };
+        Promise.resolve().then(() => atlas.bake());                   // safety net when no rig calls bake()
+      } else {
+        const t = packOnCPU(layers, pack); normalMap = setup(t.detail, false); auxMap = t.aux;
+      }
+      atlas.tex = { map, normalMap, ormMap: normalMap, auxMap, emissiveMap };
       return atlas.tex;
     },
-    /** MeshStandardMaterial driven entirely by the atlas. opts: { envMapIntensity, normalStrength, normalScale, emissiveIntensity } */
+    /** Composite the deferred noise buffers onto the colour and roughness layers (idempotent). */
+    flush() {
+      if (!tone) return atlas;
+      const put = (L, src, comp) => { const g = L.ctx; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = comp; g.imageSmoothingEnabled = true; g.drawImage(src.canvas, 0, 0, L.canvas.width, L.canvas.height); g.restore(); src.canvas.width = src.canvas.height = 1; };
+      put(layers.color, tone.color, 'source-over'); put(layers.orm, tone.rough, 'lighter'); tone = null;
+      if (atlas.tex) atlas.tex.map.needsUpdate = true;
+      return atlas;
+    },
+    /** Pack the painted layers into the DETAIL / AUX textures now (idempotent; rig.build() calls it after baking occlusion). */
+    bake() {
+      if (!pending) return atlas;
+      atlas.flush();
+      const { renderer, pack, keep } = pending; pending = null;
+      try { packOnGPU(renderer, layers, targets, pack); }
+      catch (e) { console.warn('[kit] GPU atlas packing failed, using the CPU path', e); const t = packOnCPU(layers, pack); t.detail.needsUpdate = true; atlas.tex.normalMap = atlas.tex.ormMap = t.detail; atlas.tex.auxMap = t.aux; if (atlas.mat) { atlas.mat.normalMap = t.detail; atlas.mat.userData.kitSkin.tKitAux.value = t.aux; atlas.mat.needsUpdate = true; } }
+      if (!keep) for (const k of ['height', 'orm', 'ao']) if (layers[k]) layers[k].canvas.width = layers[k].canvas.height = 1;     // free ~20 MB
+      return atlas;
+    },
+    /** True until bake() has run: the height / roughness / occlusion layers can still be painted. */
+    get paintable() { return !atlas.tex || !!pending; },
+    /**
+     * The skin material driven entirely by the atlas (see skin.js). opts: { envMapIntensity, normalStrength, normalScale,
+     * emissiveIntensity, skin: { weathering, waviness, framePitch, orangePeel, clearcoat, heatTint, cavity, mipBias, detail } }
+     */
     material(ctx, opts = {}) {
       const t = atlas.tex || atlas.textures(ctx, opts);
-      const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.ormMap, metalnessMap: t.ormMap, roughness: 1, metalness: 1 });
-      m.normalScale.setScalar(opts.normalScale ?? 1);
-      if (opts.envMapIntensity !== undefined) m.envMapIntensity = opts.envMapIntensity;
-      if (t.emissiveMap) { m.emissiveMap = t.emissiveMap; m.emissive.setRGB(1, 1, 1); m.emissiveIntensity = opts.emissiveIntensity ?? 0; }
+      const m = skinMaterial(ctx, t, { ...opts, skin: { ...(o.skin || {}), ...(opts.skin || {}) } });
       atlas.mat = m;
       return m;
     },
     dispose() {
+      pending = null;
       if (atlas.tex) for (const k in atlas.tex) atlas.tex[k]?.dispose();
+      if (targets) { targets.detail.dispose(); targets.aux.dispose(); }
       atlas.mat?.dispose();
       for (const k in layers) { layers[k].canvas.width = layers[k].canvas.height = 1; }
     },
   };
-  function emisLayer() {
-    if (!layers.emis) { const c = document.createElement('canvas'); c.width = c.height = size * 0.5; const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); layers.emis = { canvas: c, ctx: g, scale: 0.5 }; }
-    return layers.emis;
+  let targets = null, pending = null, tex = null; const strips = new Map();
+  Object.defineProperty(atlas, 'tex', { get: () => tex, set: (v) => { tex = v; }, enumerable: true });
+  let tone = null;
+  function lazyLayer(name = 'emis') {
+    if (name === 'tone') {
+      if (!tone) {
+        const mk = (fill) => { const c = document.createElement('canvas'); c.width = c.height = size * 0.25; const g = c.getContext('2d', { willReadFrequently: true }); if (fill) { g.fillStyle = fill; g.fillRect(0, 0, c.width, c.height); } return { canvas: c, ctx: g, scale: 0.25 }; };
+        tone = { color: mk(null), rough: mk('#000') };
+      }
+      return tone;
+    }
+    if (layers[name]) return layers[name];
+    if (name !== 'emis' && name !== 'ao') return undefined;
+    const k = name === 'ao' ? 0.25 : 0.5, c = document.createElement('canvas'); c.width = c.height = size * k;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = name === 'ao' ? '#fff' : '#000'; g.fillRect(0, 0, c.width, c.height);
+    return (layers[name] = { canvas: c, ctx: g, scale: k });
   }
   return atlas;
 }
 
 function ormStyle(rough, metal) { return `rgb(255,${Math.round(Math.min(1, Math.max(0, rough)) * 255)},${Math.round(Math.min(1, Math.max(0, metal)) * 255)})`; }
 
-function heightToNormal(layer, strength) {
-  const S = layer.canvas.width, src = layer.ctx.getImageData(0, 0, S, S).data, out = new Uint8Array(S * S * 4), k = strength / 255;
-  for (let y = 0; y < S; y++) {
-    const yu = y > 0 ? y - 1 : y, yd = y < S - 1 ? y + 1 : y, row = (S - 1 - y) * S * 4;
-    for (let x = 0; x < S; x++) {
-      const xl = x > 0 ? x - 1 : x, xr = x < S - 1 ? x + 1 : x;
-      const dx = (src[(y * S + xr) * 4] - src[(y * S + xl) * 4]) * k, dy = (src[(yd * S + x) * 4] - src[(yu * S + x) * 4]) * k;
-      const inv = 1 / Math.sqrt(dx * dx + dy * dy + 1), o = row + x * 4;
-      out[o] = (-dx * inv * 0.5 + 0.5) * 255; out[o + 1] = (dy * inv * 0.5 + 0.5) * 255; out[o + 2] = (inv * 0.5 + 0.5) * 255; out[o + 3] = 255;
-    }
-  }
-  const t = new THREE.DataTexture(out, S, S, THREE.RGBAFormat, THREE.UnsignedByteType);
-  t.flipY = false;
-  return t;
-}
-
 // ---- pen -------------------------------------------------------------------------------------------------------------------
 const ID = [1, 0, 0, 1, 0, 0];
-class Pen {
-  constructor(atlas, chart, layers, emisLayer) { this.atlas = atlas; this.chart = chart; this.layers = layers; this._emis = emisLayer; this.rand = rng(1234 + chart.name.length * 77); }
+export class Pen {
+  constructor(atlas, chart, layers, lazyLayer) { this.atlas = atlas; this.chart = chart; this.layers = layers; this._lazy = lazyLayer; this.rand = rng(1234 + chart.name.length * 77); }
   /** Low-level: run fn(g, setPaintTransform, strip, layer) for a layer with clipping to each strip of the chart. */
   each(layerName, fn) {
-    const L = layerName === 'emis' ? this._emis() : this.layers[layerName], g = L.ctx, k = L.scale, bleed = 3;
+    const L = typeof layerName === 'object' ? layerName : this.layers[layerName] || this._lazy(layerName), g = L.ctx, k = L.scale, bleed = 3;
     this.chart.strips.forEach((s, si) => {
       g.save(); g.setTransform(...ID); g.beginPath();
       g.rect((s.rect.x - bleed) * k, (s.rect.y - bleed) * k, (s.rect.w + 2 * bleed) * k, (s.rect.h + 2 * bleed) * k); g.clip();
@@ -394,7 +454,10 @@ class Pen {
   /** Tonal noise over the chart: o { alpha = .12, scale = 1.5 (metres per noise tile), stretch = [1, 1], mode: 'dark' | 'light', rough = 0 } */
   noise(o = {}) {
     const tiles = noiseTiles(), mode = o.mode || 'dark', sc = o.scale ?? 1.5, st = o.stretch || [1, 1];
-    const paint = (layerName, tile, comp, alpha) => this.each(layerName, (g, setT, s, L) => {
+    // Tone and roughness noise is low-frequency: it accumulates in quarter-resolution buffers that are composited onto the
+    // layers once (atlas.flush(), called by textures()) — 16 times fewer pixels per call than painting it at full size.
+    const acc = this.atlas.paintable !== false ? this._lazy('tone') : null;
+    const paint = (layerName, tile, comp, alpha) => this.each(acc && layerName !== 'height' ? (layerName === 'color' ? acc.color : acc.rough) : layerName, (g, setT, s, L) => {
       const pat = g.createPattern(tile, 'repeat'); g.setTransform(...ID);
       const m = new DOMMatrix().translateSelf(s.rect.x * L.scale, s.rect.y * L.scale).scaleSelf(Math.abs(s.sx) * sc * st[0] / 128 * L.scale, Math.abs(s.sy) * (this.chart.type === 'unwrap' ? sc / (this.chart.spec.girth ?? 3) : sc) * st[1] / 128 * L.scale);
       pat.setTransform(m); g.globalAlpha = alpha; g.globalCompositeOperation = comp; g.fillStyle = pat;
@@ -414,6 +477,12 @@ class Pen {
       g.fillStyle = gr; g.beginPath(); g.moveTo(a0 + nx * 0.4, b0 + ny * 0.4); g.lineTo(a1 + nx, b1 + ny); g.lineTo(a1 - nx, b1 - ny); g.lineTo(a0 - nx * 0.4, b0 - ny * 0.4); g.closePath(); g.fill();
     });
     if (o.rough) this.each('orm', (g) => { g.globalCompositeOperation = 'lighter'; g.fillStyle = `rgba(0,255,0,${o.rough})`; g.beginPath(); g.moveTo(a0, b0 - width / 2); g.lineTo(a1, b1 - width / 2); g.lineTo(a1, b1 + width / 2); g.lineTo(a0, b0 + width / 2); g.fill(); });
+    return this;
+  }
+  /** Paint baked ambient occlusion on the chart (amount 0 … 1 = black; o.feather = soft edge in atlas pixels). The skin material darkens ambient light by it. */
+  shade(path, amount = 0.5, o = {}) {
+    const pf = this._path(path);
+    this.each('ao', (g, setT, s, L) => { g.fillStyle = `rgba(0,0,0,${amount})`; if (o.feather) { g.shadowColor = `rgba(0,0,0,${amount})`; g.shadowBlur = o.feather * L.scale; } g.beginPath(); pf(g, s); g.fill(); });
     return this;
   }
   /** Chipped / worn paint along a path (leading edges): irregular dashes of a lighter finish. */

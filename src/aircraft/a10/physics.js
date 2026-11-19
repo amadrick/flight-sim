@@ -50,7 +50,7 @@ export default {
   },
   engines: {
     type: 'turbofan-hb', throttleRatio: 1.0, machLapse: 0.60,
-    thrustLineOffset: 0.45,   // geometry.js nozzles moved up 0.85 → 1.3 to match the visual pods; keeps the tuned thrust line
+    thrustLineOffset: 0.60,   // geometry.js nozzles moved up 0.85 → 1.45 to match the visual pods; keeps the tuned thrust line
     n1Idle: 0.30, n2Idle: 0.62, spoolUp: 5.5, spoolDown: 4.0, idleThrust: 0.02, idleFuelFlow: 0.08,
     tsfc: [0.40, 0.45], egt: [420, 820, 820], startTime: 20,
   },

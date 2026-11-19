@@ -1,6 +1,6 @@
 // Aircraft kit — landing gear: oleo struts, torque links, wheels / bogies, doors, retraction, arrestor hook.
 import * as THREE from 'three';
-import { Mesh, lathe, tube, prism, ellipsoid } from './mesh.js';
+import { Mesh, lathe, tube, pipe, prism, ellipsoid } from './mesh.js';
 import { FINISH } from './atlas.js';
 import { seq } from './rig.js';
 
@@ -8,18 +8,67 @@ const DEG = Math.PI / 180;
 const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
 const A = (v) => [v.x, v.y, v.z];
 
-/** A wheel (tyre + hub) centred at the origin with its axle along X. opts: { radius, width, rim = .55 (fraction), uvTyre, uvHub, segments } */
+/**
+ * A wheel (tyre + hub) centred at the origin with its axle along X.
+ * opts: { radius, width, rim = .56 (fraction), uvTyre, uvHub, segments, tyreStrip, hubStrip (atlas strips from tyreStrips()) }
+ * With the strips the tyre gets tread grooves, a scuffed crown and a satin sidewall, the hub a shaded dish and hub cap; the
+ * dish is also occluded per vertex so it stays dark whatever colour the hub is.
+ */
 export function wheel(o) {
   const R = o.radius, w = o.width ?? R * 0.55, rr = R * (o.rim ?? 0.56), hw = w / 2, seg = o.segments ?? 24;
-  const tyre = lathe([
+  const tp = [
     [rr, -hw * 0.72, 1], [rr + (R - rr) * 0.35, -hw * 0.98], [R * 0.9, -hw], [R * 0.985, -hw * 0.72], [R, -hw * 0.3], [R, hw * 0.3],
     [R * 0.985, hw * 0.72], [R * 0.9, hw], [rr + (R - rr) * 0.35, hw * 0.98], [rr, hw * 0.72, 1],
-  ], { segments: seg, uv: o.uvTyre });
-  const hub = lathe([
+  ];
+  const TS = o.tyreStrip, HS = o.hubStrip;
+  let tyreUV = o.uvTyre;
+  if (TS) {                                                           // strip coordinate = arc length along the section
+    const acc = [0]; for (let k = 1; k < tp.length; k++) acc.push(acc[k - 1] + Math.hypot(tp[k][0] - tp[k - 1][0], tp[k][1] - tp[k - 1][1]));
+    const uvs = acc.map(a => TS.uv(a / acc[acc.length - 1])); tyreUV = (k) => uvs[k];
+  }
+  const tyre = lathe(tp, { segments: seg, uv: tyreUV });
+  const hp = [
     [0, -hw * 0.5], [rr * 0.22, -hw * 0.5, 1], [rr * 0.3, -hw * 0.34], [rr * 0.82, -hw * 0.3], [rr * 0.94, -hw * 0.66, 1], [rr, -hw * 0.72, 1],
     [rr, hw * 0.72, 1], [rr * 0.94, hw * 0.66, 1], [rr * 0.82, hw * 0.3], [rr * 0.3, hw * 0.34], [rr * 0.22, hw * 0.5, 1], [0, hw * 0.5],
-  ], { segments: seg, uv: o.uvHub });
+  ];
+  const hub = lathe(hp, { segments: seg, uv: HS ? (k) => HS.uv(hp[k][0] / rr) : o.uvHub });
+  const dish = [0.1, 0.2, 0.42, 0.34, 0.12, 0.05];                     // occlusion by profile point: the dish between cap and rim is shaded
+  hub.occlude((x, y) => { const r = Math.hypot(x, y) / rr; return r < 0.26 ? dish[1] : r < 0.5 ? dish[2] : r < 0.88 ? dish[3] : dish[4]; });
   return tyre.add(hub).rotateY(Math.PI / 2);
+}
+
+/** Paint the shared tyre and hub strips of an atlas (idempotent). Returns { tyre, hub } (either may be null). */
+export function tyreStrips(atlas, hubFinish = FINISH.gearWhite) {
+  const orm = atlas.ormStyle, band = (g, a, b, style) => { g.fillStyle = style; g.fillRect(a, 0, b - a, 1); };
+  const grooves = [0.385, 0.462, 0.538, 0.615];
+  const tyre = atlas.strip('gear.tyreStrip', 6, (g, layer) => {
+    if (layer === 'color') {
+      band(g, 0, 1, '#141415');
+      const gr = g.createLinearGradient(0.26, 0, 0.74, 0); gr.addColorStop(0, '#141415'); gr.addColorStop(0.18, '#232220'); gr.addColorStop(0.5, '#2b2a27'); gr.addColorStop(0.82, '#232220'); gr.addColorStop(1, '#141415');
+      band(g, 0.26, 0.74, gr);                                         // tread: scrubbed, dusty rubber
+      for (const u of grooves) band(g, u - 0.011, u + 0.011, '#070707');
+      for (const u of [0.1, 0.9]) band(g, u - 0.012, u + 0.012, '#1d1d1f');      // moulded sidewall band
+      band(g, 0, 0.03, '#0b0b0b'); band(g, 0.97, 1, '#0b0b0b');       // bead in the rim's shadow
+    } else if (layer === 'orm') {
+      band(g, 0, 1, orm(0.86, 0)); band(g, 0.26, 0.74, orm(0.97, 0));
+    } else {
+      for (const u of grooves) band(g, u - 0.011, u + 0.011, '#202020');
+      for (const u of [0.1, 0.9]) band(g, u - 0.012, u + 0.012, '#a0a0a0');
+    }
+  });
+  const hub = atlas.strip('gear.hubStrip:' + hubFinish.color, 4, (g, layer) => {
+    if (layer === 'color') {
+      band(g, 0, 1, hubFinish.color);
+      const gr = g.createLinearGradient(0.24, 0, 0.9, 0); gr.addColorStop(0, 'rgba(40,36,32,0.42)'); gr.addColorStop(0.6, 'rgba(40,36,32,0.16)'); gr.addColorStop(1, 'rgba(40,36,32,0)');
+      band(g, 0.24, 0.9, gr);                                          // brake dust collects in the dish
+      band(g, 0, 0.2, '#4a4d50'); band(g, 0.06, 0.14, '#2a2c2e');     // hub cap and axle nut
+      for (const u of [0.22, 0.52, 0.9]) band(g, u - 0.012, u + 0.012, 'rgba(20,20,22,0.55)');
+      band(g, 0.94, 1, 'rgba(24,22,20,0.5)');
+    } else if (layer === 'orm') {
+      band(g, 0, 1, orm(hubFinish.rough ?? 0.35, hubFinish.metal ?? 0)); band(g, 0, 0.2, orm(0.4, 0.9)); band(g, 0.24, 0.6, orm(0.55, hubFinish.metal ?? 0));
+    } else for (const u of [0.22, 0.52, 0.9]) band(g, u - 0.012, u + 0.012, '#303030');
+  });
+  return { tyre, hub };
 }
 
 /**
@@ -56,6 +105,10 @@ export function buildGear(rig, atlas, spec) {
     hub: atlas.swatch('gear.hub', FINISH.gearWhite), link: atlas.swatch('gear.link', FINISH.anodised), dark: atlas.swatch('gear.dark', FINISH.darkGrey),
   }, spec.uv || {});
   const wheelsX = spec.wheels || [0], axlesZ = spec.axles || [0], fork = spec.fork || 'axle';
+  const custom = spec.uv || {}, strips = spec.plainWheels ? {} : tyreStrips(atlas);
+  const tyreStrip = custom.tyre ? null : strips.tyre, hubStrip = custom.hub ? null : strips.hub;
+  const uvBrake = atlas.swatch('gear.brake', { color: '#2c2724', rough: 0.58, metal: 0.8 }), uvHose = atlas.swatch('gear.hose', { color: '#17181a', rough: 0.55, metal: 0.35 });
+  const braked = spec.brakes ?? (rig.geometry?.gear?.[spec.index ?? 0]?.braked !== false && !spec.steer);
   const bogie = axlesZ.length > 1;
   // strut layout along the axis: P ... B (bottom of the outer cylinder) ... piston ... C
   const pistonVisible = eStatic + Math.max(0.06, fork === 'axle' && !bogie ? R * 0.25 : R * 0.9);
@@ -87,8 +140,17 @@ export function buildGear(rig, atlas, spec) {
     outer.add(tube(A(mid), A(b1), strutR * 0.42, strutR * 0.42, { segments: 8, uv: uv.link }));
     outer.add(ellipsoid(strutR * 0.62, strutR * 0.62, strutR * 0.62, { segments: 8, rings: 4, uv: uv.link }).translate(mid.x, mid.y, mid.z));
   }
+  if (spec.lines !== false && Lo > 0.25) {                              // hydraulic / brake lines clipped to the strut
+    const side = fwd.clone().multiplyScalar((spec.links ?? 'rear') === 'front' ? -1 : 1).addScaledVector(ax, 0.55).normalize();
+    for (const [k, r] of [[-0.35, 0.0075], [0.35, 0.006]]) {
+      const o = side.clone().addScaledVector(ax, k).normalize().multiplyScalar(strutR + r * 1.6);
+      const q = (f, lift = 0) => A(P.clone().addScaledVector(d, Lo * f).add(o).addScaledVector(o, lift));
+      outer.add(pipe([q(0.1, 0.5), q(0.16), q(0.55), q(0.9), q(0.97, 0.6)], r, { segments: 5, uv: uvHose }));
+    }
+    for (const f of [0.3, 0.72]) outer.add(tube(A(P.clone().addScaledVector(d, Lo * f - 0.012)), A(P.clone().addScaledVector(d, Lo * f + 0.012)), strutR * 1.07, strutR * 1.07, { segments: 14, uv: uv.link }));
+  }
   if (spec.extra) outer.add(spec.extra);
-  rig.part(spec.name + '.strut', outer, { parent: leg, pivot: A(P) });
+  rig.part(spec.name + '.strut', outer, { parent: leg, pivot: A(P), ao: false });
   for (const L of spec.lamps || []) rig.lamp(L.kind, L.pos, { ...L, parent: leg });
 
   // steer / twist node: rotates about the strut axis through B
@@ -121,19 +183,23 @@ export function buildGear(rig, atlas, spec) {
       if (!bogie) pm.add(ellipsoid(pistonR * 1.5, pistonR * 1.5, pistonR * 1.5, { segments: 10, rings: 5, uv: uv.strut }).translate(c.x, c.y, c.z));
     }
   }
-  rig.part(spec.name + '.rod', pm, { parent: pistonN, pivot: A(C) });
+  rig.part(spec.name + '.rod', pm, { parent: pistonN, pivot: A(C), ao: false });
   // wheels: one spinning node per axle
   const spinners = [];
   for (const z of axlesZ) {
     const c = axleAt(z), wm = new Mesh();
     for (const x of wheelsX) {
-      const one = wheel({ radius: R, width: wW, uvTyre: uv.tyre, uvHub: uv.hub, segments: spec.wheelSegments ?? 24 });
+      const one = wheel({ radius: R, width: wW, uvTyre: uv.tyre, uvHub: uv.hub, segments: spec.wheelSegments ?? 24, tyreStrip, hubStrip });
+      if (braked && Math.abs(x) > 1e-3) {                               // brake stack on the strut side of the wheel
+        const sg = -Math.sign(x), rb = R * 0.56 * 0.7, x0 = sg * wW * 0.28, x1 = sg * Math.min(wW * 0.62, Math.abs(x) - pistonR * 0.6);
+        if (Math.abs(x1) > Math.abs(x0) + 0.01) one.add(lathe([[rb * 0.45, 0], [rb, 0, 1], [rb, Math.abs(x1 - x0) * 0.75], [rb * 0.8, Math.abs(x1 - x0), 1], [rb * 0.45, Math.abs(x1 - x0)]], { segments: 14, uv: uvBrake }).rotateY(sg * Math.PI / 2).translate(x0, 0, 0));
+      }
       // align the wheel's X axle with `axW`
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), axW);
       one.transform(new THREE.Matrix4().makeRotationFromQuaternion(q)).translate(c.x + axW.x * x, c.y + axW.y * x, c.z + axW.z * x);
       wm.add(one);
     }
-    spinners.push(rig.part(`${spec.name}.wheel${spinners.length}`, wm, { parent: pistonN, pivot: A(c) }));
+    spinners.push(rig.part(`${spec.name}.wheel${spinners.length}`, wm, { parent: pistonN, pivot: A(c), ao: false }));
   }
   // torque links
   let linkU = null, linkL = null, linkGeom = null;
@@ -162,15 +228,15 @@ export function buildGear(rig, atlas, spec) {
       }
       return m;
     };
-    linkU = rig.part(spec.name + '.linkU', mkLink(U0), { parent: steer, pivot: A(U0) });
-    linkL = rig.part(spec.name + '.linkL', mkLink(L0), { parent: pistonN, pivot: A(L0) });
+    linkU = rig.part(spec.name + '.linkU', mkLink(U0), { parent: steer, pivot: A(U0), ao: false });
+    linkL = rig.part(spec.name + '.linkL', mkLink(L0), { parent: pistonN, pivot: A(L0), ao: false });
     linkGeom = { w, th0, theta, Dp };
   }
   // doors
   const doors = [];
   for (const dr of spec.doors || []) {
-    if (dr.onLeg) { rig.part(dr.name, dr.mesh, { parent: leg, pivot: A(P), key: dr.key }); continue; }
-    const node = rig.part(dr.name, dr.mesh, { pivot: dr.hinge.a, key: dr.key });
+    if (dr.onLeg) { rig.part(dr.name, dr.mesh, { parent: leg, pivot: A(P), key: dr.key, ao: false }); continue; }
+    const node = rig.part(dr.name, dr.mesh, { pivot: dr.hinge.a, key: dr.key, ao: false });
     const set = rig.hinge(node, dr.hinge.a, dr.hinge.b, { ref: dr.ref, toward: dr.toward || [0, -1, 0] });
     doors.push({ set, open: (dr.open ?? 90) * DEG, closes: !!dr.closes, window: dr.window, fn: dr.fn });
   }

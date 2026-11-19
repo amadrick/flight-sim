@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { Mesh, ellipsoid } from './mesh.js';
 import { lampMaterial } from './materials.js';
+import { bakeContactAO } from './occlusion.js';
 import { LAYERS } from '../../core/constants.js';
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -21,7 +22,9 @@ const SURF_DEFAULTS = { aileronL: 0, aileronR: 0, elevatorL: 0, elevatorR: 0, ru
 const LIGHT_DEFAULTS = { nav: true, strobe: true, beacon: true, landing: false, taxi: false };
 
 // lamp radiance (linear, HDR) by kind: [day, night]
-const LAMP_LEVEL = { nav: [22, 7], strobe: [900, 150], beacon: [420, 70], landing: [700, 110], taxi: [320, 50], formation: [6, 2.5] };
+// By day a position light is only about as bright as sunlit white paint (≈ 1) while a landing lamp or a xenon strobe is
+// hundreds of times brighter; at night the camera's exposure rises 10 – 40×, so the levels come down to keep the bloom sane.
+const LAMP_LEVEL = { nav: [5, 7], strobe: [300, 150], beacon: [110, 70], landing: [340, 110], taxi: [130, 50], formation: [0.9, 2.5] };
 
 /**
  * createRig(ctx, { geometry, name }) → rig
@@ -37,7 +40,7 @@ const LAMP_LEVEL = { nav: [22, 7], strobe: [900, 150], beacon: [420, 70], landin
 export function createRig(ctx, o = {}) {
   const geometry = o.geometry || { engines: [], gear: [], pilotEye: [0, 0, 0] };
   const root = new THREE.Group(); root.name = o.name || 'aircraft';
-  const mats = new Map(), statics = new Map(), parts = {}, updaters = [], lamps = [], owned = [];
+  const mats = new Map(), statics = new Map(), parts = {}, updaters = [], lamps = [], owned = [], occluders = [];
   const t0 = performance.now();
   let tris = 0, built = false;
   const S = makeStateView(geometry);
@@ -76,6 +79,7 @@ export function createRig(ctx, o = {}) {
       const info = mats.get(opt.key || 'paint'); if (!info) throw new Error('rig: unknown material key ' + opt.key);
       const pivot = opt.pivot || (opt.parent ? opt.parent.userData.pivot : [0, 0, 0]);
       const m = mesh.clone().translate(-pivot[0], -pivot[1], -pivot[2]);
+      if (opt.ao !== false && !m.p2) occluders.push({ mesh, key: opt.key || 'paint' });   // rest pose counts for the contact-occlusion bake
       tris += m.triCount;
       const obj = setupMesh(new THREE.Mesh(m.toGeometry(), info.mat), info);
       if (m.p2) obj.morphTargetInfluences = [0];
@@ -102,7 +106,9 @@ export function createRig(ctx, o = {}) {
       const size = opt.size ?? 0.05, sq = opt.squash || [1, 1, 1];
       const m = opt.mesh || ellipsoid(size * sq[0], size * sq[1], size * sq[2], { segments: 8, rings: 5 });
       if (!opt.mesh) m.translate(pos[0], pos[1], pos[2]);
-      lamps.push({ kind, mesh: m, color: opt.color || [1, 1, 1], parent: opt.parent || null, phase: opt.phase ?? 0, group: opt.group ?? '' });
+      let c = pos, r = size * Math.max(sq[0], sq[1], sq[2]);
+      if (opt.mesh || !pos) { const b = m.bounds(); c = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]; r = Math.max(0.01, Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) / 2); }
+      lamps.push({ kind, mesh: m, color: opt.color || [1, 1, 1], parent: opt.parent || null, phase: opt.phase ?? 0, group: opt.group ?? '', centre: c, radius: r });
       return rig;
     },
     onUpdate(fn) { updaters.push(fn); return rig; },
@@ -114,35 +120,52 @@ export function createRig(ctx, o = {}) {
         obj.name = 'static:' + key; root.add(obj); tris += m.triCount; if (!firstStatic && info.layer === undefined) firstStatic = obj;
       }
       // lamps: one mesh per (kind, parent, group, phase) with vertex colours
-      const lampMat = lampMaterial(), lampGroups = new Map();
+      const lampGroups = new Map();
       for (const L of lamps) {
         const key = L.kind + '|' + (L.parent ? L.parent.uuid : '') + '|' + L.group + '|' + L.phase;
-        let g = lampGroups.get(key); if (!g) lampGroups.set(key, g = { kind: L.kind, parent: L.parent, phase: L.phase, mesh: new Mesh(), colors: [] });
-        g.mesh.add(L.mesh); for (let i = 0; i < L.mesh.vertexCount; i++) g.colors.push(L.color[0], L.color[1], L.color[2]);
+        let g = lampGroups.get(key); if (!g) lampGroups.set(key, g = { kind: L.kind, parent: L.parent, phase: L.phase, mesh: new Mesh(), colors: [], centres: [] });
+        g.mesh.add(L.mesh); for (let i = 0; i < L.mesh.vertexCount; i++) { g.colors.push(L.color[0], L.color[1], L.color[2]); g.centres.push(L.centre[0], L.centre[1], L.centre[2], L.radius); }
       }
       const lampObjs = [];
       for (const g of lampGroups.values()) {
         const pivot = g.parent ? g.parent.userData.pivot : [0, 0, 0];
         const geo = g.mesh.translate(-pivot[0], -pivot[1], -pivot[2]).toGeometry();
         geo.setAttribute('color', new THREE.Float32BufferAttribute(g.colors, 3));
-        const mat = lampMat.clone(); owned.push(mat);
+        for (let i = 0; i < g.centres.length; i += 4) { g.centres[i] -= pivot[0]; g.centres[i + 1] -= pivot[1]; g.centres[i + 2] -= pivot[2]; }
+        geo.setAttribute('kitLamp', new THREE.Float32BufferAttribute(g.centres, 4));
+        const mat = lampMaterial(ctx); owned.push(mat);
         const obj = new THREE.Mesh(geo, mat); obj.name = 'lamp:' + g.kind; obj.castShadow = false; obj.receiveShadow = false;
         (g.parent || root).add(obj); tris += g.mesh.triCount;
         lampObjs.push({ obj, mat, kind: g.kind, phase: g.phase });
       }
-      lampMat.dispose();
       if (firstStatic) firstStatic.onBeforeRender = (renderer, scene, camera) => {
         if (!camera.isPerspectiveCamera) return;
         _inv.copy(root.matrixWorld).invert();
         rig.cameraBody.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(_inv);
         rig.cameraInCockpit = rig.cameraBody.distanceTo(eye) < (o.cockpitRadius ?? 0.75);
       };
+      // contact occlusion (wing roots, tail, pylons, nacelles → fuselage charts) is baked into the atlas occlusion layer here;
+      // the layers are packed into their GPU textures (uploads + one draw per atlas) on the first update(), i.e. together with
+      // the other texture uploads of the first frame — call atlas.bake() yourself to force it earlier.
+      const isSkin = (key) => !!mats.get(key)?.mat?.userData?.kitSkin, tA = performance.now();
+      if (o.contactAO !== false && (ctx?.quality?.level || 'high') !== 'low') {
+        try {
+          const occ = []; for (const [key, m] of statics) if (isSkin(key)) occ.push(m);
+          for (const q of occluders) if (isSkin(q.key)) occ.push(q.mesh);
+          rig.aoInfo = bakeContactAO(occ, rig.disposables, typeof o.contactAO === 'object' ? o.contactAO : {});
+        } catch (e) { console.warn('[kit] contact occlusion bake failed', e); }
+      }
+      occluders.length = 0;
+      const tB = performance.now();
+      let packed = false;
+      const pack = () => { packed = true; const t = performance.now(); for (const d of rig.disposables) d?.bake?.(); stats.packMs = Math.round(performance.now() - t); };
       let draws = 0; root.traverse(n => { if (n.isMesh) draws++; });
-      const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0 };
+      const stats = { triangles: tris, drawCalls: draws, buildMs: performance.now() - t0, occlusionMs: Math.round(tB - tA), packMs: 0 };
       const visual = {
         object3D: root, parts, stats, rig,
         update(state, dt) {
           dt = num(dt, 0);
+          if (!packed) pack();
           readState(S, state, dt, ctx);
           for (let i = 0; i < updaters.length; i++) updaters[i](S, dt);
           // lamps
@@ -156,7 +179,7 @@ export function createRig(ctx, o = {}) {
             else if (L.kind === 'landing') on = lt.landing ? 1 : 0;
             else if (L.kind === 'taxi') on = lt.taxi ? 1 : 0;
             const I = on * (lv[0] + (lv[1] - lv[0]) * night);
-            L.obj.visible = I > 0.001; if (L.obj.visible) L.mat.color.setRGB(I, I, I);
+            L.mat.color.setRGB(I, I, I); L.mat.userData.lampUniforms.uLampNight.value = night;      // unlit lamps stay visible as lenses
           }
         },
         dispose() {
