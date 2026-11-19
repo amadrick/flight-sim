@@ -35,9 +35,9 @@ const DEG = Math.PI / 180;
 export const LIVERIES = ['aurelis', 'kestria', 'house'];
 
 const SCHEMES = {
-  aurelis: { name: 'Aurelis', title: 'Aurelis', reg: 'ZZ-AUR', body: '#f5f6f7', belly: '#16264a', accent: '#c99a3e', tail: '#16264a', engine: '#16264a', lipBand: '#c99a3e', tipColor: '#16264a', titleColor: '#16264a', font: 'serif', style: 'sweep' },
-  kestria: { name: 'Kestria', title: 'KESTRIA', reg: 'ZZ-KST', body: '#f6f6f5', belly: '#c6cbd0', accent: '#d2401f', tail: '#d2401f', engine: '#f3f4f4', lipBand: '#d2401f', tipColor: '#d2401f', titleColor: '#2a2e33', font: 'wide', style: 'cheat' },
-  house: { name: 'Skyward demonstrator', title: 'SKYWARD', reg: 'ZZ-SKW', body: '#f1f2f3', belly: '#99a1a8', accent: '#2463c4', tail: '#f1f2f3', engine: '#f1f2f3', lipBand: '#2463c4', tipColor: '#2463c4', titleColor: '#1b2a3c', font: 'wide', style: 'house' },
+  aurelis: { name: 'Aurelis', title: 'Aurelis', reg: 'ZZ-AUR', body: '#f5f6f7', belly: '#16264a', accent: '#c99a3e', tail: '#16264a', engine: '#16264a', lipBand: '#c99a3e', tipColor: '#16264a', titleColor: '#16264a', font: 'serif', style: 'sweep', wx: 0.22 },
+  kestria: { name: 'Kestria', title: 'KESTRIA', reg: 'ZZ-KST', body: '#f6f6f5', belly: '#c6cbd0', accent: '#d2401f', tail: '#d2401f', engine: '#f3f4f4', lipBand: '#d2401f', tipColor: '#d2401f', titleColor: '#2a2e33', font: 'wide', style: 'cheat', wx: 0.42 },
+  house: { name: 'Skyward demonstrator', title: 'SKYWARD', reg: 'ZZ-SKW', body: '#f1f2f3', belly: '#99a1a8', accent: '#2463c4', tail: '#f1f2f3', engine: '#f1f2f3', lipBand: '#2463c4', tipColor: '#2463c4', titleColor: '#1b2a3c', font: 'wide', style: 'house', wx: 0.18 },
 };
 
 // ---- fuselage station table ---------------------------------------------------------------------------------------------
@@ -62,7 +62,8 @@ export function createVisual(ctx, opts = {}) {
   const rig = K.createRig(ctx, { geometry: G, name: 'b77w', glassLayer: opts.glassLayer, cockpitRadius: 1.6 });
 
   // ---- atlases: A = fuselage + belly + gear + flight deck, B = wings, tail, nacelles ------------------------------------------
-  const A = K.createAtlas({ size: atlasSize, base: F.gloss(SC.body) });
+  // gloss airline paint: a clear coat, a little oil-canning between the 0.53 m frames, a lightly used aircraft
+  const A = K.createAtlas({ size: atlasSize, base: F.gloss(SC.body), swatchRows: 3, skin: { weathering: SC.wx ?? 0.3, framePitch: 0.53, waviness: 0.85, clearcoat: 0.85 } });
   const cFus = A.chart('fus', { type: 'unwrap', z: [G.noseZ - 0.05, G.tailZ + 0.03], girth: 19.6, vScale: 0.8, strips: 4 });
   const cPanel = A.chart('panel', { type: 'rect', w: 2.4, h: 0.6, density: 2.0 });
   const cOver = A.chart('overhead', { type: 'rect', w: 0.8, h: 1.0, density: 1.5 });
@@ -70,27 +71,41 @@ export function createVisual(ctx, opts = {}) {
   A.pack();
   const UA = {
     body: A.swatch('body', F.gloss(SC.body)), fair: A.swatch('fair', F.gloss(SC.belly)), dark: A.swatch('dark', F.darkGrey), black: A.swatch('black', F.black),
-    well: A.swatch('well', { color: '#7b8079', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#c4c3bc', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#8d8e8a', rough: 0.7, metal: 0 }),
+    well: A.swatch('well', { color: '#7b8079', rough: 0.7, metal: 0 }), liner: A.swatch('liner', { color: '#a7a7a1', rough: 0.8, metal: 0 }), post: A.swatch('post', { color: '#8d8e8a', rough: 0.7, metal: 0 }),
     floor: A.swatch('floor', { color: '#34373b', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2a2c2f', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#5c6166', rough: 0.75, metal: 0 }),
     seat: A.swatch('seat', { color: '#45484c', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#5b5346', rough: 1, metal: 0 }), yoke: A.swatch('yoke', { color: '#17181a', rough: 0.5, metal: 0 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9eaea')), lens: A.swatch('lens', F.lens),
     strut: A.swatch('gear.strut', F.gearWhite), chrome: A.swatch('gear.chrome', F.chrome), tyre: A.swatch('gear.tyre', F.rubber), hub: A.swatch('gear.hub', { color: '#c4c6c2', rough: 0.4, metal: 0.35 }),
-    link: A.swatch('gear.link', F.anodised),
+    link: A.swatch('gear.link', F.anodised), brake: A.swatch('gear.brake', { color: '#2c2724', rough: 0.58, metal: 0.8 }), hose: A.swatch('gear.hose', { color: '#17181a', rough: 0.55, metal: 0.35 }),
+    wiper: A.swatch('wiper', { color: '#151617', rough: 0.5, metal: 0.3 }), vane: A.swatch('vane', { color: '#b8bcbf', rough: 0.35, metal: 0.8 }),
   };
-  const B = K.createAtlas({ size: atlasSize, base: F.semigloss('#b9bec3') });
+  const B = K.createAtlas({ size: atlasSize, base: F.semigloss('#aeb3b7'), swatchRows: 3, skin: { weathering: (SC.wx ?? 0.3) + 0.15, framePitch: 0.5, waviness: 0.7 } });
   const cWT = { i: B.chart('wingTopIn', { type: 'plan', x: [1.0, 12.2], z: [-10.0, 5.6], view: 'top', mirror: true, density: 1.1 }), o: B.chart('wingTopOut', { type: 'plan', x: [11.9, 32.5], z: [-3.0, 12.7], view: 'top', mirror: true, density: 1.1 }) };
   const cWB = { i: B.chart('wingBotIn', { type: 'plan', x: [1.0, 12.2], z: [-10.0, 5.6], view: 'bottom', mirror: true, density: 0.75 }), o: B.chart('wingBotOut', { type: 'plan', x: [11.9, 32.5], z: [-3.0, 12.7], view: 'bottom', mirror: true, density: 0.75 }) };
   const cSt = B.chart('stab', { type: 'plan', x: [0.3, 10.8], z: [24.4, 34.6], view: 'top', mirror: true, density: 0.9 });
   const cFin = { L: B.chart('finL', { type: 'side', z: [18.4, 34.4], y: [1.9, 14.2], view: 'left' }), R: B.chart('finR', { type: 'side', z: [18.4, 34.4], y: [1.9, 14.2], view: 'right' }) };
   B.pack();
   const UB = {
-    grey: B.swatch('grey', F.semigloss('#b9bec3')), engine: B.swatch('engine', F.gloss(SC.engine)), lip: B.swatch('lip', F.polished), band: B.swatch('band', F.gloss(SC.lipBand)),
-    duct: B.swatch('duct', { color: '#101113', rough: 0.6, metal: 0.2 }), acoustic: B.swatch('acoustic', { color: '#7d8185', rough: 0.6, metal: 0.55 }), core: B.swatch('core', F.semigloss('#c9cdd0')),
-    coreMetal: B.swatch('coreMetal', F.titanium), plug: B.swatch('plug', F.heatStained), blade: B.swatch('blade', { color: '#565b63', rough: 0.28, metal: 0.65 }),
-    spinner: B.swatch('spinner', { color: '#202226', rough: 0.3, metal: 0.5 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.primer),
+    grey: B.swatch('grey', F.semigloss('#aeb3b7')), engine: B.swatch('engine', F.gloss(SC.engine)), lip: B.swatch('lip', { color: '#c4c8cc', rough: 0.2, metal: 0.92 }), band: B.swatch('band', F.gloss(SC.lipBand)),
+    duct: B.swatch('duct', { color: '#0c0d0f', rough: 0.7, metal: 0.1 }), acoustic: B.swatch('acoustic', { color: '#4f5458', rough: 0.62, metal: 0.25 }), core: B.swatch('core', F.semigloss('#bfc3c6')),
+    coreMetal: B.swatch('coreMetal', F.titanium), plug: B.swatch('plug', F.heatStained), blade: B.swatch('blade', { color: '#2f3337', rough: 0.3, metal: 0.55 }),
+    spinner: B.swatch('spinner', { color: '#1b1d20', rough: 0.25, metal: 0.4 }), swirl: B.swatch('swirl', { color: '#f2f2f0', rough: 0.3, metal: 0 }), inner: B.swatch('inner', F.primer),
+    seam: B.swatch('seam', { color: '#5a5f64', rough: 0.6, metal: 0 }), latch: B.swatch('latch', { color: '#9aa0a5', rough: 0.4, metal: 0.6 }),
     pylon: B.swatch('pylon', F.gloss(SC.style === 'sweep' ? '#e9ebec' : '#e9ebec')), tail: B.swatch('tail', F.gloss(SC.tail)), cascade: B.swatch('cascade', { color: '#3a3c3f', rough: 0.6, metal: 0.7 }),
-    wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', F.semigloss('#c0c5c9')), tip: B.swatch('tip', F.gloss(SC.tipColor)), metal: B.swatch('metal', { color: '#c9ccce', rough: 0.26, metal: 0.9 }),
+    wick: B.swatch('wick', F.black), canoe: B.swatch('canoe', F.semigloss('#b3b8bc')), tip: B.swatch('tip', F.gloss(SC.tipColor)), metal: B.swatch('metal', { color: '#c9ccce', rough: 0.26, metal: 0.9 }),
     heat: B.swatch('heat', { color: '#8a8f93', rough: 0.45, metal: 0.8 }),
+  };
+  // 1-D gradient strips: fan blade across its chord (titanium leading-edge sheath on a dark composite blade), core cowl along z
+  const ormB = B.ormStyle, bandB = (g, a, b, s) => { g.fillStyle = s; g.fillRect(a, 0, b - a, 1); };
+  const SB = {
+    blade: B.strip('fanBlade', 4, (g, layer) => {
+      if (layer === 'color') { bandB(g, 0, 1, '#2b2f33'); bandB(g, 0, 0.09, '#a3a8ad'); bandB(g, 0.09, 0.13, '#4e5358'); bandB(g, 0.9, 1, '#373b40'); }
+      else if (layer === 'orm') { bandB(g, 0, 1, ormB(0.34, 0.3)); bandB(g, 0, 0.11, ormB(0.2, 0.95)); }
+    }),
+    core: B.strip('coreSoot', 6, (g, layer) => {
+      if (layer === 'color') { const gr = g.createLinearGradient(0, 0, 1, 0); gr.addColorStop(0, '#c4c8cb'); gr.addColorStop(0.5, '#b8bcbf'); gr.addColorStop(0.72, '#9a9c9b'); gr.addColorStop(0.83, '#5f605e'); gr.addColorStop(0.9, '#8c877d'); gr.addColorStop(1, '#a39885'); g.fillStyle = gr; g.fillRect(0, 0, 1, 1); }
+      else if (layer === 'orm') { bandB(g, 0, 0.6, ormB(0.42, 0)); bandB(g, 0.6, 0.86, ormB(0.6, 0.1)); bandB(g, 0.86, 1, ormB(0.42, 0.85)); }
+    }),
   };
 
   // ---- fuselage ---------------------------------------------------------------------------------------------------------------
@@ -100,13 +115,20 @@ export function createVisual(ctx, opts = {}) {
     ...TAIL.map(([z, top, bot, w, yc]) => st(z, top, bot, w, yc, z > 33 ? { kTop: 0.6, kBot: 0.62 } : z > 28 ? { kBot: 0.58 } : {})),
   ];
   const fseg = Math.max(40, Math.round(96 * detail / 4) * 4);
+  // flight-deck window outlines (z, t) — measured on a quick loft of the same stations (rings are exact at any z)
+  const zd = (d) => G.noseZ + d;
+  const WIN = flightDeckWindows(K.loft({ stations: FS, segments: fseg, step: 6 }), zd);
+  const fdBox = glazingBox(WIN, fseg);
   const fus = K.loft({
     stations: FS, segments: fseg, step: 1.3 / detail, chart: cFus, capEnd: 'flat', capUV: SC.style === 'sweep' ? UA.fair : UA.body,
-    cutouts: [{ name: 'ngf', z: [-31.1, -29.35], t: [0, 0.034], mirror: true }, { name: 'nga', z: [-29.3, -27.7], t: [0, 0.034], mirror: true }],
+    cutouts: [{ name: 'ngf', z: [-31.1, -29.35], t: [0, 0.034], mirror: true }, { name: 'nga', z: [-29.3, -27.7], t: [0, 0.034], mirror: true },
+      { name: 'fd', z: fdBox.z, t: fdBox.t }],
   });
   cFus.body = fus;
+  // the skin around the six flight-deck windows is rebuilt with real openings; glass panes sit 14 mm in from the skin
+  const glaz = glazing(fus, cFus, WIN.flatMap(w => [w, w.map(p => [p[0], 1 - p[1]]).reverse()]), fdBox, 0.16, 0.03, UA.wiper);
   const stA = new K.Mesh(), stB = new K.Mesh();
-  stA.add(fus.mesh);
+  stA.add(fus.mesh).add(glaz.skin);
   stA.add(K.well(K.merge(fus.patches.ngfR, fus.patches.ngfL, fus.patches.ngaR, fus.patches.ngaL), 1.3, UA.well, [0, 1, 0]));
   // ring parameter on the upper half (right side) at half-width x
   const tAtX = (z, x) => { let lo = 0.25, hi = 0.5; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (fus.at(z, m).p[0] > x) lo = m; else hi = m; } return (lo + hi) / 2; };
@@ -123,15 +145,10 @@ export function createVisual(ctx, opts = {}) {
   stA.add(fair.mesh).add(K.well(fair.patches.mlgR, 1.5, UA.well, [0, 1, 0])).add(K.well(fair.patches.mlgL, 1.5, UA.well, [0, 1, 0]));
 
   // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
-  const zd = (d) => G.noseZ + d, zy = (d, y) => [zd(d), fus.tAtY(zd(d), y)], zx = (d, x) => [zd(d), tAtX(zd(d), x)];
-  const WS = { IB: zx(3.98, 0.07), OB: zx(4.42, 1.36), OT: zx(5.1, 1.3), IT: zx(4.84, 0.07) };
-  const S1 = { bf: zy(4.58, 0.98), br: zy(5.5, 0.97), tr: zy(5.5, 1.7), tf: zy(5.2, 1.77) };
-  const S2 = { bf: zy(5.62, 0.97), br: zy(6.52, 0.98), tr: zy(6.52, 1.6), tf: zy(5.62, 1.68) };
-  const S3 = { bf: zy(6.64, 0.99), br: zy(7.2, 1.03), rt: zy(7.2, 1.36), nt: zy(7.02, 1.5), tf: zy(6.64, 1.57) };
-  const WIN = [[WS.IB, WS.OB, WS.OT, WS.IT], [S1.bf, S1.br, S1.tr, S1.tf], [S2.bf, S2.br, S2.tr, S2.tf], [S3.bf, S3.br, S3.rt, S3.nt, S3.tf]];
+  const { WS, S1, S2, S3 } = WIN, IN = new K.Mesh();
   const FLOOR = 0.25, zb = zd(7.9);
   {
-    const L = (c, uv, nu = 3, nv = 3) => stA.add(K.liner(fus, c, { uv, nu, nv, mirror: true, inset: 0.05 }));
+    const L = (c, uv, nu = 3, nv = 3) => IN.add(K.liner(fus, c, { uv, nu, nv, mirror: true, inset: 0.05 }));
     const lo = (z) => [z, fus.tAtY(z, FLOOR + 0.04)], hi = (z) => [z, 0.5];
     L([WS.IB, WS.OB, lo(WS.OB[0]), lo(WS.IB[0])], UA.liner, 2, 5);                     // below the windshield
     L([WS.IB, hi(WS.IB[0]), hi(WS.IT[0]), WS.IT], UA.post, 4, 1);                       // centre post
@@ -152,28 +169,30 @@ export function createVisual(ctx, opts = {}) {
     L([S3.nt, S3.rt, hi(S3.br[0]), hi(S3.nt[0])], UA.liner, 2, 3);                     // the sloping upper rear corner
     L([lo(S3.br[0]), lo(zb), hi(zb), hi(S3.br[0])], UA.liner, 3, 6);                   // aft side wall
     const fy = FLOOR, zP = zd(4.72);                                                      // panel face station
-    stA.add(K.deck(fus, WS.IB[0] - 0.02, zb, fy, { uv: UA.floor, n: 8 }));
-    stA.add(K.bulkhead(fus, zb, { uv: UA.liner, facing: -1 }));                          // flight-deck door wall
-    stA.add(K.bulkhead(fus, WS.IB[0] - 0.02, { uv: UA.shield, facing: 1 }));             // forward bulkhead
+    IN.add(K.deck(fus, WS.IB[0] - 0.02, zb, fy, { uv: UA.floor, n: 8 }));
+    IN.add(K.bulkhead(fus, zb, { uv: UA.liner, facing: -1 }));                          // flight-deck door wall
+    IN.add(K.bulkhead(fus, WS.IB[0] - 0.02, { uv: UA.shield, facing: 1 }));             // forward bulkhead
     // glareshield with the MCP face, main panel with six displays, pedestal, overhead panel
-    { const gs = K.prism([[zP - 0.6, 1.2], [zP - 0.02, 1.27], [zP + 0.02, 1.24], [zP - 0.02, 1.13], [zP - 0.6, 1.1]], -1.25, 1.25, UA.shield); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * (gs.p[i + 2] - (zP - 0.6)) / 0.62; stA.add(gs); }
-    { const i0 = stA.vertexCount; for (const [a, b] of [[0, 0.6], [2.4, 0.6], [2.4, 0], [0, 0]]) { const uv = cPanel.uv(a, b); stA.vert(a - 1.2, 0.52 + (0.6 - b), zP + 0.01 + (0.6 - b) * 0.12, 0, 0.12, 1, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
-    stA.add(K.box(2.4, 0.66, 0.16, UA.shield).translate(0, 0.83, zP - 0.1));
+    { const gs = K.prism([[zP - 0.6, 1.2], [zP - 0.02, 1.27], [zP + 0.02, 1.24], [zP - 0.02, 1.13], [zP - 0.6, 1.1]], -1.25, 1.25, UA.shield); for (let i = 0; i < gs.p.length; i += 3) gs.p[i] *= 0.6 + 0.4 * (gs.p[i + 2] - (zP - 0.6)) / 0.62; IN.add(gs); }
+    { const i0 = IN.vertexCount; for (const [a, b] of [[0, 0.6], [2.4, 0.6], [2.4, 0], [0, 0]]) { const uv = cPanel.uv(a, b); IN.vert(a - 1.2, 0.52 + (0.6 - b), zP + 0.01 + (0.6 - b) * 0.12, 0, 0.12, 1, uv[0], uv[1]); } IN.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    IN.add(K.box(2.4, 0.66, 0.16, UA.shield).translate(0, 0.83, zP - 0.1));
     { // pedestal: sloping top quad mapped to its chart + body
-      stA.add(K.box(0.5, 0.5, 1.05, UA.console).translate(0, fy + 0.25, zP + 0.62));
-      const i0 = stA.vertexCount; for (const [a, b] of [[0, 0], [0.5, 0], [0.5, 1.0], [0, 1.0]]) { const uv = cPed.uv(a, b); stA.vert(a - 0.25, fy + 0.62 - b * 0.12, zP + 0.08 + b * 1.05, 0, 1, 0.1, uv[0], uv[1]); } stA.quad(i0, i0 + 3, i0 + 2, i0 + 1);
-      for (const sx of [-1, 1]) stA.add(K.box(0.04, 0.16, 0.05, UA.yoke).rotateX(-0.4).translate(sx * 0.06, fy + 0.7, zP + 0.3));   // thrust levers
+      IN.add(K.box(0.5, 0.5, 1.05, UA.console).translate(0, fy + 0.25, zP + 0.62));
+      const i0 = IN.vertexCount; for (const [a, b] of [[0, 0], [0.5, 0], [0.5, 1.0], [0, 1.0]]) { const uv = cPed.uv(a, b); IN.vert(a - 0.25, fy + 0.62 - b * 0.12, zP + 0.08 + b * 1.05, 0, 1, 0.1, uv[0], uv[1]); } IN.quad(i0, i0 + 3, i0 + 2, i0 + 1);
+      for (const sx of [-1, 1]) IN.add(K.box(0.04, 0.16, 0.05, UA.yoke).rotateX(-0.4).translate(sx * 0.06, fy + 0.7, zP + 0.3));   // thrust levers
     }
-    { const i0 = stA.vertexCount, y = 2.0; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); stA.vert(a - 0.4, y + b * 0.1, zP + 0.25 + b, 0, -1, -0.15, uv[0], uv[1]); } stA.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
+    { const i0 = IN.vertexCount, y = 2.0; for (const [a, b] of [[0, 0], [0.8, 0], [0.8, 1.0], [0, 1.0]]) { const uv = cOver.uv(a, b); IN.vert(a - 0.4, y + b * 0.1, zP + 0.25 + b, 0, -1, -0.15, uv[0], uv[1]); } IN.quad(i0, i0 + 1, i0 + 2, i0 + 3); }
     const eye = G.pilotEye;
     for (const sx of [-1, 1]) {
       const e = [sx * Math.abs(eye[0]), eye[1], eye[2]];
-      stA.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.cushion } }));
-      stA.add(K.yoke({ base: [e[0], fy, e[2] - 0.55], top: [e[0], e[1] - 0.55, e[2] - 0.45], uv: UA.yoke }));
-      stA.add(K.box(0.36, 0.6, 1.2, UA.console).translate(sx * 1.45, fy + 0.3, e[2] - 0.1));                          // side console
-      stA.add(K.box(0.2, 0.03, 0.3, UA.shield).translate(e[0], fy + 0.05, zP + 0.08));                                // rudder pedals
+      IN.add(K.crewSeat({ eye: e, uv: { frame: UA.seat, cushion: UA.cushion } }));
+      IN.add(K.yoke({ base: [e[0], fy, e[2] - 0.55], top: [e[0], e[1] - 0.55, e[2] - 0.45], uv: UA.yoke }));
+      IN.add(K.box(0.36, 0.6, 1.2, UA.console).translate(sx * 1.45, fy + 0.3, e[2] - 0.1));                          // side console
+      IN.add(K.box(0.2, 0.03, 0.3, UA.shield).translate(e[0], fy + 0.05, zP + 0.08));                                // rudder pedals
     }
   }
+  IN.occlude((x, y, z) => 0.35 + 0.25 * Math.min(1, Math.max(0, (z - zd(4.2)) / 3)));   // the flight deck is a shaded room seen through the glass
+  stA.add(IN);
 
   // ---- wings ----------------------------------------------------------------------------------------------------------------
   const XR = 3.1, XK = 12, XT = 30, XE = 32.4, DIH = Math.tan(5.5 * DEG);
@@ -248,7 +267,20 @@ export function createVisual(ctx, opts = {}) {
     const n = K.nacelle({ centre: c, length: NAC.len, rHi: NAC.rHi, rMax: NAC.rMax, rThroat: NAC.rThroat, rFan: NAC.rFan, zFan: NAC.zFan, rExit: NAC.rExit, flat: 0, droop: 0, sleeve: NAC.sleeve,
       core: { r0: 1.06, r1: 0.64, length: 2.6, z0: NAC.zFan + 0.9 }, plug: { r: 0.5, length: 1.55 }, segments: Math.max(36, Math.round(56 * detail / 4) * 4),
       uv: UB.engine, uvLip: UB.lip, uvInner: UB.acoustic, uvSleeve: UB.engine, uvCore: UB.core, uvPlug: UB.plug, uvCascade: UB.cascade });
-    stB.add(n.cowl).add(n.cascade).add(n.core).add(n.plug);
+    stB.add(n.cowl).add(n.cascade).add(n.plug);
+    { // core cowl (same profile as the kit's) with a soot gradient toward the core nozzle
+      const L = NAC.len, r0 = 1.06, r1 = 0.64, cl = 2.6, cz0 = NAC.zFan + 0.9, cz1 = L + cl;
+      const prof = [[r0 * 0.9, cz0], [r0, cz0 + (L - cz0) * 0.5], [r0 * 0.98, L], [r1 * 1.08, L + cl * 0.7], [r1, cz1, 1], [r1 - 0.03, cz1, 1], [r1 - 0.035, cz1 - cl * 0.5]];
+      const uvs = prof.map(p => (SB.core ? SB.core.uv((p[1] - cz0) / (cz1 - cz0)) : UB.core));
+      stB.add(K.lathe(prof, { segments: Math.max(36, Math.round(56 * detail / 4) * 4), uv: (k) => uvs[k] }).translate(c[0], c[1], c[2]));
+    }
+    { // panel joints: inlet cowl / fan cowl ring, fan cowl bottom split line with four latches, reverser blocker-door seam
+      const L = NAC.len, rA = (z) => (z < L * 0.3 ? NAC.rHi + (NAC.rMax - NAC.rHi) * Math.sqrt(z / (L * 0.3)) : NAC.rMax);
+      const ring = (z) => { const r = rA(z) + 0.003; return K.lathe([[r - 0.006, z - 0.014], [r, z - 0.008], [r, z + 0.008], [r - 0.006, z + 0.014]], { segments: 56, uv: UB.seam }).translate(c[0], c[1], c[2]); };
+      stB.add(ring(1.5));
+      stB.add(K.box(0.012, 0.006, 1.25, UB.seam).translate(c[0], c[1] - NAC.rMax - 0.001, c[2] + 2.15));
+      for (const z of [1.7, 2.05, 2.4, 2.7]) stB.add(K.box(0.07, 0.012, 0.16, UB.latch).translate(c[0], c[1] - NAC.rMax - 0.004, c[2] + z));
+    }
     // coloured intake band just behind the polished lip
     { const L = NAC.len, rA = (z) => NAC.rHi + (NAC.rMax - NAC.rHi) * Math.sqrt(Math.min(1, z / (L * 0.3))) + 0.005;
       stB.add(K.lathe([[rA(0.16) - 0.005, 0.16], [rA(0.17), 0.17], [rA(0.5), 0.5], [rA(0.51) - 0.005, 0.51]], { segments: 56, uv: UB.band }).translate(c[0], c[1], c[2])); }
@@ -256,18 +288,34 @@ export function createVisual(ctx, opts = {}) {
     { const z1 = NAC.len + 2.6; stB.add(K.lathe([[0.705, z1 - 0.58], [0.668, z1 + 0.01, 1], [0.645, z1 + 0.01, 1]], { segments: 40, uv: UB.coreMetal }).translate(c[0], c[1], c[2])); }
     stB.add(K.fanBackdrop(NAC.rFan, 0.55, UB.duct).translate(c[0], c[1], n.fanZ));
     // pylon: aft fairing on the core cowl, main strut, blended into the wing lower surface
-    stB.add(K.pylon([{ y: c[1] + 0.92, z0: c[2] + 5.0, z1: c[2] + 9.1, x: c[0], tc: 0.12 }, { y: c[1] + 1.5, z0: c[2] + 1.9, z1: c[2] + 10.2, x: c[0], tc: 0.075 }, { y: c[1] + 1.85, z0: c[2] + 2.3, z1: c[2] + 11.0, x: c[0], tc: 0.07 }], { uv: UB.pylon }));
+    stB.add(K.pylon([{ y: c[1] + 0.92, z0: c[2] + 5.0, z1: c[2] + 9.1, x: c[0], tc: 0.12 }, { y: c[1] + 1.3, z0: c[2] + 1.9, z1: c[2] + 10.2, x: c[0], tc: 0.075 }, { y: c[1] + 1.52, z0: c[2] + 2.3, z1: c[2] + 10.8, x: c[0], tc: 0.07 }], { uv: UB.pylon }));
     stB.add(K.plate([c[0] - sx * 1.36, c[1] + 1.36, c[2] + 1.3], [c[0] - sx * 1.36, c[1] + 1.36, c[2] + 2.65], [c[0] - sx * 1.64, c[1] + 1.64, c[2] + 2.7], [c[0] - sx * 1.6, c[1] + 1.6, c[2] + 1.55], 0.015, UB.engine));   // inboard nacelle strake
-    eng.push({ c, n, fanMesh: ge90Fan({ radius: NAC.rFan - 0.015, hub: 0.6, blades: 22, uvBlade: UB.blade, uvSpinner: UB.spinner, uvSwirl: UB.swirl }) });
+    eng.push({ c, n, fanMesh: ge90Fan({ radius: NAC.rFan - 0.015, hub: 0.6, blades: 22, uvBlade: UB.blade, bladeStrip: SB.blade, uvSpinner: UB.spinner, uvSwirl: UB.swirl }) });
   }
 
   // ---- small details ----------------------------------------------------------------------------------------------------------
   for (const [z, h] of [[-25.5, 0.36], [-5.5, 0.36], [10.0, 0.34]]) stA.add(K.bladeAntenna({ pos: [0, fus.topAt(z) - 0.02, z], height: h, chord: 0.5, sweep: 0.22, uv: UA.antenna }));
   stA.add(K.ellipsoid(0.55, 0.16, 1.4, { segments: 14, rings: 6, uv: UA.antenna }).translate(0, fus.topAt(-14.5) - 0.03, -14.5));      // satcom fairing
   for (const z of [-21.0, 14.0]) stA.add(K.bladeAntenna({ pos: [0, fus.botAt(z) + 0.02, z], height: 0.3, chord: 0.45, sweep: 0.2, down: true, uv: UA.antenna }));
-  for (const sx of [-1, 1]) for (const [d, y] of [[2.9, 0.1], [3.4, -0.35], [3.6, 0.45]]) {        // pitot / AoA probes
-    const z = zd(d), t = fus.tAtY(z, y), p = fus.at(z, sx > 0 ? t : 1 - t).p; stA.add(K.probe(p, [p[0] + sx * 0.15, p[1] - 0.01, p[2] - 0.22], 0.016, UA.steel));
+  for (const sx of [-1, 1]) {
+    const on = (d, y) => { const z = zd(d), t = fus.tAtY(z, y); return fus.at(z, sx > 0 ? t : 1 - t); };
+    for (const [d, y] of [[2.85, 0.15], [3.15, -0.3], [3.45, 0.42]]) {                        // L-shaped pitot probes: mast out, tube forward
+      const { p, n } = on(d, y), m = [p[0] + n[0] * 0.13, p[1] + n[1] * 0.13 - 0.02, p[2] + n[2] * 0.13];
+      stA.add(K.tube(p, m, 0.022, 0.012, { segments: 6, uv: UA.steel })).add(K.tube(m, [m[0], m[1], m[2] - 0.2], 0.011, 0.008, { segments: 6, uv: UA.steel }));
+    }
+    for (const [d, y] of [[3.75, 0.0], [5.6, -0.95]]) {                                      // angle-of-attack vane and TAT probe
+      const { p, n } = on(d, y), q = [p[0] + n[0] * 0.1, p[1] + n[1] * 0.1, p[2] + n[2] * 0.1];
+      stA.add(K.plate(p, [p[0], p[1], p[2] + 0.07], [q[0], q[1], q[2] + 0.03], [q[0], q[1], q[2] - 0.05], 0.008, UA.vane));
+      stA.add(K.ellipsoid(0.07, 0.07, 0.07, { segments: 10, rings: 3, uv: UA.vane, z0: 0, z1: 1 }).aim(n).translate(p[0] - n[0] * 0.06, p[1] - n[1] * 0.06, p[2] - n[2] * 0.06));
+    }
+    { // windshield wiper parked along the bottom of the front pane
+      const tt = (t) => (sx > 0 ? t : 1 - t), a = fus.at(WS.IB[0] + 0.01, tt(WS.IB[1] - 0.025)), b = fus.at(WS.OB[0] - 0.13, tt(WS.OB[1] + 0.02));
+      const lift = (P, k) => [P.p[0] + P.n[0] * k, P.p[1] + P.n[1] * k, P.p[2] + P.n[2] * k];
+      stA.add(K.tube(lift(a, 0.025), lift(b, 0.025), 0.012, 0.01, { segments: 5, uv: UA.wiper })).add(K.tube(lift(b, 0.0), lift(b, 0.03), 0.025, 0.02, { segments: 6, uv: UA.wiper }));
+    }
   }
+  for (const z of [-17.5, 9.0]) stA.add(K.bladeAntenna({ pos: [0, fus.botAt(z) + 0.02, z], height: 0.24, chord: 0.18, sweep: 0.12, down: true, uv: UA.dark }));   // drain masts
+  for (const [z, x] of [[-20.0, 0.35], [-19.0, -0.35], [2.0, 0]]) { const y = fus.topAt(z) - 0.01; stA.add(K.ellipsoid(0.12, 0.035, 0.16, { segments: 10, rings: 3, uv: UA.antenna }).translate(x, y - x * x * 0.16, z)); }   // GPS / TCAS domes
   // tail skid (extends with the gear on the real aircraft; fixed here)
   { const z = 21.0, yb = fus.botAt(z); stA.add(K.prism([[z - 0.9, yb + 0.1], [z + 0.9, yb + 0.1], [z + 0.55, yb - 0.32], [z - 0.4, yb - 0.32]], -0.13, 0.13, UA.strut)); stA.add(K.box(0.3, 0.06, 0.75, UA.dark).translate(0, yb - 0.35, z + 0.07)); }
   { const wicks = []; for (const sx of [-1, 1]) { for (const x of [26.0, 27.6, 29.2, 31.6]) { const p = W.R.at(x, 1, 'mid'); wicks.push([sx * p[0], p[1], p[2]]); } for (const x of [7.0, 8.6, 10.0]) { const p = stab.R.at(x, 1, 'mid'); wicks.push([sx * p[0], p[1], p[2]]); } } for (const y of [11.5, 13.2]) { const p = fin.at(y, 1, 'mid'); wicks.push(p); } stB.add(K.staticWicks(wicks, 0.26, UB.wick)); }
@@ -280,6 +328,8 @@ export function createVisual(ctx, opts = {}) {
   const matA = A.material(ctx, { envMapIntensity: 1, emissiveIntensity: 0 }), matB = B.material(ctx, { envMapIntensity: 1 });
   lap('textures');
   rig.material('paint', matA, { shared: true }); rig.material('wing', matB, { shared: true });
+  rig.glass('glass', K.glassMaterial(ctx, { tint: '#0e161d', opacity: 0.42, edgeOpacity: 0.9, roughness: 0.03, reflect: 1.05, dust: 0.03 }));
+  rig.addStatic(glaz.glass, 'glass');
   rig.disposables.push(A, B);
 
   // ---- moving surfaces --------------------------------------------------------------------------------------------------------
@@ -318,7 +368,8 @@ export function createVisual(ctx, opts = {}) {
   rig.addStatic(stA, 'paint'); rig.addStatic(stB, 'wing');
 
   // ---- landing gear -----------------------------------------------------------------------------------------------------------
-  const gp = G.gear, gearUV = { strut: UA.strut, hub: UA.hub, tyre: UA.tyre, piston: UA.chrome, link: UA.link };
+  const gp = G.gear, gearUV = { strut: UA.strut, piston: UA.chrome, link: UA.link };     // tyres / hubs from the kit's shaded strips
+  const strips = K.tyreStrips(A);
   const doorOf = (patch, edge) => ({ mesh: K.thicken(patch, 0.03, UA.well), hinge: { a: edge[0], b: edge[1] }, ref: K.centroid(patch) });
   K.buildGear(rig, A, {
     name: 'nose', index: 0, contact: gp[0].pos, wheels: [-0.33, 0.33], wheelRadius: gp[0].wheelRadius, wheelWidth: 0.3, pivot: [0, -1.85, -28.15], stroke: 0.4, staticFrac: 0.4,
@@ -333,7 +384,7 @@ export function createVisual(ctx, opts = {}) {
     const c = gp[i].pos;
     bogieGear(rig, {
       name: 'main' + key, index: i, side: sx, contact: c, R: gp[i].wheelRadius, wW: 0.5, pivot: [sx * 5.3, -1.45, 2.1], stow: [sx * 2.75, -2.0, 2.6],
-      stroke: 0.5, staticFrac: 0.4, strutR: 0.2, axle: 1.45, track: 0.7, tilt: 12, window: [0.18, 0.9], uv: UA,
+      stroke: 0.5, staticFrac: 0.4, strutR: 0.2, axle: 1.45, track: 0.7, tilt: 12, window: [0.18, 0.9], uv: UA, strips,
       brace: [sx * 3.2, -1.6, 2.2], drag: [sx * 5.4, -1.2, 0.4], legDoor: UA.fair,
       door: { mesh: K.thicken(fair.patches['mlg' + key], 0.03, UA.well), edge: sx > 0 ? fair.edges.mlgR.tLo : fair.edges.mlgL.tHi, ref: K.centroid(fair.patches['mlg' + key]) },
     });
@@ -349,7 +400,30 @@ export function createVisual(ctx, opts = {}) {
   rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.11, squash: [1, 0.6, 1] });
   rig.lamp('beacon', [0, -3.43, -2.5], { color: [1, 0.05, 0.03], size: 0.11, squash: [1, 0.6, 1] });
   for (const sx of [-1, 1]) rig.lamp('landing', [sx * Math.abs(L.landing[0]), L.landing[1], L.landing[2]], { color: [1, 0.97, 0.9], size: 0.13, squash: [1.4, 0.8, 0.5] });
-  for (const sx of [-1, 1]) { const p = fair.at(-9.6, sx > 0 ? 0.21 : 0.79).p; rig.lamp('taxi', [p[0], p[1], p[2]], { color: [1, 0.97, 0.9], size: 0.07 }); }   // runway turn-off lights
+  const turnoff = [-1, 1].map(sx => fair.at(-9.6, sx > 0 ? 0.21 : 0.79).p);
+  for (const p of turnoff) rig.lamp('taxi', [p[0], p[1], p[2]], { color: [1, 0.97, 0.9], size: 0.07 });   // runway turn-off lights
+  // night halos: soft additive sprites so the lamps read at chase distance (drawn after the rig, not a kit mesh)
+  const strobeW = [-1, 1].map(sx => [sx * (Math.abs(L.navRight[0]) + 0.08), L.navRight[1], L.navRight[2] + 0.22]);
+  const HALO = [
+    { p: [L.navLeft[0] - 0.08, L.navLeft[1], L.navLeft[2]], c: [1, 0.05, 0.03], k: 'nav', s: 3.2 }, { p: [L.navRight[0] + 0.08, L.navRight[1], L.navRight[2]], c: [0.05, 1, 0.3], k: 'nav', s: 3.2 },
+    { p: [L.tail[0], L.tail[1], L.tail[2] + 0.08], c: [1, 1, 1], k: 'nav', s: 2.4 },
+    { p: strobeW[0], c: [1, 1, 1], k: 'strobe', s: 6 }, { p: strobeW[1], c: [1, 1, 1], k: 'strobe', s: 6 }, { p: [L.strobe[0], L.strobe[1], L.strobe[2] + 0.08], c: [1, 1, 1], k: 'strobe', s: 4.5 },
+    { p: [L.beacon[0], L.beacon[1] + 0.08, L.beacon[2]], c: [1, 0.08, 0.04], k: 'beacon', s: 4 }, { p: [0, -3.5, -2.5], c: [1, 0.08, 0.04], k: 'beacon', s: 4 },
+    ...[-1, 1].map(sx => ({ p: [sx * Math.abs(L.landing[0]), L.landing[1] - 0.05, L.landing[2] - 0.15], c: [1, 0.95, 0.85], k: 'landing', s: 6 })),
+    ...turnoff.map(p => ({ p: [p[0], p[1], p[2] - 0.1], c: [1, 0.95, 0.85], k: 'taxi', s: 3.5 })),
+    { p: [0, -2.62, -28.45], c: [1, 0.95, 0.85], k: 'taxi', s: 4 },
+  ];
+  const haloGeo = new THREE.BufferGeometry();
+  haloGeo.setAttribute('position', new THREE.Float32BufferAttribute(HALO.flatMap(h => h.p), 3));
+  haloGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Array(HALO.length * 3).fill(0), 3));
+  haloGeo.setAttribute('size', new THREE.Float32BufferAttribute(HALO.map(h => h.s), 1));
+  const haloMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, fog: false,
+    vertexShader: 'attribute float size; varying vec3 vC; void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(size * 0.5 * projectionMatrix[1][1] * 360.0 / max(0.5, -mv.z), 2.0, 128.0); }',
+    fragmentShader: 'varying vec3 vC; void main(){ vec2 q = gl_PointCoord * 2.0 - 1.0; float r2 = dot(q, q); if (r2 > 1.0) discard; float a = exp(-r2 * 5.0) + 0.25 * exp(-r2 * 1.4) * (1.0 - r2); gl_FragColor = vec4(vC * a, 1.0); }',
+  });
+  const halo = new THREE.Points(haloGeo, haloMat); halo.name = 'halos'; halo.frustumCulled = false; halo.renderOrder = 6;
+  const haloCol = haloGeo.attributes.color;
 
   // ---- animation --------------------------------------------------------------------------------------------------------------
   let fanAng = [0, 0];
@@ -374,23 +448,132 @@ export function createVisual(ctx, opts = {}) {
       sleeves[i].node.position.z = sleeves[i].node.userData.restZ + (e.reverser || 0) * sleeves[i].travel;
     }
     matA.emissiveIntensity = S.night * 2.4;
+    const lt = S.lights || {}, nf = Math.max(0, Math.min(1, (S.night ?? 0) * 1.4 - 0.2)), t = S.t || 0;
+    HALO.forEach((h, i) => {
+      let on = 0;
+      if (h.k === 'nav') on = lt.nav ? 1 : 0;
+      else if (h.k === 'strobe') { const ph = t % 1.1; on = lt.strobe && (ph < 0.055 || (ph > 0.16 && ph < 0.215)) ? 1 : 0; }
+      else if (h.k === 'beacon') { const ph = (t + 0.45) % 1.25; on = lt.beacon ? (ph < 0.16 ? Math.sin(ph / 0.16 * Math.PI) : 0) : 0; }
+      else on = lt[h.k] && sf.gear > 0.98 ? 1 : 0;
+      const I = on * nf * 0.9; haloCol.setXYZ(i, h.c[0] * I, h.c[1] * I, h.c[2] * I);
+    });
+    haloCol.needsUpdate = true; halo.visible = nf > 0.01;
   });
   for (const s of sleeves) s.node.userData.restZ = s.node.position.z;
   const visual = rig.build();
+  visual.object3D.add(halo); rig.disposables.push(haloGeo, haloMat);
   lap('rig'); visual.stats.phases = lap.out;
   visual.livery = livery; visual.liveries = LIVERIES;
   return visual;
 }
 
+// ---- flight-deck glazing ----------------------------------------------------------------------------------------------------------
+// The six windows as convex outlines in (z, t) on the right side (t < 0.5): two front panes on the nose shoulders meeting at a
+// narrow centre post, two side windows, and the small aft window whose upper edge slopes down. Returns the list with WS/S1/S2/S3.
+function flightDeckWindows(f, zd) {
+  const tAtX = (z, x) => { let lo = 0.25, hi = 0.5; for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (f.at(z, m).p[0] > x) lo = m; else hi = m; } return (lo + hi) / 2; };
+  const zy = (d, y) => [zd(d), f.tAtY(zd(d), y)], zx = (d, x) => [zd(d), tAtX(zd(d), x)];
+  const WS = { IB: zx(3.98, 0.06), OB: zx(4.42, 1.36), OT: zx(5.1, 1.3), IT: zx(4.84, 0.06) };
+  const S1 = { bf: zy(4.58, 0.98), br: zy(5.5, 0.97), tr: zy(5.5, 1.7), tf: zy(5.2, 1.77) };
+  const S2 = { bf: zy(5.62, 0.97), br: zy(6.52, 0.98), tr: zy(6.52, 1.6), tf: zy(5.62, 1.68) };
+  const S3 = { bf: zy(6.64, 0.99), br: zy(7.2, 1.03), rt: zy(7.2, 1.36), nt: zy(7.02, 1.5), tf: zy(6.64, 1.57) };
+  const W = [[WS.IB, WS.OB, WS.OT, WS.IT], [S1.bf, S1.br, S1.tr, S1.tf], [S2.bf, S2.br, S2.tr, S2.tf], [S3.bf, S3.br, S3.rt, S3.nt, S3.tf]];
+  return Object.assign(W, { WS, S1, S2, S3 });
+}
+/** Grid-aligned (z, t) box around both sides' windows: the main skin is cut there and rebuilt by glazing(). */
+function glazingBox(W, Kring) {
+  let z0 = 1e9, z1 = -1e9, tm = 1;
+  for (const w of W) for (const [z, t] of w) { z0 = Math.min(z0, z); z1 = Math.max(z1, z); tm = Math.min(tm, t); }
+  const t0 = (Math.floor(tm * Kring) - 1) / Kring;
+  return { z: [z0 - 0.14, z1 + 0.14], t: [t0, 1 - t0] };
+}
+/**
+ * Rebuild the skin inside `box` with holes for the convex (z, t) polygons, clipping each skin cell against them; the clipped
+ * insides become the glass (set `depth` metres in). Cells follow the loft's own ring columns so the edges match the main skin.
+ */
+function glazing(f, chart, polys, box, dzRow, depth = 0.014, uvSeal = null) {
+  const skin = new K.Mesh(), glass = new K.Mesh(), Kr = f.K, memo = new Map();
+  const area = (P) => { let a = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
+  const W = polys.map(P => (area(P) > 0 ? P : P.slice().reverse()));
+  const bb = W.map(P => [Math.min(...P.map(p => p[0])), Math.max(...P.map(p => p[0])), Math.min(...P.map(p => p[1])), Math.max(...P.map(p => p[1]))]);
+  const clip = (poly, a, b, keepIn) => {
+    const out = [], side = (p) => ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) * (keepIn ? 1 : -1);
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q);
+      if (sp >= 0) out.push(p);
+      if ((sp >= 0) !== (sq >= 0)) { const k = sp / (sp - sq); out.push([p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k]); }
+    }
+    return out.length >= 3 && Math.abs(area(out)) > 1e-9 ? out : null;
+  };
+  const emit = (m, poly, off) => {
+    const vs = poly.map(([z, t]) => {
+      const key = Math.round(z * 1e4) * 1e5 + Math.round(t * 1e5); let q = memo.get(key);
+      if (!q) { q = f.at(z, t); q.uv = chart.uvUnwrap(z, t, chart.stripAt(z)); memo.set(key, q); }
+      const { p, n } = q; return { p: [p[0] - n[0] * off, p[1] - n[1] * off, p[2] - n[2] * off], n, uv: q.uv };
+    });
+    for (let i = 1; i < vs.length - 1; i++) {
+      const A = vs[0]; let B = vs[i], C = vs[i + 1];
+      const e1 = [B.p[0] - A.p[0], B.p[1] - A.p[1], B.p[2] - A.p[2]], e2 = [C.p[0] - A.p[0], C.p[1] - A.p[1], C.p[2] - A.p[2]];
+      const cx = e1[1] * e2[2] - e1[2] * e2[1], cy = e1[2] * e2[0] - e1[0] * e2[2], cz = e1[0] * e2[1] - e1[1] * e2[0];
+      if (cx * A.n[0] + cy * A.n[1] + cz * A.n[2] < 0) [B, C] = [C, B];
+      const i0 = m.vertexCount;
+      for (const v of [A, B, C]) m.vert(v.p[0], v.p[1], v.p[2], v.n[0], v.n[1], v.n[2], v.uv[0], v.uv[1]);
+      m.tri(i0, i0 + 1, i0 + 2);
+    }
+  };
+  const zs = [box.z[0], box.z[1]];
+  for (let z = box.z[0] + dzRow; z < box.z[1] - dzRow * 0.3; z += dzRow) zs.push(z);
+  for (const P of W) for (const p of P) zs.push(p[0]);
+  zs.sort((a, b) => a - b);
+  const Z = zs.filter((z, i) => i === 0 || z - zs[i - 1] > 0.01);
+  const j0 = Math.round(box.t[0] * Kr), j1 = Math.round(box.t[1] * Kr);
+  for (let i = 0; i < Z.length - 1; i++) for (let j = j0; j < j1; j++) {
+    const za = Z[i], zb = Z[i + 1], ta = j / Kr, tb = (j + 1) / Kr;
+    let outside = [[[za, ta], [zb, ta], [zb, tb], [za, tb]]];
+    W.forEach((P, w) => {
+      const b = bb[w]; if (zb < b[0] || za > b[1] || tb < b[2] || ta > b[3]) return;
+      const next = [];
+      for (const piece of outside) {
+        let rest = piece;
+        for (let e = 0; e < P.length && rest; e++) { const a = P[e], c = P[(e + 1) % P.length], o = clip(rest, a, c, false); if (o) next.push(o); rest = clip(rest, a, c, true); }
+        if (rest) emit(glass, rest, depth);
+      }
+      outside = next;
+    });
+    for (const piece of outside) emit(skin, piece, 0);
+  }
+  // reveal: a dark seal wall around each opening, from the skin down to the pane
+  if (uvSeal) for (const P of W) {
+    let cz = 0, ct = 0; for (const p of P) { cz += p[0] / P.length; ct += p[1] / P.length; }
+    const c3 = f.at(cz, ct).p;
+    for (let e = 0; e < P.length; e++) {
+      const a = P[e], b = P[(e + 1) % P.length], nSeg = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], (b[1] - a[1]) * 19) / 0.12));
+      for (let k = 0; k < nSeg; k++) {
+        const pa = f.at(a[0] + (b[0] - a[0]) * k / nSeg, a[1] + (b[1] - a[1]) * k / nSeg), pb = f.at(a[0] + (b[0] - a[0]) * (k + 1) / nSeg, a[1] + (b[1] - a[1]) * (k + 1) / nSeg);
+        const a0 = pa.p, b0 = pb.p, a1 = a0.map((v, i) => v - pa.n[i] * depth * 1.15), b1 = b0.map((v, i) => v - pb.n[i] * depth * 1.15);
+        const u = [b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]], v = [a1[0] - a0[0], a1[1] - a0[1], a1[2] - a0[2]];
+        let nx = u[1] * v[2] - u[2] * v[1], ny = u[2] * v[0] - u[0] * v[2], nz = u[0] * v[1] - u[1] * v[0];
+        const flip = nx * (c3[0] - a0[0]) + ny * (c3[1] - a0[1]) + nz * (c3[2] - a0[2]) < 0, l = Math.hypot(nx, ny, nz) * (flip ? -1 : 1) || 1;
+        nx /= l; ny /= l; nz /= l;
+        const i0 = skin.vertexCount;
+        for (const q of [a0, b0, b1, a1]) skin.vert(q[0], q[1], q[2], nx, ny, nz, uvSeal[0], uvSeal[1]);
+        if (flip) skin.quad(i0 + 3, i0 + 2, i0 + 1, i0); else skin.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+      }
+    }
+  }
+  return { skin, glass };
+}
+
 // ---- GE90 fan: 22 wide-chord composite blades with a swept, curved tip, conical spinner with a white swirl -------------------
 function ge90Fan(o) {
-  const R = o.radius, hub = o.hub, nb = o.blades, m = new K.Mesh(), NS = 9, TAU = Math.PI * 2, uvB = o.uvBlade;
+  const R = o.radius, hub = o.hub, nb = o.blades, m = new K.Mesh(), NS = 10, TAU = Math.PI * 2, uvB = o.uvBlade, SBl = o.bladeStrip;
+  const uvLE = SBl ? SBl.uv(0) : uvB, uvTE = SBl ? SBl.uv(1) : uvB;
   for (let i = 0; i < nb; i++) {
     const phi0 = i / nb * TAU, rows = [];
     for (let k = 0; k <= NS; k++) {
       const f = k / NS, r = hub * 0.97 + (R - hub * 0.97) * f;
-      const beta = (24 + 40 * Math.pow(f, 0.85)) * DEG;                         // stagger from the axis
-      const cc = R * (0.36 + 0.3 * Math.sin(Math.PI * Math.min(1, f * 0.95 + 0.05)) - 0.12 * f * f);   // wide chord, narrowing at the tip
+      const beta = (26 + 40 * Math.pow(f, 0.85)) * DEG;                         // stagger from the axis
+      const cc = R * (0.38 + 0.3 * Math.sin(Math.PI * Math.min(1, f * 0.95 + 0.05)) - 0.03 * f * f);   // very wide chord: the blades overlap seen from ahead
       const sweep = R * (0.05 * f + 0.2 * f * f * f);                           // leading edge sweeps aft toward the tip
       const lean = 0.16 * f * f;                                                // scimitar curve in the direction of rotation
       const phi = phi0 + lean, rad = [Math.cos(phi), Math.sin(phi), 0], tan = [-Math.sin(phi), Math.cos(phi), 0];
@@ -401,7 +584,7 @@ function ge90Fan(o) {
     }
     for (const sg of [1, -1]) {
       const base = m.vertexCount;
-      for (const q of rows) { m.vert(q.le[0], q.le[1], q.le[2], q.n[0] * sg, q.n[1] * sg, q.n[2] * sg, uvB[0], uvB[1]); m.vert(q.te[0], q.te[1], q.te[2], q.n[0] * sg, q.n[1] * sg, q.n[2] * sg, uvB[0], uvB[1]); }
+      for (const q of rows) { m.vert(q.le[0], q.le[1], q.le[2], q.n[0] * sg, q.n[1] * sg, q.n[2] * sg, uvLE[0], uvLE[1]); m.vert(q.te[0], q.te[1], q.te[2], q.n[0] * sg, q.n[1] * sg, q.n[2] * sg, uvTE[0], uvTE[1]); }
       for (let k = 0; k < NS; k++) { const a = base + k * 2, b = a + 1, c = a + 3, d = a + 2; if (sg > 0) m.quad(a, b, c, d); else m.quad(a, d, c, b); }
     }
   }
@@ -439,6 +622,15 @@ function bogieGear(rig, o) {
     const q = (s, f) => Ar(P.clone().addScaledVector(d, s).add(out).addScaledVector(fw, f));
     sm.add(K.plate(q(0.05, 0.62), q(0.05, -0.55), q(Lo * 0.97, -0.5), q(Lo * 0.97, 0.55), 0.03, o.legDoor));
   }
+  { // brake and hydraulic lines down the aft face of the strut, clamped at two collars
+    const aft = new THREE.Vector3(0, 0, 1).addScaledVector(d, -d.z).normalize(), lat = new THREE.Vector3().crossVectors(d, aft).normalize();
+    for (const [k, r] of [[-0.3, 0.018], [0, 0.014], [0.3, 0.016]]) {
+      const off = aft.clone().addScaledVector(lat, k).normalize().multiplyScalar(sr + r * 1.4);
+      const q = (s, lift = 0) => Ar(P.clone().addScaledVector(d, s).add(off).addScaledVector(off, lift));
+      sm.add(K.pipe([q(0.15, 0.6), q(0.3), q(Lo * 0.5), q(Lo * 0.92), q(Lo + 0.05, 0.8)], r, { segments: 5, uv: UA.hose }));
+    }
+    for (const f of [0.35, 0.75]) sm.add(K.tube(Ar(P.clone().addScaledVector(d, Lo * f - 0.02)), Ar(P.clone().addScaledVector(d, Lo * f + 0.02)), sr * 1.08, sr * 1.08, { segments: 16, uv: UA.link }));
+  }
   rig.part(o.name + '.strut', sm, { parent: leg, pivot: Ar(P) });
   // piston (chrome) + bogie pivot yoke
   const pm = new K.Mesh(), yoke = C.clone().addScaledVector(d, -0.22);
@@ -457,7 +649,17 @@ function bogieGear(rig, o) {
     for (const s of [-1, 1]) bm.add(K.tube([C.x + s * 0.12, C.y + 0.12, C.z + z * 0.5], [C.x + s * 0.12, C.y + 0.05, C.z + z], 0.03, 0.03, { segments: 5, uv: UA.link }));
   }
   const bogie = rig.part(o.name + '.bogie', bm, { parent: piston, pivot: Ar(C) });
-  const wheelSet = (z) => { const m = new K.Mesh(); for (const x of [-tr, tr]) m.add(K.wheel({ radius: R, width: wW, uvTyre: UA.tyre, uvHub: UA.hub, segments: 24 }).translate(C.x + x, C.y, C.z + z)); return m; };
+  const S = o.strips || {}, rb = R * 0.56 * 0.72;
+  const wheelSet = (z) => {
+    const m = new K.Mesh();
+    for (const x of [-tr, tr]) {
+      const w = K.wheel({ radius: R, width: wW, uvTyre: UA.tyre, uvHub: UA.hub, segments: 24, tyreStrip: S.tyre, hubStrip: S.hub });
+      const sg = -Math.sign(x), x0 = sg * wW * 0.28, x1 = sg * (tr - 0.13);                    // carbon brake stack on the inboard side
+      w.add(K.lathe([[rb * 0.45, 0], [rb, 0, 1], [rb, Math.abs(x1 - x0) * 0.75], [rb * 0.8, Math.abs(x1 - x0), 1], [rb * 0.45, Math.abs(x1 - x0)]], { segments: 14, uv: UA.brake }).rotateY(sg * Math.PI / 2).translate(x0, 0, 0));
+      m.add(w.translate(C.x + x, C.y, C.z + z));
+    }
+    return m;
+  };
   const wf = rig.part(o.name + '.wheelF', wheelSet(-ax), { parent: bogie, pivot: [C.x, C.y, C.z - ax] });
   const wm = rig.part(o.name + '.wheelM', wheelSet(0), { parent: bogie, pivot: [C.x, C.y, C.z] });
   const yaw = rig.node(o.name + '.yaw', { parent: bogie, pivot: [C.x, C.y, C.z + ax] });
@@ -538,12 +740,11 @@ function paintFuselage(A, o) {
     const m = (p) => [p[0], s > 0 ? p[1] : 1 - p[1]];
     for (const w of WIN) {
       const pts = w.map(m), path = (g) => { pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); };
-      P.stroke(path, 0, { color: '#202327', rough: 0.4, metal: 0 }, { join: 'round', px: 9 });
+      P.stroke(path, 0, { color: '#2a2d30', rough: 0.5, metal: 0 }, { join: 'round', px: 2.5 });           // seal edge
       P.fill(pts, F.paintedGlass);
       P.groove(path, { px: 1.2, depth: 0.5, dark: 0.2 });
     }
   }
-  P.fill([[WIN[0][0][0], WIN[0][0][1]], [WIN[0][3][0], WIN[0][3][1]], [WIN[0][3][0], 1 - WIN[0][3][1]], [WIN[0][0][0], 1 - WIN[0][0][1]]], { color: '#202327', rough: 0.4, metal: 0 });   // centre post
   // --- cabin windows, doors, hatches ---
   const DOORS = [9.5, 19.8, 45.5, 58.0, 66.5].map(zd), OWE = zd(34.0);
   const zs = []; for (let z = zd(7.6); z < zd(66.2); z += 0.51) if (DOORS.every(dz => Math.abs(z - dz) > 0.85) && Math.abs(z - OWE) > 0.55) zs.push(z);
@@ -562,6 +763,17 @@ function paintFuselage(A, o) {
   P.decalOn(35.4, 1.25, 'R', (g) => { g.fillStyle = '#3a3d40'; g.fillRect(-0.4, -0.15, 0.8, 0.3); g.strokeStyle = '#8b9095'; g.lineWidth = 0.02; g.strokeRect(-0.43, -0.18, 0.86, 0.36); });
   P.decalOn(37.0, 0.62, 'L', (g) => { g.fillStyle = 'rgba(40,36,34,0.85)'; g.beginPath(); g.ellipse(0, 0, 0.36, 0.26, 0, 0, Math.PI * 2); g.fill(); });
   P.decalOn(-9.5, -2.6, 'both', (g) => { g.fillStyle = '#4a4e52'; g.beginPath(); g.ellipse(0, 0, 0.4, 0.09, 0, 0, Math.PI * 2); g.fill(); });
+  // door furniture: handle recess with a red arming placard, the door number above, slide-bustle seam below the sill
+  DOORS.forEach((zc, i) => {
+    P.decalOn(zc + 0.22, 0.05, 'both', (g) => { g.fillStyle = '#5a5e62'; g.fillRect(-0.09, -0.035, 0.18, 0.07); g.fillStyle = '#b8231c'; g.fillRect(-0.06, 0.06, 0.12, 0.045); g.fillStyle = '#e8e8e8'; g.fillRect(-0.045, 0.075, 0.09, 0.012); });
+    P.textOn(String(i + 1) + 'L', zc - 0.3, 1.18, 'L', 0.09, { color: '#6f757b', font: K.FONT.sans, weight: 700 });
+    P.textOn(String(i + 1) + 'R', zc - 0.3, 1.18, 'R', 0.09, { color: '#6f757b', font: K.FONT.sans, weight: 700 });
+    P.yLine(zc - 0.5, zc + 0.5, -1.15, { px: 1, depth: 0.3, dark: 0.08 });
+  });
+  P.textOn('EMERGENCY EXIT', OWE, 1.1, 'both', 0.06, { color: '#b8231c', font: K.FONT.sans, weight: 700 });
+  // grime trails from the drain masts and the gear bays along the belly
+  for (const z0 of [-17.4, 9.1]) for (let k = 0; k < 4; k++) P.streak(z0, 0.004 + k * 0.004, z0 + 3 + k * 1.3, 0.003 + k * 0.006, 0.006, { alpha: 0.12 - k * 0.02 });
+  for (const s of [1, -1]) for (let k = 0; k < 6; k++) { const t = s > 0 ? 0.06 + k * 0.012 : 0.94 - k * 0.012; P.streak(4.8, t, 9 + k * 1.5, t + s * 0.01, 0.012, { alpha: 0.07 }); }
   const rnd = (() => { let a = 17; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
   for (let i = 0; i < 46; i++) { const z = -26 + rnd() * 55, t = rnd() < 0.5 ? rnd() * 0.07 : 1 - rnd() * 0.07; P.streak(z, t, z + 1.0 + rnd() * 3, t, 0.004 + rnd() * 0.01, { alpha: 0.05 + rnd() * 0.08 }); }
   for (let i = 0; i < 10; i++) { const z = 33.5 + rnd() * 3.5; P.streak(z, 0.62 + rnd() * 0.05, z + 1.4, 0.6 + rnd() * 0.05, 0.012, { alpha: 0.08 }); }
@@ -594,15 +806,16 @@ function paintFuselage(A, o) {
 // ---- paint: wings, tail -----------------------------------------------------------------------------------------------------------
 function paintSurfaces(B, o) {
   const { SC, W, fin, stab, cWT, cWB, cSt, cFin, SP_IN, SP_OUT, SLAT_OUT, XE } = o, F = K.FINISH;
-  const grey = F.semigloss('#b9bec3'), dgrey = F.semigloss('#a6acb1'), metal = { color: '#c9ccce', rough: 0.26, metal: 0.9 };
-  const line = { px: 1, depth: 0.35, dark: 0.12 }, gap = { px: 1.8, depth: 0.8, dark: 0.5 };
+  const grey = F.semigloss('#aeb3b7'), dgrey = F.semigloss('#9fa5aa'), metal = { color: '#c9ccce', rough: 0.26, metal: 0.9 };
+  const line = { px: 1, depth: 0.3, dark: 0.08 }, gap = { px: 1.8, depth: 0.8, dark: 0.5 };
   const at = (x, f) => { const p = W.at(x, f); return [p[0], p[2]]; };
   const L = (name, x) => W.lines[name].at(W.spanToU(x));
   for (const [chart, top] of [[cWT.i, true], [cWT.o, true], [cWB.i, false], [cWB.o, false]]) {
     const Q = B.pen(chart); Q.fill('all', grey);
     const span = (x0, x1, f0, f1, fin) => { const xs = []; for (let x = x0; x < x1; x += 1.5) xs.push(x); xs.push(x1); Q.fill([...xs.map(x => at(x, typeof f0 === 'string' ? L(f0, x) + 0.03 : f0)), ...xs.reverse().map(x => at(x, typeof f1 === 'string' ? L(f1, x) - 0.02 : f1))], fin); };
     if (top) span(2.2, 30.5, 'slat', 'spoil', dgrey);
-    span(2.2, XE, 0, 'slat', metal);                                                                       // bare-metal leading edge / slats
+    span(2.2, XE, 0, 'slat', F.semigloss('#c3c7cb'));                                                      // painted slats
+    span(2.2, XE, 0, 0.014, metal);                                                                        // polished erosion strip on the very leading edge
     const seg = (name, xs, op) => { const pts = []; for (let x = xs[0]; x < xs[1]; x += 1.0) pts.push(at(x, L(name, x))); pts.push(at(xs[1], L(name, xs[1]))); Q.line(pts, op); };
     seg('slat', [3.6, 9.0], gap); seg('slat', [12.6, 29.8], gap);
     for (const x of [3.6, 9.0, ...SLAT_OUT]) Q.line([at(x, 0), at(x, L('slat', x))], gap);
@@ -617,7 +830,7 @@ function paintSurfaces(B, o) {
       const a = at(3.2, 0.2), b = at(3.2, 0.58), c = at(6.6, 0.58), d = at(6.6, 0.2);     // walkway
       Q.stroke((g) => { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); }, 0.05, F.matte('#2a2c2e'));
       Q.stroke((g) => { g.moveTo(a[0], a[1]); g.lineTo(d[0], d[1]); }, 0.05, F.matte('#2a2c2e'));
-      for (const x of [5.0, 14.5, 21.0, 26.0]) { const p = at(x, 0.36); Q.decal(p[0], p[1], (g) => { g.fillStyle = '#3c4044'; g.beginPath(); g.arc(0, 0, 0.1, 0, Math.PI * 2); g.fill(); }); }   // fuel caps
+      for (const x of [5.0, 14.5, 21.0, 26.0]) { const p = at(x, 0.36); Q.decal(p[0], p[1], (g) => { g.strokeStyle = '#7d8388'; g.lineWidth = 0.015; g.beginPath(); g.arc(0, 0, 0.09, 0, Math.PI * 2); g.stroke(); }); }   // fuel caps
     } else {
       for (let i = 0; i < 16; i++) { const x = 4 + i * 1.6, a = at(x, 0.62); Q.streak(a[0], a[1], a[0], a[1] + 1.6, 0.06, { alpha: 0.1 }); }
       for (const x of [14, 18, 22, 26]) { const p = at(x, 0.4); Q.panel(p[0] - 0.3, p[1] - 0.22, p[0] + 0.3, p[1] + 0.22, { r: 0.05 }); }
@@ -627,7 +840,7 @@ function paintSurfaces(B, o) {
   {
     const Q = B.pen(cSt); Q.fill('all', grey);
     const sa = (x, f) => { const p = stab.at(x, f); return [p[0], p[2]]; };
-    Q.fill([sa(1.5, 0), sa(10.6, 0), sa(10.6, 0.07), sa(1.5, 0.07)], metal);
+    Q.fill([sa(1.5, 0), sa(10.6, 0), sa(10.6, 0.02), sa(1.5, 0.02)], metal);
     Q.line([sa(2.75, 1), sa(2.75, 0.69), sa(10.3, 0.69), sa(10.3, 1)], gap);
     for (const f of [0.25, 0.48]) Q.line([sa(1.5, f), sa(10.4, f)], line);
     for (const x of [4.0, 5.6, 7.2, 8.8]) Q.line([sa(x, 0.08), sa(x, 0.68)], line);
@@ -646,7 +859,7 @@ function paintSurfaces(B, o) {
       Q.fill([fa(1.9, 0), fa(4.4, 0), fa(4.4, 1.02), fa(1.9, 1.02)], F.gloss(SC.accent));
       Q.text('777', c[0] + 0.6, c[1] + 0.5, 2.6, { color: SC.accent, font: K.FONT.round, weight: 700 });
     }
-    Q.fill([fa(2.6, 0), fa(14.0, 0), fa(14.0, 0.035), fa(2.6, 0.035)], metal);
+    Q.fill([fa(2.6, 0), fa(14.0, 0), fa(14.0, 0.015), fa(2.6, 0.015)], metal);
     Q.line([fa(3.05, 1), fa(3.05, 0.7), fa(13.75, 0.69), fa(13.75, 1)], gap);
     Q.line([fa(7.42, 0.7), fa(7.42, 1)], gap);
     Q.line([fa(3.05, 0.89), fa(7.4, 0.89)], gap);
