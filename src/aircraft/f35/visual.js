@@ -183,7 +183,7 @@ export function createVisual(ctx, opts = {}) {
   //   The lip plane is raked: the lower outboard corner is the most forward point (side and plan sweep).
   //   One grid per side: S-duct (deep → lip, white) | sharp lip band (edge tape) | outer cowl that drapes onto the fuselage
   //   skin (rows converge on the body section along rays from C0), so the cowl and the body read as one surface.
-  const INL = { BI: [0.8, -0.5], BO: [1.22, -0.5], TO: [1.31, 0.23], TI: [0.8, 0.27], z: -3.3, rakeY: 0.5, rakeX: 0.34 };
+  const INL = { BI: [0.79, -0.5], BO: [1.27, -0.5], TO: [1.35, 0.22], TI: [0.79, 0.27], z: -3.3, rakeY: 0.5, rakeX: 0.34 };
   const lipZ = (x, y) => INL.z - INL.rakeY * (INL.TI[1] - y) - INL.rakeX * (x - INL.TI[0]);
   const NI = Math.max(32, Math.round(48 * detail / 4) * 4);
   const ringI = roundedRing([INL.BI, INL.BO, INL.TO, INL.TI], [0.05, 0.03, 0.03, 0.06], NI);
@@ -371,8 +371,8 @@ export function createVisual(ctx, opts = {}) {
   // formation strips: electroluminescent tapes on the forward fuselage and the boom sides
   for (const sx of [1, -1]) {
     const q = fus.at(-6.3, sx > 0 ? fus.tAtY(-6.3, 0.05) : 1 - fus.tAtY(-6.3, 0.05));
-    rig.lamp('formation', [q.p[0] + q.n[0] * 0.006, q.p[1] + q.n[1] * 0.006, -6.3], { color: [0.55, 1, 0.6], size: 0.018, squash: [0.35, 1, 13] });
-    rig.lamp('formation', [sx * (BX + 0.315), 0.15, 3.4], { color: [0.55, 1, 0.6], size: 0.018, squash: [0.35, 1, 13] });
+    rig.lamp('formation', [q.p[0] + q.n[0] * 0.006, q.p[1] + q.n[1] * 0.006, -6.3], { color: [0.07, 0.15, 0.08], size: 0.018, squash: [0.35, 1, 13] });
+    rig.lamp('formation', [sx * (BX + 0.315), 0.15, 3.4], { color: [0.07, 0.15, 0.08], size: 0.018, squash: [0.35, 1, 13] });
   }
   rig.lamp('beacon', L.beacon, { color: [1, 0.08, 0.02], size: 0.07, squash: [1, 0.45, 1.5] });
 
