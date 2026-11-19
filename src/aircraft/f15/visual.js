@@ -33,7 +33,7 @@ export function createVisual(ctx, opts = {}) {
   const livery = LIVERIES.includes(opts.livery) ? opts.livery : 'seymour', SC = SCHEMES[livery];
   const { detail, atlas: atlasSize } = K.detailFor(ctx);
   const G = geometry, F = K.FINISH, lap = K.stopwatch();
-  const paintF = (c) => ({ color: c, rough: 0.62, metal: 0.05 });
+  const paintF = (c) => ({ color: c, rough: 0.68, metal: 0.04 });
   const seg = Math.max(24, Math.round(64 * detail / 4) * 4);
 
   // ---- atlas ------------------------------------------------------------------------------------------------------------
@@ -46,7 +46,7 @@ export function createVisual(ctx, opts = {}) {
   const cWB = atlas.chart('wingBot', { type: 'plan', x: [1.5, 6.6], z: [-2.9, 3.6], view: 'bottom', mirror: true, density: 0.7 });
   const cST = atlas.chart('stabTop', { type: 'plan', x: [1.85, 4.4], z: [3.6, 7.35], view: 'top', mirror: true, density: 0.85 });
   const cSB = atlas.chart('stabBot', { type: 'plan', x: [1.85, 4.4], z: [3.6, 7.35], view: 'bottom', mirror: true, density: 0.6 });
-  const cFin = { L: atlas.chart('finLV', { type: 'side', z: [1.85, 6.75], y: [0.6, 3.85], view: 'left' }), R: atlas.chart('finRV', { type: 'side', z: [1.85, 6.75], y: [0.6, 3.85], view: 'right' }) };
+  const cFin = { L: atlas.chart('finLV', { type: 'side', z: [1.7, 6.75], y: [0.45, 3.85], view: 'left' }), R: atlas.chart('finRV', { type: 'side', z: [1.7, 6.75], y: [0.45, 3.85], view: 'right' }) };
   const cPanel = atlas.chart('panel', { type: 'rect', w: 0.9, h: 0.9, density: 2.2 });
   const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.8, h: 0.95, density: 0.7 });
   atlas.pack();
@@ -164,7 +164,7 @@ export function createVisual(ctx, opts = {}) {
   // ---- tail booms (carry the fins and stabilators) -------------------------------------------------------------------------
   for (const sx of [1, -1]) {
     stat.add(K.loft({
-      stations: [[1.2, 0.30, 0.02, 0.05, 0.05], [2.0, 0.30, 0.12, 0.38, 0.22], [3.5, 0.30, 0.15, 0.48, 0.3], [5.4, 0.28, 0.15, 0.48, 0.3], [6.6, 0.26, 0.12, 0.34, 0.2], [7.25, 0.26, 0.05, 0.1, 0.08], [7.4, 0.26, 0.0, 0.0, 0.0]]
+      stations: [[2.0, 0.28, 0.02, 0.05, 0.05], [2.8, 0.28, 0.11, 0.26, 0.2], [4.0, 0.28, 0.13, 0.3, 0.26], [5.6, 0.27, 0.13, 0.3, 0.26], [6.7, 0.26, 0.1, 0.22, 0.18], [7.28, 0.26, 0.045, 0.08, 0.07], [7.42, 0.26, 0.0, 0.0, 0.0]]
         .map(([z, y, w, top, bot]) => ({ z, x: sx * 1.75, y, w, top, bot, kTop: 0.7, kBot: 0.65 })),
       segments: 16, step: 0.3, uv: U.mid,
     }).mesh);
@@ -255,7 +255,7 @@ export function createVisual(ctx, opts = {}) {
   const stab = { R: mkStab(1), L: mkStab(-1) };
 
   // ---- fins -----------------------------------------------------------------------------------------------------------------
-  const FX = 1.68, FIN = { y0: 0.7, z0: 1.95, c0: 4.6, y1: 3.78, z1: 4.35, c1: 1.75 };
+  const FX = 1.68, FIN = { y0: 0.5, z0: 1.79, c0: 4.68, y1: 3.78, z1: 4.35, c1: 1.75 };
   const mkFin = (sx) => K.wing({
     airfoil: K.biconvex(0.045), chordPts: Math.round(10 * detail), spanAxis: 'y', tip: 'flat',
     stations: [{ x: sx * FX, y: FIN.y0, z: FIN.z0, chord: FIN.c0, tc: 0.045 }, { x: sx * FX, y: FIN.y1, z: FIN.z1, chord: FIN.c1, tc: 0.03 }],
@@ -597,7 +597,7 @@ function paint(atlas, o) {
       Q.fill([at(2.45, 0), at(3.78, 0), at(3.78, 1), at(2.45, 1)], F.semigloss(SC.stripe));
       Q.fill([at(2.33, 0), at(2.45, 0), at(2.45, 1), at(2.33, 1)], F.semigloss(SC.stripe2));
       for (let i = 0; i < 5; i++) { const c = at(2.75 + (i % 2) * 0.33, 0.25 + i * 0.12); Q.decal(c[0], c[1], (g) => { g.fillStyle = '#e8e6de'; star(g, 0.1); }); }
-      const e = at(3.05, 0.62); Q.decal(e[0], e[1], (g) => eagle(g, 0.85, SC.stripe2));
+      const e = at(3.05, 0.62); Q.decal(e[0], e[1], (g) => { if (key === 'L') g.scale(-1, 1); eagle(g, 0.85, SC.stripe2); });
     } else {
       Q.fill([at(3.48, 0), at(3.72, 0), at(3.72, 1), at(3.48, 1)], F.semigloss(SC.stripe));
       if (SC.checker) { for (let i = 0; i < 16; i++) { const a = at(3.48, i / 16), b = at(3.6, (i + 1) / 16); if (i % 2) Q.fill((g) => g.rect(a[0], b[1], b[0] - a[0], 0.12), F.semigloss(SC.stripe2)); } }
