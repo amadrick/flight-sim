@@ -253,7 +253,7 @@ float clTauLight(vec3 pa, float lod, float jit) {
     float u = (float(j) + 1.0) / float(CL_LIGHT_STEPS);
     float d1 = 1000.0 * u * u;                                     // segment ends: 62, 250, 562, 1000 m (4 steps)
     float dl = d1 - d0;
-    vec3 pl = pa + uClLightDir * (d0 + dl * jit);
+    vec3 pl = pa + uClLightDir * (d0 + dl * (0.25 + 0.5 * jit));    // half-cell jitter: hides the sample planes at half the variance
     vec4 wx = clWeather(pl.xz, max(lod - 1.0, 0.0));
     float d = clDensityBase(pl, wx, lod + 1.0 + float(j) * 0.5, info);
     tau += d * info.w * dl;
@@ -262,7 +262,12 @@ float clTauLight(vec3 pa, float lod, float jit) {
   tau *= uClNoise.w * 0.8;                                         // 0.8: base density is not eroded
   vec3 pe = pa + uClLightDir * 1000.0;
   // undo the air-mass offset: cloudShadowTau wants world XZ (it subtracts the wind offset itself)
-  tau += cloudShadowTau(pe.xz + uCloudShadowC.xy, pe.y);
+  // At low sun the 2.5D shadow map projects its horizontal structure onto cloud faces compressed by tan(elevation),
+  // which reads as horizontal striations. Jitter the lookup along the light slope (up to 1.2 km, i.e. a penumbra /
+  // multiple-scattering blur); the temporal filter integrates it.
+  float sl = length(uCloudShadowB.xy);
+  vec2 jo = uCloudShadowB.xy * ((jit - 0.5) * min(150.0, 1200.0 / max(sl, 1e-3)));
+  tau += cloudShadowTau(pe.xz + uCloudShadowC.xy + jo, pe.y);
   return tau;
 }
 
@@ -419,7 +424,7 @@ void main() {
             cap = max(1.0 / sig, uClStep.y); t = max(t, ts - 0.5 * cap); fine = true; zeros = 0; continue;
           }
           zeros = 0; nDense += 1.0;
-          float tauSun = clTauLight(pa, lod, blue2);
+          float tauSun = clTauLight(pa, lod, fract(blue2 + nDense * 0.618));
           // optical depth to the cloud top: mostly a smooth height-based estimate (using only the local density
           // would print the density field onto the ambient term: an "x-ray" look in diffuse light)
           float tauUp = uClNoise.w * (0.3 + 0.2 * d) * max(info.y - h, 0.0);
