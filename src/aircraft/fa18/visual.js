@@ -22,7 +22,7 @@ export const LIVERIES = ['navy', 'cag'];
 
 const SCHEMES = {
   navy: {
-    name: 'US Navy TPS two-tone grey', top: '#6c7379', under: '#959ba0', radome: '#7e8488', finish: 'matte', mark: '#43474b',
+    name: 'US Navy TPS two-tone grey', top: '#646b71', under: '#8d9398', radome: '#767c80', finish: 'matte', mark: '#3f4347',
     code: 'NX', modex: '211', squadron: 'VFA-177', buno: '169213', weather: 1,
   },
   cag: {
@@ -53,7 +53,9 @@ export function createVisual(ctx, opts = {}) {
     Rout: atlas.chart('finRout', { type: 'side', z: FZ, y: FY, view: 'right' }), Lout: atlas.chart('finLout', { type: 'side', z: FZ, y: FY, view: 'left' }),
     Rin: atlas.chart('finRin', { type: 'side', z: FZ, y: FY, view: 'left', density: 0.65 }), Lin: atlas.chart('finLin', { type: 'side', z: FZ, y: FY, view: 'right', density: 0.65 }),
   };
-  const cNac = atlas.chart('nacelle', { type: 'rect', w: 3.5, h: 5.4, density: 0.6 });
+  const cNac = { R: atlas.chart('nacR', { type: 'rect', w: 5.8, h: 3.5, density: 0.6 }), L: atlas.chart('nacL', { type: 'rect', w: 5.8, h: 3.5, density: 0.6 }) };
+  const IZ = [-4.45, -0.8], IY = [-0.8, 0.5];
+  const cIn = { R: atlas.chart('inR', { type: 'side', z: IZ, y: IY, view: 'right', density: 0.9 }), L: atlas.chart('inL', { type: 'side', z: IZ, y: IY, view: 'left', density: 0.9 }) };
   const cPanel = atlas.chart('panel', { type: 'rect', w: 0.86, h: 0.42, density: 2.5 });
   const cNoz = atlas.chart('nozzle', { type: 'rect', w: 3.2, h: 1.2, density: 0.7 });
   atlas.pack();
@@ -198,7 +200,7 @@ export function createVisual(ctx, opts = {}) {
   })();
   for (const sx of [1, -1]) {
     const L = K.loft({ stations: inSt, segments: Math.max(24, Math.round(40 * detail / 4) * 4), step: 0.14, capStart: 'flat', capUV: U.black,
-      uvFn: (x, y, z, t, ring) => (ring.k < 2.3 ? U.duct : U.under) });
+      uvFn: (x, y, z, t, ring) => (ring.k < 2.3 ? U.duct : cIn[sx > 0 ? 'R' : 'L'].uv(z, y + IN.y)) });
     // lean (tops outboard), rake (top lip forward, inner edge forward), then move into place
     const m = new THREE.Matrix4().set(
       1, IN.lean, 0, 0,
@@ -265,7 +267,7 @@ export function createVisual(ctx, opts = {}) {
   const nozzles = [], glows = [];
   for (const [i, sx] of [[0, -1], [1, 1]]) {
     const cx = sx * ENG_X;
-    stat.add(K.lathe(nacProf, { segments: Math.round(28 * detail), uv: (k, j, r, z) => cNac.uv(((sx > 0 ? j : 1 - j) * 3.5), z - 1.6) }).translate(cx, ENG_Y, 0));
+    stat.add(K.lathe(nacProf, { segments: Math.round(28 * detail), uv: (k, j, r, z) => cNac[sx > 0 ? 'R' : 'L'].uv(z - 1.6, j * 3.5) }).translate(cx, ENG_Y, 0));
     stat.add(K.lathe([[0.5, 7.38], [0.45, 6.9], [0.45, 6.2], [0, 6.2]], { segments: 24, uv: U.exhaust }).translate(cx, ENG_Y, 0));
     for (let k = 0; k < 10; k++) stat.add(K.box(0.025, 0.44, 0.05, U.heat2).translate(0, 0.22, 0).rotateZ(k * Math.PI / 5).translate(cx, ENG_Y, 6.32));
     nozzles.push(K.petalNozzle({ z0: NZ.z0, z1: NZ.z1, r0: NZ.r0, rClosed: 0.40, rOpen: 0.475, petals: 12, centre: [cx, ENG_Y, 0], uvOuter: U.heat, uvInner: U.heat2, thickness: 0.03, chart: cNoz }));
@@ -301,7 +303,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- materials ---------------------------------------------------------------------------------------------------------
   lap('geometry');
-  paint(atlas, { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cNac, cPanel, cNoz, paintF, X_FOLD, X_TIP, zLE, zLEo, zTE, ST, T_SILL });
+  paint(atlas, { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cNac, cIn, cPanel, cNoz, paintF, X_FOLD, X_TIP, zLE, zLEo, zTE, ST, T_SILL, chY: K.pchip(FT.filter((r) => r[4]).map((r) => r[0]), FT.filter((r) => r[4]).map((r) => r[5])) });
   lap('paint');
   const mat = atlas.material(ctx, { envMapIntensity: 1 });
   lap('textures');
@@ -422,20 +424,204 @@ function mixHex(a, b, f) {
 
 // ---- paint -------------------------------------------------------------------------------------------------------------------
 function paint(atlas, o) {
-  const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cNac, cPanel, cNoz, paintF } = o, F = K.FINISH;
-  const top = paintF(SC.top), under = paintF(SC.under);
-  const P = atlas.pen(cFus);
+  const { SC, fus, W, fin, cFus, cWT, cWB, cST, cSB, cFin, cNac, cIn, cPanel, cNoz, paintF, X_FOLD, X_TIP, chY } = o, F = K.FINISH;
+  const top = paintF(SC.top), under = paintF(SC.under), mark = SC.mark, cag = !!SC.cag, wx = SC.weather;
+  const rnd = (() => { let a = 1777; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
+  const tone = (hex, d) => mixHex(hex, d > 0 ? '#ffffff' : '#000000', Math.abs(d));
+  const slime = { color: '#cfd48f', rough: 0.35, metal: 0 };
+  const lowVis = cag ? false : mark;
+  // touch-up patches: rectangles of slightly different grey, the hallmark of a hard-worked carrier jet
+  const touchUps = (Q, n, a0, a1, b0, b1, base, sa, sb) => {
+    for (let i = 0; i < n * wx; i++) {
+      const a = a0 + rnd() * (a1 - a0), b = b0 + rnd() * (b1 - b0), w = sa * (0.4 + rnd()), h = sb * (0.4 + rnd());
+      Q.fill((g) => g.rect(a, b, w, h), { color: tone(base, (rnd() - 0.45) * 0.1), rough: 0.6 + rnd() * 0.12, metal: 0 }, { alpha: 0.3 + rnd() * 0.4, feather: 1 });
+    }
+  };
+  const yBand = (z) => (z < -6.3 ? 0.12 + (z + 9.5) * 0.08 * 0 : chY(Math.min(z, 7.9)) - 0.035);
+
+  // ================= fuselage =================
+  const P = atlas.pen(cFus), tt = (s, v) => (s > 0 ? v : 1 - v);
   P.fill('all', top);
-  P.band(-9.5, 7.95, -Infinity, (z) => (z < -6.5 ? 0.0 : z < -3.5 ? 0.05 : 0.08), under, { feather: 4 });
-  P.fill((g) => g.rect(-9.5, 0, 2.35, 1), F.semigloss(SC.radome));
-  P.noise({ alpha: 0.08, scale: 2.2, stretch: [1.6, 1], rough: 0.06 });
-  for (const [key, chart] of Object.entries(cWT)) { const Q = atlas.pen(chart); Q.fill('all', top); Q.noise({ alpha: 0.08, scale: 1.2 }); void key; }
-  for (const chart of Object.values(cWB)) atlas.pen(chart).fill('all', under);
-  for (const chart of Object.values(cST)) atlas.pen(chart).fill('all', top);
-  atlas.pen(cSB).fill('all', under);
-  for (const chart of Object.values(cFin)) atlas.pen(chart).fill('all', top);
-  atlas.pen(cNac).fill('all', under);
-  atlas.pen(cNoz).fill('all', { color: '#7f776f', rough: 0.5, metal: 0.8 });
-  { const Q = atlas.pen(cPanel); Q.fill('all', { color: '#17191b', rough: 0.6, metal: 0 }); }
-  void fus; void W; void fin;
+  P.band(-9.5, 7.95, -Infinity, yBand, under, { feather: 5 });
+  touchUps(P, 70, -7, 7.6, 0.08, 0.92, SC.top, 0.5, 0.05);
+  P.fill((g) => g.rect(-9.5, 0, 2.36, 1), F.semigloss(SC.radome));
+  if (wx > 0.5) for (let i = 0; i < 18; i++) { const z = -9.3 + rnd() * 2.0, t = rnd(); P.fill((g) => g.rect(z, t, 0.05 + rnd() * 0.12, 0.004 + rnd() * 0.01), { color: tone(SC.radome, 0.18), rough: 0.5, metal: 0 }, { alpha: 0.6 }); }
+  // anti-glare panel ahead of the windscreen
+  P.fill([[-7.1, 0.47], [-6.15, 0.43], [-6.15, 0.57], [-7.1, 0.53]], F.matte(tone(SC.top, -0.25)), { feather: 1 });
+  if (cag) {
+    // black spine with a gold pinstripe, from the canopy to the fins
+    P.fill([[-3.2, 0.465], [-1.5, 0.45], [3.8, 0.45], [6.8, 0.47], [6.8, 0.53], [3.8, 0.55], [-1.5, 0.55], [-3.2, 0.535]], F.semigloss(SC.finA));
+    for (const s of [1, -1]) P.line([[-3.2, tt(s, 0.465)], [-1.5, tt(s, 0.45)], [3.8, tt(s, 0.45)], [6.8, tt(s, 0.47)]], { px: 2.5, depth: 0, dark: 0, color: SC.finB });
+  }
+  // panel lines: frames and longerons
+  const frames = [-8.1, -7.15, -6.7, -6.15, -5.1, -4.3, -3.2, -2.5, -1.75, -1.0, -0.25, 0.5, 1.3, 2.1, 2.9, 3.7, 4.5, 5.3, 6.1, 6.9, 7.45];
+  for (const z of frames) P.ring(z, 0, 1, { px: z === -7.15 ? 1.7 : 1, depth: 0.4, dark: z === -7.15 ? 0.3 : 0.12 });
+  for (const s of [1, -1]) {
+    for (const tv of [0.32, 0.4, 0.46]) P.line([[-3.2, tt(s, tv)], [7.4, tt(s, tv)]], { px: 1, depth: 0.3, dark: 0.12 });
+    for (const tv of [0.05, 0.12, 0.19]) P.line([[-6.15, tt(s, tv)], [7.4, tt(s, tv)]], { px: 1, depth: 0.3, dark: 0.12 });
+    // big avionics doors on the forward fuselage
+    for (const [z0, z1, t0, t1] of [[-7.0, -6.25, 0.16, 0.3], [-6.1, -5.25, 0.13, 0.27], [-5.15, -4.4, 0.12, 0.26], [-2.4, -1.85, 0.36, 0.44], [-1.6, -0.6, 0.34, 0.44], [0.6, 1.9, 0.36, 0.45], [2.2, 3.5, 0.35, 0.45], [4.6, 5.9, 0.34, 0.43]])
+      P.panel(z0, tt(s, t0), z1, tt(s, t1), { px: 1, depth: 0.45, dark: 0.15 });
+    for (let k = 0; k < 6; k++) { const z = -2.6 + k * 1.6; P.rivets(z, tt(s, 0.3), z + 1.3, tt(s, 0.3), 0.06, { px: 1.1, depth: 0.15, dark: 0.04 }); }
+  }
+  P.line([[-9.4, 0], [7.9, 0]], { px: 1, depth: 0.3, dark: 0.12 }); P.line([[-3.2, 0.5], [7.9, 0.5]], { px: 1, depth: 0.3, dark: 0.12 });
+  // gun port and gas vents on top of the nose, AoA / pitot bases
+  P.decalT(-8.05, 0.5, (g) => { g.fillStyle = '#16181a'; g.beginPath(); g.ellipse(0, 0, 0.16, 0.05, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = 'rgba(25,24,22,0.5)'; g.fillRect(0.1, -0.09, 0.9, 0.18); });
+  for (let i = 0; i < 6; i++) P.decalT(-7.6 + i * 0.09, 0.47, (g) => { g.fillStyle = '#2a2c2e'; g.fillRect(-0.025, -0.02, 0.05, 0.04); });
+  // cockpit sill: ejection-seat warning triangle and rescue arrow
+  for (const s of ['L', 'R']) {
+    P.decalOn(-6.55, 0.58, s, (g) => { g.fillStyle = '#c0262b'; g.beginPath(); g.moveTo(-0.08, -0.07); g.lineTo(0.08, -0.07); g.lineTo(0, 0.07); g.closePath(); g.fill(); g.fillStyle = '#e8e8e8'; g.font = '700 0.07px sans-serif'; g.textAlign = 'center'; g.fillText('!', 0, -0.0); });
+    P.textOn('RESCUE', -6.3, 0.18, s, 0.045, { color: cag ? '#b3202a' : mark });
+  }
+  // formation strip lights
+  for (const [z, y, w] of [[-7.55, 0.2, 0.5], [5.3, 0.3, 0.55]]) P.decalOn(z, y, 'both', { layers: ['color', 'orm'] }, (g, layer) => { g.fillStyle = layer === 'orm' ? 'rgb(255,90,0)' : slime.color; g.fillRect(-w / 2, -0.03, w, 0.06); });
+  // modex on the nose, squadron on the aft body
+  const modexCol = cag ? '#101318' : mark;
+  P.textOn(SC.modex, -7.55, 0.08, 'both', 0.32, { color: modexCol, font: K.FONT.sans, weight: 700, outline: cag ? SC.finB : null, outlineWidth: 9 });
+  if (cag) {
+    P.textOn('STORMRIDERS', 1.4, 0.48, 'both', 0.13, { color: SC.finB, italic: true, font: K.FONT.wide, outline: '#101318', outlineWidth: 10 });
+    P.decalOn(-4.9, 0.66, 'both', (g) => { g.fillStyle = SC.finB; g.fillRect(-0.8, -0.012, 1.6, 0.024); });
+    P.textOn('CDR J. "SPARKY" MORROW', -5.0, 0.63, 'both', 0.035, { color: '#101318' });
+  } else P.textOn('LT B. "DOC" HALVERSEN', -5.0, 0.635, 'both', 0.032, { color: mark });
+  // LERX top: NO STEP, walkway outline, fence slots
+  for (const s of [1, -1]) {
+    P.decalT(-3.3, tt(s, 0.32), { rot: s > 0 ? 90 : -90 }, (g) => K.drawText(g, 'NO STEP', 0.045, { color: cag ? '#101318' : mark }));
+    P.line([[-2.2, tt(s, 0.37)], [-0.8, tt(s, 0.38)], [-0.8, tt(s, 0.43)], [-2.2, tt(s, 0.42)], [-2.2, tt(s, 0.37)]], { px: 1.3, depth: 0, dark: 0.45 });
+  }
+  // weathering: tonal variation, grime trails, belly fluids, exhaust soot on the aft body
+  P.noise({ alpha: 0.07 + 0.04 * wx, scale: 2.4, stretch: [1.7, 1], rough: 0.07 });
+  P.noise({ alpha: 0.05, scale: 0.8, mode: 'light' });
+  for (let i = 0; i < 40 * wx; i++) { const z = -6 + rnd() * 12.5, t = rnd(); P.streak(z, t, z + 0.6 + rnd() * 1.4, t + (rnd() - 0.5) * 0.01, 0.006 + rnd() * 0.014, { alpha: 0.08 + rnd() * 0.14 }); }
+  for (let i = 0; i < 26 * wx; i++) { const z = -4 + rnd() * 10, t = (rnd() < 0.5 ? 0.0 : 0.93) + rnd() * 0.07; P.streak(z, t, z + 0.8 + rnd() * 1.5, t, 0.01 + rnd() * 0.02, { alpha: 0.12 + rnd() * 0.2, color: '42,36,28' }); }
+  P.fill((g) => g.rect(6.6, 0, 1.35, 1), { color: 'rgba(38,34,30,0.4)' }, { feather: 10 });
+  for (const tv of [0.0, 0.5]) P.streak(7.9, tv, 5.8, tv, 0.12, { alpha: 0.3 * wx + 0.1 });
+  P.streak(-7.9, 0.53, -6.2, 0.53, 0.05, { alpha: 0.35 * wx });          // gun gas soot
+
+  // ================= intake trunk sides =================
+  for (const key of ['R', 'L']) {
+    const Q = atlas.pen(cIn[key]);
+    Q.fill('all', top);
+    Q.fill([[-4.45, -0.8], [-0.8, -0.8], [-0.8, -0.32], [-4.45, -0.18]], under, { feather: 6 });
+    touchUps(Q, 10, -4.3, -1.2, -0.6, 0.35, SC.top, 0.4, 0.15);
+    for (const z of [-3.1, -2.2, -1.4]) Q.line([[z, -0.75], [z, 0.45]], { px: 1, depth: 0.4, dark: 0.13 });
+    Q.panel(-3.6, -0.45, -2.6, 0.2, { px: 1, depth: 0.45, dark: 0.15, r: 0.03 });
+    Q.line([[-4.4, 0.32], [-0.9, 0.12]], { px: 1, depth: 0.35, dark: 0.12 });
+    if (!cag) Q.decal(-2.1, -0.05, (g) => K.drawStarBar(g, 0.56, { lowVis }));
+    else Q.decal(-2.1, -0.05, (g) => K.drawStarBar(g, 0.56, {}));
+    Q.text('DANGER', -3.85, 0.1, 0.05, { color: '#b3202a' });
+    Q.decal(-3.85, -0.05, (g) => { g.strokeStyle = '#b3202a'; g.lineWidth = 0.02; g.beginPath(); g.moveTo(-0.15, 0.06); g.lineTo(0, -0.08); g.lineTo(0.15, 0.06); g.closePath(); g.stroke(); });
+    Q.noise({ alpha: 0.08, scale: 1.2, rough: 0.06 });
+    for (let i = 0; i < 8 * wx; i++) { const z = -3.8 + rnd() * 2.5, y = -0.5 + rnd() * 0.9; Q.streak(z, y, z + 0.6 + rnd(), y - 0.05, 0.02, { alpha: 0.12 }); }
+  }
+
+  // ================= nacelles (a = z - 1.6 along the body, b = around: 0 bottom, .875 outboard on the right) =================
+  for (const key of ['R', 'L']) {
+    const Q = atlas.pen(cNac[key]), out = key === 'R' ? 0.875 : 2.625;
+    Q.fill('all', under);
+    Q.fill((g) => g.rect(0, out - 0.6, 5.8, 1.6), top, { feather: 8 });
+    for (const a of [1.2, 2.3, 3.4, 4.5, 5.3]) Q.line([[a, 0], [a, 3.5]], { px: 1, depth: 0.4, dark: 0.12 });
+    for (const b of [0.4, 1.4, 2.1, 3.1]) Q.line([[0, b], [5.8, b]], { px: 1, depth: 0.3, dark: 0.1 });
+    Q.panel(3.5, out - 0.35, 4.4, out + 0.3, { px: 1, depth: 0.45, dark: 0.15 });
+    const rot = key === 'R' ? 180 : 0;
+    Q.text('NAVY', 2.4, out - 0.05, 0.2, { color: cag ? '#101318' : mark, rot, font: K.FONT.wide });
+    Q.text(`BuNo ${SC.buno}`, 2.4, out + (key === 'R' ? 0.22 : -0.22), 0.05, { color: cag ? '#101318' : mark, rot });
+    Q.fill((g) => g.rect(4.4, 0, 1.4, 3.5), { color: 'rgba(34,30,26,0.55)' }, { feather: 14 });
+    Q.noise({ alpha: 0.1, scale: 1.0, stretch: [2, 1], rough: 0.08 });
+    for (let i = 0; i < 12; i++) { const b = rnd() * 3.5, a = 3 + rnd() * 2; Q.streak(a, b, a + 1.2, b, 0.04, { alpha: 0.2 }); }
+  }
+
+  // ================= wings =================
+  for (const key of ['R', 'L']) {
+    const s = key === 'R' ? 1 : -1, wg = W.R;
+    const at = (x, f) => { const p = wg.at(x, f); return [p[0] * s, p[2]]; };
+    const hTE = (x) => wg.lines.hingeTE.at(wg.spanToU(x)), hLE = (x) => wg.lines.hingeLE.at(wg.spanToU(x));
+    for (const [chart, fin2, isTop] of [[cWT[key], top, true], [cWB[key], under, false]]) {
+      const Q = atlas.pen(chart), ln = (pts, op) => Q.line(pts, op);
+      Q.fill('all', fin2);
+      touchUps(Q, 22, s > 0 ? 1.2 : -6.0, s > 0 ? 6.0 : -1.2, -1.5, 2.8, isTop ? SC.top : SC.under, 0.5, 0.3);
+      if (cag && isTop) { Q.fill([at(X_TIP - 0.6, 0.02), at(X_TIP, 0.02), at(X_TIP, 0.98), at(X_TIP - 0.6, 0.98)], F.semigloss(SC.finA)); Q.fill([at(X_TIP - 0.68, 0.02), at(X_TIP - 0.6, 0.02), at(X_TIP - 0.6, 0.98), at(X_TIP - 0.68, 0.98)], F.semigloss(SC.finB)); }
+      for (const f of [0.08, 0.33, 0.55]) ln([at(1.3, f), at(X_TIP - 0.05, f)], { px: 1, depth: 0.35, dark: 0.14 });
+      for (const x of [1.9, 2.6, 3.2, 4.4, 5.1, 5.7]) ln([at(x, 0.03), at(x, 0.97)], { px: 1, depth: 0.35, dark: 0.14 });
+      ln([at(X_FOLD + 0.006, 0), at(X_FOLD + 0.006, 1)], { px: 2, depth: 0.8, dark: 0.45 });                                // fold joint
+      ln([at(1.5, hTE(1.5)), at(X_FOLD - 0.03, hTE(X_FOLD - 0.03)), at(X_FOLD - 0.03, 1)], { px: 2, depth: 0.8, dark: 0.55 });  // flap
+      ln([at(1.5, hTE(1.5)), at(1.5, 1)], { px: 2, depth: 0.8, dark: 0.55 });
+      ln([at(X_FOLD + 0.06, 1), at(X_FOLD + 0.06, hTE(X_FOLD + 0.06)), at(6.0, hTE(6.0)), at(6.0, 1)], { px: 2, depth: 0.8, dark: 0.55 });  // aileron
+      ln([at(1.95, 0), at(1.95, hLE(1.95)), at(X_FOLD, hLE(X_FOLD))], { px: 2, depth: 0.8, dark: 0.55 });                    // LEFs
+      ln([at(X_FOLD + 0.02, hLE(X_FOLD + 0.02)), at(X_TIP - 0.05, hLE(X_TIP - 0.05)), at(X_TIP - 0.05, 0)], { px: 2, depth: 0.8, dark: 0.55 });
+      for (const f of [0.08, 0.33, 0.55]) { const a = at(1.4, f + 0.012), b = at(X_TIP - 0.1, f + 0.012); Q.rivets(a[0], a[1], b[0], b[1], 0.04, { px: 1.1, depth: 0.15, dark: 0.04 }); }
+      if (isTop) {   // walkway outline near the root, leading-edge wear, hinge-line grime
+        ln([at(1.45, 0.2), at(2.5, 0.2), at(2.5, 0.52), at(1.45, 0.52), at(1.45, 0.2)], { px: 1.4, depth: 0, dark: 0.5 });
+        Q.fill([at(1.45, 0.2), at(2.5, 0.2), at(2.5, 0.52), at(1.45, 0.52)], { color: 'rgba(40,40,40,0.18)' });
+        const le = [at(1.95, 0.006), at(X_TIP - 0.1, 0.006)];
+        Q.wear((g) => { g.moveTo(le[0][0], le[0][1]); g.lineTo(le[1][0], le[1][1]); }, 0.035, { color: tone(SC.top, 0.25), rough: 0.5, metal: 0.2 }, { alpha: 0.5 });
+        const p = at(2.2, 0.62); Q.text('NO STEP', p[0], p[1], 0.05, { color: cag ? '#101318' : mark });
+        Q.fill((g) => { const a = at(X_TIP - 0.4, 0.25); g.rect(a[0] - 0.02, a[1], 0.04, 0.5); }, slime);
+      }
+      Q.noise({ alpha: 0.07 + 0.03 * wx, scale: 1.6, stretch: [1, 2.2], rough: 0.06 });
+      Q.noise({ alpha: 0.04, scale: 0.5, mode: 'light' });
+      for (let i = 0; i < 14 * wx; i++) { const x = 1.6 + rnd() * 4.2, f = x < X_FOLD ? hTE(x) : hTE(x), a = at(x, f - 0.25 * rnd()); Q.streak(a[0], a[1], a[0], a[1] + 0.3 + rnd() * 0.5, 0.025 + rnd() * 0.03, { alpha: 0.16 }); }
+      if (isTop && key === 'L') Q.decal(-4.6, 1.1, (g) => K.drawStarBar(g, 0.62, { lowVis }));
+      if (!isTop && key === 'R') { Q.decal(4.6, 1.1, (g) => K.drawStarBar(g, 0.62, { lowVis })); }
+      if (!isTop && key === 'L') Q.text('NAVY', -4.3, 1.1, 0.42, { color: cag ? '#101318' : mark, font: K.FONT.wide, rot: -90 });
+    }
+  }
+  // ================= stabilators =================
+  for (const [chart, f, isTop, sx] of [[cST.R, top, true, 1], [cST.L, top, true, -1], [cSB, under, false, 1]]) {
+    const Q = atlas.pen(chart); Q.fill('all', f);
+    touchUps(Q, 8, sx > 0 ? 1.2 : -4.2, sx > 0 ? 4.2 : -1.2, 5.2, 8.4, isTop ? SC.top : SC.under, 0.4, 0.3);
+    if (cag && isTop) Q.fill((g) => g.rect(sx > 0 ? 3.75 : -4.35, 4.95, 0.6, 3.7), F.semigloss(SC.finA));
+    for (const zz of [6.0, 6.9, 7.7]) Q.line([[sx * 1.05, zz], [sx * 4.25, zz + 0.9]], { px: 1, depth: 0.35, dark: 0.13 });
+    for (const x of [1.8, 2.6, 3.4]) Q.line([[sx * x, 4.95], [sx * x, 8.65]], { px: 1, depth: 0.3, dark: 0.12 });
+    Q.noise({ alpha: 0.09, scale: 1.0, stretch: [1, 2], rough: 0.06 });
+    if (isTop) Q.fill((g) => g.rect(sx * 1.3 - 0.4, 7.6, 0.8, 1.0), { color: 'rgba(36,32,28,0.4)' }, { feather: 10 });
+  }
+  // ================= fins (side charts: a = z, b = y) =================
+  for (const key of ['Rout', 'Lout', 'Rin', 'Lin']) {
+    const Q = atlas.pen(cFin[key]), outer = key.endsWith('out'), fr = fin.R;
+    const at = (u, f) => { const p = fr.at(u, f); return [p[2], p[1]]; };
+    const hz = (u) => fr.lines.hinge.at(fr.spanToU(u));
+    Q.fill('all', top);
+    touchUps(Q, 6, 2.3, 5.6, 0.6, 3.0, SC.top, 0.3, 0.2);
+    if (cag) {
+      Q.fill([at(1.1, 0), at(3.4, 0), at(3.4, 1), at(1.1, 1)], F.semigloss(SC.finA));
+      Q.fill([at(1.0, 0), at(1.1, 0), at(1.1, 1), at(1.0, 1)], F.semigloss(SC.finB));
+      // lightning bolt
+      const b = [at(3.2, 0.25), at(2.35, 0.55), at(2.45, 0.38), at(1.25, 0.72), at(2.15, 0.48), at(2.05, 0.62)];
+      Q.fill(b, F.semigloss(SC.finB)); Q.stroke((g) => { b.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); }, 0.03, F.semigloss(SC.finC));
+      Q.fill([at(3.18, 0), at(3.4, 0), at(3.4, 1), at(3.18, 1)], F.semigloss(SC.finB));
+    }
+    Q.line([at(0.42, 1), at(0.42, hz(0.42)), at(2.12, hz(2.12)), at(2.12, 1)], { px: 2, depth: 0.8, dark: 0.55 });
+    for (const u of [0.9, 1.5, 2.6, 3.0]) Q.line([at(u, 0.03), at(u, u < 2.12 ? hz(u) : 0.97)], { px: 1, depth: 0.35, dark: 0.14 });
+    for (const f of [0.2, 0.45]) Q.line([at(0.3, f), at(3.25, f)], { px: 1, depth: 0.35, dark: 0.14 });
+    Q.fill([at(3.1, 0.0), at(3.3, 0.0), at(3.3, 0.18), at(3.1, 0.18)], F.composite(tone(SC.top, -0.15)));
+    if (outer) {
+      const c = at(2.45, 0.42), d = at(1.2, 0.36);
+      Q.text(SC.code, c[0], c[1], 0.5, { color: cag ? SC.finB : mark, weight: 700, outline: cag ? '#101318' : null, outlineWidth: 6 });
+      if (!cag) { Q.decal(d[0], d[1], (g) => { g.strokeStyle = mark; g.lineWidth = 0.02; g.beginPath(); g.arc(0, 0, 0.2, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-0.05, -0.17); g.lineTo(0.08, -0.03); g.lineTo(-0.01, -0.01); g.lineTo(0.06, 0.16); g.lineTo(-0.08, 0.0); g.lineTo(0.01, -0.02); g.closePath(); g.stroke(); }); }
+      const m = at(0.75, 0.5); Q.text(SC.squadron, m[0], m[1], 0.07, { color: cag ? SC.finB : mark });
+      const fl = at(2.75, 0.5); Q.fill((g) => g.rect(fl[0] - 0.25, fl[1] - 0.03, 0.5, 0.06), slime);
+    }
+    Q.noise({ alpha: 0.08, scale: 1.2, stretch: [1, 1.5], rough: 0.05 });
+  }
+  // ================= nozzle petals (a = around, b = hinge → exit) =================
+  {
+    const Q = atlas.pen(cNoz), n = 12, w = 3.2 / n;
+    Q.fill('all', { color: '#80786f', rough: 0.5, metal: 0.8 });
+    for (let i = 0; i < n; i++) {
+      if (i % 2) Q.fill((g) => g.rect(i * w, 0, w, 1.2), { color: '#71695f', rough: 0.55, metal: 0.8 });
+      Q.fill((g) => g.rect(i * w + w * 0.3, 0.06, w * 0.4, 1.05), { color: '#968b80', rough: 0.45, metal: 0.8 }, { alpha: 0.5 });
+      Q.line([[i * w, 0], [i * w, 1.2]], { px: 2, depth: 0.9, dark: 0.6 });
+      Q.rivets(i * w + w * 0.15, 0.1, i * w + w * 0.15, 1.1, 0.08, { px: 1.2, depth: 0.2, dark: 0.1 });
+    }
+    Q.fill((g) => g.rect(0, 0.75, 3.2, 0.45), { color: '#4a3f38', rough: 0.6, metal: 0.8 }, { alpha: 0.5, feather: 6 });
+    Q.fill((g) => g.rect(0, 0, 3.2, 0.09), { color: '#5a5550', rough: 0.5, metal: 0.8 });
+    Q.noise({ alpha: 0.12, scale: 0.8, stretch: [1, 2] });
+  }
+  // ================= instrument panel (a = across, b = down from the top) =================
+  {
+    const Q = atlas.pen(cPanel); Q.fill('all', { color: '#191b1d', rough: 0.6, metal: 0 });
+    const scr = (a, b, w, h, col) => { Q.fill((g) => g.rect(a, b, w, h), { color: '#050607', rough: 0.15, metal: 0 }); Q.fill((g) => g.rect(a + 0.01, b + 0.01, w - 0.02, h - 0.02), { color: col, rough: 0.12, metal: 0, emissive: col }); };
+    scr(0.06, 0.12, 0.2, 0.2, '#0d2a16'); scr(0.6, 0.12, 0.2, 0.2, '#0d2a16'); scr(0.32, 0.18, 0.22, 0.22, '#14261c'); scr(0.33, 0.02, 0.2, 0.1, '#1a2a12');
+    for (let i = 0; i < 10; i++) for (const a of [0.035, 0.29, 0.585, 0.825]) Q.fill((g) => g.rect(a, 0.13 + i * 0.019, 0.012, 0.01), { color: '#5a5c5e', rough: 0.5, metal: 0 });
+  }
 }
