@@ -19,6 +19,12 @@
 //   Gear (geometry.js, unchanged): nose twin r 0.38 at z -11.5 retracting forward; main twin r 0.57 at x ±3.8, z 1.14,
 //   legs hinged in the wing at x ±3.65 retracting inward, wheels stowed in open wells in the belly fairing (as on the
 //   real aeroplane, the outboard tyre and hub stay visible from below).
+// Photorealism pass: the flight-deck windows are real openings (the window band of the loft is rebuilt by clipping its
+// cells against the window outlines) with glass, reveals and a dark, occluded flight deck behind; gloss paint with clear
+// coat and frame-pitch oil-canning (skin options); nacelles and the belly fairing have their own charts (cowl joints,
+// latches, polished lip, acoustic liner, soot; panels, ram-air inlets, pack outlets); heat-stained core / plug strips,
+// spinner spiral, nose-strut light bar, leg doors, well plumbing, wipers, drain masts, antennas, night halos and a fin
+// floodlit by the logo lights.
 // The airline liveries are invented for this simulator: they do not reproduce any real operator's name or marks.
 import * as THREE from 'three';
 import geometry from './geometry.js';
@@ -83,7 +89,7 @@ export function createVisual(ctx, opts = {}) {
     floor: A.swatch('floor', { color: '#34383d', rough: 0.9, metal: 0 }), shield: A.swatch('shield', { color: '#2c3137', rough: 0.85, metal: 0 }), console: A.swatch('console', { color: '#566069', rough: 0.75, metal: 0 }),
     seat: A.swatch('seat', { color: '#4c5157', rough: 0.9, metal: 0 }), cushion: A.swatch('cushion', { color: '#3b4a63', rough: 1, metal: 0 }), stick: A.swatch('stick', { color: '#17181a', rough: 0.5, metal: 0 }),
     exhaust: A.swatch('exhaust', F.exhaust), steel: A.swatch('steel', F.steel), antenna: A.swatch('antenna', F.gloss('#e9eaea')), lens: A.swatch('lens', F.lens),
-    frame: A.swatch('frame', { color: '#2a2d31', rough: 0.55, metal: 0.2 }),
+    frame: A.swatch('frame', { color: '#2a2d31', rough: 0.55, metal: 0.2 }), hyd: A.swatch('hyd', { color: '#3d4a3f', rough: 0.5, metal: 0.4 }),
   };
   const B = K.createAtlas({ size: atlasSize, base: F.semigloss('#bcc1c6'), skin: { weathering: (SC.wx ?? 0.35) + 0.15, framePitch: 0.5, waviness: 0.8 } });
   const cWT = B.chart('wingTop', { type: 'plan', x: [0.9, 17.0], z: [-4.3, 5.2], view: 'top', mirror: true, density: 1.15 });
@@ -134,9 +140,16 @@ export function createVisual(ctx, opts = {}) {
   const fAtX = (x) => { let lo = 0, hi = 0.25; for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fair.at(1.14, m).p[0] < x) lo = m; else hi = m; } return (lo + hi) / 2; };
   fair = K.loft({ ...fairOpts, cutouts: [{ name: 'bay', z: [0.44, 1.84], t: [fAtX(0.85), fAtX(2.38)], mirror: true }] });
   cFair.body = fair;
+  // plumbing in the wells (hydraulic lines, actuator, harness) so open bays do not read as empty boxes
+  for (const sx of [1, -1]) {
+    for (const [x, y, r] of [[1.15, -1.13, 0.016], [1.3, -1.12, 0.012], [1.75, -1.1, 0.014], [2.05, -1.16, 0.02]]) stA.add(K.pipe([[sx * x, y, 0.5], [sx * (x + 0.05), y + 0.03, 1.15], [sx * x, y, 1.8]], r, { uv: UA.hyd, segments: 5 }));
+    stA.add(K.tube([sx * 2.2, -1.2, 0.6], [sx * 1.25, -1.35, 1.6], 0.045, 0.035, { segments: 8, uv: UA.steel }));
+    stA.add(K.box(0.5, 0.06, 0.35, UA.dark).translate(sx * 1.6, -1.1, 1.55));
+  }
+  for (const x of [-0.12, 0.08, 0.15]) stA.add(K.pipe([[x, -1.18, -13.7], [x * 0.8, -1.15, -12.5], [x, -1.2, -11.3]], 0.012, { uv: UA.hyd, segments: 5 }));
   stA.add(fair.mesh).add(K.well(fair.patches.bayR, 1.1, UA.well, [-0.33, 0.94, 0])).add(K.well(fair.patches.bayL, 1.1, UA.well, [0.33, 0.94, 0]));
 
-  // ---- flight deck: six painted windows, lined inside so the pilot looks out through the gaps -------------------------------
+  // ---- flight deck: six windows (real openings, see the glazing below), lined inside around them ------------------------------
   // windows on the right side in (z, t); the left side is the mirror (t → 1 − t)
   const zy = (z, y) => [z, fus.tAtY(z, y)];
   const WS = { IB: [-15.66, tAtX(-15.66, 0.07)], OB: zy(-15.36, 0.5), OT: zy(-14.88, 1.17), IT: [-14.98, tAtX(-14.98, 0.07)] };
