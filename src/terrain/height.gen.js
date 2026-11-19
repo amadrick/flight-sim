@@ -266,7 +266,7 @@ function terrain(x, z) {
     let Ah = (220.0 + 520.0 * ss(-0.25, 0.45, L2)) * plainMask * (1.0 - D) * ss(7.0, 20.0, dKB);
     let mdx = X - 190.0, mdz = Z + 88.0;
     let Ms = D * (1.0 - ss(26.0, 60.0, sqrt(mdx * mdx + mdz * mdz) + 14.0 * L2)) * (1.0 - M);   // mesa country
-    let A = 25.0 + 2650.0 * M + Ah * (1.0 - M) + 900.0 * W + D * (1.0 - M) * (450.0 + 950.0 * ss(-0.2, 0.4, L1)) * Bk * (1.0 - 0.8 * Ms);
+    let A = 25.0 + 2650.0 * M + Ah * (1.0 - M) + 900.0 * W + D * (1.0 - M) * (650.0 + 1250.0 * ss(-0.2, 0.4, L1)) * Bk * (1.0 - 0.8 * Ms);
     let U = 1450.0 * M * sqrt(M) + 1000.0 * Pn * (1.0 - 0.4 * M) + 740.0 * D * (1.0 - 0.5 * Pn) + 120.0 * W + 60.0 * plainMask + 330.0 * Ms;
     let fade = ss(0.0, 10.0, c);
 
