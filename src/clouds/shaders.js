@@ -569,7 +569,16 @@ vec4 clCirrusLayer(vec3 rd, float c, float sceneD, out float tHit) {
   float mu0 = clamp(uClLightDir.y + 0.08, 0.08, 1.0);
   // ice crystals: strong forward lobe + broad floor; self-shadowing of the slanted sun path through the sheet
   float ph = mix(clHG(cosT, 0.72), 0.0796, 0.4) + 0.045 * mu0;
-  vec3 L = E * ph * op * exp(-0.5 * tauV / mu0);
+  vec3 phc = vec3(ph);
+  if (uClPhys.w > 0.5) {
+    // round five: 22 degree halo of hexagonal ice prisms (minimum deviation 21.84 deg: sharp, reddish inner edge, nothing
+    // inside it, a bluish-white fade outward); roughened crystals of fibrous cirrus keep it weak (research doc 2.3)
+    float th = degrees(acos(clamp(cosT, -1.0, 1.0)));
+    vec3 inner = vec3(21.75, 21.95, 22.15);                         // dispersion: red refracts least
+    vec3 halo = step(inner, vec3(th)) * exp(-max(vec3(th) - inner, 0.0) / vec3(1.6, 1.9, 2.3));
+    phc += 0.09 * halo * (0.5 + 0.5 * fib);
+  }
+  vec3 L = E * phc * op * exp(-0.5 * tauV / mu0);
   // (round five: the raw clear-sky ambient when the pipeline provides it; uAmbientSky is divided by the player's cloud
   //  shadow and lit the cirrus over an overcast like day)
   vec3 aU = uClAmbUp.w > 0.5 && uClLight2.y > 0.5 ? uClAmbUp.rgb : atmAmbient(pr, vec3(0.0, 1.0, 0.0));

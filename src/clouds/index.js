@@ -490,7 +490,10 @@ export async function createClouds(ctx) {
     U.uClMie.value.set(Math.exp(-0.0990567 / (dDrop - 1.67154)), Math.exp(-2.20679 / (dDrop + 3.91029) - 0.428934),
       Math.exp(3.62489 - 8.29288 / (dDrop + 5.52825)), Math.exp(-0.599085 / (dDrop - 0.641583) - 0.665888));
     U.uClPhys.value.set(dbg('clLwc', 2.0) * 1e-3, Math.cbrt(dbg('clN', P.dropletN) / 150), dbg('clLwcCap', 0.6), dbg('clPhys', 1));
-    U.uClDet2.value.set(dbg('clDetA', 0.5), dbg('clDetF', 4), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
+    // round five: amplitude ratio between detail octaves 0.5 -> 0.28 (~1 / frequency ratio): with 0.5 the 30-110 m octave
+    // displaced the surface by ~100 m and the 7-28 m one by ~50 m, more than their own size, which shredded every turret
+    // into fuzz (cotton wool); with amplitude ~ wavelength each octave adds round lobes on lobes (cauliflower)
+    U.uClDet2.value.set(dbg('clDetA', dbg('clPhys', 1) > 0 ? 0.28 : 0.5), dbg('clDetF', 4), dbg('clEdge', 0.004), dbg('clWarp', 0.3));
   }
 
   const volumetricOn = () => P.coverage > 0.012;
