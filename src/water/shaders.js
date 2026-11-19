@@ -347,9 +347,9 @@ void main() {
     float diss = vShoreA.z;
     // bores (fronts at u = 0) leave foam that decays behind them; filtered when the bands get sub-pixel
     float front = smoothstep(0.0, 0.025, u) * exp(-u * 4.0) + 0.3 * exp(-(1.0 - u) * 40.0);
-    float bore = mix(front, 0.5, smoothstep(0.3, 0.9, dph));
+    float bore = mix(front, 0.38, smoothstep(0.3, 0.9, dph));
     boreF = bore * vShoreA.y * clamp(diss * 1.6, 0.0, 1.0);
-    surfF = vShoreA.y * (0.35 + 0.65 * diss);               // general aerated surf-zone water
+    surfF = vShoreA.y * (0.1 + 0.9 * diss);               // general aerated surf-zone water
     susp = vShoreA.y * smoothstep(0.1, 0.7, Hloc);          // sand stirred up by the breakers
     // the bore / swell-line relief is geometry: take its slope from the displaced surface itself
     vec3 ng = cross(dFdx(P), dFdy(P));
