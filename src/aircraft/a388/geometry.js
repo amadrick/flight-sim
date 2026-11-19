@@ -5,7 +5,7 @@ export default {
   length: 72.72, span: 79.75, height: 24.09, wingArea: 845,
   noseZ: -37.5, tailZ: 35.22,
   cgHeight: 5.7,
-  pilotEye: [-0.55, 2.4, -31.5],
+  pilotEye: [-0.55, 2.35, -32.3],
   gear: [
     { name: 'nose', pos: [0, -5.7, -28.4], wheelRadius: 0.55, steerable: true, braked: false },
     { name: 'left', pos: [-6.25, -5.7, 0.8], wheelRadius: 0.6, steerable: false, braked: true },
@@ -13,12 +13,12 @@ export default {
     { name: 'bodyLeft', pos: [-2.65, -5.7, 4.9], wheelRadius: 0.6, steerable: false, braked: true },
     { name: 'bodyRight', pos: [2.65, -5.7, 4.9], wheelRadius: 0.6, steerable: false, braked: true },
   ],
-  engines: [
-    { nozzle: [-25.2, -3.4, 7.8], intake: [-25.2, -3.4, 1], nozzleRadius: 1 },
+  engines: [   // order = state.engines / physics.engines.each order: inboard L, outboard L, inboard R, outboard R
     { nozzle: [-12.7, -3.2, -2.5], intake: [-12.7, -3.2, -9.3], nozzleRadius: 1 },
+    { nozzle: [-25.2, -2.6, 7.8], intake: [-25.2, -2.6, 1], nozzleRadius: 1 },
     { nozzle: [12.7, -3.2, -2.5], intake: [12.7, -3.2, -9.3], nozzleRadius: 1 },
-    { nozzle: [25.2, -3.4, 7.8], intake: [25.2, -3.4, 1], nozzleRadius: 1 },
+    { nozzle: [25.2, -2.6, 7.8], intake: [25.2, -2.6, 1], nozzleRadius: 1 },
   ],
   wingtips: [[-39.875, 2.1, 14.5], [39.875, 2.1, 14.5]],
-  lights: { navLeft: [-39.8, 2.1, 14], navRight: [39.8, 2.1, 14], tail: [0, 10, 34.7], strobe: [0, 5.5, 22.5], beacon: [0, -3.6, -7.5], landing: [-6, -2.9, -3.5] },
+  lights: { navLeft: [-39.95, 2.05, 12.2], navRight: [39.95, 2.05, 12.2], tail: [0, 1.05, 35.3], strobe: [0, 1.5, 35.25], beacon: [0, -4.25, -16.5], landing: [-4.8, -2.62, -10.55] },
 };
