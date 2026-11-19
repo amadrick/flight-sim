@@ -64,7 +64,7 @@ export function buildLayout(airport) {
     id: airport.id, kind: airport.kind, spec, frame: F, elevation: airport.elevation,
     radius: airport.flattenRadius,
     runways: [], pave: [], taxiLines: [], holds: [], stands: [], buildings: [], props: [],
-    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [],
+    floods: [], roads: [], parkingLots: [], fences: [], tower: null, aprons: [], connectors: [], streetLights: [], fillets: [], dirSigns: [],
   };
 
   // ---------------- runways ----------------
@@ -152,6 +152,14 @@ export function buildLayout(airport) {
       const ph = F.P(a, R.c + s * spec.hold);
       L.holds.push({ x: ph.x, z: ph.z, hdg: norm360(F.H + (s > 0 ? 90 : -90)), wid: tw, rwy: R.i, rwyName: R.id, twyName });
       L.connectors.push({ rwy: R.i, a, isEnd, name: twyName });
+      // taxiway direction signs (black on yellow, arrow toward the connector) with the location sign of the parallel
+      // taxiway, on the left of each direction of travel, ~40 m before the junction
+      for (const t of [-1, 1]) {
+        if (isEnd && Math.sign(a - R.a) === t) continue;          // nothing beyond the last connector
+        const cL = ct - t * (tw / 2 + tsh + 9);
+        const ps = F.P(a - t * (tw / 2 + 40), cL);
+        L.dirSigns.push({ x: ps.x, z: ps.z, hdg: norm360(F.H + (t > 0 ? 180 : 0)), txt: twyName, arrow: -s * t > 0 ? 'R' : 'L', loc: letter });
+      }
       // junction fillets (triangles) where the connector meets the runway shoulder and the parallel taxiway
       const f = airport.kind === 'international' || airport.kind === 'military' ? 24 : 14;
       const cR = R.c + s * (R.wid / 2 + R.shoulder), cT = ct - s * (tw / 2 + tsh);
@@ -306,6 +314,22 @@ function layoutHub(L, F, spec) {
       const p = F.P(a, cOut - s * (k === 0 || k === nf - 1 ? 60 : 3));
       L.floods.push({ x: p.x, z: p.z, h: 28, aim: { x: F.r.x * -s, z: F.r.z * -s } });
     }
+    // cargo area at the other end of the first apron: freighter stands, a cargo shed with truck docks behind
+    if (R === R0) {
+      const aCg = aC + apronLen / 2 + 170, cgDep = 150;
+      L.pave.push(rect(F, aCg, cIn + s * cgDep / 2, 280, cgDep, 'apron', 'apron', { layer: 2 }));
+      L.aprons.push({ a: aCg, c: cIn + s * cgDep / 2, len: 280, dep: cgDep, side: s, cIn, cOut: cIn + s * cgDep, cargo: true });
+      const cgLane = cIn + s * 30;
+      L.taxiLines.push({ pts: [F.P(aCg - 120, cgLane), F.P(aCg + 120, cgLane)], kind: 'cl' });
+      L.taxiLines.push({ pts: [F.P(aCg, R.twyC), F.P(aCg, cgLane)], kind: 'cl' });
+      for (let k = 0; k < 3; k++) {
+        const a = aCg - 80 + k * 80, p = F.P(a, cIn + s * 112);
+        L.stands.push({ x: p.x, z: p.z, hdg: towardPier, size: k === 1 ? 'medium' : 'heavy', paint: true, number: 70 + k, cargo: true, leadFrom: F.P(a, cgLane) });
+      }
+      L.buildings.push({ type: 'cargo', ...F.P(aCg, cIn + s * (cgDep + 32)), hdg: F.H, len: 230, wid: 56, h: 15, faceSide: -s });
+      L.pave.push(rect(F, aCg, cIn + s * (cgDep + 82), 240, 40, 'apron', 'apron', { layer: 1 }));   // truck yard
+      for (let k = 0; k < 3; k++) { const p = F.P(aCg - 100 + k * 100, cIn + s * (cgDep - 4)); L.floods.push({ x: p.x, z: p.z, h: 25, aim: { x: F.r.x * -s, z: F.r.z * -s } }); }
+    }
     // maintenance hangar at one end of the apron
     const hp = F.P(aC - apronLen / 2 - 110, cIn + s * 95);
     L.pave.push(rect(F, aC - apronLen / 2 - 110, cIn + s * 45, 150, 90, 'apron', 'apron', { layer: 2 }));
@@ -382,7 +406,11 @@ function layoutMilitary(L, F, spec) {
     for (let k = 0; k < 14; k++) {
       const a = aC - 560 + k * 38 + row * 19;
       const p = F.P(a, c);
-      L.stands.push({ x: p.x, z: p.z, hdg: norm360(F.H + (s > 0 ? -90 : 90)), size: 'fighter', paint: true });
+      const hd = norm360(F.H + (s > 0 ? -90 : 90));
+      L.stands.push({ x: p.x, z: p.z, hdg: hd, size: 'fighter', paint: true });
+      // desert sun shade over each flight-line jet (centred on the airframe, which extends ~13 m behind the nose wheel)
+      const hc = F.P(a, c + s * 5.5);
+      L.buildings.push({ type: 'sunshade', x: hc.x, z: hc.z, hdg: hd, len: 22, wid: 17, h: 7.5 });
     }
   }
   // heavy stands (tankers/transports) at the +a end of the ramp

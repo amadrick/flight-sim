@@ -260,15 +260,21 @@ export function makeSignAtlas(ctx, texts) {
   const index = new Map();
   texts.forEach((t, i) => {
     const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
-    const [kind, txt] = t.split(':');
-    const bg = kind === 'hold' ? '#c0141a' : kind === 'loc' ? '#111' : '#0d0d0d';
-    const fg = kind === 'hold' ? '#ffffff' : kind === 'loc' ? '#ffd21c' : '#f4f4f4';
+    const [kind, txt, arrow] = t.split(':');
+    const bg = kind === 'hold' ? '#c0141a' : kind === 'loc' ? '#111' : kind === 'dir' ? '#f2c21b' : '#0d0d0d';
+    const fg = kind === 'hold' ? '#ffffff' : kind === 'loc' ? '#ffd21c' : kind === 'dir' ? '#0b0b0b' : '#f4f4f4';
     g.fillStyle = bg; g.fillRect(x, y, cellW, cellH);
     if (kind === 'loc') { g.strokeStyle = '#ffd21c'; g.lineWidth = 6; g.strokeRect(x + 10, y + 10, cellW - 20, cellH - 20); }
     g.fillStyle = fg;
     g.font = 'bold 66px "Arial Narrow","Liberation Sans Narrow",Arial,sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(txt, x + cellW / 2, y + cellH / 2 + 3, cellW - 30);
+    if (kind === 'dir') {
+      // text + a drawn arrow (no reliance on font glyphs): arrow on the side it points to
+      const right = arrow === 'R', ax = right ? x + cellW - 62 : x + 62, ay = y + cellH / 2, dirn = right ? 1 : -1;
+      g.beginPath(); g.moveTo(ax + dirn * 40, ay); g.lineTo(ax + dirn * 6, ay - 30); g.lineTo(ax + dirn * 6, ay - 12); g.lineTo(ax - dirn * 38, ay - 12);
+      g.lineTo(ax - dirn * 38, ay + 12); g.lineTo(ax + dirn * 6, ay + 12); g.lineTo(ax + dirn * 6, ay + 30); g.closePath(); g.fill();
+      g.fillText(txt, x + cellW / 2 - dirn * 40, y + cellH / 2 + 3, cellW - 120);
+    } else g.fillText(txt, x + cellW / 2, y + cellH / 2 + 3, cellW - 30);
     index.set(t, [x / c.width, 1 - (y + cellH) / c.height, (x + cellW) / c.width, 1 - y / c.height]);
   });
   const tex = texFrom(c, ctx);

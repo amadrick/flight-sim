@@ -36,6 +36,13 @@ export function buildStructures(L, B, signIndex, poles) {
       sign(B, lx, lz, h.hdg, 1.4, 0.9, 'loc:' + h.twyName, signIndex, false);
     }
   }
+  // taxiway direction signs (black on yellow) paired with the parallel taxiway's location sign (yellow on black)
+  for (const g of L.dirSigns || []) {
+    const d = dirs(g.hdg);
+    sign(B, g.x, g.z, g.hdg, 1.9, 0.9, 'dir:' + g.txt + ':' + g.arrow, signIndex, false);
+    const sg = g.arrow === 'R' ? -1 : 1;     // location sign on the side away from the arrow
+    sign(B, g.x + d.rx * sg * 1.6, g.z + d.rz * sg * 1.6, g.hdg, 1.0, 0.9, 'loc:' + g.loc, signIndex, false);
+  }
   // approach light stanchions and crossbars
   for (const p of poles) {
     if (p.h > 0.5) B.box('plain', p.x, 0, p.z, p.hdg, 0.18, 0.18, p.h, C.steel);
@@ -174,6 +181,33 @@ function building(B, b, L) {
       B.box('plain', b.x - d.rx * (b.wid / 2 + 0.3), wallH - 2.2, b.z - d.rz * (b.wid / 2 + 0.3), b.hdg, b.len + 0.6, 0.8, 2.4, b.mil ? C.milDark : C.blue);
       // lean-to workshop on the back
       B.box({ pa: 'office', na: 'office', pr: 'office', top: 'roof' }, b.x + d.rx * (b.wid / 2 + 6), 0, b.z + d.rz * (b.wid / 2 + 6), b.hdg, b.len * 0.8, 12, 7, b.mil ? C.tan : C.offwhite);
+      break;
+    }
+    case 'sunshade': {
+      // steel portal frames carrying a shallow arched metal roof (desert flight-line shelter)
+      const n = 3;
+      for (let k = 0; k < n; k++) {
+        const sa = (k / (n - 1) - 0.5) * (b.len - 1);
+        for (const sc of [-1, 1]) B.box('plain', b.x + d.dx * sa + d.rx * sc * b.wid / 2, 0, b.z + d.dz * sa + d.rz * sc * b.wid / 2, b.hdg, 0.35, 0.35, b.h, C.steel);
+        B.box('plain', b.x + d.dx * sa, b.h - 0.5, b.z + d.dz * sa, b.hdg, 0.4, b.wid + 0.6, 0.5, C.steel);
+      }
+      B.vault('metal', null, b.x, b.h, b.z, b.hdg, b.len + 1.5, b.wid + 2, 1.6, lin(0xbab5a6), 8);
+      B.box({ bottom: 'plain' }, b.x, b.h + 0.02, b.z, b.hdg, b.len + 1.4, b.wid + 1.9, 0.01, C.dgrey);
+      break;
+    }
+    case 'cargo': {
+      // cargo terminal: big clad shed, airside ULD doors, landside truck docks under a canopy, office block at one end
+      const fs = b.faceSide, air = fs > 0 ? 'pr' : 'nr', land = fs > 0 ? 'nr' : 'pr';
+      B.box({ pa: 'metal', na: 'metal', [air]: 'metal', [land]: 'metal' }, b.x, 0, b.z, b.hdg, b.len, b.wid, b.h, lin(0xb9c0c6));
+      B.box({ top: 'roof' }, b.x, b.h, b.z, b.hdg, b.len, b.wid, 0.01, C.grey);
+      B.box({ pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x, b.h, b.z, b.hdg, b.len + 0.3, b.wid + 0.3, 1.0, lin(0x2f4f7f));
+      const nA = Math.floor(b.len / 26);
+      for (let k = 0; k < nA; k++) { const sa = -b.len / 2 + (k + 0.5) * b.len / nA; B.box({ [air]: 'door' }, b.x + d.dx * sa, 0, b.z + d.dz * sa, b.hdg, 12, b.wid + 0.1, 7, C.grey); }
+      const nT = Math.floor(b.len / 5.5);
+      for (let k = 1; k < nT - 1; k++) { const sa = -b.len / 2 + (k + 0.5) * b.len / nT; B.box({ [land]: 'door' }, b.x + d.dx * sa, 1.2, b.z + d.dz * sa, b.hdg, 3.0, b.wid + 0.1, 3.2, lin(0x8a8f95)); }
+      B.box({ top: 'plain', bottom: 'plain', pa: 'plain', na: 'plain', pr: 'plain', nr: 'plain' }, b.x - d.rx * fs * (b.wid / 2 + 3), 5.0, b.z - d.rz * fs * (b.wid / 2 + 3), b.hdg, b.len * 0.92, 6, 0.4, C.offwhite);
+      B.box({ pa: 'office', na: 'office', pr: 'office', nr: 'office', top: 'roof' }, b.x + d.dx * (b.len / 2 + 12), 0, b.z + d.dz * (b.len / 2 + 12), b.hdg, 24, b.wid * 0.7, 11, C.offwhite);
+      rooftop(B, b, 5, b.h);
       break;
     }
     case 'thangar': {

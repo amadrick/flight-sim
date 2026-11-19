@@ -11,7 +11,7 @@ import { buildMarkings } from './markings.js';
 import { buildLightPlan } from './lightplan.js';
 import { createSurfaceProvider } from './surface.js';
 import { makePavementNoise, makeGlyphAtlas, makeFacades, makeSignAtlas, makeFenceTexture } from './textures.js';
-import { createPaveShared, makePavementMaterial, buildPavementGeometry, buildPaintGeometry, makePaintMaterial } from './pavement.js';
+import { createPaveShared, makePavementMaterial, buildPavementGeometry, buildPaintGeometry, makePaintMaterial, buildFringeGeometry, makeFringeMaterial } from './pavement.js';
 import { createLightSystem } from './lights.js';
 import { makeCurtainMaterial } from './curtain.js';
 import { MultiBuilder, lin } from './builder.js';
@@ -81,6 +81,7 @@ export async function createScenery(ctx) {
   const fenceTex = makeFenceTexture(ctx);
   const shared = createPaveShared(ctx, noise, atlas);
   const lights = createLightSystem(ctx);
+  const fringeMat = makeFringeMaterial(ctx, shared);
 
   // ---- layouts first (pure), so the sign atlas can collect every text it needs
   const heightAt = (ap) => (x, z) => ctx.world.terrainHeightAt(ap.position.x + x, ap.position.z + z) - ap.elevation;
@@ -92,6 +93,7 @@ export async function createScenery(ctx) {
     for (const p of L.props) if (p.type === 'drsign') { signTexts.add('dr:' + p.a); signTexts.add('dr:' + p.b); }
     for (const R of L.runways) signTexts.add('hold:' + R.ends.map((e) => e.digits + e.letter).join('-'));
     for (const h of L.holds) signTexts.add('loc:' + h.twyName);
+    for (const g of L.dirSigns) { signTexts.add('dir:' + g.txt + ':' + g.arrow); signTexts.add('loc:' + g.loc); }
   }
   const signs = makeSignAtlas(ctx, [...signTexts]);
 
@@ -142,6 +144,8 @@ export async function createScenery(ctx) {
     const paveMat = makePavementMaterial(ctx, shared, pools);
     const pave = new THREE.Mesh(buildPavementGeometry(L), paveMat);
     pave.receiveShadow = true; far.add(pave);
+    const fringe = new THREE.Mesh(buildFringeGeometry(L), fringeMat);
+    fringe.receiveShadow = true; fringe.renderOrder = -1; mid.add(fringe);
     const paint = new THREE.Mesh(buildPaintGeometry(L, markings[i]), makePaintMaterial(ctx, shared, paveMat.userData.pools));
     paint.receiveShadow = true; paint.renderOrder = 1; far.add(paint);
     if (ctx.params.raw?.shide?.includes('paint')) paint.visible = false;
@@ -196,7 +200,7 @@ export async function createScenery(ctx) {
           if (mil) type = 'tanker';
           else if (ap.kind === 'regional') type = 'prop';
           else if (ap.kind === 'island') type = rnd() < 0.5 ? 'prop' : 'narrow';
-          const liv = LIVERY[Math.floor(rnd() * LIVERY.length)];
+          const liv = st.cargo ? [[0x5a3417, 0x5a3417], [0xf2a900, 0x3a3a3a], [0x1d1d1b, 0xd9dcdf]][Math.floor(rnd() * 3)] : LIVERY[Math.floor(rnd() * LIVERY.length)];
           const sc = type === 'narrow' ? (rnd() < 0.3 ? 0.88 : 1) : 1;
           lists[type].push({ x: st.x, z: st.z, hdg: st.hdg, scale: sc, color: mil ? 0xffffff : liv[0], color2: mil ? 0x7d858c : liv[1] });
           const k = type === 'wide' ? 1.7 : type === 'prop' ? 0.72 : sc;

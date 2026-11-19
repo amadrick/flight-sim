@@ -375,3 +375,67 @@ export function makePaintMaterial(ctx, shared, poolsLocal) {
   mat.customProgramCacheKey = () => 'scn-paint';
   return mat;
 }
+
+// --- fringe -------------------------------------------------------------------------------------------------------------
+/**
+ * Soft verge around every paved rectangle: a ring of quads just above the ground, fading from trampled soil and
+ * dead grass at the pavement edge to nothing a few metres out, so pavement sits in the turf instead of on it.
+ * Drawn after the opaque pass with depthWrite off; where it runs under neighbouring pavement the depth test hides it.
+ */
+export function buildFringeGeometry(L) {
+  const pos = [], fade = [], idx = [];
+  const ring = (cx, cz, hdg, len, wid, w) => {
+    const h = hdg * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+    const P = (a, c) => [cx + dx * a + rx * c, 0.006, cz + dz * a + rz * c];
+    const hl = len / 2, hw = wid / 2;
+    const inner = [P(-hl, -hw), P(hl, -hw), P(hl, hw), P(-hl, hw)];
+    const outer = [P(-hl - w, -hw - w), P(hl + w, -hw - w), P(hl + w, hw + w), P(-hl - w, hw + w)];
+    for (let k = 0; k < 4; k++) {
+      const base = pos.length / 3, k2 = (k + 1) % 4;
+      for (const [p, f] of [[inner[k], 0], [inner[k2], 0], [outer[k], 1], [outer[k2], 1]]) { pos.push(...p); fade.push(f); }
+      idx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    }
+  };
+  for (const r of L.pave) {
+    const w = r.kind === 'rwy' || r.kind === 'rwyConcrete' ? 5 : r.kind === 'shoulder' ? 7 : r.kind === 'apron' ? 5 : r.kind === 'blast' ? 6 : 4;
+    ring(r.x, r.z, r.hdg, r.len, r.wid, w);
+  }
+  for (const R of L.roads) for (let i = 0; i + 1 < R.pts.length; i++) {
+    const a = R.pts[i], b = R.pts[i + 1], dx = b.x - a.x, dz = b.z - a.z;
+    ring((a.x + b.x) / 2, (a.z + b.z) / 2, Math.atan2(dx, -dz) / DEG, Math.hypot(dx, dz) + R.wid, R.wid, 2.5);
+  }
+  for (const P of L.parkingLots) ring(P.x, P.z, P.hdg, P.len, P.wid, 3);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('aFade', new THREE.Float32BufferAttribute(fade, 1));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
+}
+
+export function makeFringeMaterial(ctx, shared) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, transparent: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -0.5, polygonOffsetUnits: -1 });
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, shared);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>\nattribute float aFade; varying float vFade; varying vec2 vFField;\n${CURVATURE_GLSL}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvFade = aFade; vFField = position.xz;\n${CURV_VERT}`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; uniform float uWet; varying float vFade; varying vec2 vFField;')
+      .replace('#include <map_fragment>', `
+        {
+          vec4 n1 = texture(tNoise, vFField / 5.3 + 0.17), n2 = texture(tNoise, vFField / 41.0 + 0.63);
+          float edge = vFade + (n1.g - 0.5) * 0.55 + (n2.b - 0.5) * 0.35;
+          float a = 1.0 - smoothstep(0.05, 0.85, edge);
+          // trampled soil right at the edge, sun-bleached dead grass further out
+          vec3 soil = vec3(0.12, 0.1, 0.075) * (0.8 + 0.4 * n1.r), dry = vec3(0.2, 0.18, 0.11) * (0.85 + 0.3 * n2.g);
+          diffuseColor.rgb = mix(soil, dry, smoothstep(0.1, 0.6, vFade + 0.3 * n1.b)) * mix(1.0, 0.6, uWet);
+          diffuseColor.a = a * 0.85;
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'scn-fringe';
+  return mat;
+}

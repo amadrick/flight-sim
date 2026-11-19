@@ -162,3 +162,26 @@ test('light plan: PAPI settings, colours by direction, ALSF flashers sequence to
     assert.ok(along > 0.99 && along < 0.9995, 'edge light toe-in ' + along);
   }
 });
+
+test('layout: direction signs face traffic and point toward their connector; role-specific facilities exist', () => {
+  AIRPORTS.forEach((ap, i) => {
+    const L = layouts[i];
+    assert.ok(L.dirSigns.length >= L.connectors.length, ap.id + ' direction signs');
+    for (const g of L.dirSigns) {
+      const c = L.connectors.find((k) => g.txt === k.name);
+      assert.ok(c, 'sign names a connector');
+      const R = L.runways[c.rwy];
+      // the reader travels opposite to the sign face; the connector lies ahead of them
+      const h = (g.hdg + 180) * Math.PI / 180, tx = Math.sin(h), tz = -Math.cos(h);
+      const cp = L.frame.P(c.a, R.twyC);
+      assert.ok((cp.x - g.x) * tx + (cp.z - g.z) * tz > 20, ap.id + ' ' + g.txt + ' ahead');
+      // arrow side: R means the connector (toward the runway) is on the reader's right
+      const toRwy = L.frame.P(c.a, R.c), rx = Math.cos(h), rz = Math.sin(h);
+      const right = (toRwy.x - cp.x) * rx + (toRwy.z - cp.z) * rz > 0;
+      assert.equal(g.arrow, right ? 'R' : 'L', ap.id + ' ' + g.txt + ' arrow');
+    }
+  });
+  assert.ok(layouts[1].buildings.filter((b) => b.type === 'sunshade').length >= 20, 'KRDR flight-line sun shades');
+  assert.ok(layouts[0].buildings.some((b) => b.type === 'cargo') && layouts[0].stands.some((s) => s.cargo), 'KHVN cargo area');
+  for (const L of layouts) for (const p of L.props) if (p.type === 'jetbridge') assert.ok(p.stand && p.px !== undefined, 'jet bridge knows its stand');
+});
