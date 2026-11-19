@@ -1,2 +1,82 @@
-// Flight-model configuration (see src/physics/SCHEMA.md). Untuned: everything derives from specs.js + geometry.js defaults.
-export default { schema: 1 };
+// F-22A Raptor (2 × F119-PW-100) — flight-dynamics configuration. Schema: src/physics/SCHEMA.md.
+// Masses, thrust, wing area, gear geometry and limits not listed here come from ./index.js (specs) and ./geometry.js.
+export default {
+  schema: 1,
+  mass: {
+    payload: 1750,
+    fuel: 5550,
+    inertia: { ixx: 70000, iyy: 300000, izz: 360000, ixz: 2500, atMass: 27000 },
+  },
+  aero: {
+    ref: { chord: 6.4 },
+    lift: { cl0: 0.03, cla: 3.0, clMax: 1.75, sharpness: 9, clMaxNeg: 1.0, postStallCl: 1.2, cd90: 1.35 },
+    mach: {
+      m:     [0,      0.4,    0.6,    0.8,    0.9,    0.95,   1.0,    1.05,   1.1,    1.2,    1.4,    1.6,    1.8,    2.0,    2.2,    2.4],
+      cla:   [1.00,   1.02,   1.05,   1.10,   1.14,   1.16,   1.17,   1.16,   1.14,   1.08,   0.98,   0.88,   0.80,   0.73,   0.67,   0.62],
+      clMax: [1.00,   1.00,   0.98,   0.93,   0.88,   0.85,   0.83,   0.82,   0.80,   0.78,   0.73,   0.67,   0.62,   0.57,   0.53,   0.50],
+      cd0:   [0.0175, 0.0175, 0.0176, 0.0180, 0.0195, 0.0240, 0.0325, 0.0390, 0.0410, 0.0415, 0.0410, 0.0400, 0.0390, 0.0382, 0.0376, 0.0372],
+      k:     [0.145,  0.145,  0.147,  0.150,  0.155,  0.165,  0.185,  0.205,  0.225,  0.26,   0.30,   0.35,   0.40,   0.45,   0.50,   0.54],
+      xac:   [0,      0,      0,      0.01,   0.03,   0.06,   0.10,   0.13,   0.15,   0.17,   0.18,   0.18,   0.18,   0.18,   0.18,   0.18],
+      ctrl:  [1,      1,      1,      0.98,   0.95,   0.91,   0.87,   0.83,   0.81,   0.78,   0.72,   0.66,   0.61,   0.57,   0.53,   0.50],
+    },
+    drag: { clMinDrag: 0.02, gear: 0.020, speedbrake: 0.035, beta: 1.1, elevator: 0.05 },
+    pitch: { cm0: 0.0, staticMargin: -0.01, cmq: -6, cmde: 0.60, clde: 0.40, cmPostStall: -0.30, cmGear: -0.006, cmSpeedbrake: -0.003 },
+    side: { cyb: -1.0, cydr: 0.16 },
+    roll: { clb: -0.06, clbCl: -0.06, clp: -0.30, clr: 0.03, clrCl: 0.14, clda: 0.075, cldt: 0.04, cldr: 0.010 },
+    yaw: { cnb: 0.15, cnp: -0.01, cnpCl: -0.05, cnr: -0.30, cnda: 0.003, cndaCl: 0.010, cndr: 0.075, alphaDir: [32, 55], cnbPostStall: 0.02 },
+    stall: { wingDrop: 0.006, clpPost: 0.0, buffetMargin: 12, warnMargin: 3 },
+    flaps: {
+      detents: [
+        { name: 'UP', deg: 0, pos: 0 },
+        { name: 'DN', deg: 26, pos: 1, dcl0: 0.32, clMax: 1.95, dcd0: 0.035, dcm0: -0.04 },
+      ],
+      time: 2.5, autoWithGear: true, takeoff: 1, landing: 1,
+    },
+    slat: { auto: { alpha: [-2, 24], machFade: [0.9, 1.3], gearDown: 0.8 }, dAlphaStall: 8, dcd0: 0.002 },
+  },
+  controls: {
+    elevator: { max: 25, rate: 70, tau: 0.04 },
+    aileron: { max: 25, rate: 90, tau: 0.04 },
+    rudder: { max: 30, rate: 120, tau: 0.04 },
+    diffTail: { max: 8 },
+    speedbrake: { time: 2 },
+  },
+  hook: true,
+  engines: {
+    type: 'turbofan-ab', inlet: 'ramp', throttleRatio: 1.05, milLapse: 3.0, abLapse: 1.5, pressureLimit: 1.40, maxMach: 2.25,
+    n1Idle: 0.32, n2Idle: 0.66, spoolUp: 3.0, spoolDown: 2.3, idleThrust: 0.015, idleFuelFlow: 0.15,
+    tsfc: [0.66, 0.28], tsfcAb: [1.85, 0.25], egt: [400, 900, 980], abLightTime: 0.8, startTime: 15,
+    vectoring: { pitch: 20, rate: 45, qFade: 35000 },
+  },
+  gear: {
+    nose: { travel: 0.30 }, main: { travel: 0.32 },
+    retractTime: 7, steerMax: 45, steerLatG: 0.30, brakeMu: 0.50, maxSinkRate: 3.6, crashSinkRate: 7,
+  },
+  structure: { tailStrikeDeg: 13, bellyY: -0.85 },
+  limits: { vmo: 412, mmo: 2.25 },
+  fcs: {
+    type: 'fbw-fighter',
+    nzMax: 9, nzMin: -3, alphaMax: 60, alphaMin: -15, pitchRateMax: 45, alphaGain: 1.6,
+    rollRate: 240, rollAlphaFade: [20, 55],
+    gearDown: { nzMax: 5, alphaMax: 20, rollRate: 150, pitchRateMax: 25 },
+    betaGain: 3, ari: 0.1,
+  },
+  targets: {
+    stallSpeedLanding: [62, 0.08],
+    stallSpeedClean: [57, 0.10],
+    takeoffRoll: [400, 0.3],
+    landingRoll: [750, 0.35],
+    climbRate: [300, 0.25], climbSpeed: 300,
+    maxSpeedSL: [1.21, 0.06],
+    maxSpeedAlt: [2.25, 0.05], maxSpeedAltitude: 12000,
+    ceiling: 19800, ceilingMach: 1.7,
+    rollRate: [230, 0.2], rollSpeed: 200,
+    sustainedTurn: [15.5, 0.15], sustainedTurnSpeed: 232, sustainedTurnAltitude: 4572,
+    instantTurn: [25.5, 0.15], instantTurnSpeed: 185,
+    maxG: [9, 0.05], maxGSpeed: 240,
+    glideRatio: [10, 0.2], glideSpeed: 127,
+    cruise: { altitude: 10000, mach: 0.9, fuelFlow: [2600, 0.3] },
+    approachAoA: [11, 0.25],
+    rotateSpeed: 80,
+  },
+};
