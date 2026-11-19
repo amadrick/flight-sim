@@ -1,6 +1,16 @@
 # src/neural — integration notes
 
-## Round two (default since this round): trained on the game's own clouds
+## Round three: retrained on the cell-based cumulus
+
+`weights-light.js` was retrained (same architecture, same LUTs, same API) on 344k path-traced points from 70 cases:
+the round-two fields plus two fields exported after the cloud-shape rework (`scattered3`, `broken3`). Trained
+input ranges are unchanged (99.9th percentiles tauSun 83, tauUp 24, tauDown 26), so `CLOUD_LIGHT_TRAINED` stays.
+On the new fields (tools/neural/results/gt_compare_r3.md): J ln RMSE 1.00 -> 0.85 (scattered3) and 0.88 -> 0.84
+(broken3) in sample, 0.98 / 0.91 with the field held out; bias of J 1.09 -> 1.00 and 1.27 -> 1.20. The new cloud
+shapes (more, smaller clouds, more surface) are harder for a per-sample model than the round-two blobs (0.69-0.73).
+No wiring change; `main.js` needs nothing.
+
+## Round two (default since round two): trained on the game's own clouds
 
 `createNeuralCloudScatter(opts)` now returns the round-two model (`src/neural/cloud-light.js`, weights in
 `weights-light.js`); `{ version: 1 }` still builds the round-one network documented further down.
