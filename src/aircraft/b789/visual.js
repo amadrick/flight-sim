@@ -141,8 +141,8 @@ export function createVisual(ctx, opts = {}) {
   const cWB = B.chart('wingBot', { type: 'proj', u: [1, 0, 0], v: [-KS, 0, 1], a: [0.9, 30.3], b: [-10.2, 2.0], mirror: true, flip: true, density: 0.7 });
   const cSt = B.chart('stab', { type: 'plan', x: [0.4, 9.9], z: [20.2, 29.4], view: 'top', mirror: true, density: 0.85 });
   const NS = nacelleS(NAC);
-  const cNac = B.chart('nac', { type: 'unwrap', z: [0, NS.sMax], girth: 10.2, vScale: 0.8, density: 0.85 });
-  const cSlv = B.chart('sleeve', { type: 'unwrap', z: [0, 3.2], girth: 8.6, vScale: 0.8, density: 0.6 });
+  const cNac = B.chart('nac', { type: 'unwrap', z: [0, NS.sMax], girth: 10.2, vScale: 0.8, density: 1.25 });
+  const cSlv = B.chart('sleeve', { type: 'unwrap', z: [0, 4.6], girth: 8.6, vScale: 0.8, density: 0.75 });
   const cFin = { L: B.chart('finL', { type: 'side', z: [11.6, 28.6], y: [2.1, 13.0], view: 'left' }), R: B.chart('finR', { type: 'side', z: [11.6, 28.6], y: [2.1, 13.0], view: 'right' }) };
   B.pack();
   const UB = {
@@ -287,7 +287,7 @@ export function createVisual(ctx, opts = {}) {
       hudG.add(K.box(0.2, 0.16, 0.006, [0, 0]).rotateX(-0.3).translate(e[0], hy, hz));
       stA.add(K.box(0.22, 0.018, 0.03, UA.yoke).translate(e[0], hy + 0.085, hz + 0.02));
       for (const s2 of [-1, 1]) stA.add(K.box(0.014, 0.17, 0.016, UA.yoke).rotateX(-0.3).translate(e[0] + s2 * 0.107, hy, hz));
-      stA.add(K.tube([e[0], hy + 0.09, hz + 0.03], [e[0], top, hz + 0.32], 0.016, 0.016, { segments: 6, uv: UA.yoke }));
+      for (const s2 of [-1, 1]) stA.add(K.tube([e[0] + s2 * 0.1, hy + 0.09, hz + 0.03], [e[0] + s2 * 0.08, top, hz + 0.36], 0.008, 0.008, { segments: 5, uv: UA.yoke }));
       stA.add(K.box(0.18, 0.12, 0.28, UA.post).translate(e[0], top + 0.02, hz + 0.45));
     }
     rig.glass('hud', K.glassMaterial(ctx, K.GLASS.hud)); rig.addStatic(hudG, 'hud');
