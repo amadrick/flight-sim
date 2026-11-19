@@ -90,7 +90,7 @@ export function createVisual(ctx, opts = {}) {
   const U = {
     top: sw('top', paintF(SC.top)), under: sw('under', paintF(SC.under)),
     duct: sw('duct', F.semigloss('#cfd0cc')), dark: sw('dark', F.darkGrey), black: sw('black', F.black), exhaust: sw('exhaust', F.exhaust),
-    heat: sw('heat', { color: '#9b9289', rough: 0.4, metal: 0.8 }), heat2: sw('heat2', { color: '#4a433e', rough: 0.55, metal: 0.85 }),
+    heat: sw('heat', { color: '#9b9289', rough: 0.5, metal: 0.55 }), heat2: sw('heat2', { color: '#4a433e', rough: 0.55, metal: 0.85 }),
     liner: sw('liner', { color: '#5b544d', rough: 0.5, metal: 0.9 }),
     well: sw('well', F.gearWhite), interior: sw('interior', { color: '#3f4447', rough: 0.72, metal: 0 }), console: sw('console', { color: '#1d1f21', rough: 0.6, metal: 0 }),
     consoleTop: sw('consoleTop', { color: '#2b2e30', rough: 0.55, metal: 0 }), knob: sw('knob', { color: '#0d0e0f', rough: 0.4, metal: 0 }),
@@ -103,7 +103,7 @@ export function createVisual(ctx, opts = {}) {
     steel: sw('steel', F.steel), lens: sw('lens', F.lens), probe: sw('probe', F.bareMetal),
     aim9: sw('aim9', F.semigloss('#c8cbcc')), aim7: sw('aim7', F.semigloss('#e2e3e0')), seeker: sw('seeker', { color: '#1c1e20', rough: 0.15, metal: 0.3 }),
     a54: sw('a54', F.semigloss('#d9dad4')), a54nose: sw('a54nose', { color: '#d8d2bf', rough: 0.45, metal: 0 }), band: sw('band', F.semigloss('#c9a227')), bandB: sw('bandB', F.semigloss('#6b4a2a')),
-    pylon: sw('pylon', paintF(SC.style === 'gloss' ? SC.under : SC.under)), irst: sw('irst', { color: '#20262c', rough: 0.08, metal: 0.5 }), hook: sw('hook', { color: '#202224', rough: 0.45, metal: 0.4 }),
+    pylon: sw('pylon', paintF(SC.under)), irst: sw('irst', { color: '#20262c', rough: 0.08, metal: 0.5 }), hook: sw('hook', { color: '#202224', rough: 0.45, metal: 0.4 }),
     hookShoe: sw('hookShoe', F.steel), radome: sw('radome', F.semigloss(SC.radome)), fan: sw('fan', { color: '#3c3f41', rough: 0.45, metal: 0.85 }),
     ladder: sw('ladder', { color: '#c9cbc6', rough: 0.45, metal: 0.2 }), tread: sw('tread', { color: '#1b1c1d', rough: 0.95, metal: 0 }),
   };
@@ -428,10 +428,9 @@ export function createVisual(ctx, opts = {}) {
   stat.add(K.bladeAntenna({ pos: [0, fus.botAt(-4.8) + 0.01, -4.8], height: 0.18, chord: 0.22, sweep: 0.12, down: true, uv: U.under }));
   stat.add(K.bladeAntenna({ pos: [0.22, fus.botAt(-2.9) + 0.01, -2.9], height: 0.12, chord: 0.15, sweep: 0.06, down: true, uv: U.under }));
   // refuelling-probe door (right, ahead of the windscreen) and the canopy external release / step handholds: raised plates
-  for (const [z, t, w, l, sxs] of [[-7.85, 0.31, 0.1, 0.9, [1]], [-5.55, 0.79, 0.05, 0.1, [-1]], [-5.55, 0.71, 0.05, 0.1, [-1]]]) for (const sx of sxs) {
+  for (const [z, t, w, l] of [[-7.85, 0.31, 0.1, 0.9], [-5.55, 0.79, 0.05, 0.1], [-5.55, 0.71, 0.05, 0.1]]) {
     const q = fus.at(z, t), m = K.box(w, 0.006, l, U.top), roll = Math.atan2(q.n[0], q.n[1]);
     stat.add(m.rotateZ(-roll).translate(q.p[0] + q.n[0] * 0.002, q.p[1] + q.n[1] * 0.002, z));
-    void sx;
   }
 
   // ---- stores: fleet-defence fit -------------------------------------------------------------------------------------------------
@@ -573,7 +572,7 @@ export function createVisual(ctx, opts = {}) {
 
   // ---- lamps ------------------------------------------------------------------------------------------------------------------
   const L = G.lights;
-  rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.035 });
+  rig.lamp('nav', L.tail, { color: [1, 1, 1], size: 0.02 });
   rig.lamp('strobe', L.strobe, { color: [1, 1, 1], size: 0.04 });
   rig.lamp('strobe', [-L.strobe[0], L.strobe[1], L.strobe[2]], { color: [1, 1, 1], size: 0.04 });
   rig.lamp('beacon', L.beacon, { color: [1, 0.05, 0.03], size: 0.06, squash: [1, 0.55, 1] });
@@ -773,7 +772,6 @@ function paint(atlas, o) {
   for (let i = 0; i < 5; i++) { const t = 0.44 + rnd() * 0.12; P.streak(6.2, t, 7.6, t + (rnd() - 0.5) * 0.02, 0.02, { alpha: 0.18 + 0.2 * WX, color: fuel }); }   // fuel-dump stain on the paddle
   for (const t of [0.04, 0.08, 0.92, 0.96]) P.streak(6.3, t, 7.5, t, 0.02, { alpha: 0.2 + 0.2 * WX, color: hyd });                                          // speedbrake hydraulics
   P.shade((g) => g.rect(-7.65, 0.37, 3.7, 0.26), 0.35, { feather: 4 });              // canopy sill shadow
-  void W;
 
   // ================= nacelles (unwrap: z, t). Outer side t = .25 (right) / .75 (left) =================
   for (const [key, sx] of [['R', 1], ['L', -1]]) {
@@ -853,7 +851,7 @@ function paint(atlas, o) {
   // ================= movable wing panels (plan at 20° sweep) =================
   for (const key of ['R', 'L']) {
     const s = key === 'R' ? 1 : -1, wg = W.R;
-    const at = (x, f) => { const p = wg.at(x, f); return [p[0], p[2]]; };
+    const at = (x, f) => { const a = wg.at(x, 0, 'mid'), b = wg.at(x, 1, 'mid'); return [a[0] + (b[0] - a[0]) * f, a[2] + (b[2] - a[2]) * f]; };
     for (const [chart, isTop] of [[key === 'R' ? C.wTR : C.wTL, true], [key === 'R' ? C.wBR : C.wBL, false]]) {
       const Q = atlas.pen(chart);
       const ln = (pts, op) => Q.line(pts.map(p => [p[0] * s, p[1]]), op);
@@ -889,7 +887,6 @@ function paint(atlas, o) {
       for (const x of [4.2, 5.0, 5.8, 6.6, 7.4, 8.2, 9.0]) { const a = at(x + 0.02, 0.16), b = at(x + 0.02, 0.69); Q.rivets(a[0] * s, a[1], b[0] * s, b[1], 0.04, rivL); }
       for (const [x0, x1, f0, f1] of [[4.4, 4.9, 0.3, 0.4], [6.0, 6.5, 0.3, 0.4], [7.6, 8.0, 0.3, 0.39], [5.1, 5.6, 0.44, 0.56]]) {
         const A = at(x0, f0), B = at(x1, f0), Cc = at(x1, f1), D = at(x0, f1);
-        Q.fill(poly([A, B, Cc, D]), isTop ? top : under, { alpha: 0 });
         ln([A, B, Cc, D, A], fineL);
       }
       // leading-edge wear, tonal variation, hinge-line grime, touch-ups
@@ -926,7 +923,7 @@ function paint(atlas, o) {
   // ================= fins (side views: z, y) =================
   for (const [chart, outboard] of [[C.fRO, true], [C.fRI, false], [C.fLO, true], [C.fLI, false]]) {
     const Q = atlas.pen(chart), fn = fins.R;
-    const at = (u, f) => { const p = fn.at(u, f); return [p[2], p[1]]; };
+    const at = (u, f) => { const a = fn.at(u, 0, 'mid'), b = fn.at(u, 1, 'mid'); return [a[2] + (b[2] - a[2]) * f, a[1] + (b[1] - a[1]) * f]; };   // chord line, extrapolates past LE / TE
     const span = finSpan;
     const hz = (u) => fn.lines.hinge.at(fn.spanToU(u));
     const finF = hi ? F.gloss(SC.fin) : cag ? F.semigloss(SC.fin) : paintF(SC.fin);
@@ -939,9 +936,9 @@ function paint(atlas, o) {
       Q.fill([at(span - 0.12, 0), at(span + 0.1, 0), at(span + 0.1, 1.05), at(span - 0.12, 1.05)], F.semigloss(SC.accent));
     } else if (hi) {
       // blue upper fin with a row of white stars, red sweep stripe with gold pinstripe, red-and-white striped rudder
-      Q.fill([at(1.55, -0.1), at(span + 0.1, -0.1), at(span + 0.1, 1.1), at(1.2, 1.1)], F.gloss(SC.blue));
-      Q.fill([at(1.36, -0.1), at(1.55, -0.1), at(1.2, 1.1), at(1.01, 1.1)], F.gloss(SC.accent));
-      Q.fill([at(1.3, -0.1), at(1.36, -0.1), at(1.01, 1.1), at(0.95, 1.1)], F.gloss(SC.gold));
+      Q.fill([at(1.55, -0.02), at(span + 0.1, -0.02), at(span + 0.1, 1.05), at(1.2, 1.05)], F.gloss(SC.blue));
+      Q.fill([at(1.36, -0.02), at(1.55, -0.02), at(1.2, 1.05), at(1.01, 1.05)], F.gloss(SC.accent));
+      Q.fill([at(1.3, -0.02), at(1.36, -0.02), at(1.01, 1.05), at(0.95, 1.05)], F.gloss(SC.gold));
       for (let k = 0; k < 5; k++) { const p = at(2.05 + 0.04 * k, 0.12 + k * 0.1); Q.decal(p[0], p[1], (g) => { g.fillStyle = '#f2f2ee'; g.beginPath(); for (let i = 0; i < 10; i++) { const r = i % 2 ? 0.035 : 0.09, a = i * Math.PI / 5 - Math.PI / 2; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.fill(); }); }
       for (let k = 0; k < 7; k++) { const u0 = 0.42 + k * (span - 0.67) / 7, u1 = u0 + (span - 0.67) / 14; Q.fill([at(u0, hz(u0)), at(u0, 1.05), at(u1, 1.05), at(u1, hz(u1))], F.gloss(SC.accent)); }
     } else {
@@ -977,9 +974,9 @@ function paint(atlas, o) {
   // ================= nozzle petals (a = around, b = hinge → exit): heat-stained Inconel, darker toward the exit =================
   {
     const Q = atlas.pen(C.noz), n = 18, w = 3.6 / n;
-    Q.fill('all', { color: '#9b9289', rough: 0.42, metal: 0.82 });
+    Q.fill('all', { color: '#a0978d', rough: 0.5, metal: 0.55 });
     for (let i = 0; i < n; i++) {
-      Q.fill((g) => g.rect(i * w, 0, w, 0.95), { color: shade('#958c83', 0.9 + rnd() * 0.18), rough: 0.4 + rnd() * 0.1, metal: 0.82 }, { alpha: 0.7 });
+      Q.fill((g) => g.rect(i * w, 0, w, 0.95), { color: shade('#958c83', 0.9 + rnd() * 0.18), rough: 0.46 + rnd() * 0.12, metal: 0.55 }, { alpha: 0.7 });
       Q.fill((g) => g.rect(i * w + w * 0.32, 0.05, w * 0.36, 0.85), { color: '#9a9086', rough: 0.4, metal: 0.92 }, { alpha: 0.45 });
       Q.line([[i * w, 0], [i * w, 0.95]], { px: 2, depth: 0.9, dark: 0.6 });
       Q.rivets(i * w + w * 0.15, 0.05, i * w + w * 0.15, 0.9, 0.08, { px: 1.2, depth: 0.3, dark: 0.12 });
