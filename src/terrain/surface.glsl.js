@@ -224,10 +224,10 @@ TerrSurf terrSurface(vec3 rp) {
   fcol = mix(fcol, fcol * vec3(1.35, 1.2, 0.9), ss(0.45, 0.8, n2.r) * (1.0 - conifer) * 0.6);
   fcol = mix(fcol, vec3(0.030, 0.050, 0.016), tropic * 0.5);
   float crown = 1.0 - n3.b;                           // cell centres = crown tops
-  fcol *= 0.38 + 0.95 * crown * crown + 0.22 * n4.r;
+  fcol *= (0.38 + 0.95 * crown * crown + 0.22 * n4.r) * mix(1.0, 0.84, conifer);
   // where 3D trees stand (trees.js) the ground shows as shaded forest floor instead of painted crowns
   float t3d = uTerrTree.x * (1.0 - ss(uTerrTree.y, uTerrTree.z, distance(rp.xz, uTerrCam.xz)));
-  fcol = mix(fcol, mix(vec3(0.030, 0.042, 0.018), vec3(0.060, 0.052, 0.030), n4.g) * (0.7 + 0.6 * n5.r), t3d * 0.85);
+  fcol = mix(fcol, mix(vec3(0.034, 0.046, 0.020), vec3(0.064, 0.056, 0.032), n4.g) * (0.7 + 0.6 * n5.r), t3d * 0.85);
 
   // ---- cropland patchwork ---------------------------------------------------------------------------------------
   if (cropPot > 0.001) {

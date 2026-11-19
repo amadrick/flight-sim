@@ -165,8 +165,9 @@ export async function createTerrain(ctx) {
     const r0 = cfg.k * S0;
     const wantMin = Math.min(L - 1, Math.max(0, Math.ceil(Math.log2((Hd * 0.97) / r0))));
 
-    // refresh the height pyramid, coarse to fine; whole-level refills are rationed per frame (never in test mode)
-    let fills = ctx.params.test ? 99 : frameNo === 0 ? 5 : 2;
+    // refresh the height pyramid, coarse to fine; whole-level refills are rationed per frame. Test mode (software
+    // GL screenshots) gets everything at once up to 4.2 M texels per frame: all 13 levels at N <= 512, 4 at N = 1024.
+    let fills = ctx.params.test ? Math.max(1, Math.floor(4.2e6 / (cfg.N * cfg.N))) : frameNo === 0 ? 5 : 2;
     let validMin = L, tex = 0;
     for (let l = L - 1; l >= wantMin; l--) {
       const r = clip.update(l, wx, wz, fills > 0);

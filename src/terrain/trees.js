@@ -177,8 +177,8 @@ export function createTrees(ctx, { L, G, cell, uniforms }) {
         tCol = mix(tCol, vec3(0.036, 0.062, 0.020), tTropic * 0.5 * (1.0 - tConif));
         tCol *= 0.80 + 0.45 * tH3.x;
         float tUp = smoothstep(0.08, 0.95, tProf.x);
-        vTreeCol = tCol * mix(0.95, 2.1, tConif);
-        float tLow = mix(0.30, 0.42, tConif);
+        vTreeCol = tCol * mix(0.95, 2.5, tConif);
+        float tLow = mix(0.30, 0.52, tConif);
         vTreeLit = vec2(tShadow * mix(tLow, 1.0, tUp), mix(tLow + 0.05, 1.0, tUp));
       `)
       .replace('#include <begin_vertex>', 'vec3 transformed = tPos;');
