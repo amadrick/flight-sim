@@ -252,6 +252,9 @@ void main() {
   float resolved = 1.0 - smoothstep(0.5, 2.5, lod1);
   float fresh = mix(uFoam.z, crestFoam, resolved);
   float residue = clamp(dot(vec3(s0.z, s1.z, s2.z), uFoamW), 0.0, 1.0);
+  // foam patches spread and drift beyond the folded crest: a blurred (biased mip) copy of the persistent foam
+  float spread = clamp((texture(tSlope0, uv0, 2.0).z * uFoamW.x + texture(tSlope1, uv1, 2.0).z * uFoamW.y) * 1.6, 0.0, 1.0);
+  residue = max(residue, spread * 0.75);
   float cov = max(fresh, residue);
 
   // ---- large-scale sea-state variation: gust fronts, cat's paws, slicks --------------------------------------
@@ -263,10 +266,11 @@ void main() {
               * smoothstep(0.3, 0.6, n1.g) * (1.0 - smoothstep(5.0, 10.0, uSea.x));
   // cat's paws: patches of ruffled water a few hundred metres across racing downwind over a smoother sea
   // (dominant in light air, merged into the general roughness by ~8 m/s)
-  vec2 cq = (wq - uCatOff) / 1024.0;
-  float catN = texture(tNoise, cq).b * 0.65 + texture(tNoise, cq * 3.1 + vec2(0.43, 0.29)).r * 0.35;
+  // (wind frame, stretched downwind; the small paws average out once a pixel spans tens of metres)
+  vec2 cq = vec2(sw.x - uCatOff.x, sw.y) / vec2(2048.0, 512.0);
+  float catN = texture(tNoise, cq).b * 0.65 + texture(tNoise, cq * vec2(2.0, 4.0) + vec2(0.43, 0.29)).r * 0.35;
   float lightAir = 1.0 - smoothstep(4.0, 9.0, uSea.x);
-  float cat = smoothstep(0.42, 0.68, catN + 0.25 * (gust - 0.5));
+  float cat = mix(smoothstep(0.42, 0.68, catN + 0.25 * (gust - 0.5)), 0.5, smoothstep(6.0, 30.0, length(fwidth(xz))));
   float rough = mix(0.75, 1.25, gust) * (1.0 - 0.5 * slick) * mix(1.0, mix(0.6, 1.45, cat), lightAir * 0.8);
   var *= rough;
   grad *= 1.0 - 0.15 * slick;
@@ -423,7 +427,7 @@ void main() {
   float detailW = 1.0 - smoothstep(0.03, 0.25, pxs);
   cov = clamp(cov, 0.0, 1.0); fresh = clamp(fresh, 0.0, 1.0);
   float freshMask = smoothstep(0.05, 0.9, fresh) * (0.25 + 0.75 * smoothstep(0.2, 0.65, ft + 0.45 * fresh - 0.1));
-  float resMask = residue * smoothstep(0.55 - 0.35 * residue, 0.75 - 0.3 * residue, ft) * 0.6;
+  float resMask = residue * smoothstep(0.6 - 0.45 * residue, 0.8 - 0.35 * residue, ft) * 0.75;
   float wc = mix(cov * 0.75, max(freshMask, resMask), detailW);
   vec2 sq = vec2(dot(xz, uWindDir), dot(xz, vec2(-uWindDir.y, uWindDir.x))) + uStreak.xy;
   vec4 warp = texture(tNoise, sq / 256.0);

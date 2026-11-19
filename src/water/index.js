@@ -10,6 +10,7 @@ const { makeSeaState, varianceTables, componentsFor, evalHeight, LEVELS } = Spec
 import { waterVertexShader, waterFragmentShader } from './shaders.js';
 import * as Classic from './shaders-classic.js';
 import { makeNoiseTexture, makeFoamTexture } from './textures.js';
+import { createInlandWater } from './inland.js';
 
 const EARTH_R = 6371000;
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -136,6 +137,7 @@ export async function createWater(ctx) {
     Object.assign(uniforms, cl.shadowUniforms);
     material.fragmentShader = waterFragmentShader(terrainGLSL, atm.glsl, { cloudsGLSL: cl.shadowGLSL });
     material.needsUpdate = true;
+    inland?.hookClouds(cl);
   }
 
   let cfg = null, fft = null, mesh = null, meshInfo = null;
@@ -234,6 +236,12 @@ export async function createWater(ctx) {
   }
 
   build();
+  // rivers (wriver=0 disables; off on low quality and in the classic look)
+  let inland = null;
+  if (!classic && ctx.params.raw?.wriver !== '0' && ctx.quality.level !== 'low') {
+    inland = createInlandWater(ctx, { buildPolarMesh, uniforms, terrainGLSL, atm });
+    if (inland) object3D.add(inland.mesh);
+  }
   refreshSea(true);
   ctx.events.on('quality:change', () => { build(); refreshSea(true); });
   ctx.events.on('weather:change', () => { lastSea.t = -1e9; });
@@ -260,11 +268,12 @@ export async function createWater(ctx) {
     }
     {
       const wd = uniforms.uWindDir.value, U = uniforms.uSea.value.x, t = ctx.time.now;
-      uniforms.uCatOff.value.set(mod(wd.x * U * 0.6 * t, 4096), mod(wd.y * U * 0.6 * t, 4096));
+      uniforms.uCatOff.value.set(mod(U * 0.6 * t, 16384), 0);
       uniforms.uWeather.value.x = Math.min(1, Math.max(0, ctx.weather.precipitation || 0));
       uniforms.uWeather.value.z = ctx.env.exposure || 1;
     }
     updateWash();
+    inland?.update(fft);
     uniforms.uOriginWrap.value.set(mod(o.x, 4096), mod(o.z, 4096), mod(o.x, 32768), mod(o.z, 32768));
     const cam = ctx.camera;
     camW.setFromMatrixPosition(cam.matrixWorld);
@@ -307,6 +316,6 @@ export async function createWater(ctx) {
     get _fft() { return fft; },
     get _debug() { return { fft, Spectrum, sea, cascadeDefs, time: ctx.time.now }; },
     get stats() { return { N: cfg.N, vertices: meshInfo.vertices, triangles: meshInfo.triangles, floatFFT: fft.floatOK }; },
-    dispose() { fft.dispose(); mesh?.geometry.dispose(); material.dispose(); noiseTex.dispose(); foamTex.dispose(); ctx.scene.remove(object3D); },
+    dispose() { inland?.dispose(); fft.dispose(); mesh?.geometry.dispose(); material.dispose(); noiseTex.dispose(); foamTex.dispose(); ctx.scene.remove(object3D); },
   };
 }
