@@ -1,7 +1,7 @@
 // Campaign: "Lantern Line". The Cendrine Directorate — a junta that runs the valleys beyond the northern range —
 // has started testing the coast. The 88th Fighter Squadron (call sign Halyard) out of Haven is in the way.
 import * as THREE from 'three';
-import { mission, UNARMED } from './common.js';
+import { mission, UNARMED, briefMap } from './common.js';
 import { clockDir } from '../radio.js';
 import { bearing, NM } from '../../util.js';
 
@@ -22,7 +22,7 @@ export const CAMPAIGN = [
       'This morning two aircraft crossed the range with their transponders off and are descending toward Haven. You are on alert. Get airborne, intercept, and find out what they want. Halyard 2 is already up on a weather check and will join you.',
       'Rules of engagement: hold fire unless they show hostile intent. Cathedral makes the call.',
     ],
-    location: 'Haven International', tod: 6.4, weather: 'fair', aircraft: 'f16', threat: 2, minutes: 6,
+    location: 'KHVN', locationName: 'Haven International', map: briefMap(9000, -20000, 34000, [-1900, -900, 90], [[19440, -41690], [19900, -41500]]), tod: 6.4, weather: 'fair', aircraft: 'f16', threat: 2, minutes: 6,
     objectivesPreview: ['Scramble and intercept the unknown aircraft', 'Shoot down the hostiles', 'Optional: keep them 10 km from Haven', 'Optional: land back at Haven'],
     start: { mode: 'runway', airport: 'KHVN' },
     script(s) {
@@ -40,7 +40,7 @@ export const CAMPAIGN = [
       s.mark(haven, 'HAVEN', 'protect');
       s.steer(unknowns.leader, 'UNKNOWNS');
       s.chat([
-        [0.5, 'tower', 'Halyard 1, Haven Tower. Scramble, scramble! Runway two seven, cleared for immediate takeoff. Climb heading zero two zero.', { priority: 2 }],
+        [0.5, 'tower', 'Halyard 1, Haven Tower. Scramble, scramble! Runway zero niner left, cleared for immediate takeoff. Climb heading zero two zero.', { priority: 2 }],
         [8, 'awacs', 'Halyard 1, Cathedral. Two unknowns, bearing zero two five from Haven, twenty-five miles, descending. No squawk, no flight plan, no manners.'],
         [22, 'awacs', 'Halyard 2 is airborne and will join on you.'],
       ]);
@@ -91,7 +91,7 @@ export const CAMPAIGN = [
       'The Directorate knows it is coming. Expect fighters to come over the ridgelines at Bundle 1, not at you. Stay close, stay between them and the transport, and do not chase anyone into the next valley.',
       'Bundle 1 must reach Pinecrest. Everything else is negotiable.',
     ],
-    location: 'The Saddle, north of Haven', tod: 13, weather: 'scattered', aircraft: 'f16', threat: 3, minutes: 7,
+    location: 'KPNC', locationName: 'The Saddle, north of Haven', map: briefMap(-14000, -66000, 36000, [-9000, -40000, 349], [], [[-9480, -42450]]), tod: 13, weather: 'scattered', aircraft: 'f16', threat: 3, minutes: 7,
     objectivesPreview: ['Keep Bundle 1 alive', 'Escort Bundle 1 to Pinecrest', 'Optional: destroy every attacker'],
     start: { at: { x: -9000, z: -40000 }, alt: 3200, hdg: 349, spd: 200 },
     script(s) {
@@ -141,7 +141,7 @@ export const CAMPAIGN = [
       'Today the whole Halyard four-ship goes out together to sweep them away. Halyard 2 is steady, Halyard 3 is new and very keen, Halyard 4 has been doing this longer than the jets have existed.',
       'Expect four fighters in a wall, and more if they decide to reinforce. Bring everyone home.',
     ],
-    location: 'The Glass Flats', tod: 16, weather: 'fair', aircraft: 'f16', threat: 3, minutes: 6,
+    location: 'KRDR', locationName: 'The Glass Flats', map: briefMap(87000, -38000, 26000, [70000, -40000, 85], [[103870, -42960], [103980, -41660], [103760, -44260], [104090, -40360]], [[69800, -39700], [69800, -40300], [69500, -39500]]), tod: 16, weather: 'fair', aircraft: 'f16', threat: 3, minutes: 6,
     objectivesPreview: ['Destroy the Slag patrol and any reinforcements', 'Optional: bring all three wingmen home'],
     start: { at: 'glassFlats', alt: 6000, hdg: 85, spd: 240 },
     script(s) {
@@ -172,7 +172,7 @@ export const CAMPAIGN = [
       'You are the only flight close enough. The bombers are the target; the escorts exist to waste your time and missiles. Ignore them if you can, kill them if you must.',
       'Redrock Tower is already clearing the ramp. Every bomber that reaches the base will hurt.',
     ],
-    location: 'Redrock Air Force Base', tod: 10.5, weather: 'broken', aircraft: 'f15', threat: 4, minutes: 7,
+    location: 'KRDR', locationName: 'Redrock Air Force Base', map: briefMap(158000, -62000, 46000, [150600, -46960, 32], [[177000, -94090], [178400, -93300], [175600, -94900]]), tod: 10.5, weather: 'broken', aircraft: 'f15', threat: 4, minutes: 7,
     objectivesPreview: ['Shoot down the bombers', 'Do not let the bombers reach Redrock', 'Optional: destroy the escorts'],
     start: { at: 'redrock', brg: 32, dist: 20000, alt: 6500, hdg: 32, spd: 240 },
     script(s) {
@@ -228,7 +228,7 @@ export const CAMPAIGN = [
       'Mule is flying low inside a thunderstorm with a couple of escorts. Visibility is miserable and the ridges are close. If it crosses the line, it is gone.',
       'Catch it, kill it, and do not fly into a mountain doing it.',
     ],
-    location: 'Cobbler Valleys, high range', tod: 15, weather: 'storm', aircraft: 'f16', threat: 4, minutes: 5,
+    location: 'KPNC', locationName: 'Cobbler Valleys, high range', map: briefMap(40000, -118000, 36000, [40000, -92000, 0], [[40000, -107000], [40000, -104000]]), tod: 15, weather: 'storm', aircraft: 'f16', threat: 4, minutes: 5,
     objectivesPreview: ['Shoot down Mule before it crosses the Lantern Line', 'Optional: destroy the escorts', 'Hidden: there is a stylish way to do it'],
     start: { at: { x: 40000, z: -92000 }, agl: 900, hdg: 0, spd: 250 },
     script(s) {
@@ -271,7 +271,7 @@ export const CAMPAIGN = [
       'You launch from Meridian with two wingmen. Strikers that get within launch range will fire and run. A carrier can take a hit or two. It cannot take many.',
       'Meet each wave far out. The sun will be in your eyes for the first one, and gone for the last.',
     ],
-    location: 'USS Meridian, off the coast', tod: 18.9, weather: 'scattered', aircraft: 'fa18', threat: 4, minutes: 8,
+    location: 'KHVN', locationName: 'USS Meridian, off the coast', map: briefMap(-6000, 64000, 46000, [3530, 53030, 235], [[-32500, 84850], [-32000, 85500]], [[15000, 45000]]), tod: 18.9, weather: 'scattered', aircraft: 'fa18', threat: 4, minutes: 8,
     objectivesPreview: ['Protect USS Meridian', 'Break all three strike waves', 'Optional: shoot down every striker before it fires'],
     start: { at: 'carrier', brg: 235, dist: 14000, alt: 4000, hdg: 235, spd: 230 },
     script(s) {
@@ -334,7 +334,7 @@ export const CAMPAIGN = [
       'You are already airborne on night patrol in an F-15. Your wingman Halyard 2 is with you. Stars are out, the moon is thin, and the sea is black.',
       'Cathedral has a feeling about this one. So do I. Keep half an eye on the coast.',
     ],
-    location: 'Off the coast south of Haven', tod: 23.4, weather: 'clear', aircraft: 'f15', threat: 4, minutes: 7,
+    location: 'KHVN', locationName: 'Off the coast south of Haven', map: briefMap(-24000, 30000, 44000, [-14910, 21300, 215], [[-50850, 56480], [-49800, 57500]], [[0, 0]]), tod: 23.4, weather: 'clear', aircraft: 'f15', threat: 4, minutes: 7,
     objectivesPreview: ['Destroy the raid before it reaches Haven', 'Optional: destroy the escorts'],
     start: { at: 'haven', brg: 215, dist: 26000, alt: 6500, hdg: 215, spd: 240 },
     script(s) {
@@ -389,7 +389,7 @@ export const CAMPAIGN = [
       'You and Halyard 2 are going up through the deck to break up their formation before it forms. You will be outnumbered. The cloud tops are at about ten thousand feet; anything below is soup.',
       'Watch the cloud tops. Things come out of them.',
     ],
-    location: 'Above the overcast, Glass Flats', tod: 12, weather: 'overcast', aircraft: 'f16', threat: 4, minutes: 7,
+    location: 'KRDR', locationName: 'Above the overcast, Glass Flats', map: briefMap(67000, -40000, 24000, [64870, -25900, 10], [[70080, -55450], [69200, -54800], [70900, -54800]]), tod: 12, weather: 'overcast', aircraft: 'f16', threat: 4, minutes: 7,
     objectivesPreview: ['Destroy every Directorate fighter', 'Optional: Halyard 2 comes home', 'Hidden: something about the cannon'],
     start: { at: 'glassFlats', brg: 200, dist: 15000, alt: 6200, hdg: 10, spd: 240 },
     script(s) {
@@ -421,7 +421,7 @@ export const CAMPAIGN = [
       'Command thinks it is a trap. It probably is. We are going anyway, with friends: his Hilt flight will come first, and Quillon likes to arrive once the stage is set.',
       'Ridgeback flew with Drey at an exchange course years ago, before the junta. Her advice: "He flies like he is being photographed. Make him work and he gets vain."',
     ],
-    location: 'Cobbler Valleys, high range', tod: 6.1, weather: 'broken', aircraft: 'f22', threat: 5, minutes: 8,
+    location: 'KPNC', locationName: 'Cobbler Valleys, high range', map: briefMap(40000, -110000, 26000, [40000, -94000, 0], [[40000, -124000], [41000, -124000], [39000, -124000]]), tod: 6.1, weather: 'broken', aircraft: 'f22', threat: 5, minutes: 8,
     objectivesPreview: ['Shoot down Quillon', 'Optional: destroy Hilt flight', 'Hidden: a fitting end'],
     start: { at: 'cobbler', brg: 180, dist: 26000, alt: 6000, hdg: 0, spd: 250 },
     script(s) {

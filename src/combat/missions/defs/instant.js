@@ -1,5 +1,5 @@
 // Instant action: quick fights with no story. instant-1v1 and instant-2v2 are used by tests; keep those ids.
-import { mission, GUNS_ONLY, FIGHTERS } from './common.js';
+import { mission, GUNS_ONLY, FIGHTERS, briefMap } from './common.js';
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const TYPES = [...FIGHTERS, 'a10', 'sr71', 'b2', 'c17', 'b738', 'a320', 'b789', 'b77w', 'b748', 'a388'];
@@ -26,7 +26,7 @@ export const INSTANT = [
     id: 'instant-1v1', category: 'instant', order: 1,
     title: 'One on One', tagline: 'One bandit, head-on merge.',
     brief: ['A single Directorate fighter is inbound at your altitude, nose hot. Merge, get on its tail, and shoot it down. Nobody else is coming to help, and nobody else is coming to help it either.'],
-    location: 'Off the coast south of Haven', tod: 15, weather: 'fair', threat: 2, minutes: 3,
+    location: 'KHVN', locationName: 'Off the coast south of Haven', map: briefMap(-3000, 9000, 12000, [-4790, 13160, 20], [[-1710, 4700]]), tod: 15, weather: 'fair', threat: 2, minutes: 3,
     objectivesPreview: ['Shoot down the bandit'],
     start: { at: 'haven', brg: 200, dist: 14000, alt: 4500, hdg: 20, spd: 230 },
     script(s) {
@@ -40,7 +40,7 @@ export const INSTANT = [
     id: 'instant-2v2', category: 'instant', order: 2,
     title: 'Two on Two', tagline: 'You and a wingman against a pair.',
     brief: ['Two bandits are inbound. Halyard 2 is on your wing. Sort the targets, support each other, splash both.'],
-    location: 'Off the coast south of Haven', tod: 17.2, weather: 'scattered', threat: 2, minutes: 4,
+    location: 'KHVN', locationName: 'Off the coast south of Haven', map: briefMap(-3000, 8000, 12000, [-4790, 13160, 20], [[-1000, 2800], [-300, 3000]]), tod: 17.2, weather: 'scattered', threat: 2, minutes: 4,
     objectivesPreview: ['Shoot down both bandits', 'Optional: Halyard 2 comes home'],
     start: { at: 'haven', brg: 200, dist: 14000, alt: 5000, hdg: 20, spd: 240 },
     script(s) {
@@ -53,10 +53,10 @@ export const INSTANT = [
   }),
 
   mission({
-    id: 'instant-custom', category: 'instant', order: 3,
+    id: 'instant-custom', category: 'instant', order: 3, custom: true,
     title: 'Custom Fight', tagline: 'Pick the odds, the jets and the geometry.',
     brief: ['Your fight, your rules. Choose how many bandits, what they fly, how many wingmen you bring, whether it is guns only, and who starts with the advantage.'],
-    location: 'Off the coast south of Haven', tod: 15.5, weather: 'fair', threat: 3, minutes: 5,
+    location: 'KHVN', locationName: 'Off the coast south of Haven', map: briefMap(-3000, 8000, 22000, [-7520, 20670, 20], [[-1360, 3760]]), tod: 15.5, weather: 'fair', threat: 3, minutes: 5,
     objectivesPreview: ['Shoot down every bandit'],
     start: (o) => { const c = customSettings(o); return { at: 'haven', brg: 200, dist: 22000, alt: c.altitude, hdg: 20, spd: 230, tod: c.tod, weather: c.weather }; },
     loadout: (o) => (customSettings(o).gunsOnly ? GUNS_ONLY : undefined),
@@ -82,7 +82,7 @@ export const INSTANT = [
       'Wave after wave of Directorate fighters, each one bigger and sharper than the last. Between waves you get a breather, a few missiles and a quick patch-up. Nothing else.',
       'Clear three waves to call it a win. Clear ten and Cathedral will run out of things to say.',
     ],
-    location: 'Over the sea south of Haven', tod: 17.6, weather: 'scattered', threat: 5, minutes: 10,
+    location: 'KHVN', locationName: 'Over the sea south of Haven', map: briefMap(0, 30000, 26000, [0, 40000, 0]), tod: 17.6, weather: 'scattered', threat: 5, minutes: 10,
     objectivesPreview: ['Survive as many waves as you can', 'Three waves cleared counts as a win'],
     start: { at: 'haven', brg: 180, dist: 40000, alt: 5000, hdg: 0, spd: 240 },
     noTimeBonus: true, quietKills: true, par: 4000,

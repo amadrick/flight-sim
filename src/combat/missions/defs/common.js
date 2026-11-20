@@ -25,3 +25,9 @@ export function mission(d) {
 export const GUNS_ONLY = { ir: 0, radar: 0 };
 /** A target that cannot fight back. */
 export const UNARMED = { gun: 0, ir: 0, radar: 0, flares: 0 };
+
+/** Briefing map (plain data, world metres): only what a pilot is briefed on, never the surprise waves. */
+export function briefMap(cx, cz, radius, player, hostiles = [], friendlies = []) {
+  const P = (a) => ({ x: Math.round(a[0]), z: Math.round(a[1]) });
+  return { center: { x: cx, z: cz }, radius, player: { ...P(player), hdg: player[2] ?? 0 }, hostiles: hostiles.map(P), friendlies: friendlies.map(P) };
+}

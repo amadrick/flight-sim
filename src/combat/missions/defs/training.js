@@ -1,5 +1,5 @@
 // Training: three short lessons with Ridgeback, the squadron's weapons instructor.
-import { mission, GUNS_ONLY, UNARMED } from './common.js';
+import { mission, GUNS_ONLY, UNARMED, briefMap } from './common.js';
 import { clockDir } from '../radio.js';
 
 const dirTo = (s, e) => (s.player && e ? clockDir(s.player.state, e.state.position) : 'off your nose');
@@ -13,15 +13,15 @@ export const TRAINING = [
       'You have the cannon and nothing else. Get behind the drone, let the pipper settle on it, and squeeze short bursts. Clay 2 jinks: lead the turn instead of chasing the tail.',
       'Ridgeback is on frequency. She grades hard and she counts rounds.',
     ],
-    location: 'Gull Shoal Range, south of Haven', tod: 9.5, weather: 'clear', aircraft: 'f16', threat: 1, minutes: 4,
+    location: 'KHVN', locationName: 'Gull Shoal Range, south of Haven', map: briefMap(6000, 30000, 15000, [6000, 34000, 0], [[7200, 27000]]), tod: 9.5, weather: 'clear', aircraft: 'f16', threat: 1, minutes: 4,
     objectivesPreview: ['Shoot down target drone Clay 1', 'Shoot down Clay 2, which jinks', 'Optional: use fewer than 300 rounds'],
     start: { at: 'gullShoal', alt: 3000, hdg: 0, spd: 210 },
     loadout: GUNS_ONLY, noDamageBonus: true, quietKills: true,
     script(s) {
-      const drone = (cs, extra) => ({ type: 'f16', callsign: cs, single: true, passive: true, loadout: UNARMED, hp: s.n(35, 55, 75),
+      const drone = (cs, extra) => ({ type: 'f16', callsign: cs, single: true, passive: true, loadout: UNARMED, hp: s.n(25, 35, 50),
         skill: 'target', role: 'drone', points: 100, mark: cs, thrust: 0.55, speed: 190, ...extra });
-      const ring = s.at({ rel: 0, dist: 9000 });
-      const c1 = s.group('clay1', drone('Clay 1', { at: { rel: 10, dist: 7000 }, heading: { rel: 90 }, order: s.orders.orbit(ring, 3500, ring.y, { passive: true }) }));
+      const ring = s.at({ rel: 0, dist: 12000 });
+      const c1 = s.group('clay1', drone('Clay 1', { at: { rel: 10, dist: 7000 }, heading: { rel: 90 }, order: s.orders.orbit(ring, 6000, ring.y, { passive: true }) }));
       const c2 = s.declare('clay2', drone('Clay 2', {
         at: () => s.at({ rel: s.pick([-35, 35]), dist: 8000 }), heading: { rel: 60 }, skill: s.skill('target', 0.3),
         order: (i, p) => s.orders.patrol(s.route([0, 1, 2, 3, 4, 5].map((k) => ({ x: p.x + (k % 2 ? 2500 : -2500), z: p.z - 4000 * k })), { alt: p.y }), { passive: true }),
@@ -59,7 +59,7 @@ export const TRAINING = [
       'Then the unpleasant half. A second drone, Clay 4, will fire one training missile at you. It is inert and it will not hurt you, but treat it like it would: when the warning sounds, dump flares and turn hard.',
       'Defeat the shot and you are cleared to shoot Clay 4 down. Range control has spare missiles if you need them, and opinions if you do not.',
     ],
-    location: 'Gull Shoal Range, south of Haven', tod: 14, weather: 'fair', aircraft: 'f16', threat: 1, minutes: 5,
+    location: 'KHVN', locationName: 'Gull Shoal Range, south of Haven', map: briefMap(9000, 42000, 15000, [6000, 42000, 90], [[13000, 42000]]), tod: 14, weather: 'fair', aircraft: 'f16', threat: 1, minutes: 5,
     objectivesPreview: ['Lock and shoot down Clay 3 with a missile', 'Defeat a training shot with flares', 'Shoot down Clay 4'],
     start: { at: 'gullShoal', brg: 180, dist: 8000, alt: 4000, hdg: 90, spd: 230 },
     loadout: { gun: 0, ir: 4, radar: 2 }, noDamageBonus: true, quietKills: true,
@@ -144,47 +144,52 @@ export const TRAINING = [
       'Both jets are firing training rounds: every hit is scored, nobody gets hurt. Land enough hits on her before she lands too many on you, and before the range clock runs out.',
       'Keep your speed up through the merge, use the vertical, and do not get greedy with the trigger.',
     ],
-    location: 'Tinplate Range, west of Redrock AFB', tod: 11, weather: 'clear', aircraft: 'f16', threat: 2, minutes: 5,
+    location: 'KRDR', locationName: 'Tinplate Range, west of Redrock AFB', map: briefMap(115000, -8000, 14000, [112000, -8000, 90], [[119000, -8000]]), tod: 11, weather: 'clear', aircraft: 'f16', threat: 2, minutes: 5,
     objectivesPreview: ['Score hits on Ridgeback with training rounds', 'Take fewer hits than the limit', 'Optional: first hit inside 60 seconds'],
     start: { at: 'tinplate', alt: 4500, hdg: 90, spd: 240 },
-    loadout: { ...GUNS_ONLY, hp: 100000 }, noDamageBonus: true, quietKills: true, winReason: 'Ridgeback beaten',
+    loadout: { ...GUNS_ONLY, invulnerable: true }, noDamageBonus: true, quietKills: true, winReason: 'Ridgeback beaten',
     script(s) {
-      const need = s.n(20, 30, 40), limit = s.n(60, 40, 28);
+      const need = s.n(5, 7, 12), limit = s.n(20, 14, 10);
       const rb = s.group('instructor', {
-        type: 'f16', callsign: 'Ridgeback', single: true, loadout: { ...GUNS_ONLY, hp: 100000 }, skill: s.n(0.3, 0.55, 0.8),
-        at: { rel: 0, dist: 7000 }, heading: 'player', role: 'instructor', noCount: true, points: 0, mark: 'RIDGEBACK',
+        type: 'f16', callsign: 'Ridgeback', single: true, loadout: { ...GUNS_ONLY, invulnerable: true }, invulnerable: true, skill: s.n(0.3, 0.55, 0.8),
+        at: { rel: -6, dist: 7000 }, heading: { rel: 180 }, role: 'instructor', noCount: true, points: 0, mark: 'RIDGEBACK',
       });
-      const hits = s.objective('hits', `Land ${need} hits on Ridgeback`, { progress: `0 / ${need}`, points: 400 });
-      const taken = s.objective('taken', `Take fewer than ${limit} hits`, { standing: true, progress: `0 / ${limit}`, points: 200 });
+      const hits = s.objective('hits', `Score ${need} gun hits on Ridgeback`, { progress: `0 / ${need}`, points: 400 });
+      const taken = s.objective('taken', `Take fewer than ${limit} gun hits`, { standing: true, progress: `0 / ${limit}`, points: 200 });
       const first = s.objective('first', 'First hit inside 60 seconds', { optional: true });
       s.objective('clean', 'Win without taking a hit', { hidden: true, points: 300 });
-      s.boundary(s.anchor, 40000);
-      s.countdown(s.n(360, 300, 240), 'Fight time', () => s.lose('Out of time', [[0.5, 'instructor', 'Knock it off, knock it off. Time. We\'ll debrief the part where you didn\'t shoot me.']]));
+      s.boundary(s.anchor, 70000);
+      s.countdown(s.n(420, 360, 300), 'Fight time', () => s.lose('Out of time', [[0.5, 'instructor', 'Knock it off, knock it off. Time. We\'ll debrief the part where you didn\'t shoot me.']]));
       s.steer(rb.leader, 'RIDGEBACK');
       s.chat([
         [1, 'instructor', 'Ridgeback is head-on, {cs}. Training rounds hot. Pass left to left.'],
         [8, 'instructor', 'Fight\'s on! Fight\'s on!', { priority: 2 }],
       ]);
-      let mine = 0, his = 0;
-      const mine25 = [Math.round(need * 0.33), Math.round(need * 0.66)];
-      s.on('damage', ({ target, source, weapon }) => {
-        if (weapon && weapon !== 'gun') return;
+      // scored in "tracking windows": at least one hit inside a quarter second counts once, so the tally does not depend
+      // on the gun's rate of fire or on how the weapons module splits a burst into hits
+      let mine = 0, his = 0, mineT = -1, hisT = -1;
+      const marks = [Math.max(2, Math.round(need * 0.33)), Math.round(need * 0.66)];
+      const scored = (target, source) => {
         const e = rb.leader; if (!e) return;
         if (source === s.player && target === e) {
+          if (s.t - mineT < 0.25) return; mineT = s.t;
           mine++; hits.set(`${Math.min(mine, need)} / ${need}`);
           if (mine === 1 && s.t < 60) first.done();
-          if (mine === mine25[0]) s.say('instructor', ['Okay, that one I felt.', 'Lucky. Do it again.'], { priority: 0 });
-          if (mine === mine25[1]) s.say('instructor', ['Now you\'re flying. Keep it up.', 'Stop smiling, I can hear it.'], { priority: 0 });
+          if (mine === marks[0]) s.say('instructor', ['Okay, that one I felt.', 'Lucky. Do it again.'], { priority: 0 });
+          if (mine === marks[1]) s.say('instructor', ['Now you\'re flying. Keep it up.', 'Stop smiling, I can hear it.'], { priority: 0 });
           if (mine >= need && hits.state === 'active') {
             if (his === 0) s.objectives.find((o) => o.id === 'clean')?.done();
             hits.done();
           }
         } else if (source === e && target === s.player) {
+          if (s.t - hisT < 0.25) return; hisT = s.t;
           his++; taken.set(`${Math.min(his, limit)} / ${limit}`);
           if (his === Math.round(limit / 2)) s.say('instructor', ['You\'re wearing a lot of my paint, {cs}.', 'Tracking you like a lighthouse. Move!'], { priority: 0 });
-          if (his >= limit && taken.state === 'active') { taken.reason = 'Ridgeback gunned you'; taken.fail('Ridgeback gunned you'); }
+          if (his >= limit && taken.state === 'active') taken.fail('Ridgeback gunned you');
         }
-      });
+      };
+      s.on('bullet:hit', ({ target, shooter }) => scored(target, shooter));
+      s.on('damage', ({ target, source, weapon }) => { if (!weapon || weapon === 'gun') scored(target, source); });
     },
   }),
 ];
