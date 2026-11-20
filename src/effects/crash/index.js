@@ -7,7 +7,9 @@
 //
 // Debug / test URL params (headless screenshots): crashtest=<belly|collapse|breakup|impact|fireball|mountain|ditch|
 //   water|airburst> spawns that crash at a point ahead of the camera (crashdist=<m>, default 260; crashat=<frame>,
-//   default 3; crashside=1 makes it cross the view instead of running away from the camera);
+//   default 3; crashside=1 makes it cross the view instead of running away from the camera; crashlat=<m> offsets it
+//   to the right; crashrate=<x> sets the sim rate (ctx.time.timeScale) once the crash starts, so a 40 s shot does
+//   not need 400 frames: main.js clamps a frame to 0.1 s; a water test sweeps around the camera for open water);
 //   crashdive=1 pushes the stick forward until the aircraft hits the ground (a real physics crash).
 import * as THREE from 'three';
 import { classifyCrash, CRASH_TESTS } from './classify.js';
@@ -370,7 +372,7 @@ export function createCrashFx(ctx, deps) {
     update(dt, player) {
       frameN++;
       const s = player?.state;
-      if (raw.crashtest && !testDone && frameN >= (+raw.crashat || 3)) { testDone = true; crashTest(player); }
+      if (raw.crashtest && !testDone && frameN >= (+raw.crashat || 3)) { testDone = true; crashTest(player); if (+raw.crashrate > 0) ctx.time.timeScale = +raw.crashrate; }
       if (raw.crashdive === '1' && s && !s.crashed) { ctx.controls.pitch = -0.6; ctx.controls.throttle = 1; }
       if (C) {
         C.t += dt;
