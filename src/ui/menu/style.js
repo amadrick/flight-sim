@@ -389,7 +389,7 @@ export const CSS = /* css */`
   .menu-spec-key > .menu-kv:nth-child(3)::before { display: none; }
   .menu-hero-tag { display: none; }
 }
-@media (max-width: 900px) and (min-aspect-ratio: 1001/1000) {
+@media (max-width: 900px) and (min-width: 560px) and (min-aspect-ratio: 1001/1000) {
   .menu-main { grid-template-columns: minmax(232px, 262px) minmax(0, 1fr) minmax(262px, 292px); column-gap: 12px; }
   .menu-hero { display: none; }
   .menu-filter .menu-segbtn small { display: none; }
@@ -410,10 +410,10 @@ export const CSS = /* css */`
   .menu-pause-title { font-size: 26px; }
   .menu-pause-title::before { height: 19px; }
 }
-@media (max-height: 640px) and (min-aspect-ratio: 1001/1000) {
+@media (max-height: 640px) and (min-width: 560px) and (min-aspect-ratio: 1001/1000) {
   .menu-main .menu-panel-ac, .menu-main .menu-panel-plan { align-self: stretch; }
 }
-@media (max-height: 460px) and (min-aspect-ratio: 1001/1000) {
+@media (max-height: 460px) and (min-width: 560px) and (min-aspect-ratio: 1001/1000) {
   .menu-clear { display: none; }
   .menu-livsec { display: none; }
   .menu-tab svg { display: none; }
@@ -421,7 +421,7 @@ export const CSS = /* css */`
 
 /* sheet layout: portrait phones and tablets — panels collapse into one bottom sheet. Landscape phones keep the
    side-by-side panels (aircraft left, flight setup right, both scrolling inside), which uses a short screen far better. */
-@media (max-aspect-ratio: 1/1) and (max-width: 1100px) {
+@media (max-aspect-ratio: 1/1) and (max-width: 1100px), (max-width: 559px) {
   .menu-top { gap: 8px; grid-template-columns: auto minmax(0, 1fr); }
   .menu-status { display: none; }
   .menu-brand { padding: 0 12px; }
@@ -447,7 +447,7 @@ export const CSS = /* css */`
   .menu-phead { padding: 6px 2px 8px; }
   .menu-filter { margin: 0 0 10px; }
   /* aircraft: horizontal carousel of cards */
-  .menu-aclist { overflow-x: auto !important; overflow-y: hidden !important; margin: 0 calc(-1 * var(--gr)) 0 calc(-1 * var(--gl)); padding: 0 var(--gr) 0 var(--gl); scroll-snap-type: x proximity; scrollbar-width: none; touch-action: pan-x pan-y; -webkit-mask-image: none; mask-image: none; border-radius: 0; }
+  .menu-aclist { overflow-x: auto !important; overflow-y: hidden !important; margin: 0 calc(-1 * var(--gr)) 0 calc(-1 * var(--gl)); padding: 0 var(--gr) 0 var(--gl); scroll-snap-type: x proximity; scroll-padding: 0 var(--gr) 0 var(--gl); scrollbar-width: none; touch-action: pan-x pan-y; -webkit-mask-image: none; mask-image: none; border-radius: 0; }
   .menu-aclist::-webkit-scrollbar { display: none; }
   .menu-aclist > .menu-list { flex-direction: row; padding: 2px 2px 4px; width: max-content; gap: 6px; }
   .menu-aclist .menu-row { grid-template-columns: 1fr; grid-template-rows: auto auto; width: 128px; height: 98px; align-content: start; row-gap: 6px; padding: 10px 11px; scroll-snap-align: start; background: var(--fill); box-shadow: inset 0 0 0 1px var(--hair); }
@@ -455,11 +455,11 @@ export const CSS = /* css */`
   .menu-aclist .menu-row-tag { position: absolute; right: 10px; top: 12px; }
   .menu-aclist .menu-row-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 13.5px; line-height: 1.2; }
   .menu-aclist .menu-row-sub { display: none; }
-  .menu-aclist .menu-grouplabel { writing-mode: vertical-rl; transform: rotate(180deg); padding: 6px 2px; justify-content: center; }
+  .menu-aclist .menu-grouplabel { writing-mode: vertical-rl; transform: rotate(180deg); padding: 6px 2px; justify-content: center; scroll-snap-align: start; }
   .menu-aclist .menu-grouplabel .menu-count { display: none; }
   .menu-livsec { padding: 10px 2px 4px; }
   /* hero becomes the selected aircraft's card inside the sheet */
-  .menu-main .menu-hero { width: auto; align-items: stretch; text-align: left; padding: 10px 2px 2px; }
+  .menu-main .menu-hero { display: flex; width: auto; align-items: stretch; text-align: left; padding: 10px 2px 2px; }
   .menu-hero-kicker { display: none; }
   .menu-hero-name, .menu-hero-name.long { font-size: 26px; margin: 0 0 2px; text-shadow: none; }
   .menu-hero-tag { display: block; font-size: 13px; margin: 0 0 10px; text-shadow: none; color: var(--fg-dim); }
@@ -475,6 +475,9 @@ export const CSS = /* css */`
   .menu-crash.menu-crash { bottom: 40%; }
   .menu-anim .menu-sheet, .menu-anim .menu-dock > .menu-panel { animation: menu-in-u 0.46s var(--spring) both; }
   .menu-anim .menu-main .menu-panel-ac, .menu-anim .menu-main .menu-panel-plan, .menu-anim .menu-main .menu-flybar, .menu-anim .menu-hero { animation: none; }
+}
+@media (max-aspect-ratio: 1/1) and (max-width: 1100px) and (max-height: 720px) {
+  .menu-root .menu-sheet { max-height: 64%; }
 }
 @media (max-aspect-ratio: 1/1) and (max-height: 500px) {
   .menu-sheet, .menu-dock > .menu-panel { max-height: 72%; }
