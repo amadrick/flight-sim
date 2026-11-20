@@ -80,8 +80,8 @@ export function gunSmoke(ps, pos, vel, rate, dt, q, acc, big = 1) {
   while (acc.v >= 1) {
     acc.v -= 1;
     const f = rnd();
-    p.kind = KIND.SMOKE; p.life = 1.4 + rnd() * 1.6; p.size0 = 0.5 * big; p.size1 = (3.5 + rnd() * 2.5) * big; p.drag = 2.4; p.buoy = 0.3;
-    p.delay = 0; const c = 0.6 + rnd() * 0.15; p.r = c; p.g = c; p.b = c * 1.02; p.opacity = 0.28 * Math.min(1.3, big);
+    p.kind = KIND.SMOKE; p.life = 1.0 + rnd() * 1.2; p.size0 = 0.4 * big; p.size1 = (2.2 + rnd() * 1.6) * big; p.drag = 2.4; p.buoy = 0.3;
+    p.delay = 0; const c = 0.6 + rnd() * 0.15; p.r = c; p.g = c; p.b = c * 1.02; p.opacity = 0.2 * Math.min(1.3, big);
     p.emissive = 0; p.aux = 0;
     // spread along the path flown this frame so a 250 m/s shooter leaves a continuous stream, not beads
     _p.copy(pos).addScaledVector(vel, -dt * f);
