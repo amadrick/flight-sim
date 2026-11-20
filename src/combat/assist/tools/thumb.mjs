@@ -94,10 +94,12 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
 
 /** The stick deflection that gives the nose-rate fraction f through the input shaping and the assist's expo (a
  *  practised player knows the curve of the stick and pushes as far as the rate they want needs). */
-function invShape(f, dz) {
+function invShape(f, dz, touch = false) {
   if (f <= 0) return 0;
+  const T = ASSIST_TUNING;
+  const curve = touch ? (x) => shapeRate(Math.max(0, (x - T.touchDead) / (1 - T.touchDead)), T.expoTouch) : (x) => shapeRate(shapeAxis(x, dz, 0.4));
   let lo = 0, hi = 1;
-  for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (shapeRate(shapeAxis(mid, dz, 0.4)) < f) lo = mid; else hi = mid; }
+  for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (curve(mid) < f) lo = mid; else hi = mid; }
   return (lo + hi) / 2;
 }
 
@@ -120,6 +122,10 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
   // touch stick state: the finger lifts now and then (output 0 at once) and lands again at a slightly different
   // deflection (an offset and a gain error until the next lift)
   const tch = { lift: 0, next: 1 + rng() * 3, idle: 0, ox: 0, oy: 0, gain: 1 };
+  // the simulator's touch input as the assist sees it (src/input/touch.js): the raw floating stick and the rudder
+  // auto-coordination switch
+  if (stick === 'touch' && !c.ctx.input) c.ctx.input = { mode: 'touch', touchEnabled: true, touch: { visible: true, autoCoord: true, raw: { x: 0, y: 0, held: false } } };
+  const traw = stick === 'touch' ? c.ctx.input.touch.raw : null;
   const shaped = { x: 0, y: 0 };
   const NOISE = process.env.NOISE != null ? +process.env.NOISE : 1;
   const kx = { v: 0, t: 0, dir: 0 }, ky = { v: 0, t: 0, dir: 0 };
@@ -216,7 +222,7 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
       if (mode === 'assist' && stick !== 'digital' && !ground) {
         // the thumb's wish is a reticle rate (fraction of the full rate): push as far as that needs
         const m = Math.hypot(sx, sy);
-        if (m > 1e-6) { const d = invShape(Math.min(1, m), stick === 'touch' ? 0.07 : 0.1) / m; sx *= d; sy *= d; }
+        if (m > 1e-6) { const d = invShape(Math.min(1, m), 0.1, stick === 'touch') / m; sx *= d; sy *= d; }
       }
       if (stick === 'analog') {
         // a gamepad stick through the simulator's own shaping (src/input/index.js: radial dead zone 0.1, expo 0.4)
@@ -239,9 +245,12 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
           const q = (v) => Math.round(Math.max(-1, Math.min(1, v)) * 127) / 127;
           sx = q(sx); sy = q(sy);
         }
-        shapeStick(sx, sy, shaped, 0.07, 0.4); sx = shaped.x; sy = shaped.y;
+        // the raw stick (+y = stick back = nose up) and what the simulator makes of it: radial dead zone 0.06, per-axis
+        // 0.65·v + 0.35·v³, rudder = 0.28 × roll while auto-coordination is on
+        traw.x = sx; traw.y = sy; traw.held = tch.lift <= 0;
+        shapeStick(sx, sy, shaped, 0.06, 0.35); sx = shaped.x; sy = shaped.y;
       }
-      e.controls.roll = sx; e.controls.pitch = sy; e.controls.yaw = 0;
+      e.controls.roll = sx; e.controls.pitch = sy; e.controls.yaw = stick === 'touch' && c.ctx.input.touch.autoCoord ? Math.max(-1, Math.min(1, 0.28 * sx)) : 0;
       // throttle: a player leaves it at MIL-ish, AB when slow (rookie auto-throttle may take over)
       // trigger: the perceived pipper on the target, in range
       // trigger: the gun cross on the lead point as the thumb sees it (noisy)
