@@ -275,7 +275,7 @@ export const CAMPAIGN = [
     start: { at: { x: 40000, z: -92000 }, agl: 900, hdg: 0, spd: 250 },
     script(s) {
       const lineZ = s.places.lanternLine.z;
-      const z0 = s.anchor.z - s.n(20000, 31500, 29000);
+      const z0 = s.anchor.z - s.n(20000, 31500, 28000);
       const path = s.route([{ x: 40000, z: z0 }, { x: 46000, z: z0 - 14000 }, { x: 37000, z: z0 - 28000 }, { x: 43000, z: lineZ - 20000 }, { x: 40000, z: lineZ - 60000 }], { agl: 600 });
       const mule = s.group('mule', {
         type: 'c17', count: 1, callsign: 'Mule', single: true, at: path[0].clone(), heading: 0, passive: true, loadout: { ...UNARMED, flares: s.n(10, 45, 60) },
@@ -392,11 +392,11 @@ export const CAMPAIGN = [
     start: { at: 'haven', brg: 215, dist: 26000, alt: 6500, hdg: 215, spd: 240 },
     script(s) {
       const haven = s.places.haven;
-      const wing = s.wingmen(1);
-      const ember = s.group('ember', { type: 'b2', count: 2, callsign: 'Ember', at: { from: haven, brg: 222, dist: 76000, alt: 7000 }, heading: haven, spacing: 1500, formation: 'line',
+      const wing = s.wingmen(s.n(1, 1, 2));
+      const ember = s.group('ember', { type: 'b2', count: 2, callsign: 'Ember', at: { from: haven, brg: 222, dist: s.n(76000, 76000, 78000), alt: 7000 }, heading: haven, spacing: 1500, formation: 'line',
         passive: true, loadout: UNARMED, hp: s.n(110, 160, 200), points: 160, mark: 'BOMBER', speed: 220, role: 'bomber',
         order: () => s.orders.patrol([V(haven.x, 7000, haven.z)], { passive: true }) });
-      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 1, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 72000, alt: 8000 }, heading: haven,
+      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 1, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: s.n(72000, 72000, 74000), alt: 8000 }, heading: haven,
         loadout: s.n({ ir: 0, radar: 0 }, undefined, undefined), skill: s.skill('enemy', s.n(-0.08, 0, 0)),
         engageWithin: 15000, order: (i) => s.orders.escort(ember.members[i % 2], { x: 600, y: 800, z: 500 }) });
       const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 1, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: s.n(85000, 72000, 70000), agl: 1700 }, heading: haven,
