@@ -424,11 +424,10 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   crop = vec4(CROP_NONE, 0.0, vec2(-crDir.y, crDir.x));
   // soil zones (till, alluvium, chalk patches) swirl through the fields: they set the soil colour and how well the
   // crop grows; wetter hollows lusher (or drowned), dry knolls pale and thin
-  // (the 23 m noise only lightly: its cells drew a net of pale veins over every bare field seen from altitude)
-  float zone = 0.5 + 0.55 * (n2.g - 0.5) + 0.45 * (n3.r - 0.5) + 0.08 * (n4.g - 0.5);
-  float vig = clamp(0.5 + 1.0 * (wet - 0.52) + 1.2 * (zone - 0.5) + 0.12 * (n4.b - 0.5), 0.0, 1.0);
+  float zone = 0.5 + 0.55 * (n2.g - 0.5) + 0.45 * (n3.r - 0.5) + 0.25 * (n4.g - 0.5);
+  float vig = clamp(0.5 + 1.0 * (wet - 0.52) + 1.2 * (zone - 0.5) + 0.3 * (n4.b - 0.5), 0.0, 1.0);
   float chalk = ss(0.52, 0.78, n2.b * 0.55 + terrHash2(floor(w / 3100.0) + 77.0).y * 0.45);
-  float moist = clamp(wet * 1.3 - 0.32 + 1.3 * (zone - 0.5) + 0.08 * (n4.r - 0.5), 0.0, 1.0);
+  float moist = clamp(wet * 1.3 - 0.32 + 1.3 * (zone - 0.5) + 0.25 * (n4.r - 0.5), 0.0, 1.0);
   vec3 soilD = mix(vec3(0.205, 0.165, 0.115), vec3(0.300, 0.280, 0.236), chalk);
   vec3 soilW = mix(vec3(0.098, 0.077, 0.055), vec3(0.165, 0.148, 0.120), chalk);
   vec3 soil = mix(soilD, soilW, moist);
