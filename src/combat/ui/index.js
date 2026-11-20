@@ -16,6 +16,7 @@ import { createProgressStore } from './progress.js';
 import { installMenuHooks, HOOK_CSS } from './hooks.js';
 import {
   DIFFICULTY, groupMissions, nextMission, firstRunMission, conditionsLine, outcomeCopy, debriefDelay, statRows, breakdownRows,
+  FLIGHT_MODES, AIM_HELP, flightModeFor, aimHelpFor,
   group3, fmtTime, CUSTOM_DEFAULT, ADVANTAGES, RANGE_STEPS, ALT_STEPS, cleanCustom, nearestStep, fmtFt, fmtNm, isNum,
 } from './logic.js';
 
@@ -71,14 +72,30 @@ export async function createCombatUi(combat) {
     sfxVolume: num01('sfxVolume', 1),
     camKillCam: store.getSetting('camKillCam', true) !== false,
     camFeel: store.getSetting('camFeel', true) !== false,
+    flightMode: ['assist', 'off'].includes(store.getSetting('flightMode')) ? store.getSetting('flightMode') : null,   // null = by difficulty
+    aimHelp: AIM_HELP.some(a => a.id === store.getSetting('aimHelp')) ? store.getSetting('aimHelp') : 'auto',
+    vibration: store.getSetting('vibration', true) !== false,   // read by combat.input (haptics)
   };
+  const flightMode = () => flightModeFor(settings.flightMode, combat.difficulty);
+  /** Flight assist (COMBAT.md §15): mode + gun aim help, from the settings and the difficulty in effect. */
+  function applyAssist() {
+    const a = combat.assist; if (!a) return;
+    try {
+      const m = flightMode(), v = aimHelpFor(settings.aimHelp, combat.difficulty);
+      if (a.mode !== m) a.setMode?.(m);
+      if (a.aimAssist !== v) a.setAimAssist?.(v);
+    } catch (e) { console.warn('[combat ui] assist settings', e); }
+  }
   function applyAudio() {
+    applyAssist();
     const a = combat.audio;
     if (a) {
       try {
-        if (typeof a.setMusicEnabled === 'function') a.setMusicEnabled(settings.musicOn); else a.musicEnabled = settings.musicOn;
+        // URL overrides win over the stored setting (?music=0 / ?radiovoice=0: perf baselines, tests)
+        const musicOn = settings.musicOn && raw.music !== '0', voiceOn = settings.radioVoice && raw.radiovoice !== '0';
+        if (typeof a.setMusicEnabled === 'function') a.setMusicEnabled(musicOn); else a.musicEnabled = musicOn;
         a.setMusicVolume?.(settings.musicVolume);
-        a.setRadioVoice?.(settings.radioVoice);
+        a.setRadioVoice?.(voiceOn);
         a.setRadioVolume?.(settings.radioVolume);
         a.setSfxVolume?.(settings.sfxVolume);
       } catch (e) { console.warn('[combat ui] audio settings', e); }
@@ -109,11 +126,15 @@ export async function createCombatUi(combat) {
   let groups = [];
   let starter = null;           // first run: the mission to start with (shows a 'Start here' hint)
   const downOpen = new Set();
+  let briefCtl = null;          // briefing's flight-controls selector + line
+  let briefShown = null;        // mission id announced with 'briefing:open'
 
   const ui = {
     isOpen: false,
     update, openMissions, openSettings, debrief: () => showDebrief(), close: () => { if (ui.isOpen) leaveTo(view === 'debrief' ? 'flight' : origin); },
     get view() { return ui.isOpen ? view : null; },
+    /** id of the mission whose briefing is on screen, else null */
+    get briefingMission() { return ui.isOpen && view === 'missions' ? selId : null; },
     get progress() { return store; },
     settings,
   };
@@ -156,10 +177,18 @@ export async function createCombatUi(combat) {
     return h('div', { class: 'menu-field cbt-ui-volfield' }, h('span', { class: 'cbt-ui-rl', text: label }), h('div', { class: 'menu-vol', style: 'flex:1' }, r, read));
   };
   const diffNote = h('p', { class: 'menu-note' });
-  const diffSeg = radios('Default difficulty', DIFFICULTY, combat.difficulty, (id) => { combat.difficulty = id; store.setSetting('difficulty', id); syncSettings(); }, 'menu-seg');
+  const diffSeg = radios('Default difficulty', DIFFICULTY, combat.difficulty, (id) => setDifficulty(id), 'menu-seg');
+  const modeNote = h('p', { class: 'menu-note' });
+  const modeSeg = radios('Flight controls', FLIGHT_MODES, flightMode(), (id) => setSetting('flightMode', id), 'menu-seg');
+  const aimSeg = radios('Gun aim help', AIM_HELP, settings.aimHelp, (id) => setSetting('aimHelp', id), 'menu-seg');
+  const segField = (t, d, seg) => h('div', { class: 'menu-field cbt-ui-segfield' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: t }), d ? h('span', { class: 'menu-field-d', text: d }) : null), seg);
   const setPanel = h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Combat settings' },
     h('div', { class: 'menu-subhead' }, h('span', { class: 'menu-subtitle', text: 'Combat settings' })),
     h('div', { class: 'menu-scroll' },
+      h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Controls' })),
+        h('div', { class: 'menu-group' }, segField('Flight controls', null, modeSeg), modeNote,
+          segField('Gun aim help', 'Nudges your aim onto the target while you fire. Auto follows difficulty.', aimSeg),
+          swField('vibration', 'Vibration', 'Buzz while the gun fires, a thump when you are hit (phones, gamepads)'))),
       h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Sound' })),
         h('div', { class: 'menu-group' }, swField('musicOn', 'Music', 'Score under the fight, louder when it heats up'), rangeField('musicVolume', 'Music'),
           swField('radioVoice', 'Radio voice', 'Spoken calls. Subtitles always show.'), rangeField('radioVolume', 'Radio'),
@@ -231,6 +260,15 @@ export async function createCombatUi(combat) {
     if (narrow() && how) { detail = true; syncDetail(); briefScroll.scrollTop = 0; requestAnimationFrame(() => focus(flyBtn)); redrawMap(); }
     else if (how === 'key') focus(flyBtn);
     store.setSetting('lastMission', id);
+    announceBrief();
+  }
+  // 'briefing:open' { missionId } whenever a briefing is shown (open or a new selection), so audio can start on that
+  // mission's music early; 'briefing:close' { missionId, launched } when the mission screens leave it.
+  function announceBrief() {
+    const id = view === 'missions' && ui.isOpen ? selId : null;
+    if (id === briefShown) return;
+    briefShown = id;
+    if (id) combat.events.emit('briefing:open', { missionId: id });
   }
   const narrow = () => window.innerWidth <= 720;
   function syncDetail() { root.classList.toggle('cbt-ui-detail', detail); }
@@ -323,11 +361,15 @@ export async function createCombatUi(combat) {
     } else if (ac) briefBody.append(sec('Aircraft', h('div', { class: 'cbt-ui-fixed' }, acName(ac), h('small', { text: 'assigned' }))));
     // difficulty
     const dNote = h('p', { class: 'menu-note' });
-    const dGrp = radios('Difficulty', DIFFICULTY, combat.difficulty, (id) => {
-      combat.difficulty = id; store.setSetting('difficulty', id); setRadio(dGrp, id); dNote.textContent = DIFFICULTY.find(d => d.id === id)?.note || ''; syncFlyLine();
-    }, 'menu-seg');
+    const dGrp = radios('Difficulty', DIFFICULTY, combat.difficulty, (id) => { setDifficulty(id); setRadio(dGrp, id); dNote.textContent = DIFFICULTY.find(d => d.id === id)?.note || ''; }, 'menu-seg');
     dNote.textContent = DIFFICULTY.find(d => d.id === combat.difficulty)?.note || '';
     briefBody.append(sec('Difficulty', dGrp, dNote));
+    // flight controls: where a new player sees what the stick will do
+    const cGrp = radios('Flight controls', FLIGHT_MODES, flightMode(), (id) => setSetting('flightMode', id), 'menu-seg');
+    const cLine = h('p', { class: 'cbt-ui-hint cbt-ui-modeline', id: 'cbt-ui-modeline' });
+    briefCtl = { grp: cGrp, line: cLine };
+    briefBody.append(sec('Flight controls', cGrp, cLine));
+    syncControls();
     syncFlyLine();
     redrawMap();
   }
@@ -336,6 +378,7 @@ export async function createCombatUi(combat) {
     const parts = [];
     const ac = aircraftFor(m); if (ac) parts.push(acShort(ac));
     parts.push(DIFFICULTY.find(d => d.id === combat.difficulty)?.label || combat.difficulty);
+    parts.push(FLIGHT_MODES.find(f => f.id === flightMode())?.label || '');
     if (m.custom) parts.push(`${custom.enemies} v ${custom.wingmen + 1}`);
     flyLine.textContent = parts.join('  ·  ');
   }
@@ -346,8 +389,19 @@ export async function createCombatUi(combat) {
   }
 
   // ---- settings view -------------------------------------------------------------------------------------------
+  function setDifficulty(id) { combat.difficulty = id; store.setSetting('difficulty', id); applyAssist(); syncSettings(); syncControls(); syncFlyLine(); }
+  function modeText() {
+    const m = flightMode(), f = FLIGHT_MODES.find(x => x.id === m);
+    return f.line + (settings.flightMode ? '' : ` (${DIFFICULTY.find(d => d.id === combat.difficulty)?.label || ''} default; pick one to keep it.)`);
+  }
+  function syncControls() {
+    if (!briefCtl || !briefCtl.grp.isConnected) return;
+    setRadio(briefCtl.grp, flightMode()); briefCtl.line.textContent = modeText();
+  }
   function syncSettings() {
-    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFeel']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
+    setRadio(modeSeg, flightMode()); setRadio(aimSeg, settings.aimHelp); modeNote.textContent = modeText();
+    syncControls(); syncFlyLine();
+    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFeel', 'vibration']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
     for (const [k, dep] of [['musicVolume', 'musicOn'], ['radioVolume', 'radioVoice'], ['sfxVolume', null]]) {
       const r = ctlByKey[k], v = Math.round(settings[k] * 100);
       if (document.activeElement !== r) r.value = String(v);
@@ -460,7 +514,8 @@ export async function createCombatUi(combat) {
     else if (view === 'debrief') el = debPanel.querySelector('.cbt-ui-dacts .glass-tint') || debPanel.querySelector('.cbt-ui-dacts button');
     if (el && !el.disabled) focus(el);
   }
-  function hide() {
+  function hide(launched = false) {
+    if (briefShown) { combat.events.emit('briefing:close', { missionId: briefShown, launched }); briefShown = null; }
     ui.isOpen = false; root.hidden = true; view = null;
     document.documentElement.classList.remove('cbt-ui-open');
     try { if (root.contains(document.activeElement)) document.activeElement.blur(); } catch {}
@@ -502,10 +557,11 @@ export async function createCombatUi(combat) {
     enter('missions');
     if (want) { const row = listEl.querySelector(`[data-mission="${CSS_ESC(want)}"]`); reveal(row); if (!narrow()) focus(row); }
     else reveal(listEl.querySelector('[aria-selected="true"]'));
+    announceBrief();
     return true;
   }
   function launch(id, options) {
-    hide();
+    hide(true);
     setPaused(false);
     pending = null;
     let ok = false;
