@@ -108,7 +108,7 @@ export async function createHud(ctx) {
   ctx.events.on('quality:change', () => { const k = filterKey; filterKey = ''; setFilter(k); });
 
   const camPos = { x: 0, y: 0, z: 0 };
-  const E = { box: null, s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
+  const E = { box: null, clear: null, s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
   let t = 0;
 
   const hud = {
@@ -122,6 +122,9 @@ export async function createHud(ctx) {
     toast(text, opts) { notices.toast(text, opts); },
     update(dt) {
       const realDt = num(ctx.time?.realDt, 1 / 60);
+      // follow the canvas size every frame too: phones rotate, and the 'resize' event can arrive late (or report the old
+      // size on iOS), which would leave the overlay stretched or cleared after it was drawn
+      if (cv.clientWidth !== W || cv.clientHeight !== H) { if (cv.clientWidth > 1 && cv.clientHeight > 1) fit(); }
       t += realDt;
       const p = ctx.player;
       const rig = ctx.cameraRig;
@@ -143,6 +146,7 @@ export async function createHud(ctx) {
       // touch screens: draw in the HUD region the touch layout reserves (clear of stick, throttle and buttons)
       const tl = ctx.input?.touch?.layout || null;
       E.box = tl && tl.hud && tl.hud.w > 120 && tl.hud.h > 60 ? tl.hud : null;
+      E.clear = tl ? tl.clear : null;
       let below = null;
       if (interior && p.def.hudType !== 'airliner') {
         const night = num(ctx.env?.nightFactor, 0);
@@ -150,8 +154,10 @@ export async function createHud(ctx) {
         E.hudColor = night > 0.7 ? 'rgba(93,255,155,0.82)' : night > 0.3 ? 'rgba(110,255,170,0.92)' : '#7dffb2';
         ctx.camera.updateMatrixWorld?.();
         proj.set(ctx.camera, W, H);
-        fighter.draw(g, E);
-        syncPlate(false);
+        if (fighter.draw(g, E) === false) {
+          setFilter('ext'); ext.draw(g, E); syncPlate(true);
+          const r = ext.rect; if (E.box && r) below = r.y + r.h + 40;
+        } else syncPlate(false);
       } else if (interior) {
         setFilter('none');
         deck.draw(g, E);

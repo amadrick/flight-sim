@@ -78,6 +78,10 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
       hudBottom = Math.min(L.thr.y, L.rud.y) - g;
     }
     L.hud = R(l, t, L.zone.x - g - l, hudBottom - t);
+    // area free of visible controls, for a centred conformal HUD (the stick zone is invisible, so it counts as free)
+    const cx0 = gridR + g, cx1 = W - r - (railW ? railW + g : 0);
+    const bottomRud = L.rud.y > gy - g;
+    L.clear = R(cx0, zy, cx1 - cx0, (bottomRud ? L.rud.y : H - bt) - g - zy);
   } else {
     // bottom block: throttle left, stick zone right with the rudder below it
     const thrH = Math.round(clamp(H * 0.32, 3 * b + 2 * g, 300));
@@ -98,6 +102,7 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
     if (nExtra) { top = rowY - g - b; for (let i = 0; i < nExtra; i++) L.extra.push(R(W - r - b - i * (b + g), top, b, b)); }
     const hy = L.menu.y + L.menu.h + g;
     L.hud = R(l, hy, W - l - r, top - g - hy);
+    L.clear = R(l, hy, W - l - r, top - g - hy);
   }
   // idle position of the floating stick (its hint ring): low in the zone, where the thumb rests
   const zr = L.zone;

@@ -56,3 +56,13 @@ test('portrait', () => {
   assert.equal(isPortrait(844, 390), false);
   assert.equal(isPortrait(600, 600), false);
 });
+
+test('clear area (for a conformal HUD) avoids every visible control', () => {
+  for (const [W, H] of SIZES) {
+    const L = touchLayout(W, H, {}, { extra: 2 });
+    for (const [n, q] of layoutRects(L)) {
+      if (n === 'zone' || n === 'hud') continue;
+      assert.ok(!overlaps(L.clear, q), `${W}x${H} clear overlaps ${n}`);
+    }
+  }
+});

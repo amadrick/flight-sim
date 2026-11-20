@@ -14,7 +14,7 @@ export function createExternalOverlay(tok) {
   // box (touch screens): the HUD's own region from the touch layout. The strip docks at its top-left and drops the
   // cells the touch controls already show (throttle on the slider, gear / flaps / brakes / AP on the buttons).
   function layout(W, H, airliner, box) {
-    const fsV = box ? Math.round(clamp(Math.min(box.w * 0.05, H * 0.045), 13, 22)) : Math.round(clamp(Math.min(W * 0.022, H * 0.034), 15, 30));
+    const fsV = box ? Math.round(clamp(Math.min(box.w * 0.038, H * 0.045), 13, 22)) : Math.round(clamp(Math.min(W * 0.022, H * 0.034), 15, 30));
     const fsL = Math.round(fsV * 0.5), fsS = Math.round(fsV * 0.56);
     const rowH = Math.round(fsV * 2.75);
     const cw = fsV * 0.6;

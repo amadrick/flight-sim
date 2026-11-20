@@ -32,9 +32,9 @@ const CSS = `
 .inp-mil::after{content:"MIL";position:absolute;right:0;top:-13px;font:600 9px/1 var(--font-mono,monospace);letter-spacing:.06em;color:var(--ok,#4cc9f0)}
 .inp-pct{position:absolute;left:0;right:0;top:7px;text-align:center;font:600 13px/1 var(--font-mono,'B612 Mono',monospace);color:var(--fg,#f2f6fa);pointer-events:none}
 /* rudder */
-.inp-rud-c{position:absolute;left:50%;top:10px;bottom:10px;border-left:1px solid rgb(255 255 255/.35);pointer-events:none}
-.inp-rud-knob{position:absolute;top:6px;bottom:6px;width:30px;left:50%;margin-left:-15px;border-radius:10px;background:radial-gradient(circle at 50% 35%,#fff,#dfe6ee);box-shadow:0 2px 8px rgb(0 0 0/.35);pointer-events:none}
-.inp-rud .inp-lbl{top:50%;transform:translateY(-50%);display:flex;justify-content:space-between;padding:0 10px;letter-spacing:.12em}
+.inp-rud-c{position:absolute;left:50%;top:18px;bottom:6px;border-left:1px solid rgb(255 255 255/.35);pointer-events:none}
+.inp-rud-knob{position:absolute;top:18px;bottom:6px;width:34px;left:50%;margin-left:-17px;border-radius:9px;background:radial-gradient(circle at 50% 35%,#fff,#dfe6ee);box-shadow:0 2px 8px rgb(0 0 0/.35);pointer-events:none}
+.inp-rud .inp-lbl{top:5px;font-size:9.5px;display:flex;justify-content:space-between;padding:0 10px;letter-spacing:.14em}
 /* buttons */
 .inp-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0 4px;color:var(--fg,#f2f6fa);text-align:center;cursor:pointer}
 .inp-btn b{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;line-height:1;white-space:nowrap}

@@ -384,12 +384,12 @@ export const CSS = /* css */`
   .menu-status { padding-left: 14px; }
   .menu-tab { padding: 0 12px; }
 }
-@media (max-width: 1020px) {
+@media (max-width: 1100px) {
   .menu-spec-key, .menu-spec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-spec-key > .menu-kv:nth-child(3)::before { display: none; }
   .menu-hero-tag { display: none; }
 }
-@media (max-width: 900px) and (min-width: 721px) {
+@media (max-width: 900px) and (min-aspect-ratio: 1001/1000) {
   .menu-main { grid-template-columns: minmax(232px, 262px) minmax(0, 1fr) minmax(262px, 292px); column-gap: 12px; }
   .menu-hero { display: none; }
   .menu-filter .menu-segbtn small { display: none; }
@@ -410,17 +410,18 @@ export const CSS = /* css */`
   .menu-pause-title { font-size: 26px; }
   .menu-pause-title::before { height: 19px; }
 }
-@media (max-height: 640px) and (min-width: 721px) {
+@media (max-height: 640px) and (min-aspect-ratio: 1001/1000) {
   .menu-main .menu-panel-ac, .menu-main .menu-panel-plan { align-self: stretch; }
 }
-@media (max-height: 460px) and (min-width: 721px) {
+@media (max-height: 460px) and (min-aspect-ratio: 1001/1000) {
   .menu-clear { display: none; }
   .menu-livsec { display: none; }
   .menu-tab svg { display: none; }
 }
 
-/* sheet layout: phones and portrait tablets — panels collapse into one bottom sheet */
-@media (max-width: 720px), (max-aspect-ratio: 1/1) and (max-width: 1100px) {
+/* sheet layout: portrait phones and tablets — panels collapse into one bottom sheet. Landscape phones keep the
+   side-by-side panels (aircraft left, flight setup right, both scrolling inside), which uses a short screen far better. */
+@media (max-aspect-ratio: 1/1) and (max-width: 1100px) {
   .menu-top { gap: 8px; grid-template-columns: auto minmax(0, 1fr); }
   .menu-status { display: none; }
   .menu-brand { padding: 0 12px; }
@@ -475,7 +476,7 @@ export const CSS = /* css */`
   .menu-anim .menu-sheet, .menu-anim .menu-dock > .menu-panel { animation: menu-in-u 0.46s var(--spring) both; }
   .menu-anim .menu-main .menu-panel-ac, .menu-anim .menu-main .menu-panel-plan, .menu-anim .menu-main .menu-flybar, .menu-anim .menu-hero { animation: none; }
 }
-@media (max-width: 720px) and (max-height: 500px) {
+@media (max-aspect-ratio: 1/1) and (max-height: 500px) {
   .menu-sheet, .menu-dock > .menu-panel { max-height: 72%; }
 }
 @media (max-width: 420px) {
@@ -494,7 +495,7 @@ export const CSS = /* css */`
   .menu-seg > .menu-segbtn { min-height: 44px; }
   .menu-chip, .menu-todchips .menu-chip { min-height: 44px; }
   .menu-rwy { height: 44px; min-width: 60px; }
-  .menu-back, .menu-more { width: 44px; height: 44px; }
+  .menu-back, .menu-more, .menu-iconbtn { width: 44px; height: 44px; }
   .menu-switch { box-sizing: content-box; border: 6px solid transparent; background-clip: padding-box; }
   .menu-cbtn { height: 44px; min-width: 44px; }
   .menu-cbtn.menu-cbtn-icon { width: 44px; }

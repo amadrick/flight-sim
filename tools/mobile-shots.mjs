@@ -2,7 +2,7 @@
 //
 //   node tools/mobile-shots.mjs --prefix mob-after- [--devices iphone14,pixel7,small,ipad,desktop]
 //        [--screens chase,cockpit,help,pause,settings,controls,main,main-end] [--aircraft f16] [--no-build]
-//        [--orient both|portrait|landscape]
+//        [--orient both|portrait|landscape] [--ui]   (--ui: WebGL-free harness, see src/input/ui-harness.js)
 //
 // One page boot per device (booting is the slow part); the orientation is switched with setViewportSize on the same
 // page. Device emulation: isMobile + hasTouch (so `(pointer: coarse)` matches), CSS viewport from the Playwright device,
@@ -23,7 +23,8 @@ const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
 const has = (n) => args.includes('--' + n);
 const prefix = flag('prefix', 'mob-');
-const html = resolve(root, flag('html', 'dist/index.html'));
+const ui = has('ui');   // --ui: the WebGL-free harness (src/input/ui-harness.js): real input / HUD / menu, flat backdrop, seconds per shot
+const html = resolve(root, flag('html', ui ? 'dist/ui.html' : 'dist/index.html'));
 const aircraft = flag('aircraft', 'f16');
 const orient = flag('orient', 'both');
 
@@ -38,7 +39,7 @@ const D = {
 const devList = flag('devices', 'iphone14,pixel7,small,ipad,desktop').split(',');
 const screens = flag('screens', 'chase,cockpit,help,pause,settings,controls,main,main-end').split(',');
 
-if (!has('no-build')) execFileSync('node', ['tools/build.mjs', '--out', html], { cwd: root, stdio: 'inherit' });
+if (!has('no-build')) execFileSync('node', ['tools/build.mjs', '--out', html, ...(ui ? ['--entry', 'src/input/ui-harness.js'] : [])], { cwd: root, stdio: 'inherit' });
 
 // ---- shared render semaphore (same files as tools/shot.mjs) ----------------------------------------------
 const SLOTS = 2, LOCKDIR = '/tmp/flightsim-shot-locks';
@@ -55,12 +56,12 @@ async function acquire() {
     await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
   }
 }
-const slot = await acquire();
-const keepAlive = setInterval(() => { try { const t = new Date(); utimesSync(slot, t, t); } catch {} }, 20000);
-const release = () => { clearInterval(keepAlive); try { unlinkSync(slot); } catch {} };
+const slot = ui ? null : await acquire();
+const keepAlive = slot && setInterval(() => { try { const t = new Date(); utimesSync(slot, t, t); } catch {} }, 20000);
+const release = () => { if (!slot) return; clearInterval(keepAlive); try { unlinkSync(slot); } catch {} };
 process.on('exit', release); process.on('SIGINT', () => process.exit(130)); process.on('SIGTERM', () => process.exit(143));
 
-const browser = await chromium.launch({
+const browser = ui ? await chromium.launch() : await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-vsync'],
 });
 let failed = false;
@@ -78,7 +79,7 @@ const AUDIT = () => {
     const scroller = el.closest('.menu-scroll, .menu-sheet, .menu-aclist');
     if (!scroller && (r.right > vw + 1 || r.bottom > vh + 1 || r.left < -1 || r.top < -1)) out.push('off-screen: ' + name(el) + ` [${r.left | 0},${r.top | 0},${r.width | 0}x${r.height | 0}]`);
     const min = Math.min(r.width, r.height);
-    if (min < 43.5 && el.type !== 'range' && !el.closest('.menu-aptwrap:not(.open)')) out.push('small target ' + (min | 0) + 'px: ' + name(el));
+    if (matchMedia('(pointer: coarse)').matches && min < 43.5 && el.type !== 'range' && !el.closest('.menu-aptwrap:not(.open)')) out.push('small target ' + (min | 0) + 'px: ' + name(el));
   }
   // flight-time regions must not overlap one another
   const regs = [...document.querySelectorAll('.inp-region, .inp-pnl, .inp-btn, .menu-corner > button, .hud-plate, .hud-toast.on, .hud-hint')].filter(vis);
@@ -125,6 +126,7 @@ try {
     const ev = (fn, a) => page.evaluate(fn, a);
     for (const [on, vp] of orients) {
       await page.setViewportSize(vp);
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));   // let 'resize' fire first
       await step(2);
       const f = (s) => resolve(root, 'shots', `${prefix}${dn}-${on}-${s}.png`);
       const L = (s) => `${dn}-${on}-${s}`;
