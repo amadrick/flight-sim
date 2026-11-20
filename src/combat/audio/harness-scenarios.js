@@ -41,10 +41,10 @@ async function musicRun(H, cueId, script, seconds) {
   for (let i = 0; i < log.length; i++) { const s = log[i].section, t0 = log[i].t, t1 = log[i + 1]?.t ?? t0 + barLen; (spans[s] ||= []).push([t0, t1]); }
   const per = {};
   for (const [s, sp] of Object.entries(spans)) {
-    const a = sp[0][0] + 0.25, b = sp[sp.length - 1][1];
+    const inner = sp.map(([t0, t1], i) => [i === 0 || sp[i - 1][1] !== t0 ? t0 + 0.25 : t0, t1]);   // skip each entry's crossfade
     let lo = 0, mid = 0, hi = 0, n = 0, w = 0;
     for (const [t0, t1] of sp) { const d = t1 - t0; lo += A.bandFrac(x, t0, t1, 20, 250) * d; mid += A.bandFrac(x, t0, t1, 250, 4000) * d; hi += A.bandFrac(x, t0, t1, 4000, 20000) * d; w += A.width(buf, t0, t1) * d; n += d; }
-    per[s] = { lufs: +A.lufs(buf, a, b).toFixed(1), peak: +A.peak(x, a, b).toFixed(3), low: +(lo / n).toFixed(2), mid: +(mid / n).toFixed(2), high: +(hi / n).toFixed(2), width: +(w / n).toFixed(2), bars: sp.length };
+    per[s] = { lufs: +A.lufs(buf, inner).toFixed(1), peak: +Math.max(...inner.map(([a, b]) => A.peak(x, a, b))).toFixed(3), low: +(lo / n).toFixed(2), mid: +(mid / n).toFixed(2), high: +(hi / n).toFixed(2), width: +(w / n).toFixed(2), bars: sp.length };
   }
   // click check: energy above 17 kHz (the stems are band-limited to 16 kHz) at every section change vs inside sections
   const changes = log.filter((l, i) => i > 0 && (l.section !== log[i - 1].section || l.bar !== log[i - 1].bar + 1)).map((l) => l.t);
@@ -65,8 +65,8 @@ async function musicRun(H, cueId, script, seconds) {
   H.check(`${cueId}: click-free cuts (HF at changes < p99 of the music + 3 dB)`, worst < 10 * Math.log10(p99 / med) + 3, `worst ${worst.toFixed(1)} dB vs p99 ${(10 * Math.log10(p99 / med)).toFixed(1)} dB over median`);
   H.check(`${cueId}: no silent gap while playing`, gap < 0.3, `${gap.toFixed(2)} s`);
   const band = ['verse', 'pre', 'chorus', 'chorus2', 'solo', 'danger', 'intro'].filter((s) => per[s]).map((s) => per[s].lufs);
-  H.check(`${cueId}: chorus is the loudest band section, verse below it (loud-quiet dynamics)`, per.chorus && per.verse && per.chorus.lufs >= Math.max(...band) - 0.6 && per.verse.lufs < per.chorus.lufs - 1, `verse ${per.verse?.lufs} / chorus ${per.chorus?.lufs} / max ${Math.max(...band)}`);
-  H.check(`${cueId}: calm is the quiet state (>= 6 LU under the band)`, per.calm && Math.min(...band) - per.calm.lufs >= 6, `calm ${per.calm?.lufs} vs band min ${Math.min(...band)}`);
+  H.check(`${cueId}: chorus is the loudest band section, verse >= 4 LU below it (loud-quiet)`, per.chorus && per.verse && per.chorus.lufs >= Math.max(...band) - 0.6 && per.verse.lufs < per.chorus.lufs - 4, `verse ${per.verse?.lufs} / chorus ${per.chorus?.lufs} / max ${Math.max(...band)}`);
+  H.check(`${cueId}: calm is the quiet state (>= 5 LU under the verse, >= 10 under the chorus), tension between`, per.calm && per.verse && per.verse.lufs - per.calm.lufs >= 5 && per.chorus.lufs - per.calm.lufs >= 10 && per.tension.lufs > per.calm.lufs && per.tension.lufs < per.chorus.lufs, `calm ${per.calm?.lufs} / tension ${per.tension?.lufs} / verse ${per.verse?.lufs} / chorus ${per.chorus?.lufs}`);
   H.check(`${cueId}: scheduler < 0.2 ms per frame on average`, cpu.ms / cpu.calls < 0.2, `${(cpu.ms / cpu.calls).toFixed(4)} ms`);
   return { x, buf, log, obj };
 }

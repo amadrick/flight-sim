@@ -267,7 +267,7 @@ export async function createCombatAudio(combat) {
     update,
     get mood() { return mood.mood; },
     /** diagnostics: { cue, section, bar, mood, playing, voices } */
-    get info() { return A ? { ...A.music.info, voices: A.pool.live, refused: A.pool.refused, radio: A.radio.current?.text || null, seeker: A.warnings.seeker } : null; },
+    get info() { return A ? { ...A.music.info, musicVoices: A.music.info.voices, voices: A.pool.live, refused: A.pool.refused, radio: A.radio.current?.text || null, seeker: A.warnings.seeker } : null; },
     get musicVolume() { return set.musicVolume; },
     /** music level 0..1 (default 0.8) */
     setMusicVolume(v) { set.musicVolume = Math.max(0, Math.min(1, +v || 0)); A?.music.setVolume(set.musicVolume * MIX.music); },

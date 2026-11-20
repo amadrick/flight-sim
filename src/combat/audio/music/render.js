@@ -23,7 +23,7 @@ function glue(ac, threshold = -18, ratio = 3) {
  * The instrument rig inside an offline context. band / drums: stereo destinations (drums may be the band bus).
  * Instruments are created on first use, so a section only pays for what it plays.
  */
-export function buildRig(ac, cue, band, drums, { os = '4x' } = {}) {
+export function buildRig(ac, cue, band, drums, { os = '4x', mix = {} } = {}) {
   const white = noise(ac, 'white'); white.start();
   const sum = G(ac, 1), hp = BQ(ac, 'highpass', 30, 0.7), gl = glue(ac);
   sum.connect(hp); hp.connect(gl); gl.connect(band);
@@ -38,8 +38,8 @@ export function buildRig(ac, cue, band, drums, { os = '4x' } = {}) {
   const gtrRoom = lazy(() => { const r = makeReverb(ac, { decay: 0.9, damp: 5000, size: 0.85, level: 0.5 }); r.out.connect(sum); return r; });
   const drumRoom = lazy(() => { const r = makeReverb(ac, { decay: 0.9, damp: 5000, size: 0.85, level: 0.5 }); r.out.connect(dsum); return r; });
   const make = {
-    drums: () => { const bus = G(ac, 0.9); bus.connect(dsum); return makeDrums(ac, bus, drumRoom().in, makeGatedVerb(ac, bus), white); },
-    gtr: () => { const bus = G(ac, 1); bus.connect(pump); const rs = G(ac, 0.12); bus.connect(rs); rs.connect(gtrRoom().in); return makeRhythmGuitar(ac, bus, white, { os }); },
+    drums: () => { const bus = G(ac, 0.75 * (mix.drums ?? 1)); bus.connect(dsum); return makeDrums(ac, bus, drumRoom().in, makeGatedVerb(ac, bus), white); },
+    gtr: () => { const bus = G(ac, 1.4 * (mix.gtr ?? 1)); bus.connect(pump); const rs = G(ac, 0.12); bus.connect(rs); rs.connect(gtrRoom().in); return makeRhythmGuitar(ac, bus, white, { os }); },
     lead: () => makeLeadGuitar(ac, sum, S(), { pan: 0.1, os }),
     lead2: () => makeLeadGuitar(ac, sum, S(), { pan: -0.35, detune: -6, os }),
     clean: () => { const c = makeCleanGuitar(ac, pump); const v = G(ac, 0.35), d = G(ac, 0.25); c.out.connect(v); v.connect(hall().in); c.out.connect(d); d.connect(delay().in); return c; },
@@ -114,7 +114,7 @@ export async function renderSection(cue, name, sr = STEM_SR, opts = {}) {
     g.gain.setValueAtTime(lv * (sec.swell ? sec.swell[0] : 1), 0);
     if (sec.swell) g.gain.linearRampToValueAtTime(lv * sec.swell[1], total - barDur * 0.25);
   }
-  const rig = buildRig(ac, cue, band, drums, opts);
+  const rig = buildRig(ac, cue, band, drums, { ...opts, mix: sec.mix || {} });
   for (let b = 0; b < bars.length; b++) for (let k = 0; k < 16; k++) {
     const evs = bars[b].steps[k], t = (b * 16 + k) * sd;
     for (let i = 0; i < evs.length; i++) { rig.trigger(evs[i], t, sd); await M.breathe(false, evs[i].i); }
@@ -166,11 +166,12 @@ export function createStems(cueOrId, { sr = STEM_SR, log } = {}) {
     if (busy || disposed || !supported) return;
     busy = true;
     try {
-      if (!riser) {
-        for (const f of Object.keys(FILL_FROM)) { fills[f] = await renderFill(cue, f, sr); stats.bytes += bytes(fills[f]); }
-        riser = await renderRiser(cue, sr); stats.bytes += bytes(riser);
-      }
       while (queue.length && !disposed) {
+        // the first two sections come first (music can start), then the fills and the merge riser
+        if (!riser && done.size >= 2) {
+          for (const f of Object.keys(FILL_FROM)) { fills[f] = await renderFill(cue, f, sr); stats.bytes += bytes(fills[f]); }
+          riser = await renderRiser(cue, sr); stats.bytes += bytes(riser);
+        }
         const name = queue.shift(); if (done.has(name)) continue;
         try {
           const r = await renderSection(cue, name, sr);
@@ -180,6 +181,10 @@ export function createStems(cueOrId, { sr = STEM_SR, log } = {}) {
           log?.(`stem ${cue.id}/${name}: ${r.renderMs.toFixed(0)} ms render, ${r.mainMs.toFixed(1)} ms main thread`);
         } catch (e) { stats.failed++; log?.(`stem ${name} failed: ${e}`); }
         await new Promise((r) => setTimeout(r, 0));                // yield to the game between sections
+      }
+      if (!riser && !disposed && done.size) {
+        for (const f of Object.keys(FILL_FROM)) if (!fills[f]) { fills[f] = await renderFill(cue, f, sr); stats.bytes += bytes(fills[f]); }
+        riser = await renderRiser(cue, sr); stats.bytes += bytes(riser);
       }
     } finally { busy = false; }
     const w = waiters; waiters = []; for (const f of w) f();

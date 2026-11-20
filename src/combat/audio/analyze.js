@@ -87,11 +87,15 @@ function kWeight(x, sr) {
   f0 = 38.13547087602444; Q = 0.5003270373238773; K = Math.tan(Math.PI * f0 / sr); a0 = 1 + K / Q + K * K;
   return biquad(y, 1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
 }
-/** Integrated loudness (LUFS, BS.1770 gating: 400 ms blocks, 75 % overlap, -70 LUFS absolute and -10 LU relative gates). */
+/** Integrated loudness (LUFS, BS.1770 gating: 400 ms blocks, 75 % overlap, -70 LUFS absolute and -10 LU relative gates)
+ * over one span [t0, t1] or several spans ([[t0, t1], ...], pooled). */
 export function lufs(buf, t0 = 0, t1 = Infinity, sr = SR) {
-  const chans = []; for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) { const d = buf.getChannelData(c), [a, b] = seg(d, t0, t1, sr); chans.push(kWeight(d.subarray(a, b), sr)); }
-  const n = chans[0].length, B = Math.floor(0.4 * sr), hop = Math.floor(0.1 * sr), blocks = [];
-  for (let s = 0; s + B <= n; s += hop) { let z = 0; for (const ch of chans) { let e = 0; for (let i = s; i < s + B; i++) e += ch[i] * ch[i]; z += e / B; } blocks.push(z); }
+  const spans = Array.isArray(t0) ? t0 : [[t0, t1]], blocks = [];
+  for (const [u0, u1] of spans) {
+    const chans = []; for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) { const d = buf.getChannelData(c), [a, b] = seg(d, u0, u1, sr); chans.push(kWeight(d.subarray(a, b), sr)); }
+    const n = chans[0].length, B = Math.floor(0.4 * sr), hop = Math.floor(0.1 * sr);
+    for (let s = 0; s + B <= n; s += hop) { let z = 0; for (const ch of chans) { let e = 0; for (let i = s; i < s + B; i++) e += ch[i] * ch[i]; z += e / B; } blocks.push(z); }
+  }
   const L = (z) => -0.691 + 10 * Math.log10(Math.max(z, 1e-12));
   let g = blocks.filter((z) => L(z) > -70); if (!g.length) return -70;
   const rel = L(g.reduce((a, b) => a + b, 0) / g.length) - 10;

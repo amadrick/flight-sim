@@ -21,10 +21,12 @@ export function createMusic(ac, dest, opts = {}) {
   const LOOK = opts.lookahead ?? 0.3;
   const out = G(ac, 0), trim = G(ac, MUSIC_LEVEL); trim.connect(out); out.connect(dest);
   let mood = 'off', sig = null, volume = opts.volume ?? 1, duck = 1, enabled = true, pendingCue = null;
+  let memoBar = -1, memoMood = null, memoPush = false, memoFill = null, memoEnter = false;
   let nextT = 0, curT = 0, cur = null, voice = null, fillDone = false, riserDone = false, silentBars = 0, started = false;
   const live = new Set();
   const info = { cue: cue.id, section: null, bar: -1, mood: 'off', bars: 0, skipped: 0, playing: false, waiting: null, fills: 0, risers: 0, cuts: 0,
-    voices: 0, nodes: 0, stems: stems.stats, log: opts.log ? [] : null };
+    voices: 0, nodes: 0, cpu: { calls: 0, ms: 0, maxMs: 0 }, stems: stems.stats, log: opts.log ? [] : null };
+  const clock = () => (globalThis.performance ? performance.now() : 0);
 
   // ---- voices ----------------------------------------------------------------------------------------------------
   function track(v) { live.add(v); info.voices = live.size; info.nodes = [...live].reduce((n, x) => n + x.n, 0); }
@@ -99,6 +101,35 @@ export function createMusic(ac, dest, opts = {}) {
   function level(t, tc = 0.25) { out.gain.setTargetAtTime(enabled ? volume * duck : 0, t, tc); }
   const firstFor = (m) => { const d = arr.peek(m, sig); return d && d.name; };
 
+  // per-frame work (wrapped by api.update for timing)
+  function tick(now, m, s) {
+    mood = m || 'off'; sig = s || null; info.mood = mood;
+    if (!info.playing) {
+      if (mood === 'off' || !enabled) return;
+      if (pendingCue) { const c = pendingCue; pendingCue = null; api.setCue(c.id); }
+      const first = firstFor(mood); if (!first) return;          // e.g. the victory tag already played
+      if (!stems.get(first)) { stems.want(first); info.waiting = first; return; }
+      level(now, 0.05); info.playing = true; started = true; nextT = now + 0.05; cur = null; voice = null; silentBars = 0;
+    }
+    if (now > nextT + barDur) { info.skipped += Math.floor((now - nextT) / barDur); nextT = now + 0.05; }   // stalled > 1 bar: re-sync
+    while (info.playing && now >= nextT - LOOK) { barStart(nextT); nextT += barDur; }
+    if (!cur || !info.playing) return;
+    // mid-bar: a drum fill into an unplanned change, a riser when the band comes in. The arranger is asked again only
+    // when the mood or the push signal changes (or a new bar starts), so a steady frame allocates nothing.
+    const push = !!sig?.push;
+    if (memoBar !== curT || memoMood !== mood || memoPush !== push) {
+      memoBar = curT; memoMood = mood; memoPush = push;
+      memoFill = arr.fillFor(mood, sig); memoEnter = arr.entering(mood, sig);
+    }
+    if (!fillDone && memoFill && now >= curT + 8 * sd - LOOK) {
+      const t8 = curT + FILL_FROM[memoFill] * sd, t12 = curT + 12 * sd;
+      if (t8 > now + 0.005) scheduleFill(memoFill, t8);
+      else if (t12 > now + 0.005) scheduleFill('fillSmall', t12);
+      else fillDone = true;
+    }
+    if (!riserDone && memoEnter) scheduleRiser(now);
+  }
+
   const api = {
     info,
     get mood() { return mood; },
@@ -124,28 +155,8 @@ export function createMusic(ac, dest, opts = {}) {
     setDuck(k) { if (Math.abs(k - duck) < 0.005) return; const down = k < duck; duck = k; level(ac.currentTime, down ? 0.06 : 0.35); },
     /** Call every frame with the AudioContext time, the mood (mood.js) and signals ({ push }). */
     update(now, m, s) {
-      mood = m || 'off'; sig = s || null; info.mood = mood;
-      if (!info.playing) {
-        if (mood === 'off' || !enabled) return;
-        if (pendingCue) { const c = pendingCue; pendingCue = null; api.setCue(c.id); }
-        const first = firstFor(mood); if (!first) return;          // e.g. the victory tag already played
-        if (!stems.get(first)) { stems.want(first); info.waiting = first; return; }
-        level(now, 0.05); info.playing = true; started = true; nextT = now + 0.05; cur = null; voice = null; silentBars = 0;
-      }
-      if (now > nextT + barDur) { info.skipped += Math.floor((now - nextT) / barDur); nextT = now + 0.05; }   // stalled > 1 bar: re-sync
-      while (info.playing && now >= nextT - LOOK) { barStart(nextT); nextT += barDur; }
-      if (!cur || !info.playing) return;
-      // mid-bar: a drum fill into an unplanned change, a riser when the band comes in
-      if (!fillDone && now >= curT + 8 * sd - LOOK) {
-        const f = arr.fillFor(mood, sig);
-        if (f) {
-          const t8 = curT + FILL_FROM[f] * sd, t12 = curT + 12 * sd;
-          if (t8 > now + 0.005) scheduleFill(f, t8);
-          else if (t12 > now + 0.005) scheduleFill('fillSmall', t12);
-          else fillDone = true;
-        }
-      }
-      if (!riserDone && arr.entering(mood, sig)) scheduleRiser(now);
+      const c0 = clock();
+      try { tick(now, m, s); } finally { const d = clock() - c0; info.cpu.calls++; info.cpu.ms += d; if (d > info.cpu.maxMs) info.cpu.maxMs = d; }
     },
     /** Stop at once (mission abort): fade out quickly, reset the arrangement. */
     stop(fade = 0.4) {
