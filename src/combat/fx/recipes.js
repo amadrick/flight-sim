@@ -75,15 +75,18 @@ export function groundStrike(ps, pos, water, q, dust) {
 
 /** Gun smoke streaming from the muzzle (the particles keep most of the shooter's speed, then drag stops them). */
 export function gunSmoke(ps, pos, vel, rate, dt, q, acc, big = 1) {
-  acc.v += rate * dt * q;
+  acc.v += rate * dt * Math.max(0.5, q);
   const p = ps.p;
   while (acc.v >= 1) {
     acc.v -= 1;
-    p.kind = KIND.SMOKE; p.life = 1.0 + rnd() * 1.2; p.size0 = 0.3 * big; p.size1 = (2.0 + rnd() * 1.5) * big; p.drag = 2.8; p.buoy = 0.3;
-    p.delay = rnd() * dt; const c = 0.55 + rnd() * 0.15; p.r = c; p.g = c; p.b = c * 1.02; p.opacity = 0.35 * Math.min(1.3, big);
+    const f = rnd();
+    p.kind = KIND.SMOKE; p.life = 1.4 + rnd() * 1.6; p.size0 = 0.5 * big; p.size1 = (3.5 + rnd() * 2.5) * big; p.drag = 2.4; p.buoy = 0.3;
+    p.delay = 0; const c = 0.6 + rnd() * 0.15; p.r = c; p.g = c; p.b = c * 1.02; p.opacity = 0.28 * Math.min(1.3, big);
     p.emissive = 0; p.aux = 0;
-    _v.copy(vel).multiplyScalar(0.92); _v.x += sgn() * 2; _v.y += sgn() * 2; _v.z += sgn() * 2;
-    ps.spawn(pos, _v);
+    // spread along the path flown this frame so a 250 m/s shooter leaves a continuous stream, not beads
+    _p.copy(pos).addScaledVector(vel, -dt * f);
+    _v.copy(vel).multiplyScalar(0.9); _v.x += sgn() * 2.5; _v.y += sgn() * 2.5; _v.z += sgn() * 2.5;
+    ps.spawn(_p, _v);
   }
 }
 
@@ -94,8 +97,8 @@ export function fireLicks(ps, pos, vel, back, rate, dt, q, acc, size) {
   while (acc.v >= 1) {
     acc.v -= 1;
     const f = rnd();
-    p.kind = KIND.FIRE; p.life = 0.35 + rnd() * 0.45; p.size0 = size * (0.5 + rnd() * 0.4); p.size1 = size * (1.6 + rnd() * 1.4); p.drag = 1.2; p.buoy = 2;
-    p.delay = 0; p.r = 0.12; p.g = 0.1; p.b = 0.09; p.opacity = 0.85; p.emissive = 30 + rnd() * 30; p.aux = 0;
+    p.kind = KIND.FIRE; p.life = 0.3 + rnd() * 0.4; p.size0 = size * (0.4 + rnd() * 0.3); p.size1 = size * (1.3 + rnd() * 1.2); p.drag = 1.2; p.buoy = 2;
+    p.delay = 0; p.r = 0.08; p.g = 0.07; p.b = 0.06; p.opacity = 0.8; p.emissive = 5 + rnd() * 7; p.aux = 0;
     // back along the frame's path so a fast aircraft still leaves a continuous tongue
     _p.copy(pos).addScaledVector(vel, -dt * f);
     _v.copy(vel).multiplyScalar(0.88 + rnd() * 0.06).addScaledVector(back, 6 + rnd() * 8); _v.x += sgn() * 2; _v.y += sgn() * 2; _v.z += sgn() * 2;

@@ -205,12 +205,12 @@ export async function createCombatFx(combat) {
         ctx.world.toRender(v, rp2);
         back.copy(s.velocity); const sp = back.length();
         if (sp > 1) back.multiplyScalar(-1 / sp); else back.set(0, 1, 0);
-        const L = (3 + 9 * fireK) * r.scale * (isWreck ? 1.4 : 1) * clamp(sp / 150, 0.4, 1.3);
-        const I = (12 + 20 * fireK) * (0.85 + 0.3 * rnd());
-        sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, (0.6 + 0.9 * fireK) * r.scale * big, I, I * 0.62, I * 0.32, back.x * L, back.y * L, back.z * L, r.seed * 7 + frame * 0.01, 1.0, 0);
-        sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, (2 + 3 * fireK) * r.scale, I * 0.25, I * 0.12, I * 0.04, 0, 0, 0, 0, 1.2, 0.8);
-        if (dt > 0) R.fireLicks(ps, v, s.velocity, back, (26 + 40 * fireK) * big, dt, q, r.fireAcc, (0.7 + 0.8 * fireK) * r.scale * big);
-        if (dt > 0 && (isWreck || !alive)) { bodyPoint(s, [0, 0, 0], v2); R.fireLicks(ps, v2, s.velocity, back, 30, dt, q, r.fireAcc2, 1.3 * r.scale); }
+        const L = (2.5 + 7 * fireK) * r.scale * (isWreck ? 1.3 : 1) * clamp(sp / 150, 0.4, 1.3);
+        const I = (4 + 7 * fireK) * (0.85 + 0.3 * rnd());
+        sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, (0.45 + 0.55 * fireK) * r.scale * big, I, I * 0.6, I * 0.3, back.x * L, back.y * L, back.z * L, r.seed * 7 + frame * 0.01, 1.0, 0);
+        sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, (1.5 + 1.5 * fireK) * r.scale, I * 0.05, I * 0.025, I * 0.01, 0, 0, 0, 0, 1.2, 0.8);
+        if (dt > 0) R.fireLicks(ps, v, s.velocity, back, (14 + 22 * fireK) * big, dt, q, r.fireAcc, (0.6 + 0.6 * fireK) * r.scale * big);
+        if (dt > 0 && (isWreck || !alive)) { bodyPoint(s, [0, 0, 0], v2); R.fireLicks(ps, v2, s.velocity, back, 18, dt, q, r.fireAcc2, 1.1 * r.scale); }
         considerLight(v.x, v.y, v.z, 2500 * fireK * big, 1, 0.5, 0.2);
       }
     } else if (r.dmg) { r.dmg.stop(); }
@@ -227,7 +227,7 @@ export async function createCombatFx(combat) {
         sprites.add(SPR.FLASH, rp2.x + fwd.x * 0.4 * big, rp2.y + fwd.y * 0.4 * big, rp2.z + fwd.z * 0.4 * big, (0.7 + 0.5 * rnd()) * big, I, I * 0.8, I * 0.55, 0, 0, 0, rnd(), 1.2, 0);
         sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, 1.6 * big, I * 0.1, I * 0.07, I * 0.04, 0, 0, 0, 0, 1.0, 1);
       }
-      if (dt > 0) R.gunSmoke(ps, muzzleV, s.velocity, 45 * big, dt, q, r.gunAcc, big);
+      if (dt > 0) R.gunSmoke(ps, muzzleV, s.velocity, 70 * big, dt, q, r.gunAcc, big);
       if (dCam < 300) considerLight(muzzleV.x, muzzleV.y, muzzleV.z, 120 * big, 1, 0.75, 0.45);
     }
 
