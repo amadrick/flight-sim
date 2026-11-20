@@ -37,7 +37,7 @@ const SCHEMES = {
   hickam: { name: '15th Wing / 199th FS Hickam (HH)', base: '#6d7278', camo: '#61666c', under: '#777c82', mark: '#4f5359', code: 'HH', serial: 'AF 13-4236', unit: '15 WG', band: '#34373b', bandText: 'HAWAII', stripes: ['#7a3a32', '#8c7a3c'], seed: 9001, sheenColor: '#a0988a' },
   // the invented adversary air force (AGG block at the end of the file): hard-edged splinter bands in the family colours, laid
   // in the LO coating so the panel lines, RAM tape and sheen stay
-  aggressor: { name: 'Adversary desert splinter', base: AGG.sand, camo: AGG.rust, under: AGG.under, mark: '#2b2620', code: '', serial: '', unit: '', band: null, seed: 2222, irid: 0.1, sheenColor: '#a89a7e',
+  aggressor: { name: 'Adversary desert splinter', base: AGG.sand, camo: AGG.rust, under: AGG.under, mark: '#2b2620', code: '', serial: '', unit: '', band: null, seed: 2222, irid: 0.08, sheen: 0.07, sheenColor: '#a89a7e',
     agg: { seed: 2222, step: 1.7, A: 0.5, Ax: 0.2, B: 0.8, splinter: 0.28 }, num: 22 },
   lowvis: { name: 'Sanitised test aircraft', base: '#74787d', camo: '#6b6f74', under: '#7e8287', mark: '#696d72', code: '', serial: 'AF 14-4240', unit: '', band: null, seed: 1234, irid: 0.2, sheenColor: '#97989a' },
 };
