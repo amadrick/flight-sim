@@ -590,7 +590,7 @@ export function createOverlay(H) {
       g.beginPath(); arrowHead(E.x + Math.cos(E.a) * 6, E.y + Math.sin(E.a) * 6, E.a, 12); g.fillStyle = col; g.fill();
     }
     if (lim.shown && !lim.pull) text(LIMIT_TXT[lim.shown] || '', rx, ry + 24, H.C.amber, H.fontXS, 'center', 'alphabetic');
-    drawEnergy(p);
+    drawEnergy(p, info);
     if (lim.pull > 0) {
       // in the shoot-cue slot below the centre (no SHOOT while the ground is coming): fixed, away from the target box
       const on2 = flashOn(2.5), y = H.cueY, w = H.fsWarn * 5.2, hh = H.fsWarn * 1.45;
@@ -605,16 +605,22 @@ export function createOverlay(H) {
   // ---- energy cue: where the speed sits against the jet's corner speed (best instantaneous turn) --------------
   // A short tape left of the gun cross: the centre tick is corner speed, the green band the useful fight speeds, the
   // caret the indicated airspeed (up = faster). Amber caret + SLOW when well below it — a slow jet turns badly.
-  const en = { ent: null, corner: 0, stall: 0 };
-  const EN_SPAN = 40, EN_H = 22, EN_LO = 12, EN_HI = 22, EN_SLOW = 26;   // m/s (IAS): ± scale, green band, SLOW threshold
-  function drawEnergy(p) {
+  // The fight speed and the SLOW flag come from the assist (info.fightSpeed / info.slow, the speed its auto-throttle
+  // holds); an older assist without them: the same corner speed from the jet's profile, SLOW below 0.8 of it.
+  const en = { ent: null, corner: 0 };
+  const EN_SPAN = 40, EN_H = 22, EN_LO = 12, EN_HI = 22;   // m/s (IAS): ± scale, green band below / above
+  function drawEnergy(p, info) {
     if (!(H.boreX === H.boreX) || H.pullShown) return;
-    if (en.ent !== p) { en.ent = p; const pr = p.def ? profileOf(p.def, p.sim) : null; en.corner = pr?.corner || 0; en.stall = pr?.stall || 0; }
+    let vf = info.fightSpeed, slow = info.slow;
+    if (!(vf > 0)) {
+      if (en.ent !== p) { en.ent = p; const pr = p.def ? profileOf(p.def, p.sim) : null; en.corner = pr?.corner || 0; }
+      vf = en.corner; slow = p.state.ias < vf * 0.8;
+    }
     const ias = p.state.ias;
-    if (!(en.corner > 0) || !(ias >= 0)) return;
-    const dv = ias - en.corner, x = Math.round(H.boreX - 30) + 0.5, y = Math.round(H.boreY);
+    if (!(vf > 0) || !(ias >= 0)) return;
+    const dv = ias - vf, x = Math.round(H.boreX - 30) + 0.5, y = Math.round(H.boreY);
     const k = clamp(dv / EN_SPAN, -1, 1), cy = y - k * EN_H;
-    const col = dv < -EN_LO ? H.C.amber : dv > EN_HI ? H.C.fg : H.C.hud;
+    const col = slow || dv < -EN_LO ? H.C.amber : dv > EN_HI ? H.C.fg : H.C.hud;
     g.globalAlpha = 0.75; g.strokeStyle = H.C.fg; g.lineWidth = 1; g.beginPath();
     g.moveTo(x, y - EN_H); g.lineTo(x, y + EN_H); g.moveTo(x - 3, y - EN_H); g.lineTo(x + 3, y - EN_H); g.moveTo(x - 3, y + EN_H); g.lineTo(x + 3, y + EN_H);
     g.stroke(); g.globalAlpha = 1;
@@ -623,7 +629,7 @@ export function createOverlay(H) {
     // caret on the left pointing at the tape; open (outline) when pinned at an end
     g.beginPath(); g.moveTo(x - 2, cy); g.lineTo(x - 10, cy - 5); g.lineTo(x - 10, cy + 5); g.closePath();
     if (Math.abs(k) >= 1) { g.strokeStyle = col; g.lineWidth = 1.4; g.stroke(); } else { g.fillStyle = col; g.fill(); }
-    if (dv < -EN_SLOW) text('SLOW', x - 4, y + EN_H + 12, H.C.amber, H.fontXS, 'center');
+    if (slow) text('SLOW', x - 4, y + EN_H + 12, H.C.amber, H.fontXS, 'center');
   }
 
   // ---- combat cameras ---------------------------------------------------------------------------------

@@ -125,24 +125,37 @@ export async function createCombatHud(combat) {
       const side = (r) => { if (!r || !(r.w > 0)) return; if (r.x + r.w / 2 > W / 2) x1 = Math.min(x1, r.x - 14); else x0 = Math.max(x0, r.x + r.w + 14); };
       side(tl.dock); side(tl.radar); side(tl.view);
       if (tl.fire) for (const id in tl.fire) side(tl.fire[id]);
+      if (Array.isArray(tl.extra)) for (const r of tl.extra) side(r);
       const hb = tl.hud ? tl.hud.y + tl.hud.h : 60, cl = tl.clear;
       const y0 = hb + 14, y1 = cl.h > 40 ? cl.y + cl.h - 6 : Hh - 90;
       H.ex = (x0 + x1) / 2; H.ey = (y0 + y1) / 2;
       H.ax = Math.max(60, (x1 - x0) / 2); H.ay = Math.max(50, (y1 - y0) / 2);
       H.ayExt = H.ayInt = H.ay;
-      // warnings (MISSILE / lock / six): a slot just above the clear area, centred on it (inside its top when no room)
-      const wh = H.fsWarn * 1.5;
-      H.warnX = Math.round(cl.x + cl.w / 2);
-      H.warnY = Math.round(cl.y - wh / 2 - 6 >= hb + wh / 2 + 4 ? cl.y - wh / 2 - 6 : cl.y + wh / 2 + 4);
       // SHOOT / PULL UP slot: below the centre, above the radio line
       const ph = H.fsWarn * 1.45;
       if (tl.subs) H.cueY = Math.round(Math.max(Hh / 2 + 30, Math.min(H.cueY, tl.subs.y - ph / 2 - 6)));
-      // camera label: in the top band between the strip and the top-right buttons
+      // warnings (MISSILE / ENEMY LOCK / BANDIT SIX) and the camera label: the top band between the data strip and the
+      // top-right buttons — far from the target box in the middle; warnings at its top, the camera label at its bottom.
+      // No band (portrait / narrow): warnings just above the clear area, the label under the strip on the right.
+      const wh = H.fsWarn * 1.15, ht = tl.hud ? tl.hud.y : 10;
       const hr = tl.hud ? tl.hud.x + tl.hud.w : 0;
       let lim = W - 16;
-      for (const r of [tl.cam, tl.menu, tl.more]) if (r && r.y < hb && r.x > hr) lim = Math.min(lim, r.x);
-      if (lim - hr > 150) { H.camX = Math.round((hr + lim) / 2); H.camLabelY = Math.round((tl.hud ? tl.hud.y : 10) + 16); }
-      else { H.camX = Math.round(W - 16 - 70); H.camLabelY = Math.round(hb + 16); }
+      for (const r of [tl.cam, tl.menu, tl.more, tl.view]) if (r && r.y < hb && r.x > hr) lim = Math.min(lim, r.x);
+      if (lim - hr > 170) {
+        H.warnX = H.camX = Math.round((hr + lim) / 2);
+        H.warnY = Math.round(ht + wh / 2 + 2);
+        H.camLabelY = Math.round(Math.max(ht + wh + H.fs * 3.2, hb - H.fs));
+      } else if (tl.cbt && tl.cbt.h >= 130) {
+        // the bottom of the combat region (under the objectives chip / hull line / kill feed): label last, warnings over it
+        const cb = tl.cbt;
+        H.camX = H.warnX = Math.round(cb.x + cb.w / 2);
+        H.camLabelY = Math.round(cb.y + cb.h - H.fs - 2);
+        H.warnY = Math.round(H.camLabelY - H.fs * 2.8 - wh / 2);
+      } else {
+        H.warnX = H.camX = Math.round(cl.x + cl.w / 2);
+        H.warnY = Math.round(cl.y - wh / 2 - 6 >= hb + wh / 2 + 4 ? cl.y - wh / 2 - 6 : cl.y + wh / 2 + 4);
+        H.camLabelY = Math.round(hb + H.fs + 4);
+      }
     } else {
       H.ex = W / 2; H.ey = Hh / 2;
       H.ax = W / 2 - margin; H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
