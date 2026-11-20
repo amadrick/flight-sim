@@ -156,3 +156,21 @@ test('feedback events: bullet:near reaches the player, bullet:hit carries damage
   for (let i = 0; i < 60 * 31; i++) { c.clock += 1 / 60; t.damage.fire = 0; W.update(1 / 60); }
   assert.equal(t.lastHitBy, null);
 });
+
+test('large aircraft: no single-round crew kill, cockpit hits cost control; flare(); muzzleOf()', async () => {
+  const { c, W, world, a } = await pair();
+  const big = world.spawnAircraft({ aircraft: 'c17', team: 'red', position: V(3000, 6000, 0), heading: 0, speed: 200, loadout: { hp: 529 } });
+  big.pilot = null; big.ownsSim = false;
+  for (let i = 0; i < 300; i++) W.applyDamage(big, 1, { source: a, weapon: 'gun', part: 'cockpit' });   // 300 tiny crew hits
+  assert.ok(big.alive && !big.damage.pilot, 'crew never killed outright');
+  assert.ok(big.sim.damage.ctrl < 0.95, `ctrl ${big.sim.damage.ctrl}`);
+  // fighters: the human player is never pilot-killed below ace
+  const p = world.spawnAircraft({ aircraft: 'f16', team: 'blue', position: V(-3000, 5000, 0), heading: 0, speed: 250, loadout: { hp: 1e6 } });
+  p.pilot = null; p.isPlayer = true; world.player = p; c.difficulty = 'veteran';
+  for (let i = 0; i < 400; i++) W.applyDamage(p, 13, { source: big, weapon: 'gun', part: 'cockpit' });
+  assert.ok(!p.damage.pilot);
+  const n0 = a.loadout.flares;
+  assert.ok(W.flare(a, { count: 1 })); assert.equal(a.loadout.flares, n0 - 1);
+  const pos = W.muzzleOf(a, V(0, 0, 0), V(0, 0, 0));
+  assert.ok(pos && pos.distanceTo(a.state.position) < 8);
+});

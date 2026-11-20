@@ -124,6 +124,18 @@ export function gunPort(def, out = [0, 0, 0]) {
   return out;
 }
 
+/**
+ * Large aircraft (transports, bombers, airliners, AWACS-type platforms): decided from category and size, not ids.
+ * They have no single-round kills: crew hits wound (control loss), fire burns slower, no sudden fuel explosion.
+ */
+export function isLarge(def) {
+  if (!def) return false;
+  const c = def.category;
+  if (c === 'transport' || c === 'bomber' || c === 'airliner') return true;
+  const g = def.geometry;
+  return !!g && ((g.length || 0) > 24 || (g.span || 0) > 28 || (g.engines?.length || 0) > 2);
+}
+
 export function rcsOf(def) {
   return RCS[def?.id] ?? (def?.category === 'transport' ? RCS.transport : def?.category === 'airliner' ? RCS.airliner : RCS.default);
 }

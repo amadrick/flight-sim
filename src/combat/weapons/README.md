@@ -24,7 +24,8 @@ Guns, missiles, flares, hit detection, the damage model and per-aircraft loadout
   - `e.lock = { target, state, progress, seeker, inRange, range, rMin, rMax, rNe, tti, closure, aspect (rad: 0 = shooter astern of the target / tail-on, π = head-on, same as `util.geometry`), offBoresight }`. `tti` is 0 when out of reach.
   - `e.damage = { smoke, fire, engineOut[], leak, fuelLost, pilot, parts: { fuselage, cockpit, wingL, wingR, tail, engines[] } }`, all 0..1.
 - `launchMissile(e, type?)` needs a lock. A type other than the selected one is allowed only if `canLock` passes for it now. Launches are at least 0.6 s apart. Without a lock it emits `weapon:nolock` and returns null. There is no boresight or dumb launch.
-- `dropFlares(e)` releases a pair. There is a 0.4 s cooldown.
+- `dropFlares(e, count = 2)` releases a pair by default (AI and scripts). **`flare(e, { count })`** does the same with an explicit count. The player's `cmd 'flare'` releases ONE flare, because input runs a 3-release programme per press: 3 flares per press, 10 presses from 30. There is a 0.4 s cooldown.
+- **`muzzleOf(e, outPos, outDir?)`** gives the gun muzzle in world space and the firing direction (the nose), for muzzle flashes. It returns null when the entity has no gun.
 - **`threatsTo(e, out[])`** fills `out` with `{ type: 'missile'|'lock', seeker, source, missile, range }` and returns `out`.
   It sets `out.length` and `out.count` to the number of threats, so existing callers that read `out.length` keep working.
   The objects live in a hidden pool on the array (`out.pool`), so truncating `out` (by you or by the call) never drops
@@ -69,6 +70,15 @@ These are new or extended; every listener tolerates extra fields.
 `lastHitBy` / `lastHitWeapon` / `lastHitT` are set on every hit that has a source (gun, missile blast, scripted damage with
 `source`). Fire damage over time keeps the attacker who started it. Credit expires `CREDIT_WINDOW` (30 s, in `damage.js`)
 after the last hit, but not while the aircraft is still burning. A clean terrain crash long after a scratch is therefore credited to nobody.
+
+## Large aircraft
+
+`isLarge(def)` in `specs.js` is decided from category (transport, bomber, airliner) or size (length over 24 m, span over 28 m, or more than 2 engines), not from ids. For large aircraft:
+- a cockpit hit never kills the crew outright; it builds `parts.cockpit` damage, which costs control (`ctrl −0.3 × cockpit`);
+- fires start at 60 % of the normal level and burn 0.4 × as fast;
+- there is no sudden fuel explosion.
+
+They die only through accumulated hp. Fighters keep a small pilot-kill chance, but never for the human player below ace.
 
 ## Gun lethality
 
