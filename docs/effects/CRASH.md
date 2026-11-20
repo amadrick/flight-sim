@@ -12,7 +12,7 @@ camera and audio.
 
 | class | when (impact state) | what you see |
 |---|---|---|
-| `belly` | gear up, sink < 6.5 m/s | long slide (v²/2µg, µ 0.33 pavement / 0.6 grass), scrape decals, sparks on pavement, dust + turf gouges on grass, no fire |
+| `belly` | gear up, sink < 6.5 m/s | long slide (v²/2µg, µ 0.33 pavement / 0.6 grass), scrape decals, a rooster tail of sparks on pavement (150 + 7·v per s), a trail of grey abrasion smoke / dust that lingers 7–15 s and drifts, panels torn off at first contact, dust + turf gouges on grass, no fire |
 | `gearCollapse` | gear down, sink < 6.5 m/s | shorter slide, sparks, skid marks; a small fuel fire (and a small fireball) when the wreck stops if it was hard (sink > 4.5 or > 75 m/s) |
 | `breakup` | sink 6.5–15 m/s, or a wingtip/nose dig-in at speed | airframe hidden, tumbling pieces with smoke/fire trails, medium fireball (22 % of the fuel), crater, ground fire |
 | `impact` | sink > 15 m/s, steep at speed, or mountain at > 60 m/s | full fireball (55 % of the fuel), crater + scorch, ejecta, shock dust ring, debris spray, pool fire, embers |
@@ -95,6 +95,16 @@ Retrain: `cd tools/neural/fireball; .venv/bin/python sim.py --batch 0:48 --strid
 * **Particles** (existing GPU particle system): flash, sparks, ejecta, shock dust ring, spray column and ring, wake,
   ground fire flames, the long smoke column (long-lived smoke ring buffer) and night embers.
 * **Ground fire**: flames, smoke and embers for 60–120 s; crackle audio.
+* **Fire light** (`explosion.js` `LIGHT_K`, `crash/index.js` `light()`): the fx point light carries the fireball's
+  visible radiant intensity, ≈ probe power × D² × 4 (≈ 6·10⁴ at the peak of a 70 m fireball, ~10⁴ from the pool fire
+  afterwards; the sun is 4 in scene units), so ground, airframes and scenery a few hundred metres away are lit.
+* **Air glow** (`crash/glow.js`): single scattering of that light by the haze, closed-form line integral
+  σ·p·I/b·[atan] per pixel up to the scene depth (σ from the visibility, isotropic + HG 0.5 phase). At night it is the
+  orange dome over the fire; by day it is far below the sky radiance and vanishes without any special casing.
+* **Fire-light sheen** (`decals.js` type `FIRELIGHT`): the engine's ground is rough-diffuse, so a fire low on the
+  horizon lit the runway only at grazing incidence and it stayed black. One large deferred decal adds a GGX
+  (roughness 0.55, F0 0.04) reflection of the fx light plus a little near-field wrap for the fire's size: the orange
+  sheen on pavement under a fire in night footage.
 * **Camera** (`src/camera/index.js`): on `crash:fx`, the post-crash orbit camera centres between the wreck and the
   fireball and backs off to 1.7 D + 30 m; shake arrives after distance / 340 m/s and falls off with distance.
 * **Audio** (`src/audio/index.js`): crunch and scrape for slides, explosion for fire classes, boom on the low bus for
@@ -110,7 +120,8 @@ Retrain: `cd tools/neural/fireball; .venv/bin/python sim.py --batch 0:48 --strid
 | light bake | 25 600 texels × 21 field fetches |
 | march | 18–56 steps × 5 texture fetches per covered pixel; only the fireball's screen footprint |
 | memory | 2 fireballs × 2 × 40×16×40 RGBA16F = 0.8 MB; weights 57 kB in the bundle |
-| decals | 1 draw, 768 instances |
+| decals | 1 draw, 768 instances (incl. the fire-light sheen: GGX per covered ground pixel within 400 m of the fire) |
+| air glow | 1 draw (sphere, back faces) over its footprint, ~40 ALU per pixel, no texture fetch except the depth |
 | debris | ≤ 7 large + 14 small meshes (small ones × quality) for the life of the wreck |
 
 Quality: `ctx.quality.particles` scales the march steps, particle spawn rates and the number of small debris pieces.
@@ -123,6 +134,8 @@ Quality: `ctx.quality.particles` scales the march steps, particle spawn rates an
 | `crashtest=<belly\|collapse\|breakup\|impact\|fireball\|mountain\|ditch\|water\|airburst>` | deterministic synthetic crash ahead of the camera |
 | `crashdist=<m>` `crashlat=<m>` `crashside=1` `crashat=<frame>` | where / when the test crash happens |
 | `crashrate=<x>` | sim rate once the test crash starts (main.js clamps a frame to 0.1 s; long shots) |
+| `fxcam=crash` (`fxdist=<m>` `fxcamh=<m>` `fxcamk=<m>`) | spectator camera: fixed point beside the crash (distance / height / offset along the heading), looking at the fire or the sliding wreck; hides the parked player in `crashtest` shots |
+| `fxglow=0` | no air glow |
 | `crashdive=1` | push the stick forward until the aircraft hits the ground (real physics crash) |
 | `fbtemp=<k>` `fbemis=<k>` | fireball temperature / emission scale |
 | `fbbake=<dlogt>` | re-bake threshold |
@@ -139,3 +152,23 @@ Quality: `ctx.quality.particles` scales the march steps, particle spawn rates an
 * Fine structure is noise, not simulation; up close (< 0.5 D) the billows repeat.
 * Debris are rigid primitives in the airframe colour, not pieces of the actual model.
 * Water impacts have no steam and no burning slick.
+* Clouds are not lit by the fire (the cloud renderer does not read the fx light); the air glow stands in below them.
+* A real belly slide of the player shows sparks, smoke, scrape decals and shed panels, but the player's own airframe
+  is not deformed (the synthetic `crashtest=belly` ghost lies on its belly with the gear hidden and a list).
+* The smoke column without wind is a rising dome; it leans only as much as the weather wind gives it.
+
+## 7. Frame cost
+
+Headless SwiftShader (software GL, 640×360, machine shared with other renders) takes ≈ 8 s per frame for the whole
+scene; 10-frame averages before the crash, 1 s into it and 7 s into it were 8.23 / 8.16 / 7.71 s, i.e. the crash
+is inside the noise there and cannot be timed this way. Estimated GPU cost from the work done: bake 25 600 texels ×
+~10 400 MAC + light bake (≈ 1–2 ms on a laptop GPU, only in bake frames: every few frames in the first seconds,
+rarely after 20 s); march 18–56 steps × 6 fetches over the fireball's footprint (≈ 0.5–1.5 ms at 1080p when it
+fills a third of the screen); air glow ≈ 40 ALU per covered pixel, no fetch but depth (< 0.2 ms); fire-light sheen
+a GGX evaluation per ground pixel within 400 m (< 0.2 ms); particles / debris unchanged. Zero cost when no crash is live.
+
+## 8. Shots
+
+`node tools/neural/fireball/crashseq.mjs --params "tod=23&crashtest=fireball&crashdist=300&fxcam=crash&crashat=4" \
+  --times 0.5,2,8 --prefix shots/crashfinal-night_impact` (also `--html <file>` to shoot a frozen build while
+others rebuild `dist/`). The `shots/crashfinal-*` set: day / night runway impact at 0.5, 2, 8 s, belly slide, water.

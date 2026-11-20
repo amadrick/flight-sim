@@ -18,6 +18,7 @@ Attaches to the player on `session:start`, detaches and clears all live particle
 | `emitters.js` | CPU spawn recipes (tyre smoke, dust, spray, sparks, explosion, wreck fire/smoke column, shock ring…) |
 | `anchor.js` | anchored float32 storage that survives `originShift` (rebases only every ~12 km) |
 | `crash/index.js` | crash orchestration: classify, fireball, debris, decals, ground fire, sparks/dust/spray, fx light, `crash:fx`; test harness (`crashtest=`) — see `docs/effects/CRASH.md` |
+| `crash/glow.js` | air glow: closed-form single scattering of the fire light by the haze (one sphere, POST) |
 | `crash/classify.js` | pure crash classification (belly / gear collapse / breakup / impact / ditch / water impact / airburst) and fireball scaling |
 | `explosion.js` | neural fireball: GPU bake of `src/neural/fireball.js` into a 3-D texture, light bake, ray-marched volume on POST, CPU probe for the fx light |
 | `decals.js` | deferred projected ground decals (scorch, crater, scrape, turf, foam, skid), one instanced draw |
@@ -120,5 +121,5 @@ murk-only additive cone instead of the scattering beam; `beaconlight=0` beacons 
 `fxlevel=1` hold altitude (stub physics sinks); `fxwater=1&fxagl=<m>` teleport low over the nearest water (spray).
 Example: `node tools/shot.mjs --params "aircraft=f16&start=air&tod=23&fx=ab&fxtm=1&fxcam=side&fxdist=9"`.
 Crash: `crashtest=<belly|collapse|breakup|impact|fireball|mountain|ditch|water|airburst>`, `crashdist=<m>`,
-`crashlat=<m>`, `crashside=1`, `crashat=<frame>`, `crashrate=<x>`, `crashdive=1`; fireball `fbtemp`,
+`crashlat=<m>`, `crashside=1`, `crashat=<frame>`, `crashrate=<x>`, `crashdive=1`, `fxcam=crash` (+`fxdist`/`fxcamh`/`fxcamk`), `fxglow=0`; fireball `fbtemp`,
 `fbemis`, `fbbake`, `fboff=1`, `fbdbg=1..5` (see `docs/effects/CRASH.md`).
