@@ -431,7 +431,9 @@ export function createOverlay(H) {
         edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E);
         g.beginPath(); arrowHead(E.x, E.y, E.a, 30); g.fillStyle = H.C.red; g.fill();
         g.strokeStyle = '#ffffff'; g.lineWidth = 1.2; g.stroke();
-        const lx = E.x - Math.cos(E.a) * 46, ly = E.y - Math.sin(E.a) * 46;
+        // label inward on the sides; beside the arrow at the top / bottom (clear of the centre cues)
+        const sa = Math.sin(E.a), side = Math.abs(sa) > 0.7;
+        const lx = side ? E.x + (E.x < P.cx ? 44 : -44) : E.x - Math.cos(E.a) * 46, ly = side ? E.y : E.y - sa * 46;
         text(F.tenth(Math.round(nd / NM * 10)), lx, ly - 7, H.C.red, H.fontB, 'center');
         if (tti < 60) text(TTI_STR(Math.ceil(tti)), lx, ly + 8, '#ffffff', H.fontXS, 'center');
       } else if (!H.cine && P.front) {
