@@ -194,7 +194,7 @@ void main() {
         vec3 amb = mix(uFbAmbDn, uFbAmbUp, 0.35 + 0.65 * L.y) * (0.45 + 0.55 * L.y);
         vec3 pR = (uFbFromSim * vec4(p, 1.0)).xyz;
         vec3 dl = uFbFirePos - pR;
-        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.08 * uFbD * uFbD) * L.z * 0.6;
+        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.08 * uFbD * uFbD) * L.z * 1.0;
         lit += T * a * albedo * (sun + amb + fire / FX_PI);
         dbgS += T * a * vec3(sun.g, amb.g, fire.g / FX_PI);
         emis += T * a * E;
@@ -277,7 +277,12 @@ void main() {
     const lum = 0.2126 * _c[0] + 0.7152 * _c[1] + 0.0722 * _c[2];
     fb.power = clamp(lum / 1.42, 0, 3) + clamp(burn / (N * N * 2) * 4, 0, 1);
     if (cw > 1e-9) fb.centroid.set(cx / cw, 0, Math.max(0.15, cz / cw));
+    // once the fireball has lifted off, what lights the smoke from below is the pool fire on the ground: move the
+    // fire light down to it and keep a floor on its power (the coarse probe misses the thin burning layer)
+    const pk = fb.mirror ? 0 : clamp((tEval - 2) / 4, 0, 1);
+    if (pk > 0) { fb.centroid.lerp(_v2.set(0.1, 0, 0.12), pk); fb.power = Math.max(fb.power, 0.55 * pk); }
     const mx = Math.max(_c[0], _c[1], _c[2], 1e-9); fb.color = [_c[0] / mx, Math.max(0.25, _c[1] / mx), Math.max(0.05, _c[2] / mx)];
+    if (pk > 0) { const w = pk * 0.7; fb.color = [fb.color[0] * (1 - w) + w, fb.color[1] * (1 - w) + 0.45 * w, fb.color[2] * (1 - w) + 0.12 * w]; }
   }
   const bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
@@ -317,6 +322,9 @@ void main() {
       fb.age += dt;
       const tSim = fb.age / fb.tStar;
       if (fb.mirror && fb.age > 0) fb.worldPos.addScaledVector(fb.drift, dt);
+      // past the end of the simulated window the field is frozen: carry the whole cloud with the wind (and a slow
+      // residual rise) so a lingering cloud keeps drifting instead of hanging still
+      else if (tSim > FIREBALL_T_END) { const w = fb.fw * Math.sqrt(9.81 * fb.D); fb.worldPos.addScaledVector(fb.dir, w * 0.8 * dt); fb.worldPos.y += 0.5 * dt; }
       // fade: airborne fireballs disperse after the burn; ground ones live as long as the smoke lingers
       const life = fb.life;
       fb.fade = fb.mirror ? clamp(1 - (fb.age - 25) / 35, 0, 1) : clamp(1 - (fb.age - life * 0.6) / (life * 0.4), 0, 1);
