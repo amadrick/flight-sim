@@ -182,7 +182,9 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         reflectedLight.indirectDiffuse = vec3(0.0); reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0);
         #endif
         // (a sub-pixel glossy tip turns into sparkle; the sheen is kept for the blades big enough to show it)
-        reflectedLight.directSpecular *= 0.12;`)
+        // (only the sun's: at night the direct lights are lamps and fires near the ground, whose grazing lobe on a
+        // field of tiny blades glitters)
+        reflectedLight.directSpecular *= 0.12 * smoothstep(-0.02, 0.1, uSunDir.y);`)
       .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
         {
           // light through the blade: sun behind it (leaf transmittance ~0.3 x reflectance, yellower), mostly the

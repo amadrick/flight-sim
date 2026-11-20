@@ -1105,9 +1105,13 @@ TerrSurf terrSurface(vec3 rp) {
     vec3 skyR = skyK / ref, sunR = sunK / max(skyK, vec3(1.0e-4));
     skyR = mix(vec3(dot(skyR, LUM)), skyR, 0.3);
     sunR = mix(vec3(dot(sunK, LUM) / max(dot(skyK, LUM), 1.0e-4)), sunR, 0.3);
+    // (the sun factor is the SUN's: with the sun down the direct light is the moon or fire / lamp light from other
+    // directions, which it must not shape - and the canopy is matte to it: no glitter at night)
+    float dayT = ss(-0.02, 0.10, uSunDir.y);
+    sunR = mix(vec3(1.0), sunR, dayT);
     S.albedo = mix(S.albedo, S.albedo * skyR, bK);
     S.canopyK *= mix(vec3(1.0), sunR, bK);
-    S.specK = 1.0 - 0.85 * bK;                         // the cuticle sheen is part of the learned BRF
+    S.specK = 1.0 - bK * (1.0 - 0.15 * dayT);          // the cuticle sheen is part of the learned BRF
   }
 #endif
 #ifdef TERR_MICRO

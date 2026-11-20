@@ -163,7 +163,10 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         if (uTurfShell.z > 0.0) c *= 1.0 - 0.55 * (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc));
         diffuseColor.rgb = c;
         diffuseColor.a = a;`)
-      .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
+      .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);')
+      // the shells are a canopy of blades, matte at their scale: their sheen is in the turf reflectance of the ground
+      // below; a GGX lobe on alpha-speckled sheets glitters (grazing fire / lamp light at night, a low sun)
+      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n        reflectedLight.directSpecular *= 0.0; reflectedLight.indirectSpecular *= 0.3;');
   };
   mat.customProgramCacheKey = () => `skyward-turf-${N}`;
   const mesh = new THREE.Mesh(geo, mat);
