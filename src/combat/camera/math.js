@@ -251,7 +251,8 @@ export { clamp, saturate, smoothstep, dampK };
  * Fight-view defaults (see README "Fight chase view" for the reasoning). Distances are multiples of the aircraft size.
  *  rollFollow   fraction of the jet's bank the camera takes (0 = horizon locked, 1 = rolls with the jet)
  *  biasMax      most the view turns toward the target (deg); biasStart / biasFull: target angle off the view where the
- *               bias starts / reaches full; biasUp / biasDown: vertical limits (the jet must stay in frame)
+ *               bias starts / reaches full; biasUp / biasDown: vertical limits (the jet must stay in frame);
+ *               biasFadeFrom / biasFadeTo: the lean fades out again for targets this far behind (deg)
  *  turnLead     fraction of the flight path's turn the view leads into; turnMax its limit (deg)
  *  fovWide      extra FOV (deg) with the target far off the nose (30°→120°)
  *  zoom         gun zoom: FOV shrinks by this fraction with the lead solution within zoomIn deg and in range (leaves at zoomOut)
@@ -259,6 +260,7 @@ export { clamp, saturate, smoothstep, dampK };
  */
 export const FIGHT = {
   dist: 1.55, rollFollow: 0.3, biasMax: 20, biasStart: 6, biasFull: 70, biasUp: 15, biasDown: 8,
+  biasFadeFrom: 105, biasFadeTo: 150,
   turnLead: 0.5, turnMax: 7, fovBase: 56, fovWide: 12, zoom: 0.24, zoomIn: 4, zoomOut: 7, pullG: 0.12, pullAB: 0.08,
 };
 
@@ -270,7 +272,8 @@ export const FIGHT = {
 export function fightBias(out, yawT, pitchT, o = FIGHT, maxYaw = Infinity) {
   const off = Math.hypot(yawT, pitchT);
   if (!(off > 1e-6)) { out.yaw = 0; out.pitch = 0; return out; }
-  const k = smoothstep(o.biasStart * DEG, o.biasFull * DEG, off);
+  // targets far behind get no lean (the edge cues / padlock handle them; leaning would only push the jet aside)
+  const k = smoothstep(o.biasStart * DEG, o.biasFull * DEG, off) * (1 - smoothstep(o.biasFadeFrom * DEG, o.biasFadeTo * DEG, off));
   const mag = Math.min(off, o.biasMax * DEG) * k;
   out.yaw = clamp(yawT / off * mag, -Math.min(o.biasMax * DEG, maxYaw), Math.min(o.biasMax * DEG, maxYaw));
   out.pitch = clamp(pitchT / off * mag, -o.biasDown * DEG, o.biasUp * DEG);

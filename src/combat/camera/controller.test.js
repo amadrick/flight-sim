@@ -203,6 +203,7 @@ test('pure helpers: fight bias, gun zoom gate, feel amount, kill cam duration', 
   fightBias(o, 80 * DEG, 0); assert.ok(Math.abs(o.yaw - FIGHT.biasMax * DEG) < 1e-9);
   fightBias(o, 0, 80 * DEG); assert.ok(o.pitch <= FIGHT.biasUp * DEG + 1e-9);
   fightBias(o, 0, -80 * DEG); assert.ok(o.pitch >= -FIGHT.biasDown * DEG - 1e-9);
+  fightBias(o, 175 * DEG, 0); assert.ok(Math.abs(o.yaw) < 1e-9, 'no lean for a target dead astern');
   fightBias(o, 90 * DEG, 0, FIGHT, 10 * DEG); assert.ok(o.yaw <= 10 * DEG + 1e-9);
   const g = { on: false };
   assert.equal(gunZoomGate(g, 5 * DEG, true), false);
