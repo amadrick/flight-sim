@@ -3,6 +3,7 @@
 // Pure shaping logic lives in logic.js, the key map in bindings.js (both unit-tested, DOM-free).
 import { clamp, approach, shapeAxis, shapeStick, stepKeyAxis, stepThrottle, snapDetent, milLever, AB_DETENT } from './logic.js';
 import { KEY_TABLE, CODE_MAP, BINDINGS, GAMEPAD_BINDINGS } from './bindings.js';
+import { createTouchControls } from './touch.js';
 
 const CSS = `
 .inp-yoke{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none!important;z-index:5}
@@ -11,33 +12,6 @@ const CSS = `
 .inp-yoke-dead{position:absolute;width:14px;height:14px;border:1px solid rgba(93,255,155,.45);border-radius:50%;transform:translate(-50%,-50%)}
 .inp-yoke-dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--hud,#5dff9b);box-shadow:0 0 6px rgba(93,255,155,.8),0 0 0 1px rgba(0,0,0,.5)}
 .inp-yoke-tag{position:absolute;transform:translate(-50%,0);font:600 11px/1 var(--font-mono,monospace);letter-spacing:.14em;text-transform:uppercase;color:var(--hud,#5dff9b);opacity:.8;white-space:nowrap;text-shadow:0 1px 2px #000}
-.inp-touch{position:absolute;inset:0;pointer-events:none!important;touch-action:none;z-index:6;font-family:var(--font-display,'Arial Narrow',Arial,sans-serif)}
-.inp-touch[hidden]{display:none}
-.inp-touch>*{pointer-events:auto;touch-action:none;-webkit-tap-highlight-color:transparent}
-.inp-zone{position:absolute;left:0;top:26%;bottom:0;width:60%;pointer-events:auto}
-.inp-base,.inp-knob{position:absolute;border-radius:50%;pointer-events:none!important;transform:translate(-50%,-50%);display:none}
-.inp-base{width:120px;height:120px;border:2px solid rgba(230,237,243,.38);background:rgba(12,18,24,.28)}
-.inp-base::after{content:"";position:absolute;inset:34px;border:1px dashed rgba(230,237,243,.22);border-radius:50%}
-.inp-knob{width:58px;height:58px;background:rgba(255,176,0,.55);border:2px solid rgba(255,214,128,.85)}
-.inp-hint{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));width:120px;height:120px;margin-left:0;border:2px dashed rgba(230,237,243,.22);border-radius:50%;pointer-events:none!important;display:grid;place-items:center;color:rgba(230,237,243,.4);font-size:12px;letter-spacing:.16em}
-.inp-pnl{position:absolute;background:rgba(12,18,24,.5);border:1px solid rgba(143,161,179,.4);border-radius:12px;color:var(--fg,#e6edf3)}
-.inp-thr{right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));width:56px;height:clamp(150px,44vh,300px)}
-.inp-thr-fill{position:absolute;left:4px;right:4px;bottom:4px;border-radius:8px;background:linear-gradient(0deg,rgba(255,176,0,.25),rgba(255,176,0,.6));pointer-events:none;height:0}
-.inp-thr-knob{position:absolute;left:2px;right:2px;height:8px;margin-bottom:-4px;border-radius:4px;background:var(--accent,#ffb000);box-shadow:0 0 6px rgba(255,176,0,.8);pointer-events:none}
-.inp-thr-mil{position:absolute;left:-4px;right:-4px;border-top:2px dashed var(--ok,#4cc9f0);pointer-events:none}
-.inp-thr-mil::after{content:"MIL";position:absolute;right:8px;top:-13px;font:600 10px/1 var(--font-mono,monospace);letter-spacing:.1em;color:var(--ok,#4cc9f0)}
-.inp-lbl{position:absolute;left:0;right:0;top:-18px;text-align:center;font-size:12px;letter-spacing:.18em;color:var(--fg-dim,#8fa1b3);pointer-events:none;text-transform:uppercase}
-.inp-thr-pct{position:absolute;left:0;right:0;top:6px;text-align:center;font:600 12px/1 var(--font-mono,monospace);color:var(--fg,#e6edf3);pointer-events:none}
-.inp-rud{left:50%;transform:translateX(-50%);bottom:max(16px,env(safe-area-inset-bottom,0px));width:clamp(140px,30vw,240px);height:46px}
-.inp-rud::before{content:"";position:absolute;left:50%;top:8px;bottom:8px;border-left:1px solid rgba(143,161,179,.6)}
-.inp-rud-knob{position:absolute;top:5px;bottom:5px;width:34px;margin-left:-17px;left:50%;border-radius:10px;background:rgba(255,176,0,.55);border:2px solid rgba(255,214,128,.85);pointer-events:none}
-.inp-rud-lbl{position:absolute;top:-16px;left:0;right:0;text-align:center;font-size:11px;letter-spacing:.18em;color:var(--fg-dim,#8fa1b3);pointer-events:none}
-.inp-btns{position:absolute;right:calc(max(16px,env(safe-area-inset-right,0px)) + 68px);bottom:calc(max(16px,env(safe-area-inset-bottom,0px)) + 62px);display:grid;grid-template-columns:repeat(2,48px);gap:8px}
-.inp-btn{height:48px;min-width:48px;display:grid;place-items:center;border-radius:12px;background:rgba(12,18,24,.5);border:1px solid rgba(143,161,179,.45);color:var(--fg,#e6edf3);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;user-select:none;-webkit-user-select:none}
-.inp-btn.on,.inp-btn.down{background:rgba(255,176,0,.5);border-color:var(--accent,#ffb000);color:#fff}
-.inp-top{position:absolute;top:max(10px,env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));display:flex;gap:8px}
-.inp-top .inp-btn{width:58px}
-@media (prefers-reduced-motion:reduce){.inp-touch *{transition:none!important}}
 `;
 
 const MODES = new Set(['keyboard', 'mouse', 'gamepad', 'touch']);
@@ -56,6 +30,7 @@ export async function createInput(ctx) {
     zoomDelta: 0,                // wheel notches this frame, + = zoom IN (scroll away from you)
     mouseYoke: false,
     touchEnabled: false,
+    touch: null,                 // touch UI API, see below (always set)
     gamepadConnected: false,
     update, setMouseYoke, setTouch,
     dispose,
@@ -251,118 +226,47 @@ export async function createInput(ctx) {
     if (activity) setMode('gamepad');
   }
 
-  // ---- touch -------------------------------------------------------------------------------------------------
-  const touch = { stick: { id: -1, ox: 0, oy: 0, x: 0, y: 0 }, thr: { id: -1 }, rud: { id: -1, v: 0 }, roll: 0, pitch: 0, yaw: 0, brake: false, absThr: null, held: new Map() };
+  // ---- touch (touch.js: layout, stick, throttle, rudder, buttons, extra-button slots) ----------------------------
   const coarse = (() => { try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch { return false; } })();
-  let touchEl = null, tBase, tKnob, tThrFill, tThrKnob, tThrPct, tRudKnob, tThrMil, tBtnSpd, tHint;
+  let touchUI = null;
+  const touch = { roll: 0, pitch: 0, yaw: 0, brake: false, absThr: null, thrActive: false };
   let touchVisible = false;
-  const tRect = { zone: null };
-
+  // ctx.input.touch exists even before (or without) the touch UI: extra buttons added early are kept and appear when
+  // the touch UI is built (touch screens, or setTouch(true)). See INTEGRATION.md "Extra touch buttons".
+  const pendingButtons = [];
+  input.touch = {
+    get visible() { return !!(touchUI && touchUI.api.visible); },
+    get layout() { return touchUI ? touchUI.api.layout : null; },
+    addButton(spec) {
+      if (touchUI) return touchUI.api.addButton(spec);
+      if (!spec || !spec.id || pendingButtons.some((p) => p.spec.id === spec.id)) return null;
+      // handle that works before and after the UI exists
+      const p = { spec, real: null, active: false, label: null, sub: null };
+      pendingButtons.push(p);
+      return {
+        get el() { return p.real ? p.real.el : null; },
+        setActive: (on) => { p.active = !!on; p.real && p.real.setActive(on); },
+        setLabel: (t) => { p.label = t; p.real && p.real.setLabel(t); },
+        setSub: (t) => { p.sub = t; p.real && p.real.setSub(t); },
+        remove: () => { const i = pendingButtons.indexOf(p); if (i >= 0) pendingButtons.splice(i, 1); return input.touch.removeButton(spec.id); },
+      };
+    },
+    removeButton(id) { return touchUI ? touchUI.api.removeButton(id) : false; },
+    showHints(sec) { if (touchUI) touchUI.api.showHints(sec); },
+  };
   function buildTouch() {
-    touchEl = document.createElement('div'); touchEl.className = 'inp-touch'; touchEl.hidden = true;
-    touchEl.innerHTML = `
-      <div class="inp-zone"></div>
-      <div class="inp-hint">ROLL / PITCH</div>
-      <div class="inp-base"></div><div class="inp-knob"></div>
-      <div class="inp-pnl inp-thr"><div class="inp-lbl">THR</div><div class="inp-thr-fill"></div><div class="inp-thr-mil" hidden></div><div class="inp-thr-knob"></div><div class="inp-thr-pct">0</div></div>
-      <div class="inp-pnl inp-rud"><div class="inp-rud-lbl">RUDDER</div><div class="inp-rud-knob"></div></div>
-      <div class="inp-btns"></div>
-      <div class="inp-top"></div>`;
-    uiRoot.appendChild(touchEl);
-    const $ = (s) => touchEl.querySelector(s);
-    tBase = $('.inp-base'); tKnob = $('.inp-knob'); tHint = $('.inp-hint');
-    tThrFill = $('.inp-thr-fill'); tThrKnob = $('.inp-thr-knob'); tThrPct = $('.inp-thr-pct'); tThrMil = $('.inp-thr-mil');
-    tRudKnob = $('.inp-rud-knob');
-    const zone = $('.inp-zone'), thr = $('.inp-thr'), rud = $('.inp-rud');
-
-    // floating virtual stick
-    const R = () => clamp(0.13 * Math.min(window.innerWidth, window.innerHeight), 44, 64);
-    const st = touch.stick;
-    zone.addEventListener('pointerdown', (e) => {
-      if (st.id !== -1) return;
-      e.preventDefault(); setMode('touch'); st.id = e.pointerId; try { zone.setPointerCapture(e.pointerId); } catch {}
-      const r = zone.getBoundingClientRect();
-      st.ox = clamp(e.clientX - r.left, 62, r.width - 62) + r.left; st.oy = clamp(e.clientY - r.top, 62, r.height - 62) + r.top;
-      st.x = e.clientX; st.y = e.clientY;
-      tBase.style.display = tKnob.style.display = 'block'; tHint.style.display = 'none';
-      moveStick(e.clientX, e.clientY);
-    });
-    zone.addEventListener('pointermove', (e) => { if (e.pointerId === st.id) { e.preventDefault(); moveStick(e.clientX, e.clientY); } });
-    const endStick = (e) => { if (e.pointerId === st.id) stickUp(); };
-    zone.addEventListener('pointerup', endStick); zone.addEventListener('pointercancel', endStick); zone.addEventListener('lostpointercapture', endStick);
-    function moveStick(px, py) {
-      const rad = R();
-      let dx = px - st.ox, dy = py - st.oy; const d = Math.hypot(dx, dy);
-      if (d > rad) { const k = (d - rad) / d; st.ox += dx * k; st.oy += dy * k; dx = px - st.ox; dy = py - st.oy; }  // origin trails the thumb
-      const r = zone.getBoundingClientRect(), pr = touchEl.getBoundingClientRect();
-      tBase.style.left = (st.ox - pr.left) + 'px'; tBase.style.top = (st.oy - pr.top) + 'px';
-      tKnob.style.left = (px - pr.left - (px - st.ox - dx) + 0) + 'px'; tKnob.style.top = (py - pr.top - (py - st.oy - dy)) + 'px';
-      const kx = clamp(dx / rad, -1, 1), ky = clamp(dy / rad, -1, 1);
-      shapeStick(kx, ky, stk, 0.07, 0.4); touch.roll = stk.x; touch.pitch = stk.y;
-      void r;
+    touchUI = createTouchControls(ctx, { setMode, command, toggleSpeedbrake, hasAB, controls: c });
+    for (const p of pendingButtons) {
+      p.real = touchUI.api.addButton(p.spec);
+      if (p.real) { if (p.active) p.real.setActive(true); if (p.label != null) p.real.setLabel(p.label); if (p.sub != null) p.real.setSub(p.sub); }
     }
-    function stickUp() { st.id = -1; touch.roll = touch.pitch = 0; tBase.style.display = tKnob.style.display = 'none'; tHint.style.display = 'grid'; }
-    touch.stickUp = stickUp;
-
-    // throttle slider (absolute)
-    const tr = touch.thr;
-    const thrSet = (e) => {
-      const r = thr.getBoundingClientRect();
-      const pad_ = 14, h = Math.max(1, r.height - 2 * pad_);
-      let v = clamp(1 - (e.clientY - r.top - pad_) / h, 0, 1);
-      if (v < 0.03) v = 0; if (v > 0.985) v = 1;
-      touch.absThr = snapDetent(v, hasAB(), 0.04);
-    };
-    thr.addEventListener('pointerdown', (e) => { if (tr.id !== -1) return; e.preventDefault(); setMode('touch'); tr.id = e.pointerId; try { thr.setPointerCapture(e.pointerId); } catch {} thrSet(e); });
-    thr.addEventListener('pointermove', (e) => { if (e.pointerId === tr.id) { e.preventDefault(); thrSet(e); } });
-    const endThr = (e) => { if (e.pointerId === tr.id) { tr.id = -1; } };
-    thr.addEventListener('pointerup', endThr); thr.addEventListener('pointercancel', endThr); thr.addEventListener('lostpointercapture', endThr);
-
-    // rudder twist slider (springs to centre)
-    const ru = touch.rud;
-    const rudSet = (e) => { const r = rud.getBoundingClientRect(); const v = clamp(((e.clientX - r.left) / r.width - 0.5) * 2 / 0.86, -1, 1); touch.yaw = shapeAxis(v, 0.06, 0.2); ru.v = v; };
-    rud.addEventListener('pointerdown', (e) => { if (ru.id !== -1) return; e.preventDefault(); setMode('touch'); ru.id = e.pointerId; try { rud.setPointerCapture(e.pointerId); } catch {} rudSet(e); });
-    rud.addEventListener('pointermove', (e) => { if (e.pointerId === ru.id) { e.preventDefault(); rudSet(e); } });
-    const endRud = (e) => { if (e.pointerId === ru.id) { ru.id = -1; ru.v = 0; touch.yaw = 0; } };
-    rud.addEventListener('pointerup', endRud); rud.addEventListener('pointercancel', endRud); rud.addEventListener('lostpointercapture', endRud);
-
-    // buttons
-    const mk = (parent, label, aria, fn, holdKey) => {
-      const b = document.createElement('div'); b.className = 'inp-btn'; b.textContent = label; b.setAttribute('role', 'button'); b.setAttribute('aria-label', aria);
-      let pid = -1;
-      b.addEventListener('pointerdown', (e) => {
-        if (pid !== -1) return;
-        e.preventDefault(); setMode('touch'); pid = e.pointerId; b.classList.add('down'); try { b.setPointerCapture(e.pointerId); } catch {}
-        if (holdKey) touch[holdKey] = true; else fn();
-      });
-      const up = (e) => { if (e.pointerId !== pid) return; pid = -1; b.classList.remove('down'); if (holdKey) touch[holdKey] = false; };
-      b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
-      b._release = () => { pid = -1; b.classList.remove('down'); if (holdKey) touch[holdKey] = false; };
-      parent.appendChild(b); return b;
-    };
-    const btns = $('.inp-btns'), top = $('.inp-top');
-    mk(btns, 'Gear', 'Landing gear', () => command('gearToggle'));
-    mk(btns, 'Flap −', 'Flaps retract', () => command('flapsUp'));
-    mk(btns, 'Brake', 'Wheel brakes (hold)', null, 'brake');
-    mk(btns, 'Flap +', 'Flaps extend', () => command('flapsDown'));
-    tBtnSpd = mk(btns, 'Spd Brk', 'Speedbrake', () => toggleSpeedbrake());
-    mk(btns, 'Cam', 'Next camera', () => command('cameraNext'));
-    mk(top, 'Pause', 'Pause', () => command('pause'));
-    mk(top, 'Menu', 'Menu', () => command('menu'));
-    touch.buttons = touchEl.querySelectorAll('.inp-btn');
   }
-
-  function touchReleaseAll() {
-    if (!touchEl) return;
-    touch.stickUp && touch.stickUp();
-    touch.thr.id = -1; touch.rud.id = -1; touch.rud.v = 0; touch.yaw = 0; touch.brake = false; touch.absThr = null;
-    touch.buttons.forEach((b) => b._release && b._release());
-  }
+  function touchReleaseAll() { if (touchUI) touchUI.releaseAll(); }
   function setTouch(on_) {
     on_ = !!on_;
-    if (on_ && !touchEl) buildTouch();
+    if (on_ && !touchUI) buildTouch();
     input.touchEnabled = on_;
-    if (!on_) { touchReleaseAll(); if (touchEl) touchEl.hidden = true; touchVisible = false; }
+    if (!on_ && touchUI) { touchUI.setShown(false); touchVisible = false; }
   }
   setTouch(raw.touch === '1' || (coarse && raw.touch !== '0'));
 
@@ -370,7 +274,7 @@ export async function createInput(ctx) {
   unsubs.push(ctx.events.on('session:start', () => {
     // adopt whatever lever position physics set; just clear transient detent/ramp state
     thrKey.t = thrPad.t = 0; thrKey.latched = thrPad.latched = false; thrKey.dir = thrPad.dir = 0;
-    pad.lastAbs = null; touch.absThr = null;
+    pad.lastAbs = null;
   }));
 
   // ---- per-frame update -------------------------------------------------------------------------------------
@@ -381,10 +285,11 @@ export async function createInput(ctx) {
     const ab = hasAB();
 
     // visibility of touch UI
-    if (touchEl) {
+    if (touchUI) {
       const show = input.touchEnabled && !open && !(ctx.cameraRig && ctx.cameraRig.mode === 'showcase');
-      if (show !== touchVisible) { touchVisible = show; touchEl.hidden = !show; if (!show) touchReleaseAll(); }
+      if (show !== touchVisible) { touchVisible = show; touchUI.setShown(show); }
     }
+    const ts = touchUI ? touchUI.st : touch;
     yokeEl.hidden = !(input.mouseYoke && !open);
 
     pollPad(dt);
@@ -417,9 +322,9 @@ export async function createInput(ctx) {
       if (Math.abs(pad.pitch) > ANALOG_EPS) pitch = pad.pitch;
       if (Math.abs(pad.yaw) > ANALOG_EPS) yaw = pad.yaw;
       if (touchVisible) {
-        if (Math.abs(touch.roll) > ANALOG_EPS) roll = touch.roll;
-        if (Math.abs(touch.pitch) > ANALOG_EPS) pitch = touch.pitch;
-        if (Math.abs(touch.yaw) > ANALOG_EPS) yaw = touch.yaw;
+        if (Math.abs(ts.roll) > ANALOG_EPS) roll = ts.roll;
+        if (Math.abs(ts.pitch) > ANALOG_EPS) pitch = ts.pitch;
+        if (Math.abs(ts.yaw) > ANALOG_EPS) yaw = ts.yaw;
       }
     }
     c.roll = clamp(roll, -1, 1); c.pitch = clamp(pitch, -1, 1); c.yaw = clamp(yaw, -1, 1);
@@ -431,12 +336,12 @@ export async function createInput(ctx) {
       lever = stepThrottle(thrKey, lever, kd, dt, ab);
       if (pad.rate !== 0 || thrPad.dir !== 0) lever = stepThrottle(thrPad, lever, pad.rate, dt, ab);
       if (pad.abs !== null) lever = pad.abs;
-      if (touchVisible && touch.thr.id !== -1 && touch.absThr !== null) lever = touch.absThr;
+      if (touchVisible && ts.thrActive && ts.absThr !== null) lever = ts.absThr;
       c.throttle = clamp(lever, 0, 1);
     }
 
     // brakes (held), gently ramped
-    const brakeOn = !open && (held.has('Space') || pad.brakes || (touchVisible && touch.brake));
+    const brakeOn = !open && (held.has('Space') || pad.brakes || (touchVisible && ts.brake));
     c.brakes = approach(c.brakes, brakeOn ? 1 : 0, 8 * dt);
 
     // camera look: mouse drag (springs back) / right stick; deltas for orbit cameras
@@ -455,31 +360,13 @@ export async function createInput(ctx) {
     input.zoomDelta = open ? 0 : -mouse.zoomPend; mouse.zoomPend = 0;
     c.zoom = clamp(approach(c.zoom + input.zoomDelta * 0.25, 0, 3 * dt), -1, 1);
 
-    if (touchVisible) updateTouchUI();
-  }
-
-  let lastThr = -1, lastAB = null, lastSb = -1;
-  function updateTouchUI() {
-    const t = c.throttle;
-    if (t !== lastThr) {
-      lastThr = t;
-      const pct = (t * 100).toFixed(1);
-      tThrFill.style.height = `calc((100% - 28px) * ${t.toFixed(3)} + 0px)`; tThrFill.style.bottom = '14px';
-      tThrKnob.style.bottom = `calc(14px + (100% - 28px) * ${t.toFixed(3)})`;
-      tThrPct.textContent = hasAB() && t > AB_DETENT + 0.005 ? 'AB' : Math.round(t * (hasAB() ? 100 / AB_DETENT : 100)) + '%';
-      void pct;
-    }
-    const ab = hasAB();
-    if (ab !== lastAB) { lastAB = ab; tThrMil.hidden = !ab; tThrMil.style.bottom = `calc(14px + (100% - 28px) * ${AB_DETENT})`; }
-    tRudKnob.style.transform = `translateX(${(touch.rud.v * 0.43 * tRudKnob.parentNode.clientWidth).toFixed(1)}px)`;
-    const sb = c.speedbrake > 0.5 ? 1 : 0;
-    if (sb !== lastSb) { lastSb = sb; tBtnSpd.classList.toggle('on', !!sb); }
+    if (touchVisible) touchUI.update(dt);
   }
 
   function dispose() {
     for (const [t, ev, fn, opt] of listeners) t.removeEventListener(ev, fn, opt);
     for (const u of unsubs) { try { u && u(); } catch {} }
-    style.remove(); yokeEl.remove(); if (touchEl) touchEl.remove();
+    style.remove(); yokeEl.remove(); if (touchUI) touchUI.dispose();
   }
 
   return input;

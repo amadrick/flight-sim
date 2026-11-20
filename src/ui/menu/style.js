@@ -327,8 +327,8 @@ export const CSS = /* css */`
 .menu-corner { position: absolute; z-index: 15; top: var(--gt); right: var(--gr); display: flex; gap: 8px; pointer-events: auto; margin-top: 4px; transition: opacity 0.6s; }
 .menu-corner.dim { opacity: 0.55; }
 .menu-corner.dim:hover, .menu-corner:focus-within { opacity: 1; }
-.menu-corner.touch { right: calc(var(--gr) + 136px); top: max(10px, env(safe-area-inset-top, 0px)); margin-top: 0; }
-.menu-corner.touch #menu-fab, .menu-corner.touch #menu-help { display: none; }
+/* touch screens: the touch layout (input/touch.js) owns the top-right corner (Camera + Menu); fullscreen is in Settings */
+.menu-corner.touch { display: none !important; }
 .menu-cbtn { --r: var(--r-pill); height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; box-sizing: border-box; color: var(--fg);
   font-size: 13px; font-weight: 600; letter-spacing: 0.04em; transition: transform 0.25s var(--spring); }
 .menu-cbtn:active { transform: scale(0.94); }
@@ -351,16 +351,6 @@ export const CSS = /* css */`
 
 .menu-act.glass-tint, .menu-btn.glass-tint, .menu-fly.glass-tint { background: var(--tint-bg); color: var(--accent-ink); box-shadow: var(--tint-shadow); }
 .menu-act.glass-tint:hover, .menu-btn.glass-tint:hover { background: var(--tint-bg); filter: brightness(1.06); }
-
-/* touch flight controls (input module) restyled as clear glass */
-.inp-pnl, .inp-btn, .inp-base { background: rgb(var(--glass-rgb) / var(--glass-a-clear)) !important; -webkit-backdrop-filter: blur(12px) saturate(1.6); backdrop-filter: blur(12px) saturate(1.6);
-  border: 0 !important; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22), inset 0 1px 0 rgb(255 255 255 / 0.3), 0 6px 18px rgb(0 0 0 / 0.2) !important; }
-.inp-pnl, .inp-btn { border-radius: 18px !important; }
-.inp-btn.on, .inp-btn.down { background: rgb(255 176 0 / 0.55) !important; color: var(--accent-ink) !important; }
-.inp-knob, .inp-rud-knob { background: radial-gradient(circle at 50% 35%, #fff, #dfe6ee) !important; border: 0 !important; box-shadow: 0 3px 10px rgb(0 0 0 / 0.35) !important; }
-.inp-thr-knob { box-shadow: 0 1px 6px rgb(0 0 0 / 0.4) !important; }
-.inp-hint { border: 1.5px dashed rgb(255 255 255 / 0.3) !important; }
-:root.ui-lite .inp-pnl, :root.ui-lite .inp-btn, :root.ui-lite .inp-base { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgb(var(--glass-rgb) / 0.7) !important; }
 
 /* ---------- motion: panels grow out of the control that opened them -------------------------------- */
 @keyframes menu-rise { from { opacity: 0; transform: translate(-50%, 14px) scale(0.96); } to { opacity: 1; transform: translate(-50%, 0); } }
@@ -494,6 +484,24 @@ export const CSS = /* css */`
   .menu-tab svg { display: none; }
   .menu-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-opts { grid-template-columns: 1fr; }
+}
+/* touch screens: every control is at least 44 px tall (Apple HIG / WCAG 2.5.5); switches keep their look with a
+   transparent border that widens the hit area */
+@media (pointer: coarse) {
+  .menu-cap { height: 48px; }
+  .menu-tab { height: 44px; }
+  .menu-tabs { padding: 2px; }
+  .menu-seg > .menu-segbtn { min-height: 44px; }
+  .menu-chip, .menu-todchips .menu-chip { min-height: 44px; }
+  .menu-rwy { height: 44px; min-width: 60px; }
+  .menu-back, .menu-more { width: 44px; height: 44px; }
+  .menu-switch { box-sizing: content-box; border: 6px solid transparent; background-clip: padding-box; }
+  .menu-cbtn { height: 44px; min-width: 44px; }
+  .menu-cbtn.menu-cbtn-icon { width: 44px; }
+  .menu-range { height: 44px; }
+  .menu-range::-webkit-slider-thumb { width: 30px; height: 30px; margin-top: -11px; }
+  .menu-keyrow { min-height: 44px; }
+  .menu-device-touch { display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
   .menu-root *, .menu-crash, .menu-corner, .menu-corner * { animation: none !important; transition: none !important; }

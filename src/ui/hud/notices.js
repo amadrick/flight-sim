@@ -127,7 +127,7 @@ export function createNotices(ctx) {
       if (!ctx.params.test) { try { localStorage.setItem('skyward.hud.hint', String(n + 1)); } catch {} }
     }
   }
-  function showHint(life) { hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
+  function showHint(life) { if (ctx.input?.touchEnabled) return; hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
   function hideHint() { hintT = -1; hint.classList.add('off'); hint.hidden = true; }
   /** F1 / help button: bring the card back, or put it away. */
   function toggleHint() {
@@ -182,9 +182,15 @@ export function createNotices(ctx) {
   ctx.events.on('crash', (e) => { lastCrashReason = e?.reason || ''; });
   let lastCrashReason = '';
 
-  let lastReason = null;
+  let lastReason = null, toastTop = null;
   return {
     toast,
+    /** Touch layout: start the toast stack below the HUD region (px from the top), or null for the default spot. */
+    setToastTop(px) {
+      px = px == null ? null : Math.round(px);
+      if (px === toastTop) return;
+      toastTop = px; toasts.style.top = px == null ? '' : px + 'px';
+    },
     onSession,
     toggleHint,
     get hintVisible() { return hintT >= 0 && hintT < hintLife; },

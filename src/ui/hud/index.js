@@ -108,7 +108,7 @@ export async function createHud(ctx) {
   ctx.events.on('quality:change', () => { const k = filterKey; filterKey = ''; setFilter(k); });
 
   const camPos = { x: 0, y: 0, z: 0 };
-  const E = { s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
+  const E = { box: null, s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
   let t = 0;
 
   const hud = {
@@ -130,7 +130,7 @@ export async function createHud(ctx) {
       const show = userVisible && ctx.params.hud !== false && !menuOpen && mode !== 'showcase';
       notices.update(realDt, show, p);
       if (dirty) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); dirty = false; }
-      if (!show || !p || !p.state) { syncPlate(false); return; }
+      if (!show || !p || !p.state) { syncPlate(false); notices.setToastTop(null); return; }
       const s = p.state;
       updateNav(p);
       const interior = rig?.isInterior ?? (mode === 'cockpit');
@@ -140,6 +140,10 @@ export async function createHud(ctx) {
       const wp = rig?.worldPosition;
       if (wp && isFinite(wp.x)) { camPos.x = wp.x; camPos.y = wp.y; camPos.z = wp.z; } else { camPos.x = s.position.x; camPos.y = s.position.y; camPos.z = s.position.z; }
       E.camPos = camPos;
+      // touch screens: draw in the HUD region the touch layout reserves (clear of stick, throttle and buttons)
+      const tl = ctx.input?.touch?.layout || null;
+      E.box = tl && tl.hud && tl.hud.w > 120 && tl.hud.h > 60 ? tl.hud : null;
+      let below = null;
       if (interior && p.def.hudType !== 'airliner') {
         const night = num(ctx.env?.nightFactor, 0);
         setFilter(night > 0.7 ? 'night' : night > 0.3 ? 'dusk' : 'day');
@@ -152,11 +156,14 @@ export async function createHud(ctx) {
         setFilter('none');
         deck.draw(g, E);
         syncPlate(false);
+        if (E.box) below = deck.boxBottom;
       } else {
         setFilter('ext');
         ext.draw(g, E);
         syncPlate(true);
+        const r = ext.rect; if (E.box && r) below = r.y + r.h + 40;   // room for the warning chip under the strip
       }
+      notices.setToastTop(below);
     },
   };
   return hud;

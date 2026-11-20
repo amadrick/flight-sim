@@ -16,6 +16,7 @@ import {
   DEFAULT_BINDINGS, BINDING_GROUPS, bindingSegments, TOD_PRESETS, START_MODES, QUALITY_NOTES,
   CATEGORY_CODE, isCommercial, specRows, engineLine, metar, clearanceLine, fmtClock, group3, toFt, toKt, phaseOf, AC_FILTERS,
 } from './data.js';
+import { TOUCH_HELP, defaultQualityFor } from './data.js';
 
 const STORE_KEY = 'skyward.menu.v1';
 const WX_CODE = { clear: 'SKC', fair: 'FEW', scattered: 'SCT', broken: 'BKN', overcast: 'OVC -RA', storm: 'TSRA CB' };
@@ -88,6 +89,11 @@ export async function createMenu(ctx) {
   };
   if (saved.airport === sel.airport) { sel.runway = saved.runway | 0; sel.end = saved.end ? 1 : 0; }
   if (!params.quality && saved.quality && QUALITY_LEVELS[saved.quality] && saved.quality !== ctx.quality.level) ctx.quality.set(saved.quality);
+  else if (!params.quality && !saved.quality) {
+    // first run on a phone / tablet: start at a tier its GPU can hold (the pilot can raise it in Settings)
+    const q = defaultQualityFor(ctx.input?.touchEnabled, window.screen?.width, window.screen?.height, ctx.quality.level);
+    if (q !== ctx.quality.level && QUALITY_LEVELS[q]) ctx.quality.set(q);
+  }
   if (Number.isFinite(saved.volume)) ctx.audio?.setMasterVolume?.(sel.volume);
   let hudOn = params.hud !== false;
 
@@ -305,6 +311,12 @@ export async function createMenu(ctx) {
     // F1 (the in-flight controls card) is handled here and in the HUD, not by input
     if (!src.some(b => /controls card/i.test(b.action || ''))) src = [...src, { group: 'Sim', action: 'Controls card show / hide', keys: ['F1'] }];
     const groupNames = [...BINDING_GROUPS, ...new Set(src.map(b => b.group).filter(g => g && !BINDING_GROUPS.includes(g)))];
+    // touch screens: the on-screen controls come first; the keyboard table stays below for a paired keyboard
+    if (ctx.input?.touchEnabled) {
+      keysWrap.append(h('div', { class: 'menu-keygroup menu-keygroup-touch' },
+        h('div', { class: 'menu-h' }, h('span', { text: 'Touch' })),
+        h('div', { class: 'menu-group' }, TOUCH_HELP.map(([a, k]) => h('div', { class: 'menu-keyrow' }, h('span', { class: 'menu-keyrow-a', text: a }), h('span', { class: 'menu-keyrow-k menu-keytext', text: k }))))));
+    }
     for (const g of groupNames) {
       const rows = src.filter(b => (b.group || 'Sim') === g);
       if (!rows.length) continue;
@@ -328,7 +340,7 @@ export async function createMenu(ctx) {
         h('div', { class: 'menu-devices' },
           h('div', { class: 'menu-device' }, h('b', { text: 'Mouse' }), 'M turns the mouse into a yoke. Right-drag looks around, wheel zooms.'),
           h('div', { class: 'menu-device' }, h('b', { text: 'Gamepad' }), 'Standard controllers connect automatically. Left stick flies, right stick looks.'),
-          h('div', { class: 'menu-device' }, h('b', { text: 'Touch' }), 'On-screen stick and throttle appear on touch screens. Menu, top right, opens this screen.')))));
+          h('div', { class: 'menu-device' }, h('b', { text: 'Touch' }), 'Right thumb flies (drag anywhere on the right), left thumb sets the throttle. Menu, top right, pauses and opens this screen.')))));
 
   // ---- PAUSE ----------------------------------------------------------------------------------------
   const pauseSub = h('div', { class: 'menu-pause-sub' });
