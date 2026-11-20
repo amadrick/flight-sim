@@ -5,7 +5,7 @@ import { VERTEX_PULL_GLSL, VMAX } from './treegen.js';
 import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL, vegDebug, VEG_DBG_GLSL, VEG_SM_COVER_GLSL } from './common.js';
 import { TREE_CELL } from './species.js';
 
-export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
+export function createNearTrees(ctx, { L, Gn, U, neuralGLSL, baked = true, under = false }) {
   const geo = new THREE.InstancedBufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(VMAX * 3), 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(VMAX * 3).fill(1), 3));
@@ -20,8 +20,12 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
     vec4 vM = vegMapAt(vCell);
     int vS = int(vM.g + 0.5);
     vec2 vBase = vegCellRXZ(vCell);
+    float vH = vM.r;
+    #ifdef VEG_UNDER
+      vH = vegUnder(vCell, vM, vBase, vS);
+    #endif
     float vDist = distance(vBase, uTerrCam.xz);
-    float vSize = vM.r * step(vDist, uVegRange.x + 2.0);
+    float vSize = vH * step(vDist, uVegRange.x + 2.0);
     vec4 t0, t1, t2;
     vegFetch(vS, gl_VertexID, t0, t1, t2);
     vec2 vh = vegHash(vCell + 60000.0), vh2 = vegHash(vCell + 90000.0);
@@ -63,6 +67,8 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
   const SU = ctx.pipeline?.shadow?.uniforms;
   const smOK = !!(SU && SU.uSunShadowMatrix && SU.uSunShadowRect && SU.uSunShadowParams);
   mat.defines = { VEG_SPEC_DIRECT: '0.3', VEG_SPEC_SKY: '0.1' };
+  if (baked) mat.defines.VEG_BAKED = 1;
+  if (under) mat.defines.VEG_UNDER = 1;
   if (smOK) mat.defines.VEG_SM_COVER = 1;
   if (vegDebug.mode) mat.defines.VEG_DBG = vegDebug.mode;
   mat.onBeforeCompile = (sh) => {
@@ -72,7 +78,7 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
       .replace('#include <common>', `#include <common>
         ${VDECL}
         uniform vec3 uSunDir;
-        varying vec3 vVegAlb; varying vec3 vVegHD; varying vec4 vVegMisc; varying vec3 vVegTrans; varying vec3 vVegWorld;
+        varying vec3 vVegAlb; varying vec3 vVegHD; varying vec4 vVegMisc; varying vec3 vVegTrans; varying vec3 vVegWorld; varying vec4 vVegVis;
         ${transGLSL()}`)
       .replace('#include <beginnormal_vertex>', `${VERT}
         vec3 objectNormal = vegNrm;
@@ -88,8 +94,13 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
         vec2 vSunH = normalize(uSunDir.xz + 1e-4);
         vec2 vRad = vLoc.xz; float vRl = length(vRad);
         vVegHD = vec3(max(t2.x, 0.0), t2.y, vRl > 1e-3 ? dot(vRad / vRl, vSunH) : 0.0);
+        #ifdef VEG_UNDER
+          vVegHD.x = 0.0;           // under the stand's canopy
+        #endif
         vVegMisc = vec4(mix(0.25, 1.0, vM.b), vCover, vConif, step(0.5, vVegKind));
-        vVegWorld = vegPos;`)
+        vVegWorld = vegPos;
+        vec4 vVis = vegFetchVis(vS, gl_VertexID);
+        vVegVis = vec4(vVis.x, vc * vVis.y - vs * vVis.w, vVis.z, vs * vVis.y + vc * vVis.w);`)
       .replace('#include <begin_vertex>', 'vec3 transformed = vegPos;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <dithering_fragment>', VEG_DBG_GLSL)
@@ -110,7 +121,7 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);')      // crown normals: no back-face flip
       .replace('#include <aomap_fragment>', VEG_LIGHT_GLSL.replace(/vVegTrans/g, 'vegTransCol'));
   };
-  mat.customProgramCacheKey = () => 'skyward-veg-near';
+  mat.customProgramCacheKey = () => 'skyward-veg-near' + (under ? '-u' : '') + (baked ? '-b' : '');
 
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
   depth.onBeforeCompile = (sh) => {
@@ -125,10 +136,11 @@ export function createNearTrees(ctx, { L, Gn, U, neuralGLSL }) {
         ${ALPHA}`)
       .replace('void main() {', 'void main() {\n vec4 vFo; if (vegAlpha(vFo) < 0.5) discard;');
   };
-  depth.customProgramCacheKey = () => 'skyward-veg-near-depth';
+  if (under) depth.defines = { VEG_UNDER: 1 };
+  depth.customProgramCacheKey = () => 'skyward-veg-near-depth' + (under ? '-u' : '');
 
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = 'veg-near'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
+  mesh.name = under ? 'veg-near-under' : 'veg-near'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
   mesh.castShadow = !!ctx.quality.shadows; mesh.receiveShadow = true;
   mesh.customDepthMaterial = depth;
   return {

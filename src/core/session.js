@@ -13,7 +13,7 @@ export function createSession(ctx) {
     options: null,
     /**
      * opts: { aircraft: id, airport: id, runway: index (0), end: 0|1, start: 'runway'|'air'|'approach',
-     *         alt (m MSL), spd (m/s TAS), hdg (deg true) }
+     *         alt (m MSL), spd (m/s TAS), hdg (deg true), position { x, z } (world, start: 'air' only) }
      */
     start(opts = {}) {
       session.end();
@@ -25,7 +25,7 @@ export function createSession(ctx) {
       if (mode === 'air') {
         const hdg = (opts.hdg ?? ctx.params.hdg ?? rwy.heading);
         const alt = opts.alt ?? ctx.params.alt ?? airport.elevation + 1500;
-        init.position.set(rwy.threshold.x, alt, rwy.threshold.z);
+        init.position.set(opts.position ? opts.position.x : rwy.threshold.x, alt, opts.position ? opts.position.z : rwy.threshold.z);
         init.heading = hdg * DEG; init.speed = opts.spd ?? ctx.params.spd ?? def.specs.cruiseSpeed * 0.8;
         init.onGround = false; init.gearDown = false; init.throttle = 0.7;
       } else if (mode === 'approach') {
@@ -36,7 +36,7 @@ export function createSession(ctx) {
         const x = rwy.threshold.x + rwy.dir.x * 80, z = rwy.threshold.z + rwy.dir.z * 80;
         init.position.set(x, ctx.world.groundHeightAt(x, z) + def.geometry.cgHeight, z);
       }
-      const visual = def.createVisual(ctx, { livery: opts.livery ?? ctx.params.raw?.livery });
+      const visual = def.createVisual(ctx, { livery: opts.livery ?? ctx.params.raw?.livery, stores: opts.stores });
       ctx.scene.add(visual.object3D);
       const sim = createSim(ctx, def, init);
       ctx.player = { id: def.id, def, sim, state: sim.state, visual, airport, runway: rwy };
@@ -70,6 +70,7 @@ export function createSession(ctx) {
     p.visual.object3D.quaternion.copy(p.state.quaternion);
     p.visual.update?.(p.state, dt);
   }
-  ctx.events.on('cmd', ({ name }) => { if (name === 'reset') session.restart(); });
+  // in a combat mission the combat module restarts the whole mission instead
+  ctx.events.on('cmd', ({ name }) => { if (name === 'reset' && !ctx.combat?.active) session.restart(); });
   return session;
 }

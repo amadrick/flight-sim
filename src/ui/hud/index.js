@@ -42,7 +42,9 @@ export async function createHud(ctx) {
       ext.setGlass(true);
     }
   } catch { plate = null; }
+  let stripOn = false;      // the flight-data strip was drawn this frame (hud.stripRect)
   function syncPlate(on) {
+    stripOn = !!on;
     if (!plate) return;
     if (!on) { if (!plate.hidden) plate.hidden = true; return; }
     const r = ext.rect; if (!r) return;
@@ -108,8 +110,10 @@ export async function createHud(ctx) {
   ctx.events.on('quality:change', () => { const k = filterKey; filterKey = ''; setFilter(k); });
 
   const camPos = { x: 0, y: 0, z: 0 };
-  const E = { s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
+  const E = { box: null, clear: null, s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
   let t = 0;
+  let hingeTick = 0, hingeCache = null;
+  const hingeBox = { x: 0, y: 0, w: 0, h: 0 }, hingeClear = { x: 0, y: 0, w: 0, h: 0 };
 
   const hud = {
     get destination() { return nav.dest; },
@@ -119,9 +123,18 @@ export async function createHud(ctx) {
       if (a) notices.toast('Destination ' + a.id, { key: 'dest', tone: 'info' });
     },
     setVisible(v) { userVisible = !!v; },
+    /** The exterior flight-data strip's rectangle {x, y, w, h, r} in CSS px while it is on screen, else null. */
+    get stripRect() { return stripOn ? ext.rect : null; },
+    /** The keyboard controls card is up. */
+    get hintVisible() { return !!notices.hintVisible; },
+    /** Put the keyboard controls card away now (it is also never auto-shown while ctx.combat.active; F1 still opens it). */
+    dismissHint() { notices.dismissHint(); },
     toast(text, opts) { notices.toast(text, opts); },
     update(dt) {
       const realDt = num(ctx.time?.realDt, 1 / 60);
+      // follow the canvas size every frame too: phones rotate, and the 'resize' event can arrive late (or report the old
+      // size on iOS), which would leave the overlay stretched or cleared after it was drawn
+      if (cv.clientWidth !== W || cv.clientHeight !== H) { if (cv.clientWidth > 1 && cv.clientHeight > 1) fit(); }
       t += realDt;
       const p = ctx.player;
       const rig = ctx.cameraRig;
@@ -130,7 +143,7 @@ export async function createHud(ctx) {
       const show = userVisible && ctx.params.hud !== false && !menuOpen && mode !== 'showcase';
       notices.update(realDt, show, p);
       if (dirty) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); dirty = false; }
-      if (!show || !p || !p.state) { syncPlate(false); return; }
+      if (!show || !p || !p.state) { syncPlate(false); notices.setToastTop(null); return; }
       const s = p.state;
       updateNav(p);
       const interior = rig?.isInterior ?? (mode === 'cockpit');
@@ -140,23 +153,45 @@ export async function createHud(ctx) {
       const wp = rig?.worldPosition;
       if (wp && isFinite(wp.x)) { camPos.x = wp.x; camPos.y = wp.y; camPos.z = wp.z; } else { camPos.x = s.position.x; camPos.y = s.position.y; camPos.z = s.position.z; }
       E.camPos = camPos;
+      // touch screens: draw in the HUD region the touch layout reserves (clear of stick, throttle and buttons)
+      const tl = ctx.input?.touch?.layout || null;
+      E.box = tl && tl.hud && tl.hud.w > 120 && (tl.hud.h > 60 || (tl.mission && tl.hud.h > 20)) ? tl.hud : null;
+      E.clear = tl ? tl.clear : null;
+      E.chipAt = tl && tl.toast ? tl.toast : null;
+      if (!tl) {
+        // keyboard / gamepad on a dual-screen device spanned side by side: keep the strip on the left screen (top) and
+        // the conformal HUD off the hinge (it falls back to the strip when centred on it)
+        if ((hingeTick++ % 30) === 0) hingeCache = ctx.input?.touch?.hinge || null;
+        const hg = hingeCache;
+        if (hg && hg.w >= 2 && hg.h > H * 0.5) {
+          E.box = hingeBox; hingeBox.x = 16; hingeBox.y = 12; hingeBox.w = hg.x - 32; hingeBox.h = Math.round(Math.min(220, H * 0.4));
+          E.clear = hingeClear; hingeClear.x = hg.x + hg.w + 16; hingeClear.y = 12; hingeClear.w = W - hingeClear.x - 16; hingeClear.h = H - 24;
+        }
+      }
+      let below = null;
       if (interior && p.def.hudType !== 'airliner') {
         const night = num(ctx.env?.nightFactor, 0);
         setFilter(night > 0.7 ? 'night' : night > 0.3 ? 'dusk' : 'day');
         E.hudColor = night > 0.7 ? 'rgba(93,255,155,0.82)' : night > 0.3 ? 'rgba(110,255,170,0.92)' : '#7dffb2';
         ctx.camera.updateMatrixWorld?.();
         proj.set(ctx.camera, W, H);
-        fighter.draw(g, E);
-        syncPlate(false);
+        if (fighter.draw(g, E) === false) {
+          setFilter('ext'); ext.draw(g, E); syncPlate(true);
+          const r = ext.rect; if (E.box && r) below = r.y + r.h + 40;
+        } else syncPlate(false);
       } else if (interior) {
         setFilter('none');
         deck.draw(g, E);
         syncPlate(false);
+        if (E.box) below = deck.boxBottom;
       } else {
         setFilter('ext');
         ext.draw(g, E);
         syncPlate(true);
+        const r = ext.rect; if (E.box && r) below = r.y + r.h + 40;   // room for the warning chip under the strip
       }
+      if (E.chipAt) notices.setToastTop(E.chipAt.y + 34, E.chipAt.x, E.chipAt.w);      // under the warning chip spot
+      else notices.setToastTop(below, E.box ? E.box.x : null, E.box ? E.box.w : null);
     },
   };
   return hud;

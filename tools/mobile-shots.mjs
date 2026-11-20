@@ -1,0 +1,445 @@
+// Phone / tablet / desktop screenshots of every screen, for checking the touch layout (software GL = SLOW).
+//
+//   node tools/mobile-shots.mjs --prefix mob-after- [--devices iphone14,pixel7,small,ipad,desktop]
+//        [--screens chase,cockpit,help,pause,settings,controls,main,main-end] [--aircraft f16] [--no-build]
+//        [--params "mission=instant-2v2"]   (extra URL parameters, e.g. a running combat mission)
+//        [--orient both|portrait|landscape] [--ui]   (--ui: WebGL-free harness, see src/input/ui-harness.js)
+//
+// One page boot per device (booting is the slow part); the orientation is switched with setViewportSize on the same
+// page. Device emulation: isMobile + hasTouch (so `(pointer: coarse)` matches), CSS viewport from the Playwright device,
+// deviceScaleFactor 1 (layout is in CSS px; a 3x backing store would only make software GL slower).
+// Shares the machine-wide render semaphore of tools/shot.mjs (/tmp/flightsim-shot-locks, 2 slots).
+// Writes shots/<prefix><device>-<orient>-<screen>.png and prints layout problems it can detect by itself
+// (elements off-screen, overlapping touch controls, touch targets under 44 px).
+import { execFileSync } from 'node:child_process';
+import { openSync, closeSync, mkdirSync, unlinkSync, writeFileSync, statSync, utimesSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { chromium, devices } = require('playwright');
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const args = process.argv.slice(2);
+const flag = (n, d) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
+const has = (n) => args.includes('--' + n);
+const prefix = flag('prefix', 'mob-');
+const ui = has('ui');   // --ui: the WebGL-free harness (src/input/ui-harness.js): real input / HUD / menu, flat backdrop, seconds per shot
+const html = resolve(root, flag('html', ui ? 'dist/ui.html' : 'dist/index.html'));
+const aircraft = flag('aircraft', 'f16');
+const orient = flag('orient', 'both');
+
+// name → [base descriptor, portrait viewport, landscape viewport]
+const D = {
+  iphone14: [devices['iPhone 14'], devices['iPhone 14'].viewport, devices['iPhone 14 landscape'].viewport],
+  pixel7: [devices['Pixel 7'], devices['Pixel 7'].viewport, devices['Pixel 7 landscape'].viewport],
+  small: [{ ...devices['Pixel 7'] }, { width: 360, height: 640 }, { width: 640, height: 360 }],
+  ipad: [devices['iPad Mini'], devices['iPad Mini'].viewport, devices['iPad Mini landscape'].viewport],
+  // generic touch devices by size (no name-specific code in the sim: these just exercise the layout)
+  duo: [{ ...devices['Pixel 7'] }, { width: 540, height: 720 }, { width: 720, height: 540 }],
+  duospan: [{ ...devices['Pixel 7'] }, { width: 720, height: 1114 }, { width: 1114, height: 720 },
+    { portrait: { orientation: 'horizontal', offset: 540, maskLength: 34 }, landscape: { orientation: 'vertical', offset: 540, maskLength: 34 } }],
+  phone: [{ ...devices['Pixel 7'] }, { width: 390, height: 844 }, { width: 844, height: 390 }],   // a 6.1" phone's CSS viewport
+  large: [{ ...devices['Pixel 7'] }, { width: 430, height: 932 }, { width: 932, height: 430 }],
+  fold: [{ ...devices['Pixel 7'] }, { width: 884, height: 1104 }, { width: 1104, height: 884 }],
+  tab: [{ ...devices['Pixel 7'] }, { width: 800, height: 1280 }, { width: 1280, height: 800 }],
+  desktop: [{ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false }, null, { width: 1280, height: 720 }],
+};
+const devList = flag('devices', 'iphone14,pixel7,small,ipad,desktop').split(',');
+const screens = flag('screens', 'chase,cockpit,help,pause,settings,controls,main,main-end').split(',');
+
+if (!has('no-build')) execFileSync('node', ['tools/build.mjs', '--out', html, ...(ui ? ['--entry', 'src/input/ui-harness.js'] : [])], { cwd: root, stdio: 'inherit' });
+
+// ---- shared render semaphore (same files as tools/shot.mjs) ----------------------------------------------
+const SLOTS = 2, LOCKDIR = '/tmp/flightsim-shot-locks';
+mkdirSync(LOCKDIR, { recursive: true });
+async function acquire() {
+  const start = Date.now();
+  for (;;) {
+    for (let i = 0; i < SLOTS; i++) {
+      const f = `${LOCKDIR}/slot${i}`;
+      try { const fd = openSync(f, 'wx'); writeFileSync(fd, String(process.pid)); closeSync(fd); return f; }
+      catch { try { if (Date.now() - statSync(f).mtimeMs > 6 * 60 * 1000) unlinkSync(f); } catch {} }
+    }
+    if (Date.now() - start > 30 * 60 * 1000) throw new Error('mobile-shots: no render slot in 30 min');
+    await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
+  }
+}
+const slot = ui ? null : await acquire();
+const keepAlive = slot && setInterval(() => { try { const t = new Date(); utimesSync(slot, t, t); } catch {} }, 20000);
+const release = () => { if (!slot) return; clearInterval(keepAlive); try { unlinkSync(slot); } catch {} };
+process.on('exit', release); process.on('SIGINT', () => process.exit(130)); process.on('SIGTERM', () => process.exit(143));
+
+const browser = ui ? await chromium.launch() : await chromium.launch({
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-vsync'],
+});
+let failed = false;
+const problems = [];
+
+// in-page layout audit: visible interactive elements, off-screen parts, overlaps between flight-time UI regions
+const AUDIT = () => {
+  const vw = innerWidth, vh = innerHeight, out = [];
+  const vis = (el) => { if (!el.isConnected) return false; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.closest('[hidden]') && !el.closest('[inert]'); };
+  const name = (el) => (el.id ? '#' + el.id : '') + '.' + String(el.className || el.tagName).split(' ')[0] + (el.textContent ? ' "' + el.textContent.trim().slice(0, 18) + '"' : '');
+  const tgt = [...document.querySelectorAll('#ui button, #ui [role=button], #ui input, #ui [role=option], #ui [role=radio], #ui [role=switch]')].filter(vis);
+  for (const el of tgt) {
+    const r = el.getBoundingClientRect();
+    // only things on screen count for size; inside a scroller, clipped is fine
+    const scroller = el.closest('.menu-scroll, .menu-sheet, .menu-aclist');
+    if (!scroller && (r.right > vw + 1 || r.bottom > vh + 1 || r.left < -1 || r.top < -1)) out.push('off-screen: ' + name(el) + ` [${r.left | 0},${r.top | 0},${r.width | 0}x${r.height | 0}]`);
+    const min = Math.min(r.width, r.height);
+    if (matchMedia('(pointer: coarse)').matches && min < 43.5 && el.type !== 'range' && !el.closest('.menu-aptwrap:not(.open)')) out.push('small target ' + (min | 0) + 'px: ' + name(el));
+  }
+  // flight-time regions must not overlap one another
+  const regs = [...document.querySelectorAll('.inp-region:not(.inp-zone), .inp-pnl, .inp-btn, .menu-corner > button, .hud-plate, .hud-toast.on, .hud-hint, .menu-top > .menu-cap')].filter(vis);
+  for (let i = 0; i < regs.length; i++) for (let j = i + 1; j < regs.length; j++) {
+    const a = regs[i].getBoundingClientRect(), b = regs[j].getBoundingClientRect();
+    if (regs[i].contains(regs[j]) || regs[j].contains(regs[i])) continue;
+    const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (ox > 2 && oy > 2) out.push('overlap: ' + name(regs[i]) + ' × ' + name(regs[j]));
+  }
+  // dual-screen: nothing visible may sit on or straddle the hinge
+  const segs = window.viewport && window.viewport.segments;
+  if (segs && segs.length === 2) {
+    const a = segs[0], b = segs[1];
+    const hg = Math.abs(a.y - b.y) < 1 ? { l: a.x + a.width, r: b.x, t: 0, b: vh } : { l: 0, r: vw, t: a.y + a.height, b: b.y };
+    const els = [...document.querySelectorAll('#ui button, .inp-region, .menu-panel, .menu-flybar, .menu-cap, .menu-sheet, .hud-plate, .hud-toast.on, .menu-crash, .hud-crash, .hud-paused, .inp-tip, .inp-ring')].filter(vis);
+    for (const el of els) {
+      if (el.closest('.menu-scroll, .menu-aclist') && el.tagName === 'BUTTON') continue;
+      if (el.parentElement && el.parentElement.closest('.menu-sheet')) continue;     // clipped by the sheet, which is checked itself
+      const r = el.getBoundingClientRect();
+      if (r.left < hg.r && r.right > hg.l && r.top < hg.b && r.bottom > hg.t) out.push('on the hinge: ' + name(el) + ` [${r.left | 0},${r.top | 0},${r.width | 0}x${r.height | 0}]`);
+    }
+  }
+  if (document.scrollingElement.scrollHeight > vh + 1 || document.scrollingElement.scrollWidth > vw + 1) out.push('page scrolls');
+  return out;
+};
+
+let foldCdp = null;     // set while a hinge is emulated: Playwright's own screenshot re-applies its device metrics (drops the fold)
+async function shoot(page, file, label) {
+  if (foldCdp) writeFileSync(file, Buffer.from((await foldCdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  else await page.screenshot({ path: file, timeout: 240000 });
+  const issues = await page.evaluate(AUDIT);
+  console.log('shot', file.replace(root + '/', ''), issues.length ? '\n   ' + issues.slice(0, 30).join('\n   ') : '');
+  for (const s of issues) problems.push(label + ': ' + s);
+}
+
+// ---- --touch-test: multi-touch through CDP (real touch → pointer events), checks ctx.controls --------------------
+async function touchTest() {
+  const desc = devices['iPhone 14 landscape'];
+  const bctx = await browser.newContext({ ...desc, deviceScaleFactor: 1, reducedMotion: 'reduce', defaultBrowserType: undefined, screen: undefined });
+  const page = await bctx.newPage();
+  const errors = [];
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', e => errors.push('PAGEERROR ' + (e.stack || e.message)));
+  await page.goto(pathToFileURL(html).href + `?test=1&autostart=1&aircraft=${aircraft}&start=air&cam=chase&quality=low&hint=0`, { waitUntil: 'commit', timeout: 600000 });
+  await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+  const cdp = await bctx.newCDPSession(page);
+  const step = (n = 2) => page.evaluate((n) => window.__sim.step(n, 1 / 30), n);
+  const C = () => page.evaluate(() => { const c = window.__sim.ctx.controls; return { roll: c.roll, pitch: c.pitch, yaw: c.yaw, throttle: c.throttle, brakes: c.brakes }; });
+  const pts = new Map();
+  const send = async (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [...pts.values()].map(p => ({ x: p.x, y: p.y, id: p.id, radiusX: 8, radiusY: 8, force: 1 })) });
+  const down = async (id, x, y) => { pts.set(id, { id, x, y }); await send('touchStart'); };
+  // Chrome aligns pointermove to animation frames: wait one so the last move has been delivered before stepping
+  const raf = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))));
+  const move = async (id, x, y, n = 4) => { const p = pts.get(id); const x0 = p.x, y0 = p.y; for (let i = 1; i <= n; i++) { p.x = x0 + (x - x0) * i / n; p.y = y0 + (y - y0) * i / n; await send('touchMove'); } await raf(); };
+  // CDP's touch emulation pairs points by list position, so single-finger releases are unreliable: lift all fingers
+  const upAll = async () => { pts.clear(); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await raf(); };
+  const results = [];
+  const check = (name, ok, info) => { results.push([name, ok]); console.log((ok ? 'PASS ' : 'FAIL ') + name + (info ? '  ' + JSON.stringify(info) : '')); if (!ok) failed = true; };
+  await step(2);
+  const L = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+  const ctr = (q) => [q.x + q.w / 2, q.y + q.h / 2];
+  check('touch UI shown with a layout', !!L, L && { W: L.W, H: L.H });
+  if (L) {
+    const cmds = [];
+    await page.exposeFunction('__cmdSeen', (n) => cmds.push(n));
+    await page.evaluate(() => window.__sim.ctx.events.on('cmd', (e) => window.__cmdSeen(e.name)));
+    const c0 = await C();
+    const hx = L.home.x, hy = L.home.y, [tx, ty] = ctr(L.thr);
+    await down(1, hx, hy); await down(2, tx, ty);
+    await move(1, hx + L.stickR * 0.8, hy - L.stickR * 0.6); await move(2, tx, ty - 50);
+    await step(2);
+    const c1 = await C();
+    check('stick right → roll right', c1.roll > 0.3, c1);
+    check('stick forward → nose down (pitch < 0)', c1.pitch < -0.2, c1);
+    check('auto-coordinated rudder follows the roll (no slider by default)', !L.rud && Math.abs(c1.yaw - 0.28 * c1.roll) < 0.02, c1);
+    check('throttle slid up while the stick is held', c1.throttle > c0.throttle + 0.15, { before: c0.throttle, after: c1.throttle });
+    const raw = await page.evaluate(() => window.__sim.ctx.input.touch.raw);
+    check('raw (unshaped) stick exposed', raw.held && raw.x > c1.roll - 0.01 && raw.x <= 1, raw);
+    await upAll(); await step(2);
+    const c4 = await C();
+    check('release: stick centres, throttle stays', Math.abs(c4.roll) < 0.05 && Math.abs(c4.pitch) < 0.05 && Math.abs(c4.yaw) < 0.05 && Math.abs(c4.throttle - c1.throttle) < 0.02, c4);
+    // systems drawer: airborne and clean → only [Sys]; it opens the drawer; brake held with two other fingers down
+    const vis0 = await page.evaluate(() => [...document.querySelectorAll('.inp-btn[data-id]')].filter(b => !b.closest('[hidden]') && !b.hidden).map(b => b.dataset.id));
+    check('airborne: systems buttons tucked away, Sys visible', !vis0.includes('gear') && vis0.includes('more'), vis0);
+    await down(3, ...ctr(L.more)); await upAll(); await step(2);
+    const vis1 = await page.evaluate(() => [...document.querySelectorAll('.inp-btn[data-id]')].filter(b => !b.hidden).map(b => b.dataset.id));
+    check('Sys opens the drawer', ['gear', 'ap', 'flapUp', 'flapDn', 'sb', 'brake'].every(id => vis1.includes(id)), vis1);
+    await down(1, hx, hy); await down(2, tx, ty); await move(1, hx + L.stickR * 0.8, hy);
+    await down(3, ...ctr(L.btn.brake)); await step(3);
+    const c2 = await C();
+    check('brake held with stick and throttle fingers down', c2.brakes > 0.2 && Math.abs(c2.roll) > 0.3, c2);
+    await upAll(); await step(2);
+    await down(3, ...ctr(L.btn.gear)); await upAll(); await step(1);
+    check('gear button emits gearToggle', cmds.includes('gearToggle'), cmds);
+    const cm = L.cam; await down(4, ...ctr(cm)); await upAll(); await step(1);
+    check('camera button emits cameraNext', cmds.includes('cameraNext'), cmds);
+    // LOOK: drag on empty screen; double tap recentres
+    // empty screen = outside the stick zone and every control (landscape: the gap between the left block and the zone)
+    const lx = Math.round((L.thr.x + L.thr.w + L.zone.x) / 2), ly = Math.round(L.clear.y + 20);
+    await down(5, lx, ly); await move(5, lx + 60, ly - 30); await step(1);
+    const lk = await page.evaluate(() => ({ x: window.__sim.ctx.controls.lookX, y: window.__sim.ctx.controls.lookY }));
+    const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && (e.className || e.tagName) + ''; }, [lx, ly]);
+    check('drag on empty screen looks right / up', lk.x > 0.1 && lk.y > 0.05, { ...lk, hit, at: [lx, ly] });
+    await upAll(); await step(1);
+    const lk1 = await page.evaluate(() => window.__sim.ctx.controls.lookX);
+    check('look offset stays after the drag', lk1 > 0.1, { lookX: lk1 });
+    await down(5, lx, ly); await upAll(); await down(5, lx, ly); await upAll(); await step(1);
+    const lk2 = await page.evaluate(() => window.__sim.ctx.controls.lookX);
+    check('double tap recentres the view', Math.abs(lk2) < 0.01, { lookX: lk2 });
+    // rudder slider on demand (Settings → Touch controls)
+    await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ rudder: true })); await step(2);
+    const Lr = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+    const rd = Lr.rud; await down(3, ...ctr(rd)); await move(3, rd.x + rd.w / 2 + rd.w * 0.3, rd.y + rd.h / 2); await step(1);
+    const c3 = await C();
+    const hitR = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && (e.className || e.tagName) + ''; }, ctr(rd));
+    check('rudder slider (when enabled) → yaw right', !!rd && c3.yaw > 0.3, { ...c3, hitR, rd });
+    await upAll(); await step(1);
+    const c5 = await C();
+    check('rudder springs back to centre', Math.abs(c5.yaw) < 0.05, c5);
+    // sensitivity: at 200 % half the throw is full deflection
+    await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ rudder: false, sensitivity: 2 })); await step(2);
+    const Ls = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+    await down(1, Ls.home.x, Ls.home.y); await move(1, Ls.home.x + Ls.stickR * 0.5, Ls.home.y); await step(1);
+    const c6 = await C();
+    const rw6 = await page.evaluate(() => window.__sim.ctx.input.touch.raw);
+    check('sensitivity 200 %: half the throw is full roll', c6.roll > 0.97, { ...c6, rw6, R: Ls.stickR, home: Ls.home });
+    await upAll(); await step(1);
+    // left-handed: everything mirrored, stick under the left thumb
+    await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ sensitivity: 1, lefty: true })); await step(2);
+    const Ll = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+    check('left-handed: stick zone left, throttle right', Ll.zone.x + Ll.zone.w / 2 < Ll.W / 2 && Ll.thr.x > Ll.W / 2, { zone: Ll.zone, thr: Ll.thr });
+    await down(1, Ll.home.x, Ll.home.y); await move(1, Ll.home.x + Ll.stickR * 0.8, Ll.home.y); await step(1);
+    const c7 = await C();
+    check('left-handed stick flies', c7.roll > 0.3, c7);
+    await upAll(); await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ lefty: false })); await step(2);
+    // extra-button slot API
+    const ex = await page.evaluate(() => {
+      const t = window.__sim.ctx.input.touch; window.__fire = 0; window.__fireUp = 0;
+      const hFire = t.addButton({ id: 'fire', label: 'Fire', onDown: () => window.__fire++, onUp: () => window.__fireUp++ });
+      t.addButton({ id: 'target', label: 'Tgt', onDown: () => {} });
+      hFire.setActive(true);
+      return { ok: !!hFire, layout: t.layout };
+    });
+    check('addButton returns a handle and reserves rail slots', ex.ok && ex.layout.extra.length === 2, ex.layout && ex.layout.extra);
+    const f = ex.layout.extra[0];
+    await down(5, f.x + f.w / 2, f.y + f.h / 2); await step(1); await upAll(); await step(1);
+    const fired = await page.evaluate(() => [window.__fire, window.__fireUp]);
+    check('extra button onDown / onUp fire', fired[0] === 1 && fired[1] === 1, fired);
+    const ov = await page.evaluate(AUDIT);
+    check('no overlaps or small targets with two extra buttons', ov.length === 0, ov);
+    const sc = await page.evaluate(() => ({ sx: scrollX, sy: scrollY, vv: window.visualViewport ? visualViewport.scale : 1 }));
+    check('page did not scroll or zoom', sc.sx === 0 && sc.sy === 0 && sc.vv === 1, sc);
+    await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test.png`) });
+    await page.evaluate(() => { window.__sim.ctx.input.touch.removeButton('fire'); window.__sim.ctx.input.touch.removeButton('target'); });
+    // hybrid device (touch screen + keyboard): flight keys hide the touch controls, the next touch brings them back
+    await page.keyboard.down('ArrowLeft'); await step(2); await page.keyboard.up('ArrowLeft'); await step(2);
+    const k = await page.evaluate(() => ({ on: window.__sim.ctx.input.touchEnabled, vis: window.__sim.ctx.input.touch.visible }));
+    check('a flight key hides the touch controls', !k.on && !k.vis, k);
+    await down(6, L.home.x, L.home.y); await step(2);
+    const t2 = await page.evaluate(() => ({ on: window.__sim.ctx.input.touchEnabled, vis: window.__sim.ctx.input.touch.visible }));
+    check('the next touch shows them again', t2.on && t2.vis, t2);
+    await upAll(); await step(1);
+  }
+  // a mission: fire cluster beside the stick (combat.input.actions when present, else combat's own buttons seated there)
+  const mParam = ui ? 'mission=1' : 'mission=instant-1v1';
+  await page.goto(pathToFileURL(html).href + `?test=1&autostart=1&aircraft=${aircraft}&start=air&cam=chase&quality=low&hint=0&${mParam}`, { waitUntil: 'commit', timeout: 600000 });
+  await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+  await step(ui ? 4 : 40);
+  const M = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+  check('mission layout: fire cluster, view, combat HUD region', !!(M && M.mission && M.fire && M.view && M.cbt), M && { fire: M.fire, cbt: M.cbt });
+  if (M && M.fire) {
+    const own = await page.evaluate(() => !!window.__sim.ctx.combat?.input?.actions);
+    const gun = M.fire.gun;
+    await down(1, M.home.x, M.home.y); await move(1, M.home.x + M.stickR * 0.7, M.home.y);
+    await down(2, ...ctr(gun)); await step(2);
+    const g1 = await page.evaluate(() => ({ acts: (window.__acts || []).slice(), trig: !!window.__sim.ctx.combat?.input?.trigger, roll: window.__sim.ctx.input.touch.raw.x }));   // raw: the combat assist rewrites ctx.controls in missions
+    check('GUN held while the stick is held (two right-side fingers)', g1.roll > 0.3 && (g1.trig || g1.acts.includes('gun:true')), g1);
+    await upAll(); await step(1);
+    for (const id of ['msl', 'tgt', 'flr']) { await down(3, ...ctr(M.fire[id])); await upAll(); await step(1); }
+    await down(3, ...ctr(M.view)); await upAll(); await step(1);
+    const g2 = await page.evaluate(() => (window.__acts || []).slice());
+    if (ui) check('MSL / TGT / FLR / VIEW reach combat', own ? ['missile', 'targetTap', 'flares', 'toggleView'].every(a => g2.includes(a)) && g2.includes('gun:false') : true, g2);
+    const ovm = await page.evaluate(COLLECT);
+    check('mission: no intersections between HUD, combat and touch elements', ovm.out.length === 0, ovm.out);
+    await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test-mission.png`) });
+  }
+  if (errors.length) { failed = true; console.log('CONSOLE ERRORS:', errors.slice(0, 10).join('\n  ')); }
+  console.log(`touch test: ${results.filter(r => r[1]).length}/${results.length} passed`);
+  await bctx.close();
+}
+
+// ---- --overlap: bounding boxes of every visible HUD, combat and touch element must not intersect -----------------
+// Runs every size of the device matrix (both orientations, dual-screen folds) in free flight and in a mission, without
+// screenshots. Elements: touch controls (.inp-*), the HUD strip plate / toasts / cards, combat HUD panels (objectives,
+// scope, stores, kill feed, radio, pops, banner) and combat fire buttons. Clipped panels count only where they show.
+const COLLECT = () => {
+  const vw = innerWidth, vh = innerHeight;
+  const sel = ['.inp-touch .inp-region:not(.inp-zone)', '.inp-ring', '.hud-plate', '.hud-toast.on', '.hud-hint', '.hud-paused',
+    '.cbt-hud-obj', '.cbt-hud-radar', '.cbt-hud-stat', '.cbt-hud-kill', '.cbt-hud-sub', '.cbt-hud-pop', '.cbt-hud-banner', '.cbt-inp-btn', '.menu-corner > button'];
+  const vis = (el) => {
+    if (el.closest('[hidden]')) return false;
+    for (let e = el; e && e !== document.body; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05) return false; }
+    return true;
+  };
+  const name = (el) => (el.className && el.className.baseVal === undefined ? '.' + String(el.className).trim().split(/\s+/).slice(0, 2).join('.') : el.tagName) + (el.dataset.id ? `[${el.dataset.id}]` : el.dataset.act ? `[${el.dataset.act}]` : '');
+  const items = [];
+  for (const el of document.querySelectorAll(sel.join(','))) {
+    if (!vis(el)) continue;
+    let r = el.getBoundingClientRect(); let x0 = r.left, y0 = r.top, x1 = r.right, y1 = r.bottom;
+    // clipped by an overflow ancestor (the combat stack)
+    for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.overflow !== 'visible' && cs.position !== 'static') { const q = e.getBoundingClientRect(); x0 = Math.max(x0, q.left); y0 = Math.max(y0, q.top); x1 = Math.min(x1, q.right); y1 = Math.min(y1, q.bottom); }
+    }
+    if (x1 - x0 < 2 || y1 - y0 < 2) continue;
+    items.push({ el, n: name(el), x0, y0, x1, y1 });
+  }
+  const out = [];
+  for (const a of items) if (a.x0 < -1 || a.y0 < -1 || a.x1 > vw + 1 || a.y1 > vh + 1) out.push(`off-screen ${a.n} [${a.x0 | 0},${a.y0 | 0},${a.x1 | 0},${a.y1 | 0}]`);
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i], b = items[j];
+    if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+    const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+    if (ox > 1 && oy > 1) out.push(`overlap ${a.n} [${a.x0 | 0},${a.y0 | 0},${a.x1 | 0},${a.y1 | 0}] × ${b.n} [${b.x0 | 0},${b.y0 | 0},${b.x1 | 0},${b.y1 | 0}]`);
+  }
+  const segs = window.viewport && window.viewport.segments;
+  if (segs && segs.length === 2) {
+    const s0 = segs[0], s1 = segs[1];
+    const hg = Math.abs(s0.y - s1.y) < 1 ? { l: s0.x + s0.width, r: s1.x, t: 0, b: vh } : { l: 0, r: vw, t: s0.y + s0.height, b: s1.y };
+    for (const a of items) if (a.x0 < hg.r && a.x1 > hg.l && a.y0 < hg.b && a.y1 > hg.t) out.push(`on the hinge ${a.n}`);
+  }
+  return { n: items.length, out };
+};
+async function overlapRun() {
+  const all = flag('devices', Object.keys(D).filter(k => k !== 'desktop').join(',')).split(',');
+  const modes = [['free', ''], ['mission', ui ? 'mission=1' : 'mission=instant-1v1'], ...(ui ? [['mission-adopt', 'mission=adopt']] : [])];
+  let total = 0, bad = 0;
+  for (const [mode, extra] of modes) {
+    const bctx = await browser.newContext({ ...devices['Pixel 7'], viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+    const page = await bctx.newPage();
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto(pathToFileURL(html).href + `?test=1&autostart=1&aircraft=${aircraft}&start=air&cam=chase&quality=low&hint=0&${extra}`, { waitUntil: 'commit', timeout: 600000 });
+    await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+    const step = (n) => page.evaluate((n) => window.__sim.step(n, 1 / 30), n);
+    await step(ui ? 4 : 30);
+    let cdp = null;
+    for (const dn of all) {
+      const [, pv, lv, folds] = D[dn] || [];
+      for (const [on, vp] of [['portrait', pv], ['landscape', lv]]) {
+        if (!vp) continue;
+        if (cdp) { await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {}); cdp = null; }
+        await page.setViewportSize(vp);
+        if (folds && folds[on]) { cdp = await bctx.newCDPSession(page); await cdp.send('Emulation.setDeviceMetricsOverride', { width: vp.width, height: vp.height, deviceScaleFactor: 1, mobile: true, displayFeature: folds[on] }); }
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        await step(folds && folds[on] ? 31 : 12);
+        const res = await page.evaluate(COLLECT);
+        total++;
+        const tag = `${mode} ${dn}-${on} ${vp.width}x${vp.height}`;
+        if (res.out.length) { bad++; console.log(`FAIL ${tag} (${res.n} elements)\n   ` + res.out.slice(0, 12).join('\n   ')); for (const o of res.out) problems.push(tag + ': ' + o); }
+        else console.log(`ok   ${tag} (${res.n} elements)`);
+        if (has('shots')) await shoot(page, resolve(root, 'shots', `${prefix}${mode}-${dn}-${on}.png`), tag);
+      }
+    }
+    if (errors.length) { failed = true; console.log(mode, 'PAGE ERRORS', errors.slice(0, 5).join('\n  ')); }
+    await bctx.close();
+  }
+  console.log(`overlap check: ${total - bad}/${total} layouts with zero intersections`);
+  if (bad) failed = true;
+}
+
+try {
+  if (has('overlap')) { await overlapRun(); devList.length = 0; }
+  if (has('touch-test')) { await touchTest(); devList.length = 0; }
+  for (const dn of devList) {
+    const [desc, pv, lv, folds] = D[dn] || [];
+    if (!desc) { console.log('unknown device', dn); continue; }
+    const orients = [];
+    if (pv && orient !== 'landscape') orients.push(['portrait', pv]);
+    if (lv && orient !== 'portrait') orients.push([pv ? 'landscape' : 'wide', lv]);
+    if (!orients.length) continue;
+    const ctxOpts = { ...desc, viewport: orients[0][1], deviceScaleFactor: 1, reducedMotion: 'reduce' };
+    delete ctxOpts.defaultBrowserType; delete ctxOpts.screen;
+    const bctx = await browser.newContext(ctxOpts);
+    const page = await bctx.newPage();
+    const errors = [];
+    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', e => errors.push('PAGEERROR ' + (e.stack || e.message)));
+    const params = `test=1&autostart=1&aircraft=${aircraft}&start=air&tod=10&weather=fair&cam=chase&quality=low&hint=0` + (flag('params') ? '&' + flag('params') : '');
+    const t0 = Date.now();
+    await page.goto(pathToFileURL(html).href + '?' + params, { waitUntil: 'commit', timeout: 600000 });
+    await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+    const bootErr = await page.evaluate(() => window.__sim.error);
+    if (bootErr) { console.log(dn, 'BOOT', bootErr); failed = true; await bctx.close(); continue; }
+    console.log(`${dn}: booted in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    const step = (n) => page.evaluate((n) => window.__sim.step(n, 1 / 30), n);
+    const ev = (fn, a) => page.evaluate(fn, a);
+    for (const [on, vp] of orients) {
+      if (foldCdp) { await foldCdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {}); foldCdp = null; }
+      await page.setViewportSize(vp);
+      if (folds && folds[on]) {
+        // a hinge between two screens: Chromium emulates it as a display feature → viewport segments (CSS + JS)
+        const cdp = foldCdp = await bctx.newCDPSession(page);
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: vp.width, height: vp.height, deviceScaleFactor: 1, mobile: true, displayFeature: folds[on] });
+      }
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));   // let 'resize' fire first
+      await step(folds && folds[on] ? 31 : 2);     // the HUD polls the segments every 30 frames
+      const f = (s) => resolve(root, 'shots', `${prefix}${dn}-${on}-${s}.png`);
+      const L = (s) => `${dn}-${on}-${s}`;
+      mkdirSync(resolve(root, 'shots'), { recursive: true });
+      // flight screens
+      if (screens.includes('chase')) { await step(6); await shoot(page, f('chase'), L('chase')); }
+      if (screens.includes('help')) {
+        await ev(() => window.__sim.ctx.events.emit('cmd', { name: 'help' })); await step(1);
+        await shoot(page, f('help'), L('help'));
+        await ev(() => window.__sim.ctx.events.emit('cmd', { name: 'help' })); await step(2);
+      }
+      if (screens.includes('cockpit')) {
+        await ev(() => window.__sim.ctx.cameraRig.setMode('cockpit')); await step(3);
+        await shoot(page, f('cockpit'), L('cockpit'));
+        await ev(() => window.__sim.ctx.cameraRig.setMode('chase')); await step(1);
+      }
+      if (screens.includes('crash')) {
+        await ev(() => { const c = window.__sim.ctx, s = c.player.state; s.crashed = true; s.crashReason = 'Impact with terrain at 212 kt'; c.events.emit('crash', { reason: s.crashReason }); });
+        for (let i = 0; i < 13; i++) await step(5);      // the crash dialog comes up after 2 s
+        await shoot(page, f('crash'), L('crash'));
+        await ev(() => document.getElementById('menu-crash-restart')?.click()); await step(3);
+      }
+      // menus
+      for (const v of ['pause', 'settings', 'controls']) {
+        if (!screens.includes(v)) continue;
+        await ev((v) => window.__sim.ctx.menu.open(v), v); await step(1); await page.waitForTimeout(150);
+        await shoot(page, f(v), L(v));
+      }
+      if (screens.includes('main') || screens.includes('main-end')) {
+        await ev(() => window.__sim.ctx.menu.open('main')); await step(4); await page.waitForTimeout(150);
+        if (screens.includes('main')) await shoot(page, f('main'), L('main'));
+        if (screens.includes('main-end')) {
+          await ev(() => { for (const el of document.querySelectorAll('.menu-sheet, .menu-panel-plan > .menu-scroll')) el.scrollTop = 1e6; });
+          await step(1); await page.waitForTimeout(150);
+          await shoot(page, f('main-end'), L('main-end'));
+        }
+        // back to flying for the next orientation
+        await ev(() => document.getElementById('menu-fly').click()); await step(4);
+      } else {
+        await ev(() => window.__sim.ctx.menu.close()); await step(1);
+      }
+    }
+    if (errors.length) { failed = true; console.log(dn, 'CONSOLE ERRORS:', errors.slice(0, 10).map(e => e.slice(0, 400)).join('\n  ')); }
+    foldCdp = null; await bctx.close();
+  }
+} catch (e) { failed = true; console.log('mobile-shots failure:', e.stack || e.message); }
+finally { await browser.close(); release(); }
+console.log(`\n${problems.length} layout issues detected automatically`);
+process.exit(failed ? 1 : 0);

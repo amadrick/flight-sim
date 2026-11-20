@@ -45,6 +45,13 @@ export function createFighterHud() {
     const fpx = proj.fy;   // px per unit tangent
     hh = clamp(fpx * Math.tan(HUD_HALF_H), Math.min(H * 0.34, 420), H * 0.47);
     hw = clamp(fpx * Math.tan(HUD_HALF_W), Math.min(hh * 1.12, W * 0.46), W * 0.47);
+    // touch screens: keep the tapes and blocks clear of the on-screen controls; when that leaves too little room
+    // (portrait phones) the caller draws the compact strip in the HUD region instead (draw returns false)
+    const C = E.clear;
+    if (C) {
+      hw = Math.min(hw, cx - C.x, C.x + C.w - cx); hh = Math.min(hh, cy - C.y, C.y + C.h - cy);
+      if (hw < 110 || hh < 90) return false;
+    }
     fs = Math.round(clamp(Math.min(hw, hh) * 0.072, 11, 22));
     compact = hh < fs * 15;
     setFonts(E.tok.mono);

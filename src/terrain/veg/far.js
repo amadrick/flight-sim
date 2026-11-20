@@ -8,20 +8,22 @@ import { vegVertexCommon, VEG_LIGHT_GLSL, FRAG_DECL_GLSL, transGLSL, vegDebug, V
 import { OCT_GLSL, IMP_COLS } from './impostor.js';
 import { NSPECIES, SPECIES } from './species.js';
 
-export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) {
+export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true, baked = true, under = false }) {
   const geo = new THREE.InstancedBufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
   geo.setIndex([0, 1, 2, 0, 2, 3]);
   geo.instanceCount = G * G;
   const IU = {
-    tVegImpA: { value: imp.atlasA }, tVegImpB: { value: imp.atlasB },
+    tVegImpA: { value: imp.atlasA }, tVegImpB: { value: imp.atlasB }, tVegImpC: { value: imp.atlasC },
     uVegImp: { value: new THREE.Vector4(imp.N, imp.F, imp.W, imp.H) },
     uVegBaseH: { value: SPECIES.map((s) => s.base) },
     uVegProj: { value: ctx.camera.projectionMatrix }, uDepthReversed: ctx.uniforms.frame.uDepthReversed,
   };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0 });
   mat.defines = { VEG_IMP_BLEND: blend ? 1 : 0, VEG_SPEC_DIRECT: '0.3', VEG_SPEC_SKY: '0.1' };
+  if (baked) mat.defines.VEG_BAKED = 1;
+  if (under) mat.defines.VEG_UNDER = 1;
   if (vegDebug.mode) mat.defines.VEG_DBG = vegDebug.mode;
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, IU);
@@ -38,8 +40,11 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         vec4 vM = texelFetch(tVegMap, ivec2(vt), 0);
         int vS = int(vM.g + 0.5);
         vec2 vBase = vegCellRXZ(vCell);
-        float vDist = distance(vBase, uTerrCam.xz);
         float vSize = vM.r;
+        #ifdef VEG_UNDER
+          vSize = vegUnder(vCell, vM, vBase, vS);
+        #endif
+        float vDist = distance(vBase, uTerrCam.xz);
         if (vDist < uVegRange.x - uVegRange.y - 2.0 || vDist > uVegRange.w) vSize = 0.0;
         vec2 vh = vegHash(vCell + 60000.0), vh2 = vegHash(vCell + 90000.0);
         float vAng = vh.x * 6.2831853;
@@ -92,23 +97,23 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         ${FRAG_DECL_GLSL}
         ${neuralGLSL}
         ${OCT_GLSL}
-        uniform sampler2D tVegImpA; uniform sampler2D tVegImpB; uniform vec4 uVegImp; uniform vec4 uVegRange;
+        uniform sampler2D tVegImpA; uniform sampler2D tVegImpB; uniform sampler2D tVegImpC; uniform vec4 uVegImp; uniform vec4 uVegRange;
         uniform vec4 uVegSp[${NSPECIES}];
         uniform float uVegBaseH[${NSPECIES}]; uniform mat4 uVegProj; uniform float uDepthReversed;
         varying vec3 vVegAlb; varying vec3 vVegP; varying vec2 vVegRot; varying vec2 vVegFade; varying float vVegSize; flat varying int vVegS;
         // sample one baked view (fx, fy) for the tree-local ray (P, v): returns albedo.rgb + coverage, and B channels
-        void vegView(vec2 f, vec3 P, vec3 v, vec3 cc, float R, int s, float lod, out vec4 a, out vec4 b) {
+        void vegView(vec2 f, vec3 P, vec3 v, vec3 cc, float R, int s, float lod, out vec4 a, out vec4 b, out vec4 c) {
           vec3 d = vegOctDec(f / (uVegImp.x - 1.0) * 2.0 - 1.0);
           vec3 r, u; vegFrameBasis(d, r, u);
           float t = dot(cc + d * (0.45 * R) - P, d) / dot(v, d);    // plane through the typical visible crown surface (not the centre): less misregistration between views
           vec3 q = P + v * t - cc;
           vec2 l = vec2(dot(q, r), dot(q, u)) / R;
-          if (max(abs(l.x), abs(l.y)) > 0.995) { a = vec4(0.0); b = vec4(0.5); return; }
+          if (max(abs(l.x), abs(l.y)) > 0.995) { a = vec4(0.0); b = vec4(0.5); c = vec4(0.5); return; }
           int bx = s % ${IMP_COLS}, by = s / ${IMP_COLS};
           vec2 px = (vec2(float(bx) * uVegImp.x + f.x, float(by) * uVegImp.x + f.y) + 0.5 + 0.5 * l * (1.0 - 1.0 / uVegImp.y)) * uVegImp.y;
           vec2 uv = px / uVegImp.zw;
-          a = textureLod(tVegImpA, uv, lod); b = textureLod(tVegImpB, uv, lod);
-          float ia = 1.0 / max(a.a, 1e-3); a.rgb *= ia; b *= ia;      // un-premultiply (atlases are cleared to 0)
+          a = textureLod(tVegImpA, uv, lod); b = textureLod(tVegImpB, uv, lod); c = textureLod(tVegImpC, uv, lod);
+          float ia = 1.0 / max(a.a, 1e-3); a.rgb *= ia; b *= ia; c *= ia;      // un-premultiply (atlases are cleared to 0)
         }`)
       .replace('#include <map_fragment>', /* glsl */`
         int vS = vVegS;
@@ -124,14 +129,14 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         // mip level from the screen footprint of a frame texel
         vec2 dp = vec2(length(dFdx(P)), length(dFdy(P))) / (2.0 * R) * uVegImp.y;
         float lod = max(0.0, log2(max(dp.x, dp.y)));
-        vec4 A, B;
+        vec4 A, B, Cv;
         #if VEG_IMP_BLEND
           vec2 g0 = min(floor(g), uVegImp.x - 2.0), fg = g - g0;
-          vec4 a00, b00, a10, b10, a01, b01, a11, b11;
-          vegView(g0, P, v, cc, R, vS, lod, a00, b00);
-          vegView(g0 + vec2(1.0, 0.0), P, v, cc, R, vS, lod, a10, b10);
-          vegView(g0 + vec2(0.0, 1.0), P, v, cc, R, vS, lod, a01, b01);
-          vegView(g0 + vec2(1.0, 1.0), P, v, cc, R, vS, lod, a11, b11);
+          vec4 a00, b00, a10, b10, a01, b01, a11, b11, c00, c10, c01, c11;
+          vegView(g0, P, v, cc, R, vS, lod, a00, b00, c00);
+          vegView(g0 + vec2(1.0, 0.0), P, v, cc, R, vS, lod, a10, b10, c10);
+          vegView(g0 + vec2(0.0, 1.0), P, v, cc, R, vS, lod, a01, b01, c01);
+          vegView(g0 + vec2(1.0, 1.0), P, v, cc, R, vS, lod, a11, b11, c11);
           vec4 w = vec4((1.0 - fg.x) * (1.0 - fg.y), fg.x * (1.0 - fg.y), (1.0 - fg.x) * fg.y, fg.x * fg.y);
           vec4 wa = w * vec4(a00.a, a10.a, a01.a, a11.a);
           float cov = wa.x + wa.y + wa.z + wa.w;
@@ -139,8 +144,9 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
           float iw = 1.0 / max(cov, 1e-4);
           A.rgb = (a00.rgb * wa.x + a10.rgb * wa.y + a01.rgb * wa.z + a11.rgb * wa.w) * iw;
           B = (b00 * wa.x + b10 * wa.y + b01 * wa.z + b11 * wa.w) * iw;
+          Cv = (c00 * wa.x + c10 * wa.y + c01 * wa.z + c11 * wa.w) * iw;
         #else
-          vegView(floor(g + 0.5), P, v, cc, R, vS, lod, A, B);
+          vegView(floor(g + 0.5), P, v, cc, R, vS, lod, A, B, Cv);
         #endif
         A.a *= 1.0 + 0.7 * lod;
         float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + vVegFade.y);
@@ -161,7 +167,12 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         vec2 sunH = normalize(uSunDir.xz + 1e-4);
         float xl = length(Xw);
         vec3 vegHD = vec3(vegH, vegD, xl > 1e-3 ? dot(Xw / xl, sunH) : 0.0);
+        #ifdef VEG_UNDER
+          vegHD.x = 0.0;            // under the stand's canopy
+        #endif
         vec3 vegTransCol = diffuseColor.rgb * vVegTrans;
+        vec3 c1L = Cv.yzw * 4.0 - 2.0;
+        vec4 vegVis = vec4(Cv.x, cr * c1L.x - sr * c1L.z, c1L.y, sr * c1L.x + cr * c1L.z);
         // per-pixel depth of the visible crown surface (its height from h_rel, found along the view ray), so where
         // crowns overlap the higher foliage wins as it does on the meshes (quad depth alone would let a neighbour's
         // low crown edge cover a crown top)
@@ -177,11 +188,11 @@ export function createFarTrees(ctx, { L, G, U, imp, neuralGLSL, blend = true }) 
         }`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(mat3(viewMatrix) * nWo);')
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.6, 0.8, vVegMisc.z);')
-      .replace('#include <aomap_fragment>', VEG_LIGHT_GLSL.replace(/vVegHD/g, 'vegHD').replace(/vVegTrans/g, 'vegTransCol'));
+      .replace('#include <aomap_fragment>', VEG_LIGHT_GLSL.replace(/vVegHD/g, 'vegHD').replace(/vVegTrans/g, 'vegTransCol').replace(/vVegVis/g, 'vegVis'));
   };
-  mat.customProgramCacheKey = () => 'skyward-veg-far-' + (blend ? 1 : 0);
+  mat.customProgramCacheKey = () => 'skyward-veg-far-' + (blend ? 1 : 0) + (under ? '-u' : '') + (baked ? '-b' : '');
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = 'veg-far'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
+  mesh.name = under ? 'veg-far-under' : 'veg-far'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
   mesh.castShadow = false; mesh.receiveShadow = true;
   return { mesh, dispose() { geo.dispose(); mat.dispose(); } };
 }
