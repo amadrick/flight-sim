@@ -37,6 +37,10 @@ can be compared side by side; all round-four and round-five switches still work.
   finer octaves outward only, slope G x amplitude: the surface is the union of the bubbles (round domes meeting in V
   creases). The sqrt cap stood every bubble on a vertical cliff ring where it left the envelope (a disc outline), with
   flat envelope between bubbles. Bounds (CL_BUB_HI, sphere-trace slope, cheap-density gate) scale with G.
+* The sphere tracing through the bubble shell (`clSph`) overshoots the steeper linear bubbles: terraced level-set
+  striations on lit faces. Default now 0 (off). With it off, `clBubL=0.3` (largest bubble 0.3 x the cell radius, was
+  0.45) and `clBub=1.1` (was 0.85) the close turret reads as opaque cauliflower: many bulges of several sizes, each shaded
+  across, creases in the gaps (c4/diag14.png, middle). New defaults.
 
 ## 0. Round six: cauliflower, field variety, cost
 

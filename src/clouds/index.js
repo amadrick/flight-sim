@@ -522,13 +522,13 @@ export async function createClouds(ctx) {
     // octaves; clBubL = largest sub-turret / cell radius), turret noise vertical frequency in cells (clVs, 0 = clD),
     // congestus among humilis (clCong), far fade of sub-pixel cells (clFar), height-dependent wall warp (clWall, m),
     // growing-edge width factor (clBubE)
-    U.uClBub.value.set(dbg('clBub', 0.85), dbg('clBubR', 0.42), dbg('clBubL', 0.45), dbg('clVs', VSTRETCH_CELL));
+    U.uClBub.value.set(dbg('clBub', 1.1), dbg('clBubR', 0.42), dbg('clBubL', 0.3), dbg('clVs', VSTRETCH_CELL));
     U.uClBub2.value.set(dbg('clCong', 0.35), dbg('clFar', 1), dbg('clWall', 45), dbg('clBubE', 1));
     // entrainment skin of growing turrets (clSkin x round five's 20 m), lobe lighting in the learned-MS path and the
     // bubble-field lobe orientation (clLobe), the largest bubble octave in the cheap density (light march, shadow map: lobe
     // self-shadowing; clLobeSh), analytic sun path through the anvil slab (clAnvL: no contour arcs under the anvil)
     U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 1), 0);
-    U.uClBub4.value.set(dbg('clSph', 1), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
+    U.uClBub4.value.set(dbg('clSph', 0), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
     U.uClBub3.value.set(dbg('clSkin', 0.3), dbg('clLobe', 1), dbg('clAnvL', 1), dbg('clLobeSh', 1));
     // cost (round six): rays stop at transmittance clTmin (round five 0.004), far-field light from the shadow map alone beyond
     // clFarL m low-res pixels (0 = off; `low` quality from 25 m), learned-MS taps without the bubble octave (clMsBub=1 keeps it), bubble octaves 2 / 3 / 4 at low / medium / high (clBubN)
@@ -537,7 +537,7 @@ export async function createClouds(ctx) {
 
   // round six: with the bubble cascade the base-noise turrets are lower (clPtK x round five's amplitude): the cascade's big
   // octave makes the turrets, and a smooth envelope keeps the displacement isotropic
-  const turretK = () => (dbg('clBub', 0.85) > 0 ? dbg('clPtK', 0.4) : 1);
+  const turretK = () => (dbg('clBub', 1.1) > 0 ? dbg('clPtK', 0.4) : 1);
   const volumetricOn = () => P.coverage > 0.012;
   const cirrusOn = () => P.cirrus > 0.004;
 
