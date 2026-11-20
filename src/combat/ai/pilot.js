@@ -62,7 +62,7 @@ export function createPilot(combat, team, e, o = {}) {
   let targetSince = 0, lastTarget = null, lastTally = null, fighting = false, wasFighting = false;
   let fineTrack = false, aimNX = 0, aimNY = 0, aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
   let prevGunErr = 1, gunErrS = 0, lockSince = -1, flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
-  let stalemateT = 0, holdSet = false, extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1, lookT = 0, neutralT = 0, neutralLim = 30;
+  let stalemateT = 0, holdSet = false, extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1, lookT = 0, gTime = 0, neutralT = 0, neutralLim = 30;
 
   const gunDbg = { err: 0, tol: 0, r: 0, good: false, losRate: 0 };      // last gun fire-control numbers (tools)
   const pilot = {
@@ -110,6 +110,8 @@ export function createPilot(combat, team, e, o = {}) {
     if ((senseT -= dt) <= 0) { senseT = 0.2; sense(); }
     if ((thinkT -= dt) <= 0) { thinkT = sk.think * (0.8 + 0.4 * rng()); think(); }
     manT -= dt; lockMan -= dt; mistakeT -= dt; lostSightT -= dt;
+    // G fatigue: sustained high G wears the pilot down (more mistakes the longer a hard fight lasts)
+    { const gl = e.state.gLoad || 1; gTime = gl > 4 ? gTime + dt * (gl - 4) / 4 : gTime * (1 - dt * 0.01); }
     // ---- default request
     want.direct = false; want.useFF = false; want.fire = false; want.ab = true; want.brake = true; want.minLever = 0; want.track = false; want.bias = 0;
     want.g = 3; want.gain = 1.3;
@@ -124,7 +126,7 @@ export function createPilot(combat, team, e, o = {}) {
       Math.abs(s.pitch) < 0.45 && want.dir.y > -0.3 && !recovering;
     // how much of the envelope the pilot dares to use: rookies stay well clear of the AoA limit (fear of departing),
     // aces fly on it; terrain recovery always uses everything
-    const aUse = recovering ? 1 : lerp(0.6, 1.0, clamp((skill - 0.15) / 0.75, 0, 1));
+    const aUse = recovering ? 1 : lerp(0.3, 1.0, clamp((skill - 0.15) / 0.75, 0, 1));
     // (the best sustained turn rate is found near the AoA limit at low speed, so skilled pilots do not back off there)
     void offensive;
     fc.alphaLimit = prof.alphaFight * aUse;
@@ -532,12 +534,12 @@ export function createPilot(combat, team, e, o = {}) {
     }
     // slow, close, neutral, crossing: scissors
     if (geo.situation === 'neutral' && geo.range < 900 && geo.hca > 100 * DEG && V < corner * 0.85) { setMode('scissors'); return; }
-    // pursuit geometry by range / aspect. Turn-circle thinking (skilled pilots): in front of the bandit's 3–9 line, fly
-    // to its tail instead of pointing at it (that only buys another head-on pass); rookies point their nose at it.
-    // Behind it: fly to the control zone (lag) while the aspect or closure is wrong, pure to close, lead only to shoot
+    // pursuit geometry by range / aspect. In front of the bandit's 3–9 line: nose to it (flying to its tail from there
+    // only stretched the fight into wide two-circle stalemates). Behind it: fly to the control zone (its trail) while
+    // the aspect is wrong, pure to close, lead only to shoot; a straight or running bandit gets pointed at
     const circle = skill > 0.4 || (skill > 0.3 && personality === 'turn');
     if (geo.range > 4000) setMode('pursuit', 0, geo.aa > 50 * DEG ? 'lead' : 'pure');
-    else if (circle && geo.aa > 95 * DEG && geo.range > 400) setMode('pursuit', 0, 'tail');
+    else if (circle && geo.aa > 95 * DEG && geo.range > 400) setMode('pursuit', 0, 'pure');
     else if (geo.aa < 100 * DEG && circle) {
       // far behind and not closing: lead cuts across the circle; close with closure or aspect: lag; else pure / lead
       // outside the control zone: fly to it (the bandit's trail); inside: pure to close, lead to shoot
@@ -556,7 +558,7 @@ export function createPilot(combat, team, e, o = {}) {
     mistake = '';
     const defending = pilot.mode === 'break' || pilot.mode === 'jink' || pilot.mode === 'split-s';
     // poor pilots under pressure make more mistakes (the opening a human attacker can use)
-    if (!T || rng() >= sk.mistake * (defending ? 2.2 : 1)) return;
+    if (!T || rng() >= sk.mistake * (defending ? 2.2 : 1) * (1 + gTime / lerp(40, 25, skill))) return;
     const r = rng();
     if (defending) mistake = r < 0.6 ? 'relax' : 'fixate';           // eases the pull / keeps looking at the wrong thing
     else mistake = r < 0.35 && geo.ata > 60 * DEG ? 'lost' : r < 0.55 ? 'slow' : r < 0.8 ? 'overshoot' : 'fixate';

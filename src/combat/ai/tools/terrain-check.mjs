@@ -25,7 +25,7 @@ for (const type of types.split(',')) for (const pair of skills.split(',')) {
         if (q.length > (process.env.DETAIL ? 1200 : 60)) q.shift(); hist.set(e, q);
       }
     } });
-    n += 2;
+    n += 2; damagedN += dmg.size;
   }
 }
-console.log(`${n} aircraft, ${lost} terrain losses (${(100 * lost / n).toFixed(1)} %), ${lostDamaged} of them damaged`);
+console.log(`${n} aircraft, ${lost} terrain losses (${(100 * lost / n).toFixed(1)} %), ${lostDamaged} of them damaged; ${damagedN} aircraft took damage during the fights`);
