@@ -28,7 +28,7 @@ export async function createCombat(ctx, opts = {}) {
     mission: null,                 // running mission definition
     options: null,                 // options the mission was started with (for restart)
     result: null,                  // null while the mission is undecided, else { outcome: 'success'|'failure', reason, stats }
-    difficulty: DIFFICULTIES.includes(ctx.params?.raw?.difficulty) ? ctx.params.raw.difficulty : 'veteran',
+    difficulty: DIFFICULTIES.includes(ctx.params?.raw?.difficulty) ? ctx.params.raw.difficulty : 'rookie',   // first-time players start easy; the briefing screen remembers their choice
     clock: 0,                      // mission time, simulated seconds
     world: null, targeting: null, ai: null, weapons: null, director: null, fx: null, hud: null, input: null, audio: null, ui: null, camera: null,
     start, restart, abort, end, kill, pre, step, cam, late,

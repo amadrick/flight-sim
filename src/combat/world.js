@@ -7,7 +7,7 @@ import { createSim } from '../physics/index.js';
 import { getAircraft } from '../aircraft/registry.js';
 import { DEG } from './util.js';
 
-const WRECK_TIME = 30;          // s a shot-down aircraft keeps falling before it is removed
+const WRECK_TIME = 90;          // s a shot-down aircraft may keep falling before it is removed (normally it reaches the ground first)
 const FWD = new THREE.Vector3(0, 0, -1), UP = new THREE.Vector3(0, 1, 0), RIGHT = new THREE.Vector3(1, 0, 0);
 
 export function createWorld(combat) {

@@ -53,13 +53,14 @@ export function createDamageModel(combat) {
 
   function scratch(e) { return e.wpn || (e.wpn = { ledger: [], pitchSign: combat.rng() < 0.5 ? -1 : 1, shape: null, nearT: -1, fireT: 0 }); }
 
-  /** Difficulty: multiplier on damage `target` takes (the DAMAGE_TAKEN table). */
-  function takenMult(t) {
+  /** Difficulty: multiplier on damage `target` takes from weapon class `kind` (the DAMAGE_TAKEN table). */
+  function takenMult(t, kind = 'gun') {
     const d = combat.difficulty || 'veteran';
     const p = combat.world.player;
-    if (t.isPlayer) return DAMAGE_TAKEN.player[d] ?? 1;
-    if (p && t.team === p.team) return DAMAGE_TAKEN.playerWingman[d] ?? 1;
-    return DAMAGE_TAKEN.enemy[d] ?? 1;
+    const row = t.isPlayer ? DAMAGE_TAKEN.player[d] : p && t.team === p.team ? DAMAGE_TAKEN.playerWingman[d] : DAMAGE_TAKEN.enemy[d];
+    if (row == null) return 1;
+    if (typeof row === 'number') return row;
+    return row[kind] ?? row.gun ?? 1;
   }
 
   function syncSim(e) {
@@ -119,7 +120,8 @@ export function createDamageModel(combat) {
       if (part === 'engine') index = Math.max(0, nearestEngine(w.shape, tmp));
     }
     const P = PARTS[part] || PARTS.fuselage;
-    let dmg = amount * (info.blast ? 1 : P.mult) * takenMult(t);
+    const kind = info.blast || weapon === 'missile' ? 'missile' : weapon === 'gun' ? 'gun' : 'other';
+    let dmg = amount * (info.blast ? 1 : P.mult) * (kind === 'other' ? 1 : takenMult(t, kind));
     const hp0 = t.hp;
     t.hp -= dmg;
     const killInfo = { part: part || 'hull', cause: weapon };
@@ -147,7 +149,7 @@ export function createDamageModel(combat) {
         if (rng() < 0.4 + 0.6 * sat(dmg / mx)) startFire(t, 0.35 + 0.5 * sat(dmg / mx));
       }
       // pilot: rare, instant
-      if (part === 'cockpit' && !d.pilot && rng() < (P.pilot || 0) * Math.min(3, dmg / 7)) { d.pilot = true; killInfo.pilotKilled = true; t.hp = Math.min(t.hp, 0); }
+      if (part === 'cockpit' && !info.blast && !d.pilot && !(t.isPlayer && takenMult(t, 'gun') < 0.6) && rng() < (P.pilot || 0) * Math.min(3, dmg / 7)) { d.pilot = true; killInfo.pilotKilled = true; t.hp = Math.min(t.hp, 0); }
       updateSmoke(t);
       syncSim(t);
     }
@@ -189,9 +191,9 @@ export function createDamageModel(combat) {
         const P = d.parts;
         for (let k = 0; k < P.engines.length; k++) if (P.engines[k] > 0.3) { P.engines[k] = sat(P.engines[k] + dt * 0.012 * d.fire); if (P.engines[k] >= 1) engineOut(t, k); }
         P.fuselage = sat(P.fuselage + dt * 0.012 * d.fire);
-        if (!t.invulnerable) t.hp -= dt * (t.maxHp || 100) * 0.03 * d.fire * takenMult(t);
+        if (!t.invulnerable) t.hp -= dt * (t.maxHp || 100) * 0.03 * d.fire * takenMult(t, 'fire');
         if (d.fire < 0.35 && combat.rng() < dt * 0.04) d.fire = 0;          // blew out
-        if (t.alive && d.fire > 0.85 && d.leak > 0.3 && combat.rng() < dt * 0.08 && !t.invulnerable) {
+        if (t.alive && d.fire > 0.85 && d.leak > 0.3 && combat.rng() < dt * 0.08 * takenMult(t, 'fire') && !t.invulnerable) {
           kill(t, t.lastHitBy || null, t.lastHitWeapon || 'gun', { cause: 'fire', part: 'fuel', disintegrated: true });
           continue;
         }
@@ -199,9 +201,14 @@ export function createDamageModel(combat) {
       }
       if (d.leak > 0) {
         changed = true;
-        d.fuelLost += dt * LEAK_RATE * d.leak;
-        const fuel = t.state.fuel;
-        if (fuel != null && fuel > 0 && d.fuelLost >= fuel) for (let k = 0; k < d.engineOut.length; k++) engineOut(t, k);
+        const rate = LEAK_RATE * d.leak;
+        d.fuelLost += dt * rate;
+        const sd = t.sim?.damage;
+        if (sd && 'fuelLeak' in sd) sd.fuelLeak = rate;      // flight model drains the real fuel; engines starve on their own
+        else {                                               // older flight model: emulate the flame-out
+          const fuel = t.state.fuel;
+          if (fuel != null && fuel > 0 && d.fuelLost >= fuel) for (let k = 0; k < d.engineOut.length; k++) engineOut(t, k);
+        }
       }
       if (changed) { updateSmoke(t); syncSim(t); }
     }
@@ -210,8 +217,29 @@ export function createDamageModel(combat) {
   function reset(e) {
     const sd = e?.sim?.damage; if (!sd) return;
     sd.thrust = 1; sd.ctrl = 1; sd.drag = 0; sd.rollBias = 0; sd.pitchBias = 0;
+    if ('fuelLeak' in sd) sd.fuelLeak = 0;
     if (sd.engineOut) sd.engineOut.length = 0;
   }
 
-  return { apply, update, syncSim, reset, scratch, kill, takenMult };
+  /** Repair by fraction h (0..1) of the damage: hp, parts, fire, leak; h = 1 restores engines that were shot out. */
+  function repair(t, h) {
+    const d = t.damage, mx = t.maxHp || 100;
+    if (h > 0) t.hp = Math.min(mx, (t.hp ?? mx) + h * mx);
+    if (d && d.parts) {
+      const P = d.parts, k = 1 - Math.min(1, Math.max(0, h));
+      P.fuselage *= k; P.cockpit *= k; P.wingL *= k; P.wingR *= k; P.tail *= k;
+      for (let i = 0; i < P.engines.length; i++) { P.engines[i] *= k; if (h >= 1) d.engineOut[i] = false; }
+      d.leak *= k; if (h >= 0.5) d.fire = 0; else d.fire *= k;
+      if (h >= 1) { d.fuelLost = 0; d.pilot = false; }
+      const sd = t.sim?.damage; if (sd && 'fuelLeak' in sd) sd.fuelLeak = LEAK_RATE * d.leak;
+      updateSmoke(t); syncSim(t);
+    }
+  }
+  /** Keep derived damage state consistent after outside writes to hp / maxHp (missions). */
+  function refresh(t) {
+    if (t.maxHp > 0 && t.hp > t.maxHp) t.hp = t.maxHp;
+    if (t.damage?.parts) updateSmoke(t);
+  }
+
+  return { apply, update, syncSim, reset, scratch, kill, takenMult, repair, refresh };
 }

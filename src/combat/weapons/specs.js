@@ -82,11 +82,31 @@ const BY_CATEGORY = {
   airliner: { gun: null, rounds: 0, ir: 0, radar: 0, flares: 0, hp: 220 },
 };
 
-/** Damage TAKEN multipliers — the one place difficulty touches the damage model. */
+/**
+ * Damage TAKEN multipliers — the one place difficulty touches the damage model. Per weapon class:
+ * gun, missile (blast), fire (burning over time), other (collision is not scaled: it always kills).
+ * Player numbers vs one missile hit on a 100 hp fighter (warhead 240–300 hp × fall-off 0.5–1):
+ *   rookie: at most ≈ 86 hp → always survives one hit, crippled; veteran: 65–200 → crippled or dead; ace: dead.
+ */
 export const DAMAGE_TAKEN = {
-  player: { rookie: 0.4, veteran: 0.8, ace: 1.1 },
+  player: {
+    rookie: { gun: 0.45, missile: 0.25, fire: 0.3 },
+    veteran: { gun: 0.8, missile: 0.65, fire: 0.8 },
+    ace: { gun: 1.1, missile: 1.1, fire: 1.1 },
+  },
   playerWingman: { rookie: 0.7, veteran: 0.9, ace: 1.0 },   // blue AI
   enemy: { rookie: 1.15, veteran: 1.0, ace: 0.9 },           // red AI
+};
+
+/**
+ * Warning time guaranteed to the human player: an aircraft hostile to the player cannot launch a radar missile at
+ * them until its radar lock ('rwr:lock' on the player) has been held this long (s). IR launches are passive (no lock
+ * warning) but still raise 'rwr:launch'; they require the lock to be held `irHold` s.
+ */
+export const PLAYER_WARNING = {
+  rookie: { radarHold: 4, irHold: 2 },
+  veteran: { radarHold: 2.5, irHold: 1 },
+  ace: { radarHold: 1, irHold: 0 },
 };
 
 /** Resolve the base loadout of an aircraft definition (id table → category → fighter default). */
