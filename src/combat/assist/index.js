@@ -66,6 +66,11 @@ export const ASSIST_TUNING = {
   aoaTau: 0.15,        // s: smoothing of the AoA used to turn nose aims into path aims (faster = G oscillation)
   rudder: 0,         // rudder per rad of small lateral nose error
   frameRelax: 2.5,     // rad/s: the stick frame re-erects to the horizon when not pulling through the vertical
+  touchPitch: 1,       // raw touch y → nose up (+y = drag down = stick back; checked in the page)
+  touchDead: 0.04,     // radial dead zone of the raw touch stick
+  expoTouch: 0,        // the assist's expo on the raw touch stick (linear: a phone thumb has no fine control to spend it on)
+  mRiseTouch: 6,       // 1/s: fastest growth of the touch stick magnitude
+  slowOn: 0.8, slowOff: 0.88,     // info.slow below this share of the fight speed (off again above the second)
   keyStep: 0.03,       // rad (1.7°): the nose step of one key tap
   keyStepRate: 0.45,   // rad/s: how fast a tap's step is applied
   keyTap: 0.15,        // s: a key held longer than this starts the continuous nose rate …
@@ -127,7 +132,7 @@ export function createAssist(combat) {
     aoaS: 0, safeT: 0, clear: 1e9, mPrev: 0, mEff: 0, holdT: 0, holdHi: 0, settle: 0, Ps: new THREE.Vector3(), E: new THREE.Vector3(), eMag: 0, settleTau: 1, settleT: 0, vPrev: new THREE.Vector3(), nAero: 9, nI: new THREE.Vector3(), Ld: new THREE.Vector3(0, 1, 0), recovering: false, recHdg: 0,
     thrWritten: -1, thrTouchT: -1e9, thrTouched: false, auto: false,
     modeSet: false, aimSet: false,
-    lead: 0, wMax: 0.4, ffS: new THREE.Vector3(), kv: [0, 0], kd: [0, 0], kt: [0, 0], kpend: [0, 0], kEnd: [-9, -9], kLast: [0, 0], keys: false,
+    coordTaken: false, coordSaved: true, touchHeld: false, lead: 0, wMax: 0.4, ffS: new THREE.Vector3(), kv: [0, 0], kd: [0, 0], kt: [0, 0], kpend: [0, 0], kEnd: [-9, -9], kLast: [0, 0], keys: false,
   };
 
   const assist = {
@@ -140,7 +145,7 @@ export function createAssist(combat) {
      *  'analog' or 'keys'. Keys get their own law: tap = a small fixed nose step, hold = a rate ramping to the full
      *  turn, the opposite key right after = stop. */
     device: 'auto',
-    info: { mode: 'off', active: false, gunAssist: false, limiting: '', pullUp: false, autoThrottle: false, aimPoint: false, keys: false },
+    info: { mode: 'off', active: false, gunAssist: false, limiting: '', pullUp: false, autoThrottle: false, aimPoint: false, keys: false, touch: false, fightSpeed: 0, slow: false },
     /** The commanded nose direction, the flight path that gives it (world, unit) and the stick frame (right / up,
      *  world) — for HUD cues (e.g. a reticle where the nose is going). */
     command: st.A, path: st.P, frameRight: st.R, frameUp: st.U,
@@ -172,9 +177,18 @@ export function createAssist(combat) {
     if (!st.aimSet) assist.aimAssist = d.aim;
     assist.info.mode = assist.mode;
   }
+  /** The touch stick: while the assist steers it reads ctx.input.touch.raw and turns the simulator's own rudder
+   *  auto-coordination off; this gives it back. */
+  function restoreCoord() {
+    if (!st.coordTaken) return;
+    st.coordTaken = false;
+    const t = combat.ctx?.input?.touch;
+    if (t) t.autoCoord = st.coordSaved;
+  }
   function disengage() {
+    restoreCoord();
     st.engaged = false; st.recovering = false; st.auto = false;
-    const i = assist.info; i.active = false; i.gunAssist = false; i.limiting = ''; i.pullUp = false; i.autoThrottle = false; i.aimPoint = false; i.keys = false;
+    const i = assist.info; i.active = false; i.gunAssist = false; i.limiting = ''; i.pullUp = false; i.autoThrottle = false; i.aimPoint = false; i.keys = false; i.touch = false; i.slow = false;
     st.kd[0] = st.kd[1] = 0; st.kpend[0] = st.kpend[1] = 0;
   }
   function bind(e) {
@@ -234,7 +248,28 @@ export function createAssist(combat) {
     }
     info.active = true;
     st.blend = Math.min(1, st.blend + dt / T.blendIn);
-    const sx = clamp(c.roll || 0, -1, 1), sy = clamp(c.pitch || 0, -1, 1), rz = clamp(c.yaw || 0, -1, 1);
+    // ---- the stick. Touch: the raw floating stick (unit circle, +y = drag down = stick back = nose up), with the
+    // simulator's rudder auto-coordination off; the assist shapes it itself. Otherwise ctx.controls as the input
+    // layer shaped it.
+    const inp = combat.ctx?.input, tch = inp?.touch, raw = tch?.raw;
+    const touch = !!(raw && tch.visible && (inp.mode === 'touch' || raw.held));
+    let sx, sy, rz;
+    if (touch) {
+      const first = !st.coordTaken;
+      if (first) { st.coordSaved = tch.autoCoord !== false; st.coordTaken = true; tch.autoCoord = false; }
+      const rx = clamp(raw.x || 0, -1, 1), ry = clamp(raw.y || 0, -1, 1) * T.touchPitch, rm = Math.hypot(rx, ry);
+      // radial dead zone only: the expo is the assist's own (shapeRate with expoTouch)
+      const k = rm > T.touchDead ? Math.min(1, (rm - T.touchDead) / (1 - T.touchDead)) / rm : 0;
+      sx = rx * k; sy = ry * k;
+      rz = first ? 0 : clamp(c.yaw || 0, -1, 1);                    // the rudder slider when used (else 0 now)
+      // the thumb lifted: a real release, at once (also with the simulator's auto-centre off)
+      if (!raw.held) { sx = 0; sy = 0; }
+      st.touchHeld = !!raw.held;
+    } else {
+      restoreCoord();
+      sx = clamp(c.roll || 0, -1, 1); sy = clamp(c.pitch || 0, -1, 1); rz = clamp(c.yaw || 0, -1, 1);
+    }
+    info.touch = touch;
     const thr0 = c.throttle, sb0 = c.speedbrake;
     const V = Math.max(s.tas || s.velocity.length(), 40), ias = Math.max(s.ias || V, 1);
     const gLim = Math.min(prof.gMax, prof.fbw ? prof.fcsNzMax : prof.gMax) * d.g;
@@ -274,8 +309,7 @@ export function createAssist(combat) {
     st.wMax = wMax;
     // stick magnitude, rising at most at mRise per second (a tapped or flicked stick gives a small correction; holding it
     // builds to the full-rate turn), falling at once
-    const inp = combat.ctx?.input;
-    const keys = assist.device === 'keys' || (assist.device === 'auto' && !!inp && (inp.mode === 'keyboard' || inp.mode === 'mouse') && !inp.mouseYoke);
+    const keys = !touch && assist.device === 'keys' || (assist.device === 'auto' && !!inp && (inp.mode === 'keyboard' || inp.mode === 'mouse') && !inp.mouseYoke);
     info.keys = keys;
     _ff.set(0, 0, 0);
     let m, sh;
@@ -315,8 +349,8 @@ export function createAssist(combat) {
     } else {
       st.kd[0] = st.kd[1] = 0; st.kv[0] = sx; st.kv[1] = sy; st.kpend[0] = st.kpend[1] = 0;
       const mRaw = Math.min(1, Math.hypot(sx, sy));
-      st.mEff = mRaw < st.mEff ? mRaw : Math.min(mRaw, st.mEff + T.mRise * dt);
-      m = st.mEff; sh = shapeRate(m);
+      st.mEff = mRaw < st.mEff ? mRaw : Math.min(mRaw, st.mEff + (touch ? T.mRiseTouch : T.mRise) * dt);
+      m = st.mEff; sh = shapeRate(m, touch ? T.expoTouch : T.expo);
       const w = sh * wMax;
       if (m > 1e-3) {
         const ux = sx / Math.max(mRaw, 1e-6), uy = sy / Math.max(mRaw, 1e-6);
@@ -496,9 +530,12 @@ export function createAssist(combat) {
     const idle = st.t - st.thrTouchT;
     st.auto = d.autoThrottle && idle > (st.thrTouched ? T.thrHold : T.thrIdle);
     info.autoThrottle = st.auto;
+    // the fight speed (corner speed, never below 1.6 × stall): the auto-throttle's aim and the HUD energy cue
+    const fight = s.gLoad > 2.5 || m > 0.5 || !!tgt;
+    const safe = Math.max(prof.stall, 40) * 1.6;
+    info.fightSpeed = Math.max(safe, prof.corner);
+    info.slow = ias < info.fightSpeed * (info.slow ? T.slowOff : T.slowOn);
     if (st.auto) {
-      const fight = s.gLoad > 2.5 || m > 0.5 || !!tgt;
-      const safe = Math.max(prof.stall, 40) * 1.6;
       const want = Math.max(safe, fight ? prof.corner : prof.corner + 40);
       fc.speed(want, true, true, 0.45);
       if (ias < safe) fc.thrCmd = 1;
@@ -518,6 +555,10 @@ export function createAssist(combat) {
     }
     st.thrWritten = c.throttle;
   }
+
+  // the mission is over or left, or the player is down: give the touch stick's rudder auto-coordination back at once
+  // (combat.pre stops calling update outside a mission)
+  for (const ev of ['mission:end', 'mission:abort', 'player:down']) combat.events?.on?.(ev, () => { if (st.engaged || st.coordTaken) disengage(); });
 
   defaults();
   return assist;

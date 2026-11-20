@@ -211,3 +211,38 @@ test('keys: a tap is a small fixed nose step; the release after a hard turn give
   const back = -wrap(heading(e) - hr) / DEG;
   assert.ok(back < 3, `gave back ${back.toFixed(1)}°`);
 });
+
+test('touch: raw floating stick, auto-coordination off while steering; pinned = a steady max turn, rim wobble does not shake it', async () => {
+  const run = async (wobble) => {
+    const { b, c, e } = await setup({ speed: 220 });
+    const touch = { visible: true, autoCoord: true, raw: { x: 0, y: 0, held: false } };
+    c.ctx.input = { mode: 'touch', touch };
+    fly(b, e, 1);
+    assert.equal(touch.autoCoord, false, 'the assist takes the rudder coordination');
+    assert.equal(c.assist.info.touch, true);
+    const h0 = heading(e);
+    let t = 0, n = 0, sb = 0, sb2 = 0, sg = 0, sg2 = 0;
+    b.run(6, () => {
+      t += 1 / 60;
+      const a = wobble * Math.sin(2 * Math.PI * 2 * t);                 // the thumb circling at the rim, ±wobble
+      touch.raw.x = Math.cos(a); touch.raw.y = Math.sin(a); touch.raw.held = true;
+      // what the simulator would put in ctx.controls (shaped; yaw 0 with auto-coordination off)
+      e.controls.roll = touch.raw.x; e.controls.pitch = touch.raw.y; e.controls.yaw = touch.autoCoord ? 0.28 * touch.raw.x : 0;
+      if (t > 3) { n++; sb += e.state.roll; sb2 += e.state.roll ** 2; sg += e.state.gLoad; sg2 += e.state.gLoad ** 2; }
+    });
+    const turned = wrap(heading(e) - h0) / DEG;
+    const sdB = Math.sqrt(Math.max(0, sb2 / n - (sb / n) ** 2)) / DEG, sdG = Math.sqrt(Math.max(0, sg2 / n - (sg / n) ** 2));
+    // a lifted thumb is a release at once; the end of the mission gives the coordination back
+    touch.raw.held = false;
+    fly(b, e, 0.2);
+    const active = c.assist.info.active;
+    c.events.emit('mission:end', {});
+    return { turned, sdB, sdG, active, coord: touch.autoCoord, gEnd: e.state.gLoad };
+  };
+  const pin = await run(0), wob = await run(25 * DEG);
+  assert.ok(pin.turned > 60, `pinned right turned ${pin.turned.toFixed(0)}°`);
+  assert.ok(pin.sdB < 6 && pin.sdG < 0.6, `pinned is steady: bank σ ${pin.sdB.toFixed(1)}°, G σ ${pin.sdG.toFixed(2)}`);
+  assert.ok(Math.abs(wob.turned - pin.turned) < 0.25 * pin.turned, `wobble turns the same: ${wob.turned.toFixed(0)}° vs ${pin.turned.toFixed(0)}°`);
+  assert.ok(wob.sdB < 8 && wob.sdG < 0.8, `rim wobble does not shake the jet: bank σ ${wob.sdB.toFixed(1)}°, G σ ${wob.sdG.toFixed(2)}`);
+  assert.ok(pin.active && pin.coord === true, 'auto-coordination restored when the mission ends');
+});
