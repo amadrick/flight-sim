@@ -383,8 +383,10 @@ export async function createClouds(ctx) {
       }
       return false;
     };
-    // (a second pass without the clear-air ring when no candidate within ~9 km has both)
-    for (let pass = 0; pass < 2; pass++, clearR = 0) for (let i = 0; i < 400; i++) {
+    // (a second pass without the clear-air ring when no candidate within ~12 km has both)
+    // (round six c: clear air is searched out to ~12 km: with the stronger clustering the gaps between groups are wider
+    //  but farther apart)
+    for (let pass = 0; pass < 2; pass++, clearR = 0) for (let i = 0; i < (pass === 0 ? 700 : 400); i++) {
       // sunflower spiral: candidates in order of distance
       const r = 450 * Math.sqrt(i), a = i * 2.39996;
       const ox = ox0 + r * Math.cos(a), oz = oz0 + r * Math.sin(a);
