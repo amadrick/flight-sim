@@ -10,14 +10,14 @@ const MARK_COLOR = { target: '#ff5a4e', protect: '#5ad1ff', nav: '#ffd166', zone
 
 /** Skill by role and difficulty (0..1, passed to world.spawnAircraft). */
 export const SKILLS = {
-  enemy: { rookie: 0.18, veteran: 0.5, ace: 0.8 },
-  elite: { rookie: 0.32, veteran: 0.66, ace: 0.95 },
-  wing: { rookie: 0.8, veteran: 0.62, ace: 0.48 },
+  enemy: { rookie: 0.18, veteran: 0.5, ace: 0.72 },
+  elite: { rookie: 0.32, veteran: 0.66, ace: 0.88 },
+  wing: { rookie: 0.8, veteran: 0.62, ace: 0.55 },
   target: { rookie: 0.1, veteran: 0.25, ace: 0.4 },
 };
 /** The Cendrine Directorate flies a mixed bag. */
 /** Default missiles on Directorate fighters by difficulty. */
-export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0 }, veteran: { ir: 2, radar: 0 }, ace: { ir: 2, radar: 2 } };
+export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0, flares: 4 }, veteran: { ir: 2, radar: 0, flares: 10 }, ace: { ir: 2, radar: 1, flares: 16 } };
 export const ADVERSARY_MIX = ['f16', 'f15', 'fa18', 'f14', 'f16', 'f35'];
 
 export function createRuntime(combat, director, mission, options = {}) {
@@ -225,6 +225,22 @@ export function createRuntime(combat, director, mission, options = {}) {
     /** Stay within `radius` of center; after a warning the player has o.grace seconds to come back. */
     boundary(center, radius, o = {}) { boundary = { zone: s.zone(center, radius), grace: o.grace ?? 30, out: -1, timer: null }; },
     failIf(cond, reason) { s.when(cond, () => s.lose(reason)); },
+    /**
+     * The mission clock for fights that could otherwise run forever: when it runs out the hostiles still flying
+     * disengage. o.decide(lost, total) says whether that is a win (default: at least o.fraction, 0.6, of the red aircraft
+     * that showed up are down). o: { label, fraction, decide, win, lose, winChat, loseChat }
+     */
+    bingo(seconds, o = {}) {
+      return s.countdown(seconds, o.label || 'Bingo fuel', () => {
+        let total = 0, lost = 0;
+        for (const g of groups) if (g.team === 'red' && !g.noCount && g.spawned) { total += g.size; lost += g.lost; }
+        const p = world.player;
+        for (const g of groups) if (g.team === 'red' && g.spawned && g.alive) g.order((e) => s.orders.flee(p ? bearing(p.state.position, e.state.position) : 0, e.state.position.y));
+        const ok = o.decide ? o.decide(lost, total) : total > 0 && lost / total >= (o.fraction ?? 0.6);
+        if (ok) s.win(o.win || 'Bandits disengaged', o.winChat || [[0.5, 'awacs', '@awacs.bugout'], [3, 'awacs', '@awacs.rtb']]);
+        else s.lose(o.lose || 'Bingo fuel: the bandits held the airspace', o.loseChat || [[0.5, 'awacs', '@awacs.bugout'], [3, 'awacs', '@awacs.bingoFail']]);
+      });
+    },
 
     // ---------------- HUD: steer point, markers ----------------
     /** Set the steer point: a point, an entity (followed) or null. */
@@ -420,7 +436,8 @@ export function createRuntime(combat, director, mission, options = {}) {
       const typ = sp.mixed === false ? types[0] : types[(typeOff + i) % types.length];
       const cs = Array.isArray(sp.callsign) ? sp.callsign[i] : sp.callsign ? (g.size === 1 && sp.single ? sp.callsign : `${sp.callsign} ${(sp.startIndex ?? 1) + i}`) : `${team === 'red' ? 'Bandit' : 'Friendly'} ${i + 1}`;
       // the Directorate's missile racks scale with difficulty (fighters only; explicit loadouts win)
-      const base = team !== 'blue' && !sp.loadout ? ENEMY_LOADOUT[combat.difficulty] || ENEMY_LOADOUT.veteran : null;
+      const rack = ENEMY_LOADOUT[combat.difficulty] || ENEMY_LOADOUT.veteran;
+      const base = team === 'blue' ? null : !sp.loadout ? rack : sp.loadout.flares == null ? { flares: rack.flares } : null;
       const loadout = base || sp.loadout || sp.hp != null || sp.invulnerable ? { ...(base || {}), ...(sp.loadout || {}) } : undefined;
       if (loadout && sp.hp != null) loadout.hp = sp.hp;
       if (loadout && sp.invulnerable) loadout.invulnerable = true;
