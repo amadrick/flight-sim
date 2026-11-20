@@ -110,7 +110,7 @@ export const CAMPAIGN = [
         w.pilot.setOrder(s.orders.engage(a));
         s.say(w, ['Halyard 2, I\'ve got the one going for Bundle.', 'Halyard 2, taking the bandit on the transport.'], { priority: 1 });
       });
-      const w1 = s.wave('flint', { type: ['f16', 'fa18'], count: 2, callsign: 'Flint', at: fromB(40, 22000), loadout: { ir: s.n(0, 1, 2), radar: 0 }, heading: 'player', call: true,
+      const w1 = s.wave('flint', { type: ['f16', 'fa18'], count: s.n(1, 1, 2), callsign: 'Flint', at: fromB(40, 22000), loadout: { ir: s.n(0, 1, 2), radar: 0 }, heading: 'player', call: true,
         order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, 35, cover);
       const saddleZone = s.zone(saddle, 5000);
       const w2 = s.wave('slag', { type: 'mixed', count: s.n(1, 2, 2), callsign: 'Slag', at: fromB(285, 20000), loadout: { ir: s.n(0, 1, 2), radar: 0 }, call: true,
@@ -346,10 +346,10 @@ export const CAMPAIGN = [
     id: 'c7-blackout', order: 7, title: 'Blackout', tagline: 'Night intercept. Not everything on the scope is the real threat.',
     brief: [
       'Two in the morning. Cathedral picks up bombers far out over the sea, lights off, swinging around the south of the coast toward Haven. It is the first time the Directorate has tried the long way round.',
-      'You are already airborne on night patrol in an F-15. Your wingman Halyard 2 is with you. Stars are out, the moon is thin, and the sea is black.',
+      'You are already airborne on night patrol with your wingman, Halyard 2. Stars are out, the moon is thin, and the sea is black.',
       'Cathedral has a feeling about this one. So do I. Keep half an eye on the coast.',
     ],
-    location: 'KHVN', locationName: 'Off the coast south of Haven', map: briefMap(-24000, 30000, 44000, [-14910, 21300, 215], [[-50850, 56480], [-49800, 57500]], [[0, 0]]), tod: 23.4, weather: 'clear', aircraft: 'f15', threat: 4, minutes: 7,
+    location: 'KHVN', locationName: 'Off the coast south of Haven', map: briefMap(-24000, 30000, 44000, [-14910, 21300, 215], [[-50850, 56480], [-49800, 57500]], [[0, 0]]), tod: 23.4, weather: 'clear', aircraft: 'f16', threat: 4, minutes: 7,
     objectivesPreview: ['Destroy the raid before it reaches Haven', 'Optional: destroy the escorts'],
     start: { at: 'haven', brg: 215, dist: 26000, alt: 6500, hdg: 215, spd: 240 },
     script(s) {
@@ -358,9 +358,9 @@ export const CAMPAIGN = [
       const ember = s.group('ember', { type: 'b2', count: 2, callsign: 'Ember', at: { from: haven, brg: 222, dist: 76000, alt: 7000 }, heading: haven, spacing: 1500, formation: 'line',
         passive: true, loadout: UNARMED, hp: s.n(110, 160, 200), points: 160, mark: 'BOMBER', speed: 220, role: 'bomber',
         order: () => s.orders.patrol([V(haven.x, 7000, haven.z)], { passive: true }) });
-      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 2, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 72000, alt: 8000 }, heading: haven,
+      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 1, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 72000, alt: 8000 }, heading: haven,
         engageWithin: 15000, order: (i) => s.orders.escort(ember.members[i % 2], { x: 600, y: 800, z: 500 }) });
-      const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 2, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: 52000, agl: 650 }, heading: haven,
+      const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 1, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: 52000, agl: 650 }, heading: haven,
         passive: true, loadout: { gun: 0, ir: 0, radar: 0 }, points: 150, mark: 'LOW RAIDER', role: 'raider', speed: 190, spacing: 800,
         order: () => s.orders.patrol([V(haven.x, 600, haven.z)], { passive: true }) }, s.n(110, 85, 75), (g) => {
         s.chat([
@@ -398,30 +398,32 @@ export const CAMPAIGN = [
 
   // ------------------------------------------------------------------------------------------------ 8
   mission({
-    id: 'c8-ceiling', order: 8, title: 'Glass Ceiling', tagline: 'Two against many, above a floor of solid cloud.',
+    id: 'c8-ceiling', order: 8, title: 'Glass Ceiling', tagline: 'Outnumbered, above a floor of solid cloud.',
     brief: [
       'The Directorate is massing fighters for something big, and they are using the overcast over the Glass Flats to hide it. Cathedral can see them, roughly. Nobody else can see anything.',
-      'You and Halyard 2 are going up through the deck to break up their formation before it forms. You will be outnumbered. The cloud tops are at about ten thousand feet; anything below is soup.',
+      'Your flight is going up through the deck to break up their formation before it forms: Halyard 2 for certain, Halyard 3 if the maintainers win their argument with her jet. You will be outnumbered. The cloud tops are at about ten thousand feet; anything below is soup.',
       'Watch the cloud tops. Things come out of them.',
     ],
     location: 'KRDR', locationName: 'Above the overcast, Glass Flats', map: briefMap(67000, -40000, 24000, [64870, -25900, 10], [[70080, -55450], [69200, -54800], [70900, -54800]]), tod: 12, weather: 'overcast', aircraft: 'f16', threat: 4, minutes: 7,
-    objectivesPreview: ['Destroy every Directorate fighter', 'Optional: Halyard 2 comes home', 'Hidden: something about the cannon'],
+    objectivesPreview: ['Destroy every Directorate fighter', 'Optional: your wingmen come home', 'Hidden: something about the cannon'],
     start: { at: 'glassFlats', brg: 200, dist: 15000, alt: 6200, hdg: 10, spd: 240 },
     script(s) {
-      const wing = s.wingmen(1);
-      const flint = s.group('flint', { type: 'mixed', count: 3, callsign: 'Flint', at: { rel: 0, dist: 30000, alt: 6800 }, formation: 'wedge', spacing: 900 });
-      const slag = s.wave('slag', { type: 'mixed', count: s.n(2, 3, 3), callsign: 'Slag', at: () => s.at({ rel: s.pick([-55, 55]), dist: 24000, alt: 7500 }), call: '@awacs.wave' }, { or: [{ kills: 2 }, { after: 100 }] });
-      const pop = s.wave('kiln', { type: ['f16', 'fa18'], count: s.n(1, 2, 2), callsign: 'Kiln', at: () => s.at({ rel: s.pick([-15, 15]), dist: 9000, alt: 2600, clear: 300 }), heading: { rel: 180 } }, { or: [{ kills: 4 }, { after: 220 }] }, () => {
+      const wing = s.wingmen(s.n(2, 2, 1));
+      // Flint is still forming up, crossing your nose: catch them before they turn in
+      const flint = s.group('flint', { type: 'mixed', count: s.n(2, 2, 3), callsign: 'Flint', at: { rel: 10, dist: 26000, alt: 6800 }, heading: { rel: 95 }, formation: 'wedge', spacing: 900,
+        engageWithin: s.n(7000, 9000, 14000), order: (i, p) => s.orders.patrol([s.at({ from: p, rel: 95, dist: 40000, alt: p.y }), s.at({ from: p, rel: -85, dist: 10000, alt: p.y })]) });
+      const slag = s.wave('slag', { type: 'mixed', count: s.n(2, 2, 3), callsign: 'Slag', at: () => s.at({ rel: s.pick([-55, 55]), dist: 24000, alt: 7500 }), call: '@awacs.wave' }, { or: [{ kills: 2 }, { after: 100 }] });
+      const pop = s.wave('kiln', { type: ['f16', 'fa18'], count: s.n(1, 1, 2), callsign: 'Kiln', at: () => s.at({ rel: s.pick([-15, 15]), dist: 9000, alt: 2600, clear: 300 }), heading: { rel: 180 } }, { or: [{ kills: 4 }, { after: 220 }] }, () => {
         s.say('awacs', 'Pop-up! Two contacts climbing out of the overcast, right under your nose. Look low!', { priority: 2 });
         s.say(wing.leader || 'awacs', 'Where did they come from? Oh. The clouds. Right.', { priority: 0, delay: 4 });
       });
       s.destroy('all', 'Destroy every Directorate fighter', [flint, slag, pop]);
-      s.protect('h2', 'Halyard 2 comes home', wing, { optional: true });
+      s.protect('h2', 'Bring your wingmen home', wing, { optional: true });
       let guns = 0;
       const gun = s.objective('guns', 'Three kills with the cannon', { hidden: true, points: 300 });
       s.on('kill', ({ killer, weapon, victim }) => { if (killer === s.player && weapon === 'gun' && victim.team === 'red' && ++guns >= 3) gun.done(); });
       s.chat([
-        [1, 'awacs', 'Halyard, Cathedral. Three fighters, bearing {brg}, thirty-five miles, and more behind them. Break them up.', { vars: { brg: String(Math.round(bearing(s.anchor, flint.members[0].state.position) / 10) * 10).padStart(3, '0') } }],
+        [1, 'awacs', 'Halyard, Cathedral. Lead group bearing {brg}, thirty-five miles, and more behind them. Break them up.', { vars: { brg: String(Math.round(bearing(s.anchor, flint.members[0].state.position) / 10) * 10).padStart(3, '0') } }],
         [6, wing.leader, 'Halyard 2. Lovely view up here. Shame about the company.'],
       ]);
     },

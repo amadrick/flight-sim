@@ -85,7 +85,7 @@ export const INSTANT = [
     location: 'KHVN', locationName: 'Over the sea south of Haven', map: briefMap(0, 30000, 26000, [0, 40000, 0]), tod: 17.6, weather: 'scattered', threat: 5, minutes: 10,
     objectivesPreview: ['Survive as many waves as you can', 'Three waves cleared counts as a win'],
     start: { at: 'haven', brg: 180, dist: 40000, alt: 5000, hdg: 0, spd: 240 },
-    noTimeBonus: true, quietKills: true, par: 4000,
+    noTimeBonus: true, quietKills: true, par: 2200,
     script(s) {
       const MAX = 10;
       s.autoWin = false;

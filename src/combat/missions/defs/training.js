@@ -79,7 +79,7 @@ export const TRAINING = [
       const defend = s.objective('defend', 'Defeat Clay 4\'s training shot (flares: V)');
       s.destroy('clay4', 'Shoot down Clay 4', c4);
       s.steer(c3.leader, 'CLAY 3');
-      s.boundary(s.anchor, 50000);
+      s.boundary(s.anchor, 90000);
       s.countdown(s.n(480, 360, 300), 'Range time', () => s.lose('Range time expired'));
       s.chat([
         [1, 'instructor', 'Afternoon, {cs}. Missile day. Clay 3 is ahead of you. Keep it inside the seeker circle until you hear the lock tone.'],
