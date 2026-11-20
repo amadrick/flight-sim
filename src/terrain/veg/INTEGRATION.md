@@ -70,3 +70,52 @@ It also reads `terrHash2`, `terrUV`, `terrTexD`, `terrDecodeN`, `ss`, `terrShado
 and the uniforms `tTerrNoise`, `uTerrTile`, `uTerrRw(L)`. Cover is evaluated on clipmap level max(4, finest valid)
 so it never depends on the camera (stable trees). The surface shader's `uTerrTree` (x = on, y = full radius,
 z = end radius) is set to the impostor fade band.
+
+## Trees, second generation (trees / hedges / woods / bushes)
+
+What changed (all switchable, see URL parameters below):
+
+- **Skeletons** (`tree-skeleton.js`, `treegen.js`): broadleaf trees, pines and bushes grow a space-colonisation
+  skeleton inside the species envelope (attraction points denser toward the surface, a few empty pockets), pipe-model
+  limb radii, limbs emitted thickest first up to a bark budget, leaf-cluster cards at the twig tips with a minimum
+  spacing (no stacked cards). Spruce / fir: whorls of rising-then-drooping boughs clad in overlapping shoot-spray
+  cards, missing boughs, dead stubs on the bole. 2560 vertices (853 triangles) per species (was 1152 / 384).
+- **Atlas** (`foliage.js`): new spray tiles 0, 1, 2, 6, 7 (curving twigs with alternate side twigs, leaves alternate
+  along every twig, per-leaf tilt brightness), furrowed bark tile 11, conifer shoot spray tile 12. Grass tiles 9 / 10 are
+  byte-identical to before (the old random stream is still consumed).
+- **Baked light per tree**: a leaf-area voxel grid of every tree, 32 rays per card / bark quad, visibility stored as
+  L1 SH in a 4th vertex texel and in a third impostor atlas (C). Meshes and impostors use the same term, so the
+  hand-over keeps the crown's shading. Neighbours: the crown network's stand term at the crown surface (transfer for
+  this cover / transfer for an open-grown tree). Bark uses the bake too (trunks inside the crown are in its shade).
+- **Leaf tint** (`species.js` `LEAF_TINT`): foliage about 30-40 % darker and less saturated than the path tracer's
+  single-leaf reflectance; `canopy.js` applies the same factor to the painted canopy (uniform `uVegLeafTint`).
+- **Per-tree colour variety** (`common.js` `vegTreeColour`): about 2:1 brightness, yellower / bluer / greyish individuals.
+- **Understory and stand-edge mantle** (`common.js` `vegUnder`, a second near mesh and impostor layer): bushes and
+  saplings between the trees, denser and bigger at stand edges; casts no shadow-map shadow.
+- **Ground shadows and contact darkening** (`forest-shadow.js`): one instanced draw of 8-triangle ground grids per
+  placement cell, multiplied into the scene (crown shadow projected along the sun, soft contact disc); the cast part
+  fades where the engine's shadow map covers the ground.
+- **Crown relief in the painted canopy** (`canopy.js` `vegCrownRelief`): the painted forest beyond the 3-D trees shows
+  the crowns of the SAME tree cells (same hashes as placement.js), as domes with sun-facing sides, darker edges and
+  shaded gaps, normalised to keep the network's stand reflectance; fades out once a pixel is wider than ~3 m.
+
+| param | effect |
+|---|---|
+| `vegGen=classic` | previous generation: envelope-scattered cards, first atlas, crown-network lighting, no tint / understory / ground shadows / relief |
+| `vegLight=crown` | new trees, but lit by the crown network instead of the bake |
+| `vegTint=0` | no leaf darkening |
+| `vegUnder=0` | no understory layers |
+| `vegShadow=0` | no ground-shadow decals |
+| `vegRelief=0` | no crown relief in the painted canopy |
+
+Budgets (high, 100 % forest): near 729 instances x 853 triangles x 2 layers + 1 shadow pass, far 2 x 147 k quads,
+ground shadows 147 k x 8 triangles (degenerate when empty). Draw calls +3 (understory near, understory far, ground
+shadows). Texture memory +16 MB (impostor atlas C) +1 MB (vertex texture): 55 MB on high (was 38).
+
+### Requests to the ground agent (surface.glsl.js)
+
+1. With `VEG_CANOPY` defined, drop the painted crown modulation inside `if (forest > 0.004)` (`fcol *= mix(1.0, (0.62 +
+   0.76 * cn.a) * ...)` and `canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine)`): `vegCanopy()` now draws crowns aligned
+   with the 3-D trees and the two patterns multiply.
+2. The forest-floor darkening under 3-D trees (`ao *= mix(1.0, 0.5, floorAmt)`) can be reduced to ~0.7 now that every
+   tree draws its own contact shadow (`forest-shadow.js`).

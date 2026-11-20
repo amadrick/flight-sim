@@ -83,7 +83,7 @@ export function createDebrisMesh(ctx, capacity = 128) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aHeat;\nvarying float vHeat;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHeat = aHeat;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vHeat;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.32, 0.07) * vHeat * vHeat * 6.0;\ndiffuseColor.rgb *= 1.0 - 0.75 * clamp(vHeat * 1.5, 0.0, 1.0);');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.32, 0.07) * vHeat * vHeat * 2.0;\ndiffuseColor.rgb *= 1.0 - 0.75 * clamp(vHeat * 1.5, 0.0, 1.0);');
   };
   mat.customProgramCacheKey = () => 'cfx-debris';
   const mesh = new THREE.InstancedMesh(geo, mat, capacity);

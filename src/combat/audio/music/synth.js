@@ -90,62 +90,79 @@ export function makeChorus(ac, { rate = 0.8, depth = 0.0025, base = 0.012, mix =
 }
 
 // ---- drums --------------------------------------------------------------------------------------------------
-export function makeDrums(ac, bus, room, gateIn, white) {
-  // kick: pitched sine thump + beater click, slightly saturated
-  const kO = OSC(ac, 'sine', 50), kG = G(ac, 0), kSh = shaper(ac, driveCurve(1.6, 0), 'none'), kOut = G(ac, 0.78);
-  chain(kO, kG, kSh, kOut, bus); kO.start();
-  const kcF = BQ(ac, 'bandpass', 3500, 0.9), kcG = G(ac, 0); chain(white, kcF, kcG, kOut);
-  const kK = OSC(ac, 'triangle', 120), kKG = G(ac, 0), kKF = BQ(ac, 'lowpass', 900, 0.7); chain(kK, kKF, kKG, kOut); kK.start();   // mid "knock" layer
-  const kSub = BQ(ac, 'lowshelf', 70, 0.7, 0.5); // a touch of chest
-  kOut.disconnect(); chain(kOut, kSub, bus);
-  // snare: noise rattle + two-mode body
-  const sF = BQ(ac, 'bandpass', 2100, 0.7), sH = BQ(ac, 'highpass', 400, 0.7), sG = G(ac, 0), sOut = G(ac, 0.9);
-  chain(white, sF, sH, sG, sOut);
-  const sB = OSC(ac, 'triangle', 185), sBG = G(ac, 0); chain(sB, sBG, sOut); sB.start();
-  const sB2 = OSC(ac, 'sine', 330), sB2G = G(ac, 0); chain(sB2, sB2G, sOut); sB2.start();
-  sOut.connect(bus); const sRoom = G(ac, 0.55); sOut.connect(sRoom); sRoom.connect(room); const sGate = G(ac, 0.9); sOut.connect(sGate); sGate.connect(gateIn.in);
-  // hats (closed/open share one voice so a closed hat chokes the open one), ride
-  const hF = BQ(ac, 'highpass', 7200, 0.7), hF2 = BQ(ac, 'peaking', 10500, 1.2, 5), hG = G(ac, 0), hOut = G(ac, 0.95);
-  chain(white, hF, hF2, hG, hOut, bus);
-  const rF = BQ(ac, 'bandpass', 5200, 1.6), rF2 = BQ(ac, 'highpass', 3000, 0.7), rG = G(ac, 0), rOut = G(ac, 0.4);
-  chain(white, rF, rF2, rG, rOut, bus);
-  const rP = OSC(ac, 'sine', 3150), rPG = G(ac, 0); chain(rP, rPG, rOut); rP.start();
-  // toms
-  const tO = OSC(ac, 'sine', 110), tG = G(ac, 0), tO2 = OSC(ac, 'triangle', 110), tG2 = G(ac, 0), tOut = G(ac, 0.95);
-  chain(tO, tG, tOut); chain(tO2, tG2, tOut); tO.start(); tO2.start(); tOut.connect(bus); const tRoom = G(ac, 0.6); tOut.connect(tRoom); tRoom.connect(room);
-  // crash: bright noise wash + metallic ring
-  const cF = BQ(ac, 'highpass', 4200, 0.6), cF2 = BQ(ac, 'peaking', 7000, 0.8, 6), cG = G(ac, 0), cOut = G(ac, 0.4);
-  chain(white, cF, cF2, cG, cOut, bus); const cRoom = G(ac, 0.5); cOut.connect(cRoom); cRoom.connect(room);
+export function makeDrums(ac, bus, room, gateIn, white, { hats = 1 } = {}) {
+  // each piece is built on its first hit, so building the kit never costs one long main-thread slice
+  const sources = [], P = {};
+  const st = (...o) => { for (const x of o) { x.start(); sources.push(x); } };
+  const build = {
+    // kick: pitched sine thump + beater click + mid "knock", slightly saturated, a touch of chest
+    kick() {
+      const kO = OSC(ac, 'sine', 50), kG = G(ac, 0), kSh = shaper(ac, driveCurve(1.6, 0), 'none'), kOut = G(ac, 0.78), kSub = BQ(ac, 'lowshelf', 70, 0.7, 0.5);
+      chain(kO, kG, kSh, kOut, kSub, bus);
+      const kcF = BQ(ac, 'bandpass', 3500, 0.9), kcG = G(ac, 0); chain(white, kcF, kcG, kOut);
+      const kK = OSC(ac, 'triangle', 120), kKG = G(ac, 0), kKF = BQ(ac, 'lowpass', 900, 0.7); chain(kK, kKF, kKG, kOut);
+      st(kO, kK); return { kO, kG, kcG, kK, kKG };
+    },
+    // snare: noise rattle + two-mode body, room and gated-reverb sends
+    snare() {
+      const gate = typeof gateIn === 'function' ? gateIn() : gateIn;
+      const sF = BQ(ac, 'bandpass', 2100, 0.7), sH = BQ(ac, 'highpass', 400, 0.7), sG = G(ac, 0), sOut = G(ac, 0.9);
+      chain(white, sF, sH, sG, sOut);
+      const sB = OSC(ac, 'triangle', 185), sBG = G(ac, 0); chain(sB, sBG, sOut);
+      const sB2 = OSC(ac, 'sine', 330), sB2G = G(ac, 0); chain(sB2, sB2G, sOut);
+      sOut.connect(bus); const sRoom = G(ac, 0.55); sOut.connect(sRoom); sRoom.connect(room); const sGate = G(ac, 0.9); sOut.connect(sGate); sGate.connect(gate.in);
+      st(sB, sB2); return { sG, sB, sBG, sB2G, gate };
+    },
+    // hats (closed/open share one voice so a closed hat chokes the open one)
+    hat() { const hF = BQ(ac, 'highpass', 7200, 0.7), hF2 = BQ(ac, 'peaking', 10500, 1.2, 5), hG = G(ac, 0), hOut = G(ac, 1.15 * hats); chain(white, hF, hF2, hG, hOut, bus); return { hG }; },
+    ride() {
+      const rF = BQ(ac, 'bandpass', 5200, 1.6), rF2 = BQ(ac, 'highpass', 3000, 0.7), rG = G(ac, 0), rOut = G(ac, 0.5 * hats);
+      chain(white, rF, rF2, rG, rOut, bus);
+      const rP = OSC(ac, 'sine', 3150), rPG = G(ac, 0); chain(rP, rPG, rOut); st(rP); return { rG, rPG };
+    },
+    tom() {
+      const tO = OSC(ac, 'sine', 110), tG = G(ac, 0), tO2 = OSC(ac, 'triangle', 110), tG2 = G(ac, 0), tOut = G(ac, 0.95);
+      chain(tO, tG, tOut); chain(tO2, tG2, tOut); tOut.connect(bus); const tRoom = G(ac, 0.6); tOut.connect(tRoom); tRoom.connect(room);
+      st(tO, tO2); return { tO, tG, tO2, tG2 };
+    },
+    // crash: bright noise wash
+    crash() { const cF = BQ(ac, 'highpass', 4200, 0.6), cF2 = BQ(ac, 'peaking', 7000, 0.8, 6), cG = G(ac, 0), cOut = G(ac, 0.4); chain(white, cF, cF2, cG, cOut, bus); const cRoom = G(ac, 0.5); cOut.connect(cRoom); cRoom.connect(room); return { cG }; },
+  };
+  build.ohat = () => P.hat || (P.hat = build.hat());
+  const get = (k) => P[k] || (P[k] = build[k]());
   const TOMF = [146, 110, 82];
   return {
     trigger(e, t) {
-      const v = e.v;
+      const v = e.v; if (!build[e.i]) return;
+      const p = get(e.i);
       switch (e.i) {
         case 'kick':
-          kO.frequency.setValueAtTime(165, t); kO.frequency.exponentialRampToValueAtTime(58, t + 0.055); kO.frequency.exponentialRampToValueAtTime(43, t + 0.3);
-          hit(kG.gain, t, v, 0.002, 0.42); hit(kcG.gain, t, 0.5 * v, 0.0008, 0.018);
-          kK.frequency.setValueAtTime(240, t); kK.frequency.exponentialRampToValueAtTime(95, t + 0.04); hit(kKG.gain, t, 0.35 * v, 0.001, 0.07); return 'kick';
+          p.kO.frequency.setValueAtTime(165, t); p.kO.frequency.exponentialRampToValueAtTime(58, t + 0.055); p.kO.frequency.exponentialRampToValueAtTime(43, t + 0.3);
+          hit(p.kG.gain, t, v, 0.002, 0.42); hit(p.kcG.gain, t, 0.5 * v, 0.0008, 0.018);
+          p.kK.frequency.setValueAtTime(240, t); p.kK.frequency.exponentialRampToValueAtTime(95, t + 0.04); hit(p.kKG.gain, t, 0.35 * v, 0.001, 0.07); return 'kick';
         case 'snare': {
           const ghost = v < 0.3;
-          hit(sG.gain, t, 0.9 * v, 0.001, ghost ? 0.07 : 0.22); hit(sBG.gain, t, 0.7 * v, 0.001, 0.09); hit(sB2G.gain, t, 0.35 * v, 0.001, 0.05);
-          sB.frequency.setValueAtTime(200, t); sB.frequency.exponentialRampToValueAtTime(165, t + 0.08);
-          if (!ghost) gateIn.open(t, v);
+          hit(p.sG.gain, t, 0.9 * v, 0.001, ghost ? 0.07 : 0.22); hit(p.sBG.gain, t, 0.7 * v, 0.001, 0.09); hit(p.sB2G.gain, t, 0.35 * v, 0.001, 0.05);
+          p.sB.frequency.setValueAtTime(200, t); p.sB.frequency.exponentialRampToValueAtTime(165, t + 0.08);
+          if (!ghost) p.gate.open(t, v);
           return;
         }
-        case 'hat': hit(hG.gain, t, 0.8 * v, 0.0008, 0.045); return;
-        case 'ohat': hit(hG.gain, t, 0.8 * v, 0.001, 0.32); return;
-        case 'ride': hit(rG.gain, t, 0.7 * v, 0.001, 0.45); hit(rPG.gain, t, 0.12 * v, 0.001, 0.6); return;
+        case 'hat': hit(p.hG.gain, t, 0.8 * v, 0.0008, 0.045); return;
+        case 'ohat': hit(p.hG.gain, t, 0.8 * v, 0.001, 0.32); return;
+        case 'ride': hit(p.rG.gain, t, 0.7 * v, 0.001, 0.45); hit(p.rPG.gain, t, 0.12 * v, 0.001, 0.6); return;
         case 'tom': {
           const f = TOMF[e.n ?? 1];
-          tO.frequency.setValueAtTime(f * 1.35, t); tO.frequency.exponentialRampToValueAtTime(f, t + 0.05); tO.frequency.exponentialRampToValueAtTime(f * 0.82, t + 0.5);
-          tO2.frequency.setValueAtTime(f * 1.35, t); tO2.frequency.exponentialRampToValueAtTime(f * 0.85, t + 0.3);
-          hit(tG.gain, t, 0.85 * v, 0.002, 0.55); hit(tG2.gain, t, 0.25 * v, 0.002, 0.18); return;
+          p.tO.frequency.setValueAtTime(f * 1.35, t); p.tO.frequency.exponentialRampToValueAtTime(f, t + 0.05); p.tO.frequency.exponentialRampToValueAtTime(f * 0.82, t + 0.5);
+          p.tO2.frequency.setValueAtTime(f * 1.35, t); p.tO2.frequency.exponentialRampToValueAtTime(f * 0.85, t + 0.3);
+          hit(p.tG.gain, t, 0.85 * v, 0.002, 0.55); hit(p.tG2.gain, t, 0.25 * v, 0.002, 0.18); return;
         }
-        case 'crash': hit(cG.gain, t, 0.9 * v, 0.002, 2.2); return;
+        case 'crash': hit(p.cG.gain, t, 0.9 * v, 0.002, 2.2); return;
       }
     },
+    /** build the pieces up front (the live band: no node creation during play) */
+    warm(keys = ['kick', 'snare', 'hat', 'ride', 'tom', 'crash']) { for (const k of keys) get(k); },
     release() {},
-    sources: [kO, kK, sB, sB2, rP, tO, tO2],
+    sources,
   };
 }
 /** 80s gated reverb for the snare: a dense short reverb whose output is opened by each snare hit and slammed shut. */
@@ -163,9 +180,9 @@ export function makeGatedVerb(ac, out) {
  * low-passes at 4.8 kHz (24 dB/oct). Left and right are detuned differently, the right plays 9 ms late, panned hard.
  * Extras: slow vibrato on held chords, slides into a chord (e.sl semitones below), pick scrapes (e.i === 'scrape').
  */
-export function makeRhythmGuitar(ac, out, white, { drive = 14, os = '2x' } = {}) {
+export function makeRhythmGuitar(ac, out, white, { drive = 14, os = '2x', mono = false } = {}) {
   const curve = driveCurve(drive, 0.15);
-  const sides = [-1, 1].map((pan, side) => {
+  const sides = (mono ? [0] : [-1, 1]).map((pan, side) => {
     const lfo = OSC(ac, 'sine', side ? 4.3 : 4.7), vib = G(ac, 0); lfo.connect(vib); lfo.start();
     const strings = [0, 1, 2].map((k) => {
       const a = OSC(ac, 'sawtooth', 73, side ? 7 : -5), b = OSC(ac, 'sawtooth', 73, side ? -9 : 6), g = G(ac, 0.5);
@@ -211,11 +228,12 @@ export function makeRhythmGuitar(ac, out, white, { drive = 14, os = '2x' } = {})
         }
         S.vib.gain.setValueAtTime(0, t);
         if (!mute && dur > 0.9) tgt(S.vib.gain, 9, t + 0.45, 0.35);            // held chord: slow, shallow vibrato
-        S.palm.frequency.setValueAtTime(mute ? 900 : 5200, t);
-        if (mute) S.palm.frequency.setTargetAtTime(520, t + 0.01, 0.06);
+        // palm mutes: the low-pass closes fast but not all the way (it keeps a 1-3 kHz edge for small speakers)
+        S.palm.frequency.setValueAtTime(mute ? 1700 : 5200, t);
+        if (mute) S.palm.frequency.setTargetAtTime(760, t + 0.012, 0.05);
         tgt(S.pre.gain, e.v * (mute ? 0.9 : 1), t, 0.0012);
         tgt(S.pre.gain, e.v * (mute ? 0.3 : 0.45), t + 0.004, mute ? 0.07 : 1.2);
-        hit(S.pkG.gain, t, mute ? 0.15 : 0.25, 0.0008, 0.012);
+        hit(S.pkG.gain, t, mute ? 0.4 : 0.3, 0.0008, mute ? 0.018 : 0.012);
         tgt(S.gate.gain, mute ? 0.85 : 1, t, 0.002);
         tgt(S.gate.gain, 0, t + dur - 0.01, mute ? 0.012 : 0.05);
       }
@@ -312,6 +330,9 @@ export function makeBass(ac, out, white) {
   const lp = BQ(ac, 'lowpass', 600, 1.1), env = G(ac, 0), sh = shaper(ac, driveCurve(2.2, 0.05), 'none'), lvl = G(ac, 0.17);
   chain(mix, lp, env); subG.connect(env); chain(env, sh, BQ(ac, 'highpass', 35, 0.7), lvl, out);
   const pk = BQ(ac, 'bandpass', 1800, 1), pkG = G(ac, 0); chain(white, pk, pkG, env);
+  // overdriven mid layer (700 Hz-1.5 kHz) so the bass line reads on a phone speaker
+  const mhp = BQ(ac, 'highpass', 300, 0.7), msh = shaper(ac, driveCurve(7, 0.1), 'none'), mbp = BQ(ac, 'bandpass', 1000, 0.8), mG = G(ac, 0.5);
+  chain(env, mhp, msh, mbp, mG, lvl);
   return {
     trigger(e, t, sd) {
       const f = mtof(e.n), dur = Math.max(0.04, e.d * sd);
