@@ -7,7 +7,7 @@
 // originShift. Counts scale with ctx.quality.particles. See INTEGRATION.md for budgets and pipeline notes.
 //
 // Debug URL params (test harness only): fx=ab,contrail,vapor,cone,crash,touchdown,rain,lights,lightning,spray,sparks,
-//   dust,smoke,boom   fxtm=1 (tone map in-shader for the stub pipeline)   fxcam=side|front|rear|far|low|top|cockpit
+//   dust,smoke,boom   fxtm=1 (tone map in-shader for the stub pipeline)   fxcam=side|front|rear|far|low|top|cockpit|crash
 //   fxdist=<m>  fxexp=<exposure>
 import * as THREE from 'three';
 import { createNoise3D, createPuffTexture } from './noise.js';
@@ -354,6 +354,7 @@ export async function createEffects(ctx) {
     else if (dcam === 'far') { cam.position.copy(tmp).addScaledVector(rt, d * 6).addScaledVector(fw, d * 2).addScaledVector(up, -d * 0.6); look.addScaledVector(fw, -d * 4); }
     else if (dcam === 'low') { cam.position.copy(tmp).addScaledVector(rt, d * 0.8).addScaledVector(fw, -d * 0.6); cam.position.y = Math.max(tmp.y - d, ctx.world.groundHeightAt(s.position.x, s.position.z) + 1.5); look.addScaledVector(fw, -d * 0.5); }
     else if (dcam === 'top') { cam.position.copy(tmp).addScaledVector(up, d).addScaledVector(fw, -L * 0.4).addScaledVector(rt, 0.01); look.addScaledVector(fw, -L * 0.4); }
+    else if (dcam === 'crash') { if (!crashFx?.spectator(tmp, tmp3)) return; ctx.world.toRender(tmp, cam.position); ctx.world.toRender(tmp3, tmp3); look.copy(tmp3); }
     else if (dcam === 'cockpit') { cam.position.copy(tmp).add(tmp2.fromArray(P.g.pilotEye || [0, 1, -4]).applyQuaternion(s.quaternion)); cam.quaternion.copy(s.quaternion); }
     if (dcam !== 'cockpit') { cam.up.set(0, 1, 0); cam.lookAt(look); }
     cam.updateMatrixWorld(true);

@@ -163,6 +163,22 @@ export class Debris {
   }
   /** brightest burning piece (world) for the fx light fallback */
   burning(out) { for (const pc of this.pieces) if (pc.burn && pc.settled && pc.t < 120) { out.copy(pc.p); return true; } return false; }
+  /** shed a few small pieces (panels, fairings) from a sliding airframe without clearing the existing ones */
+  shed(o) {
+    const s = o.state, g = o.def.geometry || {}, L = g.length || 15, span = g.span || 10, r = Math.max(0.6, L * 0.05);
+    const base = o.colour || new THREE.Color(0.55, 0.57, 0.6);
+    for (let i = 0; i < (o.n || 3); i++) {
+      const m = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.8 + 0.3 * rnd()), roughness: 0.55, metalness: 0.4, emissive: new THREE.Color(1, 0.35, 0.08), emissiveIntensity: 0 });
+      const mesh = new THREE.Mesh(this._geo('panel'), m);
+      const sx = 0.3 + rnd() * r, sz = 0.3 + rnd() * r * 1.2;
+      mesh.scale.set(sx, 0.04 + rnd() * 0.05, sz); mesh.castShadow = true; mesh.receiveShadow = true;
+      const p = new THREE.Vector3(sgn() * span * 0.3, -0.3, sgn() * L * 0.35).applyQuaternion(s.quaternion).add(s.position);
+      const v = s.velocity.clone().multiplyScalar(0.55 + 0.35 * rnd()); v.x += sgn() * 6; v.z += sgn() * 6; v.y = 2 + rnd() * 7;
+      const w = new THREE.Vector3(sgn(), sgn(), sgn()).multiplyScalar(10);
+      this.ctx.world.toRender(p, mesh.position); this.group.add(mesh);
+      this.pieces.push({ mesh, mat: m, p, v, w, size: Math.cbrt(sx * sz * 0.05), radius: Math.max(sx, sz) * 0.5, burn: false, settled: false, heat: 0.15, t: 0, trail: { v: 0 }, fire: { v: 0 }, bounces: 0 });
+    }
+  }
   clear() {
     for (const pc of this.pieces) { this.group.remove(pc.mesh); pc.mat.dispose(); }
     this.pieces.length = 0;

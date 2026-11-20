@@ -1,7 +1,7 @@
 // Crash screenshot sequence: one page load, several shots at exact times after a test crash.
 //
 //   node tools/neural/fireball/crashseq.mjs --params "tod=12&crashtest=impact&crashdist=600" \
-//        --times 0.2,1,3,10,40 --prefix shots/day_grass [--size 960x540] [--no-build]
+//        --times 0.2,1,3,10,40 --prefix shots/day_grass [--size 960x540] [--no-build] [--html dist/other.html]
 //
 // Boots dist/index.html with ?test=1&autostart=1&aircraft=f16&hud=0&crashat=1&<params>, steps until the crash has
 // started, then advances the simulation to each requested time (seconds after the crash) and saves
@@ -23,7 +23,7 @@ const has = (n) => args.includes('--' + n);
 const [W, H] = flag('size', '960x540').split('x').map(Number);
 const times = flag('times', '0.2,1,3,10,40').split(',').map(Number);
 const prefix = resolve(root, flag('prefix', 'shots/crash'));
-const html = resolve(root, 'dist/index.html');
+const html = resolve(root, flag('html', 'dist/index.html'));
 if (!has('no-build')) execFileSync('node', ['tools/build.mjs', '--out', html], { cwd: root, stdio: 'inherit' });
 
 const SLOTS = 2, LOCKDIR = '/tmp/flightsim-shot-locks';
@@ -52,7 +52,9 @@ try {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push('PAGEERROR ' + (e.stack || e.message)));
-  const url = pathToFileURL(html).href + '?test=1&autostart=1&aircraft=f16&hud=0&crashat=1&' + flag('params', '');
+  const P = flag('params', '');
+  // crashat=1 (the first frame) unless the params set it: on frame 1 the chase camera may not have settled yet
+  const url = pathToFileURL(html).href + '?test=1&autostart=1&aircraft=f16&hud=0&' + (/(^|&)crashat=/.test(P) ? '' : 'crashat=1&') + P;
   await page.goto(url, { waitUntil: 'commit', timeout: 600000 });
   await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000 });
   const bootErr = await page.evaluate(() => window.__sim.error || null);

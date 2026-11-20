@@ -17,6 +17,7 @@ import { createFireballSystem } from '../explosion.js';
 import { Decals, DECAL } from '../decals.js';
 import { Debris, airframeColour } from '../debris.js';
 import { KIND } from '../particles.js';
+import { createFireGlow } from './glow.js';
 import * as E from '../emitters.js';
 
 const rnd = Math.random, sgn = () => rnd() * 2 - 1;
@@ -28,8 +29,10 @@ export function createCrashFx(ctx, deps) {
   const fireballs = createFireballSystem(ctx, shared, header, 2);
   const decals = new Decals(ctx, shared, header, anchor);
   const debris = new Debris(ctx);
+  const glow = createFireGlow(ctx, shared, header);
   const g0 = {}, g1 = {};
   const v = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), n0 = new THREE.Vector3();
+  const h0 = new THREE.Vector3(), h1 = new THREE.Vector3(), h2 = new THREE.Vector3();   // emitter-helper temporaries
   const fires = [];            // ground fires { pos, t, scale, life, acc, smokeAcc, emberAcc }
   let C = null;                // the current crash
   const q0 = () => clamp(ctx.quality?.particles ?? 1, 0.1, 1.5);
@@ -60,6 +63,33 @@ export function createCrashFx(ctx, deps) {
       p.kind = KIND.SPARK; p.life = 0.8 + rnd() * 2.2; p.size0 = p.size1 = 0.1 + rnd() * 0.16; p.drag = 0.3; p.buoy = -14;
       p.delay = rnd() * 0.08; p.r = 1; p.g = 0.55 + rnd() * 0.3; p.b = 0.2; p.opacity = 1; p.emissive = 40 + rnd() * 70; p.aux = 0.04;
       ps.spawn(pos, v2.copy(v).multiplyScalar(speed * (0.3 + rnd())).addScaledVector(vel, 0.3));
+    }
+  }
+
+  // belly / wreck slide on pavement: a rooster tail of sparks (white-hot titanium/steel, orange aluminium), much
+  // denser and longer-lived than the touchdown sparks, and visible as streaks well behind the airframe
+  function slideSparks(pos, vel, rate, dt, q, acc) {
+    acc.v += rate * dt * q;
+    const p = ps.p;
+    while (acc.v >= 1) {
+      acc.v -= 1;
+      const hot = rnd() < 0.35;
+      p.kind = KIND.SPARK; p.life = 0.35 + rnd() * (hot ? 1.1 : 0.7); p.size0 = p.size1 = (hot ? 0.1 : 0.07) + rnd() * 0.12; p.drag = 0.45; p.buoy = -12;
+      p.delay = rnd() * dt; p.r = 1; p.g = hot ? 0.85 + rnd() * 0.15 : 0.5 + rnd() * 0.25; p.b = hot ? 0.6 : 0.18; p.opacity = 1; p.emissive = (hot ? 90 : 45) + rnd() * 80; p.aux = 0.05;
+      h1.copy(vel).multiplyScalar(0.45 + rnd() * 0.45); h1.x += sgn() * 7; h1.z += sgn() * 7; h1.y = 1 + rnd() * 7;
+      ps.spawn(h0.set(pos.x + sgn() * 1.2, pos.y, pos.z + sgn() * 1.2), h1);
+    }
+  }
+
+  // light-grey abrasion smoke and runway dust kicked up behind a scraping airframe; long-lived, it drifts downwind
+  function scrapeSmoke(pos, vel, rate, dt, q, acc, colour, op) {
+    acc.v += rate * dt * q;
+    const sp = smoke.p;
+    while (acc.v >= 1) {
+      acc.v -= 1;
+      sp.kind = KIND.SMOKE; sp.life = 7 + rnd() * 8; sp.size0 = 1.2 + rnd() * 1.5; sp.size1 = 9 + rnd() * 9; sp.drag = 1.4; sp.buoy = 0.7;
+      sp.delay = rnd() * dt; const c = 0.9 + rnd() * 0.15; sp.r = colour[0] * c; sp.g = colour[1] * c; sp.b = colour[2] * c; sp.opacity = op * (0.7 + 0.5 * rnd()); sp.emissive = 0; sp.aux = 0;
+      smoke.spawn(h0.set(pos.x + sgn() * 2, pos.y + 0.6, pos.z + sgn() * 2), h1.copy(vel).multiplyScalar(0.3 + 0.2 * rnd()).add(h2.set(sgn() * 2, 1 + rnd() * 2, sgn() * 2)));
     }
   }
 
@@ -192,7 +222,7 @@ export function createCrashFx(ctx, deps) {
     const windDir = ws > 2 ? w.clone().normalize() : (vh.lengthSq() > 1 ? vh.clone().normalize() : new THREE.Vector3(1, 0, 0));
     const sq = Math.sqrt(9.81 * o.D);
     const fw = ws / sq, ui = clamp(0.4 * Math.abs(vh.dot(windDir)) / sq, 0, 2.5);
-    C = { o, t: 0, pos: gp.clone(), vel, scale, def, player, state, lastSlide: gp.clone(), slideAcc: { v: 0 }, sparkAcc: { v: 0 }, dustAcc: { v: 0 },
+    C = { o, t: 0, pos: gp.clone(), vel, scale, def, player, state, lastSlide: gp.clone(), slideAcc: { v: 0 }, sparkAcc: { v: 0 }, dustAcc: { v: 0 }, smokeAcc: { v: 0 },
           sprayAcc: { v: 0 }, yaw: Math.atan2(vel.x, -vel.z), secondary: false, fireAtRest: o.kind === 'gearCollapse' && o.fire, restDone: false,
           windDir, fw, ui, synthetic: !!override };
     const colour = airframeColour(player?.visual?.object3D);
@@ -211,6 +241,7 @@ export function createCrashFx(ctx, deps) {
         debris.spawn({ state, def, colour, severity: big ? 1 : 0.6, kind: o.kind, water: false, q, fire: o.fire });
         if (o.fire) fireballs.spawn({ worldPos: gp, D: o.D, tStar: o.tStar, windDir, fw, ui, life: 150 });
         decals.add(gp, C.yaw, o.D * 0.42, o.D * 0.36, DECAL.SCORCH, 0.95);
+        if (o.fire) decals.add(gp, 0, Math.max(400, o.D * 8), Math.max(400, o.D * 8), DECAL.FIRELIGHT, 1, 240, 120);
         if (o.crater > 0) decals.add(gp, C.yaw + 0.4, o.crater, o.crater * 0.9, DECAL.CRATER, 1);
         if (o.fire) { const dh = new THREE.Vector3(vel.x, 0, vel.z); if (dh.lengthSq() > 1e-6) dh.normalize(); addFire(dh.multiplyScalar(Math.min(o.slide, 30) * 0.5).add(gp), scale * (big ? 1.3 : 1), big ? 75 : 55, true); }
         break;
@@ -234,8 +265,12 @@ export function createCrashFx(ctx, deps) {
         break;
       }
       case 'gearCollapse': case 'belly': {
-        if (o.sparks) sparkBurst(v3.copy(gp).setY(gp.y + 0.3), vel, 50, 15);
-        if (o.dust) ejecta(gp, vel, scale * 0.6, 20, dirt);
+        // first contact: a burst of sparks / dirt, a puff of scraped metal and dust, panels torn off the belly
+        if (o.sparks) sparkBurst(v3.copy(gp).setY(gp.y + 0.3), vel, Math.round(140 * Math.max(0.5, q)), 18);
+        if (o.dust) ejecta(gp, vel, scale * 0.6, 30, dirt);
+        scrapeSmoke(gp, vel, 40, 1, Math.max(0.5, q), { v: 0 }, o.surface === 'runway' ? [0.66, 0.66, 0.68] : dirt, 0.45);
+        debris.clear();
+        debris.shed({ state, def, colour, n: Math.round(4 * Math.max(0.5, q)) });
         break;
       }
     }
@@ -275,15 +310,21 @@ export function createCrashFx(ctx, deps) {
       const paved = g0.type === 'runway' || g0.type === 'taxiway' || g0.type === 'apron' || g0.type === 'deck';
       if (onWater) E.waterSpray(ps, v3.copy(gp).setY(gp.y + 0.3), s.velocity, v2.set(-s.velocity.x, 0, -s.velocity.z).normalize(), clamp(sp / 40, 0.2, 1.3), dt, q, C.sprayAcc);
       else if (paved) {
-        E.sparks(ps, v3.copy(gp).setY(gp.y + 0.25), s.velocity, (90 + sp * 4) * (o.kind === 'belly' || o.kind === 'gearCollapse' ? 1 : 0.6), dt, q, C.sparkAcc);
-        E.dust(ps, v3.copy(gp).setY(gp.y + 0.5), v2.copy(s.velocity).multiplyScalar(0.25), sp * 0.5, dt, q, C.dustAcc, [0.62, 0.62, 0.64], 0.9);
-      } else E.dust(ps, v3.copy(gp).setY(gp.y + 0.5), v2.copy(s.velocity).multiplyScalar(0.3), sp * 1.4, dt, q, C.dustAcc, [0.47, 0.4, 0.3], 1.3);
+        const k = o.kind === 'belly' || o.kind === 'gearCollapse' ? 1 : 0.6;
+        slideSparks(v3.copy(gp).setY(gp.y + 0.25), s.velocity, (150 + sp * 7) * k, dt, q, C.sparkAcc);
+        E.dust(ps, v3.copy(gp).setY(gp.y + 0.5), v2.copy(s.velocity).multiplyScalar(0.25), sp * 0.8, dt, q, C.dustAcc, [0.62, 0.62, 0.64], 1.2);
+        scrapeSmoke(gp, s.velocity, clamp(sp / 70, 0.15, 1.2) * 40 * k, dt, q, C.smokeAcc, [0.52, 0.52, 0.54], 0.6);
+      } else {
+        E.dust(ps, v3.copy(gp).setY(gp.y + 0.5), v2.copy(s.velocity).multiplyScalar(0.3), sp * 1.4, dt, q, C.dustAcc, [0.47, 0.4, 0.3], 1.3);
+        scrapeSmoke(gp, s.velocity, clamp(sp / 60, 0.15, 1.3) * 26, dt, q, C.smokeAcc, [0.5, 0.43, 0.33], 0.5);
+      }
     } else if (!C.restDone) {
       C.restDone = true;
       if (C.fireAtRest) {
         const D = clamp(o.D * 0.6, 10, 40);
         fireballs.spawn({ worldPos: gp.clone(), D, tStar: Math.sqrt(D / 9.81), windDir: C.windDir, fw: C.fw * Math.sqrt(o.D / D), ui: 0, life: 110 });
         decals.add(gp, C.yaw, D * 0.4, D * 0.35, DECAL.SCORCH, 0.9);
+        decals.add(gp, 0, 300, 300, DECAL.FIRELIGHT, 1, 200, 80);
         addFire(gp, C.scale * 0.8, 60, true);
       }
       if (onWater) decals.add(gp, C.yaw, 18 * C.scale, 14 * C.scale, DECAL.FOAM, 0.9, 60);
@@ -303,6 +344,7 @@ export function createCrashFx(ctx, deps) {
     fireballs.spawn({ worldPos: gp, D, tStar: Math.sqrt(D / 9.81), windDir: C.windDir, fw: C.fw, ui: 0.5, life: 120 });
     decals.add(gp, 0, D * 0.45, D * 0.4, DECAL.SCORCH, 0.9);
     decals.add(gp, 0.7, D * 0.12 + 2, D * 0.11 + 2, DECAL.CRATER, 1);
+    decals.add(gp, 0, 300, 300, DECAL.FIRELIGHT, 1, 200, 80);
     addFire(gp, C.scale, 60, true);
     ctx.events.emit('crash:fx', { kind: 'secondary', worldPos: gp.clone(), energy: C.o.energy * 0.3, D, fire: true, water: false, surface: 'grass' });
   }
@@ -350,9 +392,14 @@ export function createCrashFx(ctx, deps) {
     if (C.o.breakup < 0.6 && player?.visual?.object3D) {
       const ghost = player.visual.object3D.clone(true);
       ghost.visible = true; ctx.scene.add(ghost);
+      // gear-up slide: no legs under it; it lies on its belly with a slight list and the nose down
+      if (C.o.kind === 'belly' || C.o.kind === 'ditch') ghost.traverse((ob) => { if (/\.leg$|wheel|tyre/i.test(ob.name)) ob.visible = false; });
+      quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.05, 0.02, 0.1)));
       C.fake = { position: state.position.clone(), velocity: state.velocity.clone(), quaternion: quat, onGround: true, ghost, mu: C.o.surface === 'water' ? 0.9 : C.o.surface === 'runway' ? 0.33 : 0.6 };
       C.fake.position.y = gp.y + (C.o.surface === 'water' ? 0.2 : 0.4);
     }
+    // spectator shots: the (intact, parked) player aircraft is not part of the scene being looked at
+    if (raw.fxcam === 'crash' && player?.visual?.object3D) { player.visual.object3D.visible = false; C.hidVisual = player.visual.object3D; }
   }
 
   // ------------------------------------------------------------------------------------------------ API
@@ -360,6 +407,7 @@ export function createCrashFx(ctx, deps) {
     if (C?.hidVisual) C.hidVisual.visible = true;
     if (C?.fake?.ghost) ctx.scene.remove(C.fake.ghost);
     C = null;
+    glow.hide();
     if (all) { fireballs.clear(); decals.clear(); debris.clear(); fires.length = 0; }
     else { fireballs.clear(); debris.clear(); fires.length = 0; decals.clear(); }
   }
@@ -396,12 +444,35 @@ export function createCrashFx(ctx, deps) {
       const l = fireballs.light(out);
       let fire = null, fi = 0;
       for (const f of fires) { const k = clamp(1 - f.t / f.life, 0, 1) * f.scale; if (k > fi) { fi = k; fire = f; } }
-      const If = fire ? 4000 * fi * (0.8 + 0.3 * rnd()) : 0;
-      if (l && l.intensity > If) { out.intensity *= 0.9 + 0.2 * rnd(); return out; }
-      if (fire && If > 1) { ctx.world.toRender(fire.pos, out.pos); out.pos.y += 4; out.color.setRGB(1, 0.5, 0.2); out.intensity = If; out.distance = 400; return out; }
-      return null;
+      // pool fire: ~20-30 m of burning kerosene radiates tens of MW; visible share ~2e4 scene units per unit scale
+      const If = fire ? 20000 * fi * (0.8 + 0.3 * rnd()) : 0;
+      let r = null;
+      if (l && l.intensity > If) { out.intensity *= 0.9 + 0.2 * rnd(); r = out; }
+      else if (fire && If > 1) { ctx.world.toRender(fire.pos, out.pos); out.pos.y += 4; out.color.setRGB(1, 0.5, 0.2); out.intensity = If; out.distance = 1000; r = out; }
+      if (raw.fxglow === '0') glow.hide(); else glow.set(r, r === out && l ? Math.max(6, (fireballs.pool.find((f) => f.active)?.D || 40) * 0.3) : 8);
+      return r;
     },
-    active() { return !!C || fires.length > 0 || fireballs.active(); },
+    /** debug spectator camera (fxcam=crash): a fixed vantage point beside the crash, looking at the wreck / fire.
+     *  Writes WORLD positions; false until a crash has happened. fxdist=<m> distance, fxcamh=<m> height,
+     *  fxcamk=<m> offset along the crash heading. */
+    spectator(camOut, lookOut) {
+      if (!C) return false;
+      if (!C.spec) {
+        const u = v3.set(C.vel.x, 0, C.vel.z); if (u.lengthSq() < 1e-6) u.set(0, 0, -1); u.normalize();
+        const slide = C.o.kind === 'belly' || C.o.kind === 'gearCollapse' || C.o.kind === 'ditch';
+        const dist = +raw.fxdist || (slide ? 60 : C.o.fire ? 2.4 * C.o.D + 90 : 150);
+        const along = raw.fxcamk !== undefined ? +raw.fxcamk : slide ? 70 : C.o.fire ? 0.3 * C.o.D : 30;
+        const h = +raw.fxcamh || (slide ? 5 : 14);
+        const cam = C.pos.clone().addScaledVector(u, along).add(new THREE.Vector3(-u.z, 0, u.x).multiplyScalar(dist));
+        ctx.world.groundAt(cam.x, cam.z, g0); cam.y = Math.max(cam.y, g0.height) + h;
+        C.spec = { cam, u: u.clone(), slide };
+      }
+      camOut.copy(C.spec.cam);
+      if (C.spec.slide && C.fake) lookOut.copy(C.fake.position).lerp(C.pos, 0.12);
+      else lookOut.copy(C.pos).setY(C.pos.y + (C.o.fire ? C.o.D * 0.45 : 8)).addScaledVector(C.spec.u, C.o.fire ? C.o.D * 0.3 : 10);
+      return true;
+    },
+    active() { const a = !!C || fires.length > 0 || fireballs.active(); if (!a) glow.hide(); return a; },
     warm() {
       // fireball programs + one bake, and the decal program (debris uses the scene's standard material programs)
       const t0 = performance.now();
@@ -412,7 +483,7 @@ export function createCrashFx(ctx, deps) {
       return performance.now() - t0;
     },
     clear,
-    dispose() { clear(); fireballs.dispose(); decals.dispose(); debris.dispose(); },
+    dispose() { clear(); fireballs.dispose(); decals.dispose(); debris.dispose(); glow.dispose(); },
   };
   if (ctx.params?.test && typeof window !== 'undefined') window.__crashfx = api;   // headless debugging hook
   return api;

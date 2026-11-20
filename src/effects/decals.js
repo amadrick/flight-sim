@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { LAYERS } from '../core/constants.js';
 import { premulMaterialOpts } from './fxglsl.js';
 
-export const DECAL = { SCORCH: 0, CRATER: 1, SCRAPE: 2, TURF: 3, FOAM: 4, SKID: 5 };
+export const DECAL = { SCORCH: 0, CRATER: 1, SCRAPE: 2, TURF: 3, FOAM: 4, SKID: 5, FIRELIGHT: 6 };
 const STRIDE = 12;
 
 export class Decals {
@@ -89,6 +89,28 @@ void main() {
   vec4 n = fxNoise(vec3(wxz * 0.11, seed * 7.0));
   vec4 n2 = fxNoise(vec3(wxz * 0.47, seed * 3.0 + 0.5));
   float rr = length(q.xz);
+  if (type > 5.5) {            // fire light sheen: glossy reflection of the fire (fx light) on the ground around it
+    // The engine's ground is a rough diffuse surface, so a low fire at night lit it only at grazing incidence and the
+    // runway stayed black; real pavement and grass have a broad specular lobe at grazing angles (GGX, roughness
+    // ~0.55, F0 0.04, Schlick Fresnel), which is the orange sheen under a fire in night footage.
+    vec3 Nf = normalize(cross(dFdy(P), dFdx(P))); if (Nf.y < 0.0) Nf = -Nf;
+    vec3 Ld = uFxLightPos - P; float dl2 = dot(Ld, Ld); Ld *= inversesqrt(dl2);
+    vec3 V = normalize(uCameraPos - P), H = normalize(Ld + V);
+    float nl = max(dot(Nf, Ld), 0.0), nv = max(dot(Nf, V), 1e-3), nh = max(dot(Nf, H), 0.0), vh = max(dot(V, H), 0.0);
+    float al = 0.3, a2 = al * al;
+    float dd = nh * nh * (a2 - 1.0) + 1.0, Dg = a2 / (FX_PI * dd * dd);
+    float k = al * 0.5, Gv = nv / (nv * (1.0 - k) + k), Gl = nl / (nl * (1.0 - k) + k);
+    float F = 0.04 + 0.96 * pow(1.0 - vh, 5.0);
+    vec3 E = 2.0 * uFxLightColor / (dl2 + 25.0);
+    vec3 spec = E * Dg * F * Gv * Gl / (4.0 * nv) * vD2.z * (1.0 - smoothstep(0.7, 1.0, rr));
+    // + a little diffuse wrap: the fire is a volume tens of metres across, not a point, so ground near it is lit
+    // closer to normal incidence than the point light gives
+    spec += E * 0.12 / FX_PI * max(0.35 - nl, 0.0) * (1.0 - smoothstep(0.0, 0.5, rr)) * vD2.z;
+    if (dot(spec, vec3(1.0)) * uFxExposure < 1e-4) discard;
+    vec4 ap = fxAP(P);
+    outColor = vec4(spec * ap.a, 0.0);
+    return;
+  }
   float a = 0.0; vec3 alb = vec3(0.05);
   float yFade = 1.0 - smoothstep(0.6, 1.0, abs(q.y));
   if (type < 0.5) {            // scorch: soot-blackened ground, ragged edge, darker centre
