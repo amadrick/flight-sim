@@ -22,6 +22,10 @@ import { decodeFireball, fireballGLSL, packFireballWeights, fireballBox, firebal
 const NXB = 40, NYB = 16, NZB = 40;
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 export const FIREBALL_T_END = FIREBALL_MODEL.enc.tMax;
+// fire light: radiant intensity per (probe power x D^2). A 70 m kerosene fireball radiates a few GW, mostly in the
+// infrared; the visible share at 1400-1700 K is a few per cent of the same power of sunlight, which in scene units
+// (sun = 4) gives ~3e4-1e5 at the peak: the runway and the scenery a few hundred metres away are lit like dusk.
+const LIGHT_K = 4.0;
 
 // Normalised blackbody colour/brightness (Wien approximation at 610 / 550 / 465 nm, = 1 in G at 1500 K)
 export function blackbody(TK, out = [0, 0, 0]) {
@@ -156,7 +160,7 @@ void main() {
   float cosT = dot(rd, uFbLightSim);
   float phase = mix(fxHG(cosT, 0.55), fxHG(cosT, -0.2), 0.35) * 4.0 * FX_PI;
   float ageK = smoothstep(4.0, 40.0, uFbAge);
-  vec3 albedo = mix(vec3(0.16, 0.15, 0.14), vec3(0.34, 0.33, 0.32), ageK);
+  vec3 albedo = mix(vec3(0.2, 0.18, 0.16), vec3(0.4, 0.38, 0.36), ageK);
   float rise = 0.18 + 0.1 * (1.0 - ageK);
   float t = t0 + dt * jit;
   for (int i = 0; i < 64; i++) {
@@ -178,17 +182,25 @@ void main() {
       vec4 n2 = fxNoise(np * 1.6 + (n1.xyz - 0.5) * 0.9);
       vec4 n3 = fxNoise(np * 4.1 + (n2.xyz - 0.5) * 0.5);
       float turb = n1.w * 0.5 + n2.w * 0.33 + n3.w * 0.17;
-      float dens = max(f.x * (0.1 + 1.8 * turb * turb) - 0.05, 0.0);
-      // temperature: hot cracks where the turbulence opens the soot shell
-      float theta = f.y * (0.75 + 0.3 * smoothstep(0.35, 0.8, 1.0 - turb) + 0.1 * n3.x);
-      float burn = f.z * (0.5 + n2.x);
+      // cauliflower surface: where the learned soot is thin (the envelope) the billow noise decides whether there is
+      // smoke at all, so the outline breaks into rounded lobes instead of a smooth, opaque disc; the dense core stays
+      vec4 b1 = fxNoise(np * 0.9 + vec3(3.1, 1.7, 0.0) + (n1.xyz - 0.5) * 0.6);
+      float bil = 1.0 - abs(2.0 * b1.w - 1.0);
+      bil = 0.6 * bil + 0.4 * (1.0 - abs(2.0 * n2.w - 1.0));
+      float sN = f.x / (f.x + 0.45);
+      float shape = smoothstep(0.0, 0.3, sN * 1.2 - (1.0 - bil) * 0.75);
+      float dens = max(f.x * shape * (0.25 + 1.5 * turb * turb) - 0.03, 0.0);
+      // temperature: hot cracks where the turbulence opens the soot shell, a cooler dark-red skin on the lobes
+      float crack = smoothstep(0.38, 0.78, 1.0 - turb);
+      float theta = f.y * (0.55 + 0.55 * crack + 0.15 * n3.x) * mix(0.75, 1.0, shape);
+      float burn = f.z * (0.35 + 1.3 * n2.x * n2.x + 0.4 * crack);
       // young soot in the hot gas is optically thinner than the agglomerated smoke it becomes as it cools
-      float hotK = mix(0.3, 1.0, smoothstep(3.5, 1.0, theta));
+      float hotK = mix(0.22, 1.0, smoothstep(3.5, 1.0, theta));
       float sig = (dens * hotK + 0.25 * burn) * uFbExt;
       float a = 1.0 - exp(-sig * dt);
       if (a > 1e-4) {
-        float TK = min(300.0 * (1.0 + uFbTempK * theta), 1650.0);
-        float TKf = max(TK, 1380.0 * smoothstep(0.2, 1.5, burn));
+        float TK = min(300.0 * (1.0 + uFbTempK * theta), 1700.0);
+        float TKf = max(TK, 1420.0 * smoothstep(0.2, 1.5, burn));
         vec3 E = uFbEmisK * (fbBlackbody(TK) * dens * hotK + fbBlackbody(TKf) * 0.25 * burn * 2.0) / max(dens * hotK + 0.25 * burn, 1e-4);
         vec3 sun = uFbSun * L.x * phase / (4.0 * FX_PI);
         vec3 amb = mix(uFbAmbDn, uFbAmbUp, 0.35 + 0.65 * L.y) * (0.45 + 0.55 * L.y);
@@ -356,7 +368,7 @@ void main() {
       u.uFbFireColor.value.set(fb.color[0] * fl, fb.color[1] * fl, fb.color[2] * fl);
     },
     /** radiant intensity scale of the fire light (contract units: irradiance = I / d^2) */
-    lightPower(fb) { return fb.power * fb.D * fb.D * 0.5 * fb.fade; },
+    lightPower(fb) { return fb.power * fb.D * fb.D * LIGHT_K * fb.fade; },
     update(dt) { for (const fb of pool) if (fb.active) sys.updateOne(fb, dt); },
     /** brightest active fireball for the fx light: { pos (render), color, intensity, distance } or null */
     light(out) {
@@ -365,7 +377,7 @@ void main() {
       if (!best || bi < 1) return null;
       out.pos.copy(best.centroid).applyMatrix4(best.fromSim);
       out.color.setRGB(best.color[0], best.color[1], best.color[2]);
-      out.intensity = bi; out.distance = best.D * 12;
+      out.intensity = bi; out.distance = Math.max(best.D * 25, 1200);
       return out;
     },
     active() { return pool.some((f) => f.active); },
