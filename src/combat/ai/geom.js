@@ -61,6 +61,13 @@ export function pursuitPoint(me, tgt, kind, out, amount = 1) {
     if (a) { _h.copy(a); _h.y += 0; out.addScaledVector(_h, 0.5 * t * t * 0.8); }
     return out;
   }
+  // trail: where the target was `amount` seconds ago on its (curving) flight path: its control zone
+  if (kind === 'trail') {
+    const t = amount, a = tgt.state.acceleration;
+    out.addScaledVector(vt, -t);
+    if (a) out.addScaledVector(a, 0.5 * t * t);
+    return out;
+  }
   // lag: a point behind the target on its flight path
   const sv = vt.length();
   if (sv > 1) out.addScaledVector(vt, -clamp(range * 0.45, 120, 900) * amount / sv);

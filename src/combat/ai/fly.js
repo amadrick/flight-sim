@@ -13,7 +13,7 @@ const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _l = new THREE.Vector3
 
 /** Inverse of fcs.js shape(): stick deflection that produces normalised command s (|s| <= 1) with shaping factor k. */
 // nose-error roll loop gains for gun tracking (higher gains oscillate through the roll / pitch coupling)
-const LAT_KP = 0.5, LAT_KD = 0, LAT_KI = 0.5;
+const LAT_KP = 0.7, LAT_KD = 0, LAT_W = 0.2, LAT_KI = 0.5;
 export function invShape(s, k) {
   const a = Math.abs(s) > 1 ? Math.sign(s) : s;
   if (k <= 1e-6) return a;
@@ -174,18 +174,18 @@ export function createFlightController(e, prof) {
       // close in, roll the lift plane through the aim point using the NOSE error (the velocity-based roll above keeps
       // a lateral offset of ~AoA·sin(roll error) that only decays slowly)
       let re = rollErr, rv = rollValid;
-      if (err < 0.2 && c > 0) {
+      if (err < LAT_W && c > 0) {
         const ex = _n.dot(e.right);
         const exd = fc.exValid ? (ex - fc.exPrev) / Math.max(dt, 1e-3) : 0;
         fc.exDot += (exd - fc.exDot) * Math.min(1, dt / 0.08); fc.exPrev = ex; fc.exValid = true;
         fc.exInt = clamp(fc.exInt + LAT_KI * ex * dt * (err < 0.08 ? 1 : 0), -0.04, 0.04);   // trims the steady lateral offset
         const lat = _l.dot(e.right) + (LAT_KP * ex + LAT_KD * fc.exDot + fc.exInt) * V, upc = Math.max(_l.dot(e.up) + kp * ey * V + fc.trackInt, 0.5 * G0);
-        const rn = Math.atan2(lat, upc), w = clamp((0.2 - err) / 0.1, 0, 1);
+        const rn = Math.atan2(lat, upc), w = clamp((LAT_W - err) / (LAT_W * 0.5), 0, 1);
         re = rv ? rollErr + (rn - rollErr) * w : rn; rv = true;
       }
       fc.rollErr = re; fc.rollValid = rv; fc.dbgEy = _n.dot(e.up); fc.dbgEx = _n.dot(e.right);
       fc.nzCmd = clamp(Math.abs(re) > 0.5 ? Math.min(nz, 2) : nz, -1, gLimit);
-      fc.yawCmd = err < 0.05 ? clamp(_n.dot(e.right) * 12, -0.4, 0.4) : 0;
+      fc.yawCmd = 0;                                     // (rudder corrections made the lateral loop worse)
       return err;
     },
     nzFull: prof.gMax, exPrev: 0, exDot: 0, exInt: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),

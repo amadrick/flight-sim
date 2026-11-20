@@ -39,7 +39,7 @@ export function makeSkill(skill, personality, rng) {
     burst: [lerp(0.9, 0.3, s), lerp(2.0, 0.7, s)],
     burstGap: [lerp(0.5, 0.8, s), lerp(1.2, 1.8, s)],
     // gun employment range (m) and the most head-on aspect the pilot will snapshot at (rad off the target's tail)
-    gunMax: lerp(1000, 600, s) * p.gunRange,
+    gunMax: lerp(950, 700, s) * p.gunRange,
     // range the pilot tries to settle at behind a target before shooting (m): aces close to 300–400 m
     gunIdeal: lerp(560, 340, s) * p.closeIn ** -0.3,
     headOnGuns: lerp(2.3, 2.0, s),
