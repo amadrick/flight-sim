@@ -48,6 +48,35 @@ can be compared side by side; all round-four and round-five switches still work.
   within `clSpawnClear` (1800 m) of the aircraft at its level (12 directions x 3 radii x 3 heights); falls back to the
   sun-path test alone if no candidate within ~9 km has both. Scattered: shift 8.0 km, clear air, no walls.
 
+## 0c. Round six c: running log (newest last)
+
+Review of r6b: smooth clay / wax blobs (glossy, pillow-like, no crisp structure, no frayed edges); from 6 km a uniform
+scatter of isolated cotton balls; backlit near clouds a tan wall with stippled noise and speckle fringes, dot fragments,
+weak silver lining; dark speckle dots along the far horizon. Shots `scratchpad r6c/t*.png` while iterating, final pairs
+`shots/r6c-*.png` (left main = round five, right this branch).
+
+* **Base decision: profile erosion on top of the two or three biggest bubble octaves** (`clNub`, default 1; 0 = r6b). The
+  finest bubble octaves made every scale a smooth dome with a hard edge (edge ~ footprint): a level-set surface shaded by a
+  Lambert term reads as clay. Now the signed depth below the turret surface (envelope + bubble octaves 0..`clNubB`-1)
+  becomes a density profile 0 .. 1 over P = `clNubP` x the largest bubble cell (clamped 10-80 m, x3 where wispy, half at
+  the base), and Nubis-style value erosion eats into that profile: `x = (sd / P - E) / (1 - E)`, `dens = x^s`, E = `clNubE` x
+  noise. Noise from the 128^3 base volume (Worley cells 4-8 voxels: crisp) at a tile of `clNubT` x the bubble cell, two
+  octaves (x4), billowy (1 - cap(inverted Worley)) on growing tops, Perlin-Worley on dissolving cells and the low flanks
+  (`clNubF`), with a 3-D warp there. `s` = `clNubS` (0.45, crisp tops) .. `clNubW` (1, soft frayed edges). Fine structure
+  and soft translucent edges come from the erosion, the cauliflower lobes from the bubbles.
+* Grey smoky towers in the first try: the light march and MS-tap offsets (r6b clLOff) were measured from the eroded
+  surface, so a sample in the eroded skin looked like thin cloud to the network. The taps now measure from the un-eroded
+  turret surface (`clSurfL`); the light march sees `clNubL` (0.8) of the erosion, so a fragment left in an eroded hollow is
+  lit through the hollow (otherwise dark specks along backlit edges).
+* Micro light samples (near camera) band-limited x3 with the erosion (speckle).
+* Field: satellite thermals (`clSatl` 0.5: half the smaller cells are placed against a bigger cloud, gap 0.78 instead of
+  0.92 of the radii sum: families of clouds, flanking turrets), stronger clustering `clClu` 1.2 (0.7), `clFill` 0.7 (0.55).
+* **Horizon speckle found**: `clClamp=0` removes it. The history clamp clamped premultiplied radiance and opacity
+  independently; a small distant cloud's history kept its opacity and lost its light (dark dot) or the reverse (blue dot).
+  Now one factor scales both (`clClampC`, default 1), and a transparent history made opaque takes the current colour.
+* Vertical fins on dissolving towers: the 2-D curl warp shifted whole columns alike; replaced by a 3-D warp. The cell field
+  is fetched C1 up to mip 4 with the profile erosion (C0 creases of the coarse mips).
+
 ## 0. Round six: cauliflower, field variety, cost
 
 The complaint was "smooth rounded cotton puffs". What made them so (each one checked with the vertical density

@@ -107,6 +107,8 @@ uniform vec4 uClNub;       // round six c: x = 1: profile erosion (big bubbles +
                            //   (x largest bubble cell), z = erosion depth (share of the profile), w = erosion noise tile (x largest bubble cell)
 uniform vec4 uClNub2;      // round six c: x = sharpening exponent of growing tops, y = of flanks / bases / dissolving cells,
                            //   z = bubble octaves kept, w = wispy share on the flanks
+uniform vec4 uClNub3;      // round six c: x = share of the erosion the light march sees (its offset; the MS taps see none), y = profile depth
+                           //   factor where wispy, z = 1: also on Cb towers, w = reserved
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
 // side outputs of clShape for the detail pass (globals: GLSL ES 3 functions may write them)
 float clDecay = 0.0;       // 0 = growing / mature cell (crisp edges) .. 1 = decaying fragment (soft, frayed)
@@ -169,7 +171,9 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  80 m, extruded up the steep walls of a cell, were the vertical "curtain" lines on big cumulus seen from close by)
   vec2 uvC = pc * uClCell.x;
   float lc = lod + 1.0;
-  if (uClBub2.z > 0.0 && lc < 2.5) {
+  // (round six c: at every level up to mip 4 with the profile erosion, which turns the C0 creases of the coarser mips of
+  //  far towers into vertical fins)
+  if (uClBub2.z > 0.0 && lc < (uClNub.x > 0.0 ? 4.5 : 2.5)) {
     lc = floor(lc); float cs = float(textureSize(tClCells, int(lc)).x);
     vec2 tc = uvC * cs - 0.5, ti = floor(tc), tf = tc - ti;
     uvC = (ti + tf * tf * (3.0 - 2.0 * tf) + 0.5) / cs;
@@ -317,7 +321,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  500 m dark ovals on the towers, camouflage rather than cauliflower)
   clBubK = isCell ? 1.0 - decay : 0.7 * uClShape2.z * smoothstep(0.25, 0.6, dev) * (1.0 - uClShape.w);
   if (!isCell && clBubK > 0.0) { clRadius = mix(1000.0, 1800.0, dev); clThermal = mix(500.0, 900.0, dev); }
-  clNubW = isCell || clBubK > 0.0 ? 1.0 : 0.0;
+  clNubW = isCell ? 1.0 : uClNub3.z * step(0.001, clBubK);         // (Cb towers: clNubCb)
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
   // toward the rim through its density (info.w), not through a soft threshold (which would reveal texel facets)
   ex = mix(ex, s - (1.0 - 0.95 * am), anvil);
@@ -445,11 +449,15 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
     if (uClBub.x > 0.0) bD = clBubbles(pa, fp, bCav) * mix(0.35, 1.0, hK) * (1.0 - 0.6 * clDecay);
     clBubD = bD;
     float sd = excess + bD;                                              // km below the turret surface
-    float P = max(clamp(uClNub.y * lam0, 10.0, 80.0) * 1e-3 * mix(1.0, 3.0, wisp) * mix(0.5, 1.0, hK), 1.5 * edge);
+    float P = max(clamp(uClNub.y * lam0, 10.0, 80.0) * 1e-3 * mix(1.0, uClNub3.y, wisp) * mix(0.5, 1.0, hK), 1.5 * edge);
     float tile = uClNub.w * lam0;                                        // m
     vec3 q = pa / tile;
-    vec2 curl = textureLod(tClCurl, pa.xz * 1.9e-4 + pa.y * vec2(1.1e-4, 0.7e-4), 0.0).xy * 2.0 - 1.0; clNF += 1.0;
-    q.xz += curl * (0.3 * wisp + 0.05);
+    if (wisp > 0.05) {
+      // turbulent fringes where it is wispy: a 3-D warp from the detail volume (the 2-D curl field shifts whole vertical
+      // columns alike and drew vertical fins and sheets on dissolving towers)
+      vec3 wv = textureLod(tClDetail, q * 0.37 + 0.19, 0.0).gba - vec3(0.5); clNF += 1.0;
+      q += wv * 0.6 * wisp;
+    }
     q.y -= uClNoiseOfs.w * 5.0 / uClNub.w;                               // rises with the bubbles (boiling)
     float l1 = log2(max(fp, 0.1) * 128.0 / tile);
     vec4 n1 = textureLod(tClBase, q, clamp(l1, 0.0, 6.0)); clNF += 1.0;
@@ -747,9 +755,11 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
       float s2 = dl * (0.36 + 0.44 * jit), s1 = dl * (0.07 + 0.2 * jit);
       vec3 p2 = pa + uClLightDir * s2;
       float surf0 = clSurf, ex2 = clShape(p2, wx, lod, info);
-      float dA = clDensityFull(p2, ex2, info, max(2.0 * fp, 6.0), max(edge, 0.008)) * info.w, surf2 = clSurf;
+      // (round six c: band-limited harder with the profile erosion, whose fine noise in two jittered point samples was speckle)
+      float fpm = uClNub.x > 0.0 ? 3.0 : 1.0;
+      float dA = clDensityFull(p2, ex2, info, max(2.0 * fp, 6.0) * fpm, max(edge, 0.008)) * info.w, surf2 = clSurf;
       // the shape excess between the sample and p2 is interpolated: only the detail is fetched again
-      float dB = clDensityFull(pa + uClLightDir * s1, mix(ex0, ex2, s1 / s2), info, max(fp, 3.0), max(edge, 0.006)) * info.w;
+      float dB = clDensityFull(pa + uClLightDir * s1, mix(ex0, ex2, s1 / s2), info, max(fp, 3.0) * fpm, max(edge, 0.006)) * info.w;
       // How the surface faces the sun: (excess - erosion) is a rough signed depth below the surface (1 unit ~ 1 km),
       // so its decrease along the light direction is ~cos(normal, sun) x |gradient|; the gradient length is not
       // known (that would take three more samples), hence the soft normalisation.
@@ -1021,12 +1031,14 @@ void main() {
           clMu0 = 2.0;
           // (detailed light samples: within ~10 low-res pixels per metre... i.e. where a pixel is under 10 m, and only in the
           //  outer ~50 m of the cloud: deeper samples are in its shadow whatever the lobes do)
-          float thermS = clThermal, surfS = clSurfL, bubDS = clBubD, bubS0 = clBubS0;
+          float thermS = clThermal, surfS = clSurfL, surfE = clSurf, bubDS = clBubD, bubS0 = clBubS0;
           // round six b: local displacement of the visible surface against the cheap density the light march sees
           if (uClBub4.w > 0.0 && bubS > 0.0 && uClBub.x > 0.0) {
             float lam0 = clamp(thermS * uClBub.z, 22.0, 650.0);
             float exCh = exS_ + (uClBub3.w > 0.0 ? bubS * CL_BUB_G * uClBub.x * lam0 * 1e-3 * (bubS0 - CL_BUB_C) * mix(0.35, 1.0, clSat(info.x * 12.0)) : 0.0);
-            clLightOffIn = uClBub4.w * (surfS - exCh); clLightOffR = uClBub5.y * lam0;
+            // (round six c: the light march sees most of the profile erosion: a fragment left in an eroded hollow is lit through
+            //  the hollow, not through the un-eroded envelope around it, which printed dark specks along backlit edges)
+            clLightOffIn = uClBub4.w * (mix(surfS, surfE, uClNub3.x) - exCh); clLightOffR = uClBub5.y * lam0;
           }
           #ifdef CL_MS5
           // (the taps skip the bubble octave when uClCost.z is set: their offset is then measured from the plain envelope)
@@ -1280,7 +1292,7 @@ uniform sampler2D tClMarch, tClMarchAux, tClHist, tClHistAux;
 uniform vec4 uClJitter;      // xy = this frame's sub-pixel offset (full-res px)
 uniform vec4 uClTemporal;    // x = history valid, y = 1 / (2 sigma^2) of the sample kernel (px^-2), z = largest history weight, w = camera translation this frame (m)
 uniform vec4 uClWindVel;     // xyz = cloud drift this frame (m, render space), w = focal length in pixels
-uniform vec4 uClTemporal2;   // x = strength of the young-history spatial filter (0 = off), y = unused, z = history clamp (0 = off), w = Catmull-Rom history (0 = bilinear)
+uniform vec4 uClTemporal2;   // x = strength of the young-history spatial filter (0 = off), y = 1: one factor for colour and opacity in the clamp (round six c), z = history clamp (0 = off), w = Catmull-Rom history (0 = bilinear)
 vec4 clHistory(vec2 uv) {
   if (uClTemporal2.w < 0.5) return texture(tClHist, uv);
   vec2 size = vec2(textureSize(tClHist, 0));
@@ -1339,7 +1351,20 @@ void main() {
     if (uClTemporal2.z > 0.0 && mx.a >= mn.a) {
       // while it moves, the history may not leave the range of the current neighbourhood by much (trails, ghosts)
       vec4 pad = (mx - mn) * mix(4.0, 0.25, clamp(vel * 0.5 + par * 3.0, 0.0, 1.0)) / uClTemporal2.z + 0.01 * (mx + 0.05);
-      h = clamp(h, mn - pad, mx + pad);
+      vec4 hc = clamp(h, mn - pad, mx + pad);
+      // round six c: premultiplied radiance and opacity were clamped independently; where the history of a small distant
+      // cloud kept its opacity but lost its light (or the reverse) the pixel turned into a dark / saturated-blue dot (the
+      // horizon speckle). Scale both by one factor instead, the larger of the two corrections (colour per opacity kept).
+      float o0 = 1.0 - h.a, l0 = h.r + h.g + h.b;
+      if (uClTemporal2.y > 0.5 && o0 > 0.02 && l0 > 1e-5) {
+        float kO = (1.0 - hc.a) / o0, kL = (hc.r + hc.g + hc.b) / l0;
+        float k = abs(log(max(kO, 1e-4))) > abs(log(max(kL, 1e-4))) ? kO : kL;
+        hc = vec4(h.rgb * k, 1.0 - min(o0 * k, 1.0));
+      } else if (uClTemporal2.y > 0.5) {
+        // (a transparent history made opaque by the clamp takes the current colour per opacity, not the clamped radiance)
+        hc.rgb = max(hc.rgb, cur.rgb / max(1.0 - cur.a, 0.05) * (1.0 - hc.a));
+      }
+      h = hc;
     }
   }
   // Young history: shrink towards a depth-aware Gaussian over 4x4 low-res samples (variance for a little blur) until

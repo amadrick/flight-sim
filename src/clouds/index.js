@@ -106,7 +106,7 @@ export async function createClouds(ctx) {
   const U = {
     tClBase: { value: noise3.base }, tClDetail: { value: noise3.detail }, tClWeather: { value: weatherRT.texture },
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
-    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClNub: v4(), uClNub2: v4(), uClCost: v4(0.004, 0, 0, 0),
+    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClNub: v4(), uClNub2: v4(), uClNub3: v4(), uClCost: v4(0.004, 0, 0, 0),
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
     uClDet: v4(1, 1, 1, 1), uClLife: v4(0, 1, 0, 0), uClPhys: v4(2e-3, 1, 0.6, 1), uClMie: v4(0.9946, 0.594, 27.1, 0.498), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
@@ -514,7 +514,7 @@ export async function createClouds(ctx) {
     const nn = jitterSeq.length, sub = jitterIdx % nn, cycle = Math.floor(jitterIdx / nn);
     U.uClJitter.value.set(j[0], j[1], (cycle * GOLDEN + sub / nn) % 1, volumetricOn() ? 1 : 0);
     U.uClWindVel.value.set(wind.x * (frame.dt || 0), 0, wind.z * (frame.dt || 0), focalPx);
-    U.uClTemporal2.value.set(dbg('clYoung', 1), 0, dbg('clClamp', 1), dbg('clCR', detailLevel > 0 ? 1 : 0));
+    U.uClTemporal2.value.set(dbg('clYoung', 1), dbg('clClampC', 1), dbg('clClamp', 1), dbg('clCR', detailLevel > 0 ? 1 : 0));
     // detail cascade, detailed light samples (not at `low`), crease occlusion, surface refinement
     U.uClDet.value.set(dbg('clDet', 1), dbg('clMicro', detailLevel > 0 ? 1 : 0), dbg('clCav', 1.0), dbg('clRef', 1));
     U.uClDet3.value.set(dbg('clDbg', 0), dbg('clLam', dbg('clPhys', 1) > 0 ? 0.7 : 0), dbg('clWxL', 1), dbg('clAmbSide', 0.5));
@@ -546,9 +546,11 @@ export async function createClouds(ctx) {
     U.uClBub4.value.set(dbg('clSph', 0), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
     // round six c (docs/clouds/SHAPE.md): profile erosion (clNub=0: round six b bubble cascade): profile depth (clNubP, x largest
     // bubble cell), erosion depth (clNubE, share of the profile), erosion noise tile (clNubT, x largest bubble cell), sharpening
-    // of growing tops / of flanks and dissolving cells (clNubS, clNubW), bubble octaves kept (clNubB), wispy share of low flanks (clNubF)
+    // of growing tops / of flanks and dissolving cells (clNubS, clNubW), bubble octaves kept (clNubB), wispy share of low flanks (clNubF),
+    // share of the erosion the light march sees (clNubL)
     U.uClNub.value.set(dbg('clNub', 1), dbg('clNubP', 0.6), dbg('clNubE', 1.4), dbg('clNubT', 1.6));
     U.uClNub2.value.set(dbg('clNubS', 0.45), dbg('clNubW', 1.0), dbg('clNubB', 3), dbg('clNubF', 0.6));
+    U.uClNub3.value.set(dbg('clNubL', 0.8), dbg('clNubWP', 3), dbg('clNubCb', 0), 0);
     U.uClBub3.value.set(dbg('clSkin', 0.3), dbg('clLobe', 1), dbg('clAnvL', 1), dbg('clLobeSh', 1));
     // cost (round six): rays stop at transmittance clTmin (round five 0.004), far-field light from the shadow map alone beyond
     // clFarL m low-res pixels (0 = off; `low` quality from 25 m), learned-MS taps without the bubble octave (clMsBub=1 keeps it), bubble octaves 2 / 3 / 4 at low / medium / high (clBubN)
