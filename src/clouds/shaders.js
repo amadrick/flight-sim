@@ -103,6 +103,10 @@ uniform vec4 uClPhys;      // round five: x = adiabatic liquid-water lapse (g m^
 uniform vec4 uClBub5;      // round six b: x = reach of the bubble offset in the learned-MS taps, y = in the light march (x largest bubble)
 uniform vec4 uClBub4;      // round six b: x = sphere tracing through the bubble shell (march), y = bubble shape v2 (signed union),
                            //   z = lobe-orientation term from the bubble field, w = reserved
+uniform vec4 uClNub;       // round six c: x = 1: profile erosion (big bubbles + value-eroded density profile), y = profile depth
+                           //   (x largest bubble cell), z = erosion depth (share of the profile), w = erosion noise tile (x largest bubble cell)
+uniform vec4 uClNub2;      // round six c: x = sharpening exponent of growing tops, y = of flanks / bases / dissolving cells,
+                           //   z = bubble octaves kept, w = wispy share on the flanks
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
 // side outputs of clShape for the detail pass (globals: GLSL ES 3 functions may write them)
 float clDecay = 0.0;       // 0 = growing / mature cell (crisp edges) .. 1 = decaying fragment (soft, frayed)
@@ -112,7 +116,9 @@ float clGradK = 1.0;       // estimated |gradient| of the shape excess relative 
 float clCav = 0.2;         // side output of clDensityFull: 0 = tip of a lobe .. 1 = bottom of a crease (0.2 = mean / unresolved)
 float clMu0 = 2.0;         // side output of clTauLight: cos between the local surface normal and the sun, estimated from the detail field (2 = not available)
 float clSurf = 0.0;        // side output of clDensityFull: depth of the sample below the eroded surface (shape units, ~km)
+float clSurfL = 0.0;       // round six c: the same below the surface the light march / MS-tap offsets refer to (profile erosion: before the erosion)
 float clBubK = 0.0;        // side output of clShape (round six): weight of the bubble cascade (growing cumulus / Cb towers 1, decks 0)
+float clNubW = 0.0;        // side output of clShape (round six c): 1 = cumulus cell or Cb tower (profile erosion), 0 = deck / anvil
 float clNF = 0.0;          // round six: texture-fetch counter (clCount=2 writes it per ray to the march's aux.a)
 float clPixM = 0.0;
 float clThermal = 1000.0;
@@ -311,10 +317,11 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  500 m dark ovals on the towers, camouflage rather than cauliflower)
   clBubK = isCell ? 1.0 - decay : 0.7 * uClShape2.z * smoothstep(0.25, 0.6, dev) * (1.0 - uClShape.w);
   if (!isCell && clBubK > 0.0) { clRadius = mix(1000.0, 1800.0, dev); clThermal = mix(500.0, 900.0, dev); }
+  clNubW = isCell || clBubK > 0.0 ? 1.0 : 0.0;
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
   // toward the rim through its density (info.w), not through a soft threshold (which would reveal texel facets)
   ex = mix(ex, s - (1.0 - 0.95 * am), anvil);
-  if (anvil > 0.5) { info.x = clSat(hRel); info.y = uClLayer.y; clDecay = 0.0; clRadius = 1000.0; clGradK = 1.0; clBubK = 0.0; }
+  if (anvil > 0.5) { info.x = clSat(hRel); info.y = uClLayer.y; clDecay = 0.0; clRadius = 1000.0; clGradK = 1.0; clBubK = 0.0; clNubW = 0.0; }
   clAnvilW = anvil; clAnvilTop = uClLayer.x + lid * uClLayer.w; clAnvilSig = info.w * uClNoise.w;
   return ex - 3.0 * clSat((hN - lid) * 14.0);                    // lid at the tropopause / inversion
 }
@@ -371,7 +378,7 @@ float clBubbles(vec3 pa, float fp, out float cav) {
     // one tile = 5 bubble cells = 64 voxels: the octave fades out once its bubbles are under ~3 footprints
     float lodk = log2(max(fp, 0.5) * 1e-3 * 12.8 / lam);
     float wk = clSat((3.0 - lodk) / 1.5);
-    if (wk <= 0.0 || float(k) >= uClCost.w) break;
+    if (wk <= 0.0 || float(k) >= uClCost.w || float(k) >= (uClNub.x > 0.0 ? uClNub2.z : 4.0)) break;
     // rotated per octave (hides the lattice), warped by the parent (no regular packing of the sub-bubbles)
     vec3 r = k == 0 ? pk : k == 1 ? vec3(0.80 * pk.x - 0.60 * pk.z, pk.y, 0.60 * pk.x + 0.80 * pk.z)
            : k == 2 ? vec3(pk.x, 0.80 * pk.y + 0.60 * pk.z, -0.60 * pk.y + 0.80 * pk.z) : vec3(0.6 * pk.x + 0.8 * pk.y, -0.8 * pk.x + 0.6 * pk.y, pk.z);
@@ -423,6 +430,49 @@ float clBubbleMu(vec3 pa, vec3 L, float thermal) {
 float clBubD = 0.0;        // round six b: side output of clDensityFull, bubble displacement (km, x the cascade weight)
 float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
   excess /= clGradK;                                         // ~ signed distance to the un-eroded surface (km)
+  // Round six c: PROFILE EROSION (Nubis-style value erosion, research doc 3.1, on top of the two big bubble octaves). The
+  // signed depth below the turret surface (envelope + big bubbles) becomes a density profile 0 .. 1 over a depth P of
+  // ~0.25 x the largest bubble cell (10-80 m, x3 where wispy); a Worley / Perlin-Worley noise from the 128^3 base volume (tile tied to the turret
+  // size, two octaves) erodes that profile: billowy (inverted Worley caps) on growing tops, ragged Perlin-Worley with curl
+  // on dissolving cells and low flanks, and the result is sharpened with pow (crisp tops, soft frayed edges). The finest
+  // bubble octaves (smooth clay domes at every scale) are dropped. Cells and Cb towers only; decks keep round five.
+  if (uClNub.x > 0.0 && clNubW > 0.0) {
+    float lam0 = clamp(clThermal * uClBub.z, 22.0, 650.0);              // m, largest bubble cell
+    float hK = clSat(info.x * 12.0);                                     // (flat condensation level)
+    // 0 = billowy growing top .. 1 = wispy (dissolving cell, lower flanks)
+    float wisp = max(clDecay, uClNub2.w * (1.0 - clSat(info.x * 2.5)));
+    float bCav = 0.2, bD = 0.0;
+    if (uClBub.x > 0.0) bD = clBubbles(pa, fp, bCav) * mix(0.35, 1.0, hK) * (1.0 - 0.6 * clDecay);
+    clBubD = bD;
+    float sd = excess + bD;                                              // km below the turret surface
+    float P = max(clamp(uClNub.y * lam0, 10.0, 80.0) * 1e-3 * mix(1.0, 3.0, wisp) * mix(0.5, 1.0, hK), 1.5 * edge);
+    float tile = uClNub.w * lam0;                                        // m
+    vec3 q = pa / tile;
+    vec2 curl = textureLod(tClCurl, pa.xz * 1.9e-4 + pa.y * vec2(1.1e-4, 0.7e-4), 0.0).xy * 2.0 - 1.0; clNF += 1.0;
+    q.xz += curl * (0.3 * wisp + 0.05);
+    q.y -= uClNoiseOfs.w * 5.0 / uClNub.w;                               // rises with the bubbles (boiling)
+    float l1 = log2(max(fp, 0.1) * 128.0 / tile);
+    vec4 n1 = textureLod(tClBase, q, clamp(l1, 0.0, 6.0)); clNF += 1.0;
+    float e = mix(1.0 - clCap(clSat((n1.g - 0.3) / 0.6)), n1.r, wisp);
+    float l2 = l1 + 2.0;
+    if (l2 < 5.0) {
+      vec3 q2 = vec3(0.80 * q.x - 0.60 * q.z, q.y, 0.60 * q.x + 0.80 * q.z) * 4.0 + (n1.gba - 0.5) * mix(0.25, 0.8, wisp) + 0.37;
+      vec4 n2 = textureLod(tClBase, q2, clamp(l2, 0.0, 6.0)); clNF += 1.0;
+      float e2 = mix(1.0 - clCap(clSat((n2.b - 0.3) / 0.6)), n2.r, wisp);
+      e += 0.5 * clSat(5.0 - l2) * (e2 - 0.45);
+    }
+    float E = clSat(uClNub.z * e);
+    float x = clSat((sd / P - E) / max(1.0 - E, 0.05));
+    float dens = pow(x, mix(uClNub2.x, uClNub2.y, wisp));
+    clSurf = sd - E * P;
+    // (the light march and the MS taps measure from the un-eroded turret surface: a sample in the eroded skin still has the
+    //  cloud's body around it and below it, which is where its multiply scattered light comes from)
+    clSurfL = sd;
+    float cavD = clSat(0.25 - bD / (uClBub.x * lam0 * 1e-3 * 0.8 + 1e-4));
+    clCav = mix(0.2, mix(0.5 * cavD + 0.5 * bCav, e, 0.5), clSat(info.x * 5.0) * (1.0 - wisp));
+    if (uClPhys.w > 0.5) dens *= mix(mix(0.6, 0.3, clDecay), 1.0, clSat(clSurf / (mix(0.006, 0.08, clDecay))));
+    return dens;
+  }
   float bk = uClBub.x > 0.0 ? clBubK : 0.0;
   float bCav = 0.2, bD = 0.0;
   if (bk > 0.0) bD = clBubbles(pa, fp, bCav) * mix(0.35, 1.0, clSat(info.x * 12.0));   // (flat condensation level)
@@ -484,6 +534,7 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
     edge *= mix(1.0, uClBub2.w, bk);
   }
   clSurf = excess - m;
+  clSurfL = clSurf;
   // hard sunlit edges on growing towers, soft frayed edges on decaying fragments
   float dens = clSat((excess - m) / (edge * mix(1.0, uClPhys.w > 0.5 ? 2.0 : 3.5, clDecay)));
   // round five, entrainment: dry air mixed in through the surface dilutes the outer ~20 m of a growing turret a little
@@ -932,6 +983,7 @@ void main() {
         float exS_ = clShape(pa, wx, lod, info);
         // (round six: the bubble cascade can push the surface out by up to ~0.6 x the sum of its octave sizes)
         if (uClBub.x > 0.0 && clBubK > 0.0) exLo = max(exLo * (1.0 - clBubK), CL_BUB_HI);
+        if (uClNub.x > 0.0 && clNubW > 0.0) exLo = uClBub.x > 0.0 ? CL_BUB_HI : 0.0;   // (round six c: the profile erosion only carves in)
         exLo *= clGradK;
         float ex = exS_ + exLo;                                       // conservative: erosion can also add
         if (!fine && !farField) {
@@ -969,7 +1021,7 @@ void main() {
           clMu0 = 2.0;
           // (detailed light samples: within ~10 low-res pixels per metre... i.e. where a pixel is under 10 m, and only in the
           //  outer ~50 m of the cloud: deeper samples are in its shadow whatever the lobes do)
-          float thermS = clThermal, surfS = clSurf, bubDS = clBubD, bubS0 = clBubS0;
+          float thermS = clThermal, surfS = clSurfL, bubDS = clBubD, bubS0 = clBubS0;
           // round six b: local displacement of the visible surface against the cheap density the light march sees
           if (uClBub4.w > 0.0 && bubS > 0.0 && uClBub.x > 0.0) {
             float lam0 = clamp(thermS * uClBub.z, 22.0, 650.0);

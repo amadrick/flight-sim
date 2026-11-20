@@ -182,7 +182,7 @@ export function createNoise2D(seed = 1337) {
  * gentler and higher ramp, so a vigorous cell tapers off well before its border and is not cut there by a vertical
  * cliff that no detail can move).
  */
-export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, slope2 = null, dBreak = 1000, fill = 0.55, borderTaper = true, cluster = 0, taperK = 2, taperTo = 1.25 } = {}) {
+export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, slope2 = null, dBreak = 1000, fill = 0.55, borderTaper = true, cluster = 0, taperK = 2, taperTo = 1.25, satellite = 0 } = {}) {
   const rnd = mulberry(seed * 31 + 7);
   const S = size, texel = period / S;
   // sizes: inverse CDF of D^-slope on [dMin, dMax] (two segments with slope2 above dBreak), sorted descending, until
@@ -214,14 +214,26 @@ export function createCellField({ seed = 1337, size = 512, period = 20480, dMin 
   for (const D of want) {
     const r = D / 2;
     for (let tries = 0; tries < 30; tries++) {
-      const x = rnd() * period, z = rnd() * period;
-      if (cluster > 0 && rnd() > Math.min(1, Math.max(0.03, 0.5 + cluster * clusterAt(x, z) * (r < 500 ? 1.3 : 0.8)))) continue;
+      let x = rnd() * period, z = rnd() * period, gap = 0.92;
+      // round six c: satellite thermals: a share of the smaller cells is placed against a bigger cloud (flanking turrets,
+      // families of clouds sharing one base) instead of anywhere
+      let sat = false;
+      if (satellite > 0 && placed.length > 8 && rnd() < satellite) {
+        for (let k = 0; k < 6; k++) {
+          const c = placed[Math.floor(rnd() * placed.length)];
+          if (c.r < 1.4 * r) continue;
+          const a = rnd() * Math.PI * 2, dd = (0.8 + 0.15 * rnd()) * (c.r + r);
+          x = ((c.x + Math.cos(a) * dd) % period + period) % period; z = ((c.z + Math.sin(a) * dd) % period + period) % period;
+          gap = 0.78; sat = true; break;
+        }
+      }
+      if (!sat && cluster > 0 && rnd() > Math.min(1, Math.max(0.03, 0.5 + cluster * clusterAt(x, z) * (r < 500 ? 1.3 : 0.8)))) continue;
       const gx = Math.floor(x / cellM), gz = Math.floor(z / cellM), reach = Math.ceil((r + dMax / 2) / cellM);
       let ok = true;
       for (let j = -reach; j <= reach && ok; j++) for (let i = -reach; i <= reach && ok; i++) {
         for (const c of grid[((gz + j + GC) % GC) * GC + ((gx + i + GC) % GC)]) {
           const dx = wrapD(c.x - x), dz = wrapD(c.z - z);
-          if (dx * dx + dz * dz < Math.pow(0.92 * (c.r + r), 2)) { ok = false; break; }
+          if (dx * dx + dz * dz < Math.pow(gap * (c.r + r), 2)) { ok = false; break; }
         }
       }
       if (!ok) continue;

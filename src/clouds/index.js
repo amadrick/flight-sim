@@ -71,7 +71,7 @@ export async function createClouds(ctx) {
   // round six (clField=0: round five): broken power law of sizes, clustered placement, gentler border taper
   const field6 = dbg('clField', 1) > 0;
   const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(raw.clBorder ?? 1) !== '0',
-    ...(field6 ? { slope: 1.7, slope2: 3.2, dBreak: 1100, cluster: 0.7, taperK: 1, taperTo: 1.6 } : {}) });
+    ...(field6 ? { slope: 1.7, slope2: 3.2, dBreak: 1100, cluster: dbg('clClu', 1.2), taperK: 1, taperTo: 1.6, fill: dbg('clFill', 0.7), satellite: dbg('clSatl', 0.5) } : {}) });
   const weatherField = makeWeatherFieldJS(noise2);
 
   const atmGLSL = ctx.pipeline?.atmosphere?.glsl || FALLBACK_ATMOSPHERE_GLSL;
@@ -106,7 +106,7 @@ export async function createClouds(ctx) {
   const U = {
     tClBase: { value: noise3.base }, tClDetail: { value: noise3.detail }, tClWeather: { value: weatherRT.texture },
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
-    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClCost: v4(0.004, 0, 0, 0),
+    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClNub: v4(), uClNub2: v4(), uClCost: v4(0.004, 0, 0, 0),
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
     uClDet: v4(1, 1, 1, 1), uClLife: v4(0, 1, 0, 0), uClPhys: v4(2e-3, 1, 0.6, 1), uClMie: v4(0.9946, 0.594, 27.1, 0.498), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
@@ -544,6 +544,11 @@ export async function createClouds(ctx) {
     // self-shadowing; clLobeSh), analytic sun path through the anvil slab (clAnvL: no contour arcs under the anvil)
     U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 1), 0);
     U.uClBub4.value.set(dbg('clSph', 0), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
+    // round six c (docs/clouds/SHAPE.md): profile erosion (clNub=0: round six b bubble cascade): profile depth (clNubP, x largest
+    // bubble cell), erosion depth (clNubE, share of the profile), erosion noise tile (clNubT, x largest bubble cell), sharpening
+    // of growing tops / of flanks and dissolving cells (clNubS, clNubW), bubble octaves kept (clNubB), wispy share of low flanks (clNubF)
+    U.uClNub.value.set(dbg('clNub', 1), dbg('clNubP', 0.6), dbg('clNubE', 1.4), dbg('clNubT', 1.6));
+    U.uClNub2.value.set(dbg('clNubS', 0.45), dbg('clNubW', 1.0), dbg('clNubB', 3), dbg('clNubF', 0.6));
     U.uClBub3.value.set(dbg('clSkin', 0.3), dbg('clLobe', 1), dbg('clAnvL', 1), dbg('clLobeSh', 1));
     // cost (round six): rays stop at transmittance clTmin (round five 0.004), far-field light from the shadow map alone beyond
     // clFarL m low-res pixels (0 = off; `low` quality from 25 m), learned-MS taps without the bubble octave (clMsBub=1 keeps it), bubble octaves 2 / 3 / 4 at low / medium / high (clBubN)
