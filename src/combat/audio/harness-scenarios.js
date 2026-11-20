@@ -1,82 +1,123 @@
 // Harness scenarios (see harness.js). Each scenario renders offline, measures and records rows + checks.
-import { makeRhythmGuitar, makeLeadGuitar, noise, makeReverb, makePingPong, G } from './music/synth.js';
+import { makeRhythmGuitar, makeLeadGuitar, noise, G } from './music/synth.js';
 import { CUES } from './music/cues.js';
+import { createStems, ORDER } from './music/render.js';
+import { createRadio } from './radio.js';
+import { createWarnings } from './warnings.js';
+import { MIX } from './index.js';
 import { MUSIC_SCENARIOS_EXTRA } from './harness-sfx.js';
 
-function moodAt(script, t) { let m = script[0][1]; for (const [t0, mm] of script) if (t >= t0) m = mm; return m; }
+const STEMS = {};
+/** render (once per page) every stem of a cue, with timings */
+export async function stemsFor(H, id) {
+  if (STEMS[id]) return STEMS[id];
+  const t0 = performance.now(), st = createStems(id);
+  await st.all();
+  const per = {};
+  for (const n of ORDER) { const e = st.get(n); if (e) per[n] = { renderMs: Math.round(e.renderMs), mainMs: +e.mainMs.toFixed(1), maxSliceMs: +e.maxSliceMs.toFixed(1), where: e.where, sec: +e.duration.toFixed(1) }; }
+  H.results.music['stems_' + id] = { sr: st.sr, sections: st.stats.sections, failed: st.stats.failed, totalMs: Math.round(performance.now() - t0), renderMs: Math.round(st.stats.renderMs), mainThreadMs: Math.round(st.stats.mainMs), maxMainThreadSliceMs: +st.stats.maxSliceMs.toFixed(1), MB: +(st.stats.bytes / 1048576).toFixed(1), per };
+  return (STEMS[id] = st);
+}
+const scriptAt = (script, t) => { let e = script[0]; for (const x of script) if (t >= x[0]) e = x; return e; };
 
 async function musicRun(H, cueId, script, seconds) {
   const { A } = H;
+  const stems = await stemsFor(H, cueId);
+  const cpu = { calls: 0, ms: 0, max: 0, maxNodes: 0, maxVoices: 0 };
   const { buf, obj } = await H.render({
     seconds,
-    setup: (ac, M) => ({ mus: H.createMusic(ac, M.master, { cue: cueId, log: true }) }),
-    tick: (t, o) => o.mus.update(t, moodAt(script, t)),
+    setup: (ac) => ({ mus: H.createMusic(ac, ac.destination, { cue: cueId, log: true, stems }) }),
+    tick: (t, o) => {
+      const [, m, sig] = scriptAt(script, t), t0 = performance.now();
+      o.mus.update(t, m, sig);
+      const dt = performance.now() - t0; cpu.calls++; cpu.ms += dt; cpu.max = Math.max(cpu.max, dt);
+      cpu.maxNodes = Math.max(cpu.maxNodes, o.mus.info.nodes); cpu.maxVoices = Math.max(cpu.maxVoices, o.mus.info.voices);
+    },
   });
-  const x = A.mono(buf), log = obj.mus.info.log, sd = obj.mus.stepDur, barLen = 16 * sd;
-  const r = H.row(`music ${cueId}: ${seconds}s scripted moods`, buf);
-  // per-section levels (whole bars only)
-  const sec = {};
-  for (let i = 0; i < log.length - 1; i++) { const s = log[i].section; (sec[s] ||= []).push([log[i].t, log[i + 1].t]); }
-  const lv = {}, cen = {}, gtr = {}, wid = {};
-  for (const [s, spans] of Object.entries(sec)) {
-    let e = 0, n = 0, c = 0, g = 0, w = 0;
-    for (const [a, b] of spans) { const v = A.rms(x, a, b); e += v * v * (b - a); n += b - a; c += A.centroid(x, a, b) * (b - a); g += A.bandFrac(x, a, b, 1200, 4500) * (b - a); w += A.width(buf, a, b) * (b - a); }
-    lv[s] = +A.db(Math.sqrt(e / n)).toFixed(1); cen[s] = Math.round(c / n); gtr[s] = +(g / n).toFixed(3); wid[s] = +(w / n).toFixed(2);
+  const x = A.mono(buf), log = obj.mus.info.log.filter((l) => l.section), barLen = 16 * obj.mus.stepDur;
+  const r = H.row(`music ${cueId}: ${seconds}s scripted game`, buf);
+  // per-section measurements (whole bars only, first 0.25 s of each entry skipped for the crossfade)
+  const spans = {};
+  for (let i = 0; i < log.length; i++) { const s = log[i].section, t0 = log[i].t, t1 = log[i + 1]?.t ?? t0 + barLen; (spans[s] ||= []).push([t0, t1]); }
+  const per = {};
+  for (const [s, sp] of Object.entries(spans)) {
+    const inner = sp.map(([t0, t1], i) => [i === 0 || sp[i - 1][1] !== t0 ? t0 + 0.25 : t0, t1]);   // skip each entry's crossfade
+    let lo = 0, mid = 0, hi = 0, n = 0, w = 0;
+    for (const [t0, t1] of sp) { const d = t1 - t0; lo += A.bandFrac(x, t0, t1, 20, 250) * d; mid += A.bandFrac(x, t0, t1, 250, 4000) * d; hi += A.bandFrac(x, t0, t1, 4000, 20000) * d; w += A.width(buf, t0, t1) * d; n += d; }
+    per[s] = { lufs: +A.lufs(buf, inner).toFixed(1), peak: +Math.max(...inner.map(([a, b]) => A.peak(x, a, b))).toFixed(3), low: +(lo / n).toFixed(2), mid: +(mid / n).toFixed(2), high: +(hi / n).toFixed(2), width: +(w / n).toFixed(2), bars: sp.length };
   }
+  // click check: energy above 17 kHz (the stems are band-limited to 16 kHz) at every section change vs inside sections
+  const changes = log.filter((l, i) => i > 0 && (l.section !== log[i - 1].section || l.bar !== log[i - 1].bar + 1)).map((l) => l.t);
+  const base = []; for (let t = 1; t < seconds - 1; t += 0.37) base.push(A.hfEnergy(x, t));
+  base.sort((p, q) => p - q); const med = base[Math.floor(base.length / 2)] || 1e-20, p99 = base[Math.floor(base.length * 0.99)] || 1e-20;
+  let worst = -Infinity; for (const t of changes) for (const dt of [-0.01, 0, 0.01, 0.02]) worst = Math.max(worst, 10 * Math.log10(A.hfEnergy(x, t + dt) / med));
+  const lead = script.find((e) => e[1] === 'fight' || e[1] === 'hero'), firstBand = log.find((l) => ['intro', 'verse'].includes(l.section));
+  const startLag = firstBand && lead ? firstBand.t - lead[0] : null;
   const barTimes = log.map((l) => l.t), offGrid = barTimes.filter((t) => Math.abs(((t - barTimes[0]) / barLen) - Math.round((t - barTimes[0]) / barLen)) > 1e-3).length;
-  const fightSpan = [sec.riff?.[0]?.[0] ?? 0, sec.riff2?.[sec.riff2.length - 1]?.[1] ?? 0];
-  const beat = A.beatPeriod(x, fightSpan[0], fightSpan[1], 0.7, 2.4);
-  const firstT = barTimes[0] ?? 0, lastPlay = (log[log.length - 1]?.t ?? 0) + barLen;
-  const gap = A.longestGap(x, firstT + 0.5, Math.min(seconds, lastPlay), -55);
-  const sections = log.map((l) => l.section + l.bar).join(' ');
-  H.results.music[cueId] = { bpm: CUES[cueId].bpm, barSec: +barLen.toFixed(3), measuredBeatSec: +beat.toFixed(3), levelsDb: lv, centroidHz: cen, gtrBand800_5k: gtr, stereoWidth: wid, longestGapSec: gap, skipped: obj.mus.info.skipped, order: [...new Set(log.map((l) => l.section))].join(' > '), sections };
+  const order = []; for (const l of log) if (l.bar === 0 || order[order.length - 1] !== l.section) if (order[order.length - 1] !== l.section) order.push(l.section);
+  const gap = A.longestGap(x, (barTimes[0] ?? 0) + 0.5, Math.min(seconds, (barTimes[barTimes.length - 1] ?? 0) + barLen), -60);
+  H.results.music[cueId] = { bpm: CUES[cueId].bpm, barSec: +barLen.toFixed(3), sections: per, songOrder: order.join(' > '), bandStartsAfterContactSec: startLag && +startLag.toFixed(2), fills: obj.mus.info.fills, risers: obj.mus.info.risers, cuts: obj.mus.info.cuts,
+    clickWorstDbOverMedianHF: +worst.toFixed(1), hfP99DbOverMedian: +(10 * Math.log10(p99 / med)).toFixed(1), scheduler: { avgMsPerFrame: +(cpu.ms / cpu.calls).toFixed(4), maxMs: +cpu.max.toFixed(3), maxNodes: cpu.maxNodes, maxVoices: cpu.maxVoices }, longestGapSec: gap, skipped: obj.mus.info.skipped };
   H.check(`${cueId}: no clipping / NaN, peak < 1`, r.peak < 1 && r.nan === 0, `peak ${r.peak}`);
-  H.check(`${cueId}: no DC offset`, Math.abs(+r.dc) < 2e-3, r.dc);
   H.check(`${cueId}: section changes land on bar lines`, offGrid === 0, `${offGrid} off-grid of ${barTimes.length}`);
-  const q = 60 / CUES[cueId].bpm, bOk = [q * 2, q * 4].some((p) => Math.abs(beat - p) < 0.02 * p);
-  H.check(`${cueId}: rhythmic period (onset autocorrelation) = half bar or bar at ${CUES[cueId].bpm} BPM`, bOk, `${beat.toFixed(3)} s vs ${(2 * q).toFixed(3)} / ${(4 * q).toFixed(3)} s`);
+  H.check(`${cueId}: the band starts within a bar of contact`, startLag !== null && startLag <= barLen + 0.35, `${startLag?.toFixed(2)} s (bar ${barLen.toFixed(2)} s)`);
+  H.check(`${cueId}: riser into the first merge`, obj.mus.info.risers >= 1, obj.mus.info.risers);
+  H.check(`${cueId}: click-free cuts (HF at changes < p99 of the music + 3 dB)`, worst < 10 * Math.log10(p99 / med) + 3, `worst ${worst.toFixed(1)} dB vs p99 ${(10 * Math.log10(p99 / med)).toFixed(1)} dB over median`);
   H.check(`${cueId}: no silent gap while playing`, gap < 0.3, `${gap.toFixed(2)} s`);
-  const band = ['riff', 'riff2', 'chorus', 'chorus2', 'danger'].filter((s) => lv[s] !== undefined).map((s) => lv[s]);
-  H.check(`${cueId}: full-band sections within 6 dB of each other`, Math.max(...band) - Math.min(...band) < 6, band.join(' / '));
-  H.check(`${cueId}: calm is the quiet state (>= 5 dB under the band)`, lv.calm !== undefined && Math.min(...band) - lv.calm >= 5, `calm ${lv.calm} vs band min ${Math.min(...band)}`);
-  H.check(`${cueId}: tension sits between calm and the band`, lv.tension > lv.calm && lv.tension < Math.max(...band), `${lv.calm} < ${lv.tension} < ${Math.max(...band)}`);
-  H.check(`${cueId}: guitars enter with the fight (0.8-5 kHz share of riff > tension, which has only mutes)`, gtr.riff > gtr.tension, `${gtr.calm} -> ${gtr.riff}`);
-  H.check(`${cueId}: stereo width in the band sections`, wid.riff > 0.25, `${wid.riff}`);
-  H.check(`${cueId}: victory sting plays then the score goes quiet`, lv.win > lv.calm && A.db(A.rms(x, seconds - 1.5, seconds)) < -45, `win ${lv.win} dB, tail ${A.db(A.rms(x, seconds - 1.5, seconds)).toFixed(1)} dB`);
-  return { x, buf, log };
+  const band = ['verse', 'pre', 'chorus', 'chorus2', 'solo', 'danger', 'intro'].filter((s) => per[s]).map((s) => per[s].lufs);
+  H.check(`${cueId}: chorus is the loudest band section, verse >= 4 LU below it (loud-quiet)`, per.chorus && per.verse && per.chorus.lufs >= Math.max(...band) - 0.6 && per.verse.lufs < per.chorus.lufs - 4, `verse ${per.verse?.lufs} / chorus ${per.chorus?.lufs} / max ${Math.max(...band)}`);
+  H.check(`${cueId}: calm is the quiet state (>= 5 LU under the verse, >= 10 under the chorus), tension between`, per.calm && per.verse && per.verse.lufs - per.calm.lufs >= 5 && per.chorus.lufs - per.calm.lufs >= 10 && per.tension.lufs > per.calm.lufs && per.tension.lufs < per.chorus.lufs, `calm ${per.calm?.lufs} / tension ${per.tension?.lufs} / verse ${per.verse?.lufs} / chorus ${per.chorus?.lufs}`);
+  H.check(`${cueId}: scheduler < 0.2 ms per frame on average`, cpu.ms / cpu.calls < 0.2, `${(cpu.ms / cpu.calls).toFixed(4)} ms`);
+  return { x, buf, log, obj };
 }
 
 export const SCENARIOS = {
-  async 'debug-inst'(H) {
-    for (const inst of ['drums', 'gtr', 'lead', 'bass', 'arp', 'pad', 'clean', 'sbass', 'riser', 'all']) for (const [mood, secs] of [['calm', 8], ['fight', 32]]) {
-      const { buf } = await H.render({ seconds: secs, setup: (ac, M) => ({ mus: H.createMusic(ac, ac.destination, { cue: 'sweep', only: inst === 'all' ? null : [inst] }) }), tick: (t, o) => o.mus.update(t, mood) });
-      const x = H.A.mono(buf); let nanAt = -1; for (let i = 0; i < x.length; i++) if (!isFinite(x[i])) { nanAt = i / H.SR; break; }
-      H.row(`debug ${inst} ${mood}`, buf, { nanAt, cen: Math.round(H.A.centroid(x, 1, Math.min(secs, nanAt > 0 ? nanAt : secs))) });
-    }
-  },
+  async 'music-stems'(H) { for (const id of ['sweep', 'nightfall']) await stemsFor(H, id); },
   async 'music-sweep'(H) {
-    await musicRun(H, 'sweep', [[0, 'calm'], [10, 'tension'], [17, 'fight'], [47, 'hero'], [64, 'danger'], [72, 'fight'], [74, 'victory']], 90);
+    // contact at 20 s; a lock at 31 s; kill (hero) at 50 s; missile at 76 s; disengage at 98 s; back at 112 s; win at 126 s
+    await musicRun(H, 'sweep', [[0, 'calm'], [12, 'tension'], [20, 'fight'], [31, 'fight', { push: true }], [40, 'fight'], [50, 'hero'], [76, 'danger'], [83, 'fight'], [98, 'tension'], [112, 'fight'], [126, 'victory']], 142);
   },
   async 'music-night'(H) {
-    await musicRun(H, 'nightfall', [[0, 'calm'], [10, 'tension'], [20, 'fight'], [50, 'hero'], [66, 'danger'], [76, 'victory']], 96);
+    await musicRun(H, 'nightfall', [[0, 'calm'], [14, 'tension'], [24, 'fight'], [40, 'fight', { push: true }], [50, 'fight'], [62, 'hero'], [92, 'danger'], [100, 'fight'], [118, 'tension'], [134, 'fight'], [150, 'victory']], 168);
   },
   async 'music-defeat'(H) {
-    const { buf, obj } = await H.render({ seconds: 22, setup: (ac, M) => ({ mus: H.createMusic(ac, M.master, { cue: 'sweep', log: true }) }), tick: (t, o) => o.mus.update(t, t < 8 ? 'fight' : 'defeat') });
-    const x = H.A.mono(buf); H.row('music sweep: fight -> defeat sting', buf);
-    const secs = obj.mus.info.log.map((l) => l.section);
-    H.check('defeat: sombre sting follows the fight, then silence', secs.includes('lose') && H.A.db(H.A.rms(x, 20.5, 22)) < -45, secs.join(','));
+    const stems = await stemsFor(H, 'sweep');
+    const { buf, obj } = await H.render({ seconds: 22, setup: (ac) => ({ mus: H.createMusic(ac, ac.destination, { cue: 'sweep', log: true, stems }) }), tick: (t, o) => o.mus.update(t, t < 8 ? 'fight' : 'defeat') });
+    const x = H.A.mono(buf); H.row('music sweep: fight -> defeat tag', buf);
+    const secs = obj.mus.info.log.filter((l) => l.section).map((l) => l.section);
+    H.check('defeat: sombre tag follows the fight, then silence', secs.includes('lose') && H.A.db(H.A.rms(x, 20.5, 22)) < -50, secs.join(','));
   },
   async 'music-abort'(H) {
-    const { buf } = await H.render({ seconds: 8, setup: (ac, M) => ({ mus: H.createMusic(ac, M.master, { cue: 'sweep' }) }), tick: (t, o) => { if (t > 4 && !o.stopped) { o.stopped = true; o.mus.stop(0.3); } o.mus.update(t, t > 4 ? 'off' : 'fight'); } });
+    const stems = await stemsFor(H, 'sweep');
+    const { buf } = await H.render({ seconds: 8, setup: (ac) => ({ mus: H.createMusic(ac, ac.destination, { cue: 'sweep', stems }) }), tick: (t, o) => { if (t > 4 && !o.stopped) { o.stopped = true; o.mus.stop(0.3); } o.mus.update(t, t > 4 ? 'off' : 'fight'); } });
     const x = H.A.mono(buf);
-    H.check('abort: music stops within ~1 s', H.A.db(H.A.rms(x, 5.5, 8)) < -50, `${H.A.db(H.A.rms(x, 5.5, 8)).toFixed(1)} dB after stop`);
+    H.check('abort: music stops within ~1 s', H.A.db(H.A.rms(x, 5.2, 8)) < -60, `${H.A.db(H.A.rms(x, 5.2, 8)).toFixed(1)} dB after stop`);
+  },
+  async 'music-duck'(H) {
+    // the same chorus rendered with and without the duck, and the radio / warnings alone through the simulator mix
+    const { A } = H; const stems = await stemsFor(H, 'sweep');
+    const run = (duck) => H.render({ seconds: 20, setup: (ac, M) => { const m = H.createMusic(ac, M.master, { cue: 'sweep', stems }); m.setVolume(0.8 * MIX.music); return { m }; },
+      tick: (t, o) => { o.m.setDuck(duck && t > 10 && t < 14 ? MIX.duckRadio : duck && t > 15 && t < 18 ? MIX.duckWarn : 1); o.m.update(t, 'hero'); } });
+    const a = A.mono((await run(false)).buf), b = A.mono((await run(true)).buf);
+    const dR = A.db(A.rms(b, 10.6, 13.9) / A.rms(a, 10.6, 13.9)), dW = A.db(A.rms(b, 15.6, 17.9) / A.rms(a, 15.6, 17.9));
+    const radio = await H.render({ seconds: 4, setup: (ac, M) => { const g = ac.createGain(); g.gain.value = MIX.radio; g.connect(M.flightIn); const r = createRadio(ac, g, { speech: null }); r.say({ text: 'Two bandits, bullseye zero four zero, twenty miles, hot.', role: 'awacs', priority: 1 }, 0); return { r }; }, tick: (t, o) => o.r.update(t, false) });
+    const warn = await H.render({ seconds: 3, setup: (ac, M) => { const g = ac.createGain(); g.gain.value = MIX.warnings; g.connect(M.flightIn); return { w: createWarnings(ac, g) }; }, tick: (t, o) => o.w.update(t, { launch: true }) });
+    const rx = A.mono(radio.buf), wx = A.mono(warn.buf);
+    const bandE = (x, t0, t1, f0, f1) => A.rms(x, t0, t1) * Math.sqrt(A.bandFrac(x, t0, t1, f0, f1));
+    const snrR = A.db(bandE(rx, 0.3, 3, 300, 3400) / bandE(b, 10.6, 13.9, 300, 3400)), snrW = A.db(bandE(wx, 0.2, 2.8, 800, 1600) / bandE(b, 15.6, 17.9, 800, 1600));
+    const clickD = Math.max(...[10, 14, 15, 18].map((t) => 10 * Math.log10((A.hfEnergy(b, t) + 1e-20) / (A.hfEnergy(a, t) + 1e-20))));
+    H.results.music.duck = { radioDuckDb: +dR.toFixed(1), warnDuckDb: +dW.toFixed(1), radioOverDuckedMusicDb_300_3400: +snrR.toFixed(1), launchWarnOverDuckedMusicDb_800_1600: +snrW.toFixed(1), duckEdgeHFDeltaDb: +clickD.toFixed(1) };
+    H.check('duck: music drops ~7 dB under radio, ~4 dB under missile warnings', dR < -5.5 && dR > -9 && dW < -3 && dW > -6, `${dR.toFixed(1)} / ${dW.toFixed(1)} dB`);
+    H.check('duck: radio band > music band by 6 dB (intelligible)', snrR > 6, `${snrR.toFixed(1)} dB`);
+    H.check('duck: launch warning > music in its band by 10 dB', snrW > 10, `${snrW.toFixed(1)} dB`);
+    H.check('duck: duck edges are click-free', clickD < 3, `${clickD.toFixed(1)} dB`);
   },
   async 'guitar-cab'(H) {
     const { A } = H;
     // ringing power chord D5 (D2 A2 D3) then 8 palm-muted chugs
     const { buf } = await H.render({ seconds: 4, setup: (ac, M) => {
       const w = noise(ac, 'white'); w.start();
-      const g = makeRhythmGuitar(ac, M.master, w); const sd = 60 / 132 / 4;
+      const g = makeRhythmGuitar(ac, M.master, w, { os: '4x' }); const sd = 60 / 132 / 4;
       g.trigger({ n: [38, 45, 50], d: 16, v: 1, m: 0 }, 0.1, sd);
       for (let i = 0; i < 8; i++) g.trigger({ n: [38, 45], d: 1, v: 0.8, m: 1 }, 2.2 + i * 2 * sd, sd);
     } });

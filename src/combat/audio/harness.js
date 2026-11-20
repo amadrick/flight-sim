@@ -4,7 +4,7 @@
 import { createMaster } from '../../audio/master.js';
 import { createMusic } from './music/engine.js';
 import * as A from './analyze.js';
-import { SCENARIOS } from './harness-scenarios.js';
+import { SCENARIOS, stemsFor } from './harness-scenarios.js';
 
 const SR = A.SR, FPS = 30;
 
@@ -39,6 +39,7 @@ function row(name, buf, extra = {}) {
 }
 
 const H = { render, results, check, row, A, createMusic, SR };
+H.stemsFor = (id) => stemsFor(H, id);
 window.__sim = { ready: false, error: null, results, ctx: {}, step() {}, H };
 const filter = new URLSearchParams(location.search).get('only') || '';
 (async () => {

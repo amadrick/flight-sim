@@ -83,6 +83,10 @@ export const CSS = /* css */`
 
 /* first run + settings rows */
 .cbt-ui-start { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+.cbt-ui-modeline { margin: 8px 0 0; color: var(--fg, #f2f6fa); background: rgb(255 255 255 / 0.06); box-shadow: inset 0 0 0 1px rgb(143 161 179 / 0.3); }
+.cbt-ui-segfield { flex-wrap: wrap; gap: 8px 12px; }
+.cbt-ui-segfield .menu-seg { flex: 1 1 220px; min-width: 0; }
+.cbt-ui-segfield + .menu-note { margin: 0 12px 6px; }
 .cbt-ui-hint { margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r-m); font-size: 13px; line-height: 1.4; color: var(--amber-soft); background: rgb(255 176 0 / 0.1); box-shadow: inset 0 0 0 1px rgb(255 176 0 / 0.35); }
 .cbt-ui-rl { font-size: 13px; color: var(--fg-dim); min-width: 62px; flex: none; }
 .cbt-ui-volfield { gap: 14px; }
