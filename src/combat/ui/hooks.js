@@ -144,6 +144,7 @@ export function installMenuHooks(combat, ui) {
   ctx.events.on('menu:open', () => { attach(); syncPause(); syncBadge(); });
   combat.events.on('mission:start', () => { syncActive(); syncBadge(); });
   combat.events.on('mission:abort', syncActive);
+  combat.events.on('mission:end', () => syncBadge());
   // the menu may re-render (mobile layout pass): re-attach on DOM changes, at most once per task
   let queued = false;
   try {

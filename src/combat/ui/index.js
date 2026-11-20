@@ -469,6 +469,7 @@ export async function createCombatUi(combat) {
   function leaveTo(dest) {
     if (dest === 'debrief' && (last?.result || combat.result)) { renderDebrief(last?.result || combat.result); show('debrief'); focusView(); return; }
     hide();
+    if (dest === 'pause') restoreCam();               // back to a paused flight: its own camera, not the showcase
     if ((dest === 'main' || dest === 'pause') && ctx.menu?.open) { ctx.menu.open(dest); return; }
     setPaused(false); restoreCam();
   }
