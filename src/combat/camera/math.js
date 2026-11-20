@@ -253,6 +253,7 @@ export { clamp, saturate, smoothstep, dampK };
  *  biasMax      most the view turns toward the target (deg); biasStart / biasFull: target angle off the view where the
  *               bias starts / reaches full; biasUp / biasDown: vertical limits (the jet must stay in frame);
  *               biasFadeFrom / biasFadeTo: the lean fades out again for targets this far behind (deg)
+ *  orbitShare   share of the sideways lean done by swinging the camera round the jet (keeps the jet near the centre)
  *  turnLead     fraction of the flight path's turn the view leads into; turnMax its limit (deg)
  *  fovWide      extra FOV (deg) with the target far off the nose (30°→120°)
  *  zoom         gun zoom: FOV shrinks by this fraction with the lead solution within zoomIn deg and in range (leaves at zoomOut)
@@ -260,7 +261,7 @@ export { clamp, saturate, smoothstep, dampK };
  */
 export const FIGHT = {
   dist: 1.55, rollFollow: 0.3, biasMax: 20, biasStart: 6, biasFull: 70, biasUp: 15, biasDown: 8,
-  biasFadeFrom: 105, biasFadeTo: 150,
+  biasFadeFrom: 105, biasFadeTo: 150, orbitShare: 0.75,
   turnLead: 0.5, turnMax: 7, fovBase: 56, fovWide: 12, zoom: 0.24, zoomIn: 4, zoomOut: 7, pullG: 0.12, pullAB: 0.08,
 };
 

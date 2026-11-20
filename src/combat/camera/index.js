@@ -502,6 +502,16 @@ export async function createCombatCamera(combat) {
       const gy2 = Math.atan2(t6.x, -t6.z), gp2 = Math.atan2(t6.y, Math.hypot(t6.x, t6.z));
       yaw += (gy2 - yaw) * zk * 0.55; pitch += (gp2 - pitch) * zk * 0.55;
     }
+    // most of the sideways lean is done by swinging the camera round the jet (the jet stays near the centre and the
+    // target comes in from the edge); the rest turns the look
+    const orb = fv.by * FP.orbitShare;
+    yaw -= orb;
+    if (Math.abs(orb) > 1e-5) {
+      q2.setFromAxisAngle(Y, -orb);
+      t3.set(0, h, fv.dist).applyQuaternion(q2).applyQuaternion(fv.qf);
+      fightPose.pos.copy(P).add(t3);
+      const gy3 = groundY(fightPose.pos) + 2.5; if (fightPose.pos.y < gy3) fightPose.pos.y = gy3;
+    }
     // turn the view about the frame's up, then tilt about the new right: the horizon keeps its (partial) level
     t6.copy(t5).sub(fightPose.pos).normalize();
     q2.setFromAxisAngle(t4, -yaw); t6.applyQuaternion(q2);

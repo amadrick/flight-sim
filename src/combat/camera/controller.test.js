@@ -86,6 +86,7 @@ test('fight view: default in a mission, jet and a target 60° off the nose both 
   const pj = onScreen(s.camera, s.player.state.position), pt = onScreen(s.camera, s.bandit.state.position);
   assert.ok(pj, 'own jet on screen'); assert.ok(pt, 'target on screen');
   assert.ok(pj.y < 0, 'jet in the lower half');
+  assert.ok(Math.abs(pj.x) < 0.2, `jet near the centre sideways ${pj.x}`);
   // the view leans right toward the target, but not more than biasMax
   const fwd = V(0, 0, -1).applyQuaternion(s.camera.quaternion);
   const yaw = Math.atan2(fwd.x, -fwd.z) / DEG;
