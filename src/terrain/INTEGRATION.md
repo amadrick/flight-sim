@@ -295,3 +295,56 @@ is fully matte to direct light at night, the shells have no specular, and the bl
 Hook for `src/effects/decals.js` (not owned here): the crash fire-light sheen decal uses a GGX lobe (roughness 0.3)
 with a normal from depth derivatives on every surface; on turf it should be skipped or made diffuse (e.g. only where
 `ctx.terrain.airfield.distanceAt(x, z)[0] < 0`, i.e. on pavement).
+
+## Ground vegetation (round 5): grass, crops, fields, scrub
+
+All inside the owned files (`surface.glsl.js`, `material.js`, `index.js`, `airfield.js`, `veg/turf.js`, `veg/blades.js`,
+`veg/grass.js`, `veg/placement.js`, new `veg/cover-crop.js`, `src/neural/ground-crop*`, `tools/neural/ground/crop/**`).
+
+Two old bugs were behind most of what looked wrong up close:
+- **Grass map empty everywhere.** `veg/grass.js`'s map pass reads the cover, which reads the settlements
+  (`tSetGrid` is a `usampler2D`); the pass never bound those textures, so the integer sampler sat on a unit with a float
+  texture and every draw failed with INVALID_OPERATION, silently. No grass tufts, no meadow blades, no crops grew.
+  The pass now binds them, as `placement.js` already did.
+- **Black blades.** The blade geometry had no `normal` attribute, so three compiled the Standard material
+  `FLAT_SHADED`, lighting every standing blade by its horizontal face normal: every blade seen toward the sun went
+  near black, and the final sharpen made specks of them. Blades and crop plants now carry a (dummy) normal attribute.
+  Any instanced Standard-material mesh that builds its normal in the vertex shader needs one.
+
+Near grass (`veg/blades.js`): an instance is a tuft of 7 blades (3 segments). Kinds by hash: living blades (young
+yellow-green to old blue-green, olive in the rough, browning tips), dead straw, seed stems with heads, clover / plantain
+leaves lying nearly flat in weedy patches, the odd flower (white / yellow / mauve). Clumps and bare scuffs from the 4 m
+and 0.7 m noise, thinning toward the pavement, widening to 1.2 px with hash dropping (no speckle), translucency to the
+sun, sun-only sheen. Off the airfield the blades grow where the grass map says meadow (kind 0 carries the meadow share).
+Turf shells vanish inside the blade radius; the ground between blades is shaded green thatch, never black.
+
+Airfield turf (`airfield.js turfPlan`, `surface.glsl.js`): mostly rough (long grass from ~26 m off the pavement plus
+random long panels); mowing passes faint and irregular; ground turf less saturated and olive, stronger clumps, hollows,
+seed-head haze, dry patches.
+
+Fields (`surface.glsl.js terrFieldColor`, `terrFieldT`): 11 classes from one per-field number (green / ripe cereal,
+plough, seedbed, pasture, stubble, ley, maize, flowering rape, beet / potatoes, fallow), soil zones, a 12-24 m headland
+worked parallel to the edge, drill rows, tramlines every 18-30 m plus one round the headland, lodging, combining with a
+stubble cut, plough lands with dead furrows, straw swaths and bales, pasture tussocks / dung / buttercups / poached gate,
+wet and dry patches, rough grass margins with a sterile strip; far colours desaturated toward olive.
+
+Crop plants (`veg/cover-crop.js`): near-field 3-D crop within 16 / 20 / 26 m (medium / high / ultra), snapped to drill
+rows, per-m^2 density by crop: cereal stalks with ears and leaves, stubble with weeds, maize stem + 5 leaves across
+the row, rape with flower clusters, beet rosettes, hay grass. Read from the grass map (kind 3 + class / 10, r =
+height, b = row angle / pi, a = cover). They sink toward the ring edge. Not drawn within ~130 m of airfield pavement.
+
+Crop reflectance network (`src/neural/ground-crop.js`): see the file header. Held-out ln-RMSE of the sun BRDF 0.216
+vs 0.311 for a fitted RPV vegetation BRDF and 0.455 for Lambert with the oracle albedo (per crop: cereal 0.178 / 0.313,
+maize 0.293 / 0.333, rape 0.322 / 0.404, meadow 0.127 / 0.236, stubble 0.153 / 0.228). Multiplies the direct-sun
+diffuse of field pixels (hot spot, row shading, into-sun darkening), 1 trilinear fetch.
+
+Scrub (`veg/placement.js`): more solitary bushes in open country, bramble / thorn scrub along field margins with no
+hedge, willow / alder scrub on river banks (drawn by the tree agent's renderers).
+
+Forests (requested by the tree agent): with `VEG_CANOPY` the surface's own painted crown modulation is dropped (the
+canopy draws its crown relief); floor shade under 3-D trees 0.5 -> 0.7 (trees draw contact shadows); a stand mosaic
+(410 m / 110 m noise: older taller stands darker, young ones lighter, yellower) and a shaded stand edge from afar.
+
+Switches: `cropbrdf=0` (classic Lambert crops), `cropPlants=0` (no 3-D crop), `blades=0`, `turf=0`, `turfbrdf=0`,
+`ground=classic`. Debug (tools only): `blDbg=1|2|3` (blades: normal up / albedo / lighting panels), `cropDbg=1|2` (crop
+everywhere / show the grass map), `grDbg=1..4` (grass map forced outputs).

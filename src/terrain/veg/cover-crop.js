@@ -179,7 +179,9 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         if (dot(pn.xz, cameraPosition.xz - base.xz) < 0.0) pn = -pn;
         vec3 objectNormal = normalize(normalize(pn + sv * side * 0.4) + vec3(0.0, 0.6 + 1.5 * isFlower, 0.0));
         // ---- colour (linear albedo; matched to terrFieldColor) -------------------------------------------------
-        vec3 green = mix(vec3(0.070, 0.120, 0.045), vec3(0.055, 0.105, 0.048), hb.y);
+        // every leaf its own green (yellow-green young to blue-green), the lowest, oldest leaves yellowing
+        vec3 green = mix(vec3(0.088, 0.132, 0.040), vec3(0.046, 0.094, 0.050), hb.y) * (0.75 + 0.5 * hb.z);
+        green = mix(green, vec3(0.150, 0.140, 0.060), isLeaf * step(0.7, hb.w) * (1.0 - smoothstep(0.0, 0.5, H0 / max(ch, 0.05))) * 0.6);
         vec3 ripe = mix(vec3(0.34, 0.27, 0.13), vec3(0.28, 0.21, 0.10), hb.y);
         vec3 c = mix(green, ripe, sen);
         if (cls > 2.5 && cls < 3.5) c = mix(vec3(0.060, 0.110, 0.038), vec3(0.050, 0.095, 0.035), hb.y);
