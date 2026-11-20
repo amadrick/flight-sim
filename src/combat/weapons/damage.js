@@ -1,7 +1,7 @@
 // Damage model: hit points scaled by toughness, component damage by hit location, progressive smoke → fire → loss of
 // control → destruction, mapping onto the flight model (sim.damage), kill credit with assists. Logic only.
 import * as THREE from 'three';
-import { DAMAGE_TAKEN } from './specs.js';
+import { DAMAGE_TAKEN, isLarge } from './specs.js';
 import { nearestPart } from './hitshape.js';
 
 const sat = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -42,7 +42,7 @@ export function simDamageFrom(d, pitchSign, out) {
     if (!outI) { sum += Math.max(0.25, 1 - 0.65 * E[i]); n++; }
   }
   out.thrust = (n ? sum / n : 1) * (1 - 0.25 * d.fire);
-  out.ctrl = Math.max(0.12, 1 - 0.32 * (P.wingL + P.wingR) - 0.45 * P.tail - 0.25 * P.fuselage - 0.3 * d.fire);
+  out.ctrl = Math.max(0.12, 1 - 0.32 * (P.wingL + P.wingR) - 0.45 * P.tail - 0.25 * P.fuselage - 0.3 * P.cockpit - 0.3 * d.fire);
   out.rollBias = Math.max(-0.6, Math.min(0.6, 0.35 * (P.wingR - P.wingL)));
   out.pitchBias = pitchSign * 0.18 * P.tail;
   out.drag = 0.018 * (P.wingL + P.wingR) + 0.012 * P.fuselage + 0.01 * P.tail;
@@ -53,7 +53,9 @@ export function createDamageModel(combat) {
   const ev = combat.events;
   const tmp = new THREE.Vector3(), qi = new THREE.Quaternion();
 
-  function scratch(e) { return e.wpn || (e.wpn = { ledger: [], pitchSign: combat.rng() < 0.5 ? -1 : 1, shape: null, nearT: -1, fireT: 0 }); }
+  function scratch(e) {
+    return e.wpn || (e.wpn = { ledger: [], pitchSign: combat.rng() < 0.5 ? -1 : 1, shape: null, nearT: -1, fireT: 0, large: e.kind === 'aircraft' && isLarge(e.def) });
+  }
 
   /** Difficulty: multiplier on damage `target` takes from weapon class `kind` (the DAMAGE_TAKEN table). */
   function takenMult(t, kind = 'gun') {
@@ -94,6 +96,7 @@ export function createDamageModel(combat) {
 
   function startFire(t, level) {
     const d = t.damage; if (!d) return;
+    if (scratch(t).large) level *= 0.6;
     if (d.fire <= 0) ev.emit('fire:start', { target: t });
     d.fire = Math.max(d.fire, Math.min(1, level));
   }
@@ -151,7 +154,9 @@ export function createDamageModel(combat) {
         if (rng() < 0.4 + 0.6 * sat(dmg / mx)) startFire(t, 0.35 + 0.5 * sat(dmg / mx));
       }
       // pilot: rare, instant
-      if (part === 'cockpit' && !info.blast && !d.pilot && !(t.isPlayer && takenMult(t, 'gun') < 0.6) && rng() < (P.pilot || 0) * Math.min(3, dmg / 7)) { d.pilot = true; killInfo.pilotKilled = true; t.hp = Math.min(t.hp, 0); }
+      // never on large aircraft (crew hits wound: cockpit damage costs control), never on the human player below ace
+      const pilotOk = !w.large && !(t.isPlayer && combat.difficulty !== 'ace');
+      if (part === 'cockpit' && pilotOk && !info.blast && !d.pilot && rng() < (P.pilot || 0) * Math.min(3, dmg / 7)) { d.pilot = true; killInfo.pilotKilled = true; t.hp = Math.min(t.hp, 0); }
       updateSmoke(t);
       syncSim(t);
     }
@@ -194,13 +199,14 @@ export function createDamageModel(combat) {
       let changed = false;
       if (d.fire > 0) {
         changed = true;
+        const w = scratch(t);
         d.fire = Math.min(1, d.fire + dt * 0.018 * (1 + 2 * d.leak));
         const P = d.parts;
         for (let k = 0; k < P.engines.length; k++) if (P.engines[k] > 0.3) { P.engines[k] = sat(P.engines[k] + dt * 0.012 * d.fire); if (P.engines[k] >= 1) engineOut(t, k); }
         P.fuselage = sat(P.fuselage + dt * 0.012 * d.fire);
-        if (!t.invulnerable) t.hp -= dt * (t.maxHp || 100) * 0.03 * d.fire * takenMult(t, 'fire');
+        if (!t.invulnerable) t.hp -= dt * (t.maxHp || 100) * (w.large ? 0.012 : 0.03) * d.fire * takenMult(t, 'fire');
         if (d.fire < 0.35 && combat.rng() < dt * 0.04) d.fire = 0;          // blew out
-        if (t.alive && d.fire > 0.85 && d.leak > 0.3 && combat.rng() < dt * 0.08 * takenMult(t, 'fire') && !t.invulnerable) {
+        if (t.alive && !w.large && d.fire > 0.85 && d.leak > 0.3 && combat.rng() < dt * 0.08 * takenMult(t, 'fire') && !t.invulnerable) {
           kill(t, t.lastHitBy || null, t.lastHitWeapon || 'gun', { cause: 'fire', part: 'fuel', disintegrated: true });
           continue;
         }
