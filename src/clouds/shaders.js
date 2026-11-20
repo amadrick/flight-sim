@@ -670,6 +670,8 @@ uniform vec4 uClFlash[2];    // lightning: xyz = render-space position, w = inte
 uniform vec4 uClCirrus;      // x = altitude (m), y = amount (0..1), zw = render-space -> cirrus air-mass offset
 uniform vec4 uClAmbUp;       // rgb = clear-sky ambient irradiance / pi for the clouds (NOT divided by the player's cloud shadow), w = 1: use it
 uniform vec4 uClAmbDn;       // rgb = ground-bounce radiance under the cloud field
+uniform vec4 uClRef;         // round seven, reference lighting for the path-tracer comparison: x = 1 on (sun E = 1, uniform
+                             // sky / ground radiance y / z, no aerial perspective, no cirrus)
 
 const float CL_R = 6371000.0;
 
@@ -926,6 +928,7 @@ void main() {
                           + atmSkyRadiance(vec3(-sa.y, 0.208, sa.x)) + atmSkyRadiance(vec3(sa.y, 0.208, -sa.x)));
         ambUp = mix(ambUp, side * uClLightSel.z * uClLightSel.x + ambUp * (1.0 - uClLightSel.x), uClDet3.w);
       }
+      if (uClRef.x > 0.5) { ambUp = vec3(uClRef.y); ambDn = vec3(uClRef.z); }
       float cosT = dot(rd, uClLightDir);
       #ifdef CL_MS5
       vec3 msPhase = cloudPhaseMie(cosT), msLast = vec3(0.0);
@@ -1018,7 +1021,7 @@ void main() {
         if (ex > 0.0) {
           // footprint of the sample: the (low-res) pixel across the ray, half a step along it (the temporal filter
           // integrates the step jitter); the detail octaves and the density ramp follow it: crisp near, soft far
-          if (uClDet.x > 0.5) { fp = max(pix, 0.75 * ds); edge = clamp(fp * 0.001, uClDet2.z, 0.05); }
+          if (uClDet.x > 0.5) { fp = max(pix, uClBub5.w * ds); edge = clamp(fp * 0.001, uClDet2.z, 0.05); }   // (round seven: clEdgeS, share of the step in the footprint)
           else { fp = ds; edge = clamp(ds * 0.0005, 0.009, 0.05); }
           d = clDensityFull(pa, ex - exLo, info, fp, edge) * info.w * fadeFar;
         }
@@ -1093,6 +1096,7 @@ void main() {
           #endif
           float eS = clSat((ts - t0) / max(tB - t0, 1.0)), eH = clSat((h - eLo) / (eHi - eLo));
           vec3 E = mix(mix(EaL, EbL, eS), mix(EaH, EbH, eS), eH);
+          if (uClRef.x > 0.5) E = vec3(1.0);
           #if defined(CL_AMBIENT_VIS) && !defined(CL_MS5)
           // Round four, calibration of the round-three network against a path-traced 10 m cumulus at the new
           // extinction (tools/neural/gt_near.py, 9600 points): with a low sun the light enters through the flanks
@@ -1174,13 +1178,14 @@ void main() {
   // (one evaluation per pixel, [Schneider15]/[Hillaire16]).
   T = clSat((T - uClCost.x) / (1.0 - uClCost.x));
   float tMean = wSum > 0.0 ? tSum / wSum : tFallback;
-  vec4 ap = atmAerialPerspective(uCameraPos + rd * tMean);
+  vec4 ap = uClRef.x > 0.5 ? vec4(0.0, 0.0, 0.0, 1.0) : atmAerialPerspective(uCameraPos + rd * tMean);
   L = L * ap.a + ap.rgb * (1.0 - T);
   flash *= ap.a;
 
   // cirrus sheet: behind the low clouds when seen from below, in front when the camera is above it
   float tCi;
   vec4 ci = clCirrusLayer(rd, c, sceneD, tCi);
+  if (uClRef.x > 0.5) ci = vec4(0.0, 0.0, 0.0, 1.0);
   if (c < uClCirrus.x) { L += T * ci.rgb; if (wSum <= 0.0 && tCi > 0.0) tMean = tCi; T *= ci.a; }
   else { L = ci.rgb + ci.a * L; T *= ci.a; if (tCi > 0.0 && ci.a < 0.5) tMean = tCi; }
 

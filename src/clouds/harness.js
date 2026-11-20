@@ -190,6 +190,18 @@ async function boot() {
     slicePass.render(ctx.renderer, null);
   }
   sim.exportDensity = (opts) => exportDensity(ctx, opts);
+  // round seven: the linear cloud output (premultiplied radiance, transmittance) of the last frame as base64 float32, and
+  // the camera / sun / layer state, for the reference comparison (tools/neural/clouds/game_compare.py)
+  sim.readClouds = () => {
+    const rt = ctx.clouds.debug.outRT, w = rt.width, h = rt.height, px = new Float32Array(w * h * 4);
+    ctx.renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+    let s = ''; const u8 = new Uint8Array(px.buffer);
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    const c = ctx.camera, U = ctx.clouds.debug.U;
+    return { w, h, px: btoa(s), fov: c.fov, aspect: c.aspect, quat: c.quaternion.toArray(),
+      camAir: [ctx.world.origin.x + c.position.x - ctx.clouds.windOffset.x, c.position.y, ctx.world.origin.z + c.position.z - ctx.clouds.windOffset.y],
+      sun: U.uClLightDir.value.toArray(), layer: U.uClLayer.value.toArray() };
+  };
   if (useAircraft) ctx.session.start({});
   // Tour: several views in one run, tiled into one screenshot (software GL + a shared render queue make single
   // shots expensive):  tour=weather:scattered,tod:12,cy:2000,yaw:0|tod:17.5,clCav:0|...  tiles=3x2  tourFrames=20
