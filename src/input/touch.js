@@ -239,13 +239,21 @@ export function createTouchControls(ctx, h) {
   function coach(sec) { coachT = sec; el.classList.add('coach'); }
   function coachDone() { if (coachT > 0) { coachT = Math.min(coachT, 1.2); } }
 
+  // ---- portrait: fully usable, but suggest landscape once per flight (never blocks anything) ----
+  let rotateSaid = false;
+  function rotateHint() {
+    if (rotateSaid || !L || !L.portrait || L.W > 700 || ctx.params?.raw?.hint === '0') return;
+    rotateSaid = true;
+    try { ctx.hud?.toast?.('Turn your phone sideways for a wider view', { tone: 'info', key: 'rotate', duration: 4 }); } catch {}
+  }
+
   // ---- visibility ----
   let shown = false;
   function setShown(on) {
     on = !!on;
     if (on === shown) return;
     shown = on; el.hidden = !on;
-    if (on) relayout(true); else releaseAll();
+    if (on) { relayout(true); rotateHint(); } else releaseAll();
   }
   function releaseAll() {
     stickUp();
@@ -325,6 +333,8 @@ export function createTouchControls(ctx, h) {
 
   ctx.events.on('cmd', (e) => { if (e && e.name === 'help' && shown) coach(8); });
   ctx.events.on('session:start', () => {
+    rotateSaid = false;
+    if (shown) setTimeout(rotateHint, 0);
     if (ctx.params?.raw?.hint === '0') return;
     let n = 0; try { n = parseInt(localStorage.getItem(COACH_KEY) || '0', 10) || 0; } catch {}
     if (n < 3 || ctx.params?.raw?.hint === '1') { coach(7); if (!ctx.params?.test) { try { localStorage.setItem(COACH_KEY, String(n + 1)); } catch {} } }
