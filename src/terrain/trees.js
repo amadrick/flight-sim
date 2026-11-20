@@ -14,25 +14,26 @@
 // API used by terrain/index.js: createTrees(ctx, { L, uniforms }) -> { object3D, triangles, radius, update, dispose, stats }
 import * as THREE from 'three';
 import { createFoliageAtlas } from './veg/foliage.js';
-import { buildTreeMeshes } from './veg/treegen.js';
+import { buildTreeMeshes, treeGen } from './veg/treegen.js';
 import { bakeImpostors } from './veg/impostor.js';
 import { createPlacement } from './veg/placement.js';
 import { createCommonUniforms, vegDebug } from './veg/common.js';
 import { createNearTrees } from './veg/near.js';
 import { createFarTrees } from './veg/far.js';
 import { createGrass } from './veg/grass.js';
+import { createForestShadows } from './veg/forest-shadow.js';
 import { createTurf, TURF_TIERS } from './veg/turf.js';
 import { createBlades, BLADE_TIERS } from './veg/blades.js';
-import { TREE_CELL } from './veg/species.js';
+import { TREE_CELL, LEAF_TINT, applyLeafTint } from './veg/species.js';
 import { createVegNeural } from '../neural/veg.js';
 
 // per quality: G = far map cells per side (6.5 m), near = mesh radius (m), grass = grass cells per side (1 m),
 // frame = impostor frame size (px), blend = 4-view impostor blending
 const TIERS = {
-  low:    { G: 176, near: 0,   grass: 0,   frame: 64, blend: false },
-  medium: { G: 320, near: 70,  grass: 96,  frame: 72, blend: true },
-  high:   { G: 384, near: 80,  grass: 112, frame: 72, blend: true },
-  ultra:  { G: 512, near: 130, grass: 160, frame: 72, blend: true },
+  low:    { G: 176, near: 0,   grass: 0,   frame: 64, blend: false, under: 0 },
+  medium: { G: 320, near: 70,  grass: 96,  frame: 72, blend: true,  under: 1 },
+  high:   { G: 384, near: 80,  grass: 112, frame: 72, blend: true,  under: 1 },
+  ultra:  { G: 512, near: 130, grass: 160, frame: 72, blend: true,  under: 1 },
 };
 
 let shared = null;      // meshes / atlases survive quality changes (rebuilding them is the expensive part of boot)
@@ -44,10 +45,15 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
   if (raw.vegG) tier.G = Math.max(16, Math.min(640, +raw.vegG | 0));
   if (raw.vegNear !== undefined) tier.near = Math.max(0, +raw.vegNear);
   const neuralOn = raw.veg !== 'classic';
+  // vegGen=classic: the previous tree generation (no skeletons, first atlas); vegLight=crown: crown-network lighting
+  const genClassic = raw.vegGen === 'classic';
+  const baked = !genClassic && raw.vegLight !== 'crown';
   vegDebug.mode = raw.vegDbg ? +raw.vegDbg | 0 : 0;
-  if (!shared || shared.renderer !== ctx.renderer || shared.frame !== tier.frame || shared.neural !== neuralOn) {
+  if (!shared || shared.renderer !== ctx.renderer || shared.frame !== tier.frame || shared.neural !== neuralOn || shared.genClassic !== genClassic || shared.tint !== raw.vegTint) {
     shared?.dispose();
-    const foliage = createFoliageAtlas();
+    treeGen.classic = genClassic;
+    applyLeafTint(!genClassic && raw.vegTint !== '0');
+    const foliage = createFoliageAtlas({ classic: genClassic });
     const tA = performance.now();
     const meshes = buildTreeMeshes();
     const tB = performance.now();
@@ -55,7 +61,7 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
     const tC = performance.now();
     const neural = createVegNeural({ neural: neuralOn });
     shared = {
-      renderer: ctx.renderer, frame: tier.frame, neural: neuralOn, foliage, meshes, imp, nn: neural,
+      renderer: ctx.renderer, frame: tier.frame, neural: neuralOn, genClassic, tint: raw.vegTint, foliage, meshes, imp, nn: neural,
       ms: { foliage: tA - t0, meshes: tB - tA, impostors: tC - tB, neural: performance.now() - tC },
       dispose() { foliage.dispose(); meshes.texture.dispose(); imp.dispose(); neural.dispose(); },
     };
@@ -63,6 +69,9 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
   const { foliage, meshes, imp, nn } = shared;
   // the canopy LUT uniforms ride along in the terrain's shared uniforms (for the surface shader's distant forest)
   Object.assign(uniforms, nn.uniforms);
+  const tintOn = !genClassic && raw.vegTint !== '0';
+  uniforms.uVegRelief = { value: !genClassic && raw.vegRelief !== '0' ? 1 : 0 };
+  uniforms.uVegLeafTint = { value: ['broad', 'conifer'].map((g) => new THREE.Vector3(...(tintOn ? LEAF_TINT[g] : [1, 1, 1]))) };
   const G = tier.G, Gn = tier.near > 0 ? Math.ceil(2 * tier.near / TREE_CELL) + 2 : 0;
   const placement = createPlacement(ctx, { L, G, uniforms });
   const U = createCommonUniforms(ctx, uniforms, placement, meshes, nn);
@@ -76,8 +85,14 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
   const group = new THREE.Group();
   group.name = 'vegetation';
   group.matrixAutoUpdate = false;
-  const near = Gn ? createNearTrees(ctx, { L, Gn, U, neuralGLSL: nn.glsl }) : null;
-  const far = createFarTrees(ctx, { L, G, U, imp, neuralGLSL: nn.glsl, blend: tier.blend });
+  const near = Gn ? createNearTrees(ctx, { L, Gn, U, neuralGLSL: nn.glsl, baked }) : null;
+  const far = createFarTrees(ctx, { L, G, U, imp, neuralGLSL: nn.glsl, blend: tier.blend, baked });
+  // understory (shrubs and saplings between the trees, the mantle at stand edges): vegUnder=0 turns it off
+  const underOn = !genClassic && raw.vegUnder !== '0' && tier.under > 0;
+  const nearU = underOn && Gn ? createNearTrees(ctx, { L, Gn, U, neuralGLSL: nn.glsl, baked, under: true }) : null;
+  const farU = underOn ? createFarTrees(ctx, { L, G, U, imp, neuralGLSL: nn.glsl, blend: false, baked, under: true }) : null;
+  // ground shadows and contact darkening under every tree: vegShadow=0 turns them off
+  const gsh = !genClassic && raw.vegShadow !== '0' ? createForestShadows(ctx, { L, G, U, info: meshes.info }) : null;
   const grass = tier.grass ? createGrass(ctx, { L, Gg: tier.grass, uniforms, U }) : null;
   // near-field 3-D airfield turf (shells); turf=0 turns it off
   const turfTier = raw.turf === '0' || !airfield ? null : TURF_TIERS[ctx.quality.level] || null;
@@ -91,6 +106,9 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
   uniforms.uTurfShell.value.z = blades ? bladeTier.R1 : 0;
   if (near) group.add(near.mesh);
   group.add(far.mesh);
+  if (nearU) group.add(nearU.mesh);
+  if (farU) group.add(farU.mesh);
+  if (gsh) group.add(gsh.mesh);
   if (grass) group.add(grass.mesh);
   group.visible = false;
   // the surface shader shows shaded forest floor instead of painted crowns where 3-D trees stand
@@ -112,6 +130,31 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
     return JSON.stringify({ w, h, b64: btoa(s) });
   };
   stats.readGrass = () => grass ? grass.read() : null;
+  // debug (tools only): trees around the camera from the placement map -> [[dxWorld, dzWorld, height, species], ...]
+  // relative to the camera's world xz, nearest first (finds subjects for screenshots)
+  stats.findTrees = (maxN = 40, minH = 0, rMax = 400) => {
+    const rt = new THREE.WebGLRenderTarget(G, G, { type: THREE.FloatType, depthBuffer: false });
+    const m = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, uniforms: { t: { value: placement.texture } },
+      vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: 'precision highp float; uniform highp sampler2D t; out vec4 o; void main(){ o = texelFetch(t, ivec2(gl_FragCoord.xy), 0); }' });
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m); q.frustumCulled = false;
+    const sc = new THREE.Scene(); sc.add(q);
+    const prev = ctx.renderer.getRenderTarget();
+    ctx.renderer.setRenderTarget(rt); ctx.renderer.render(sc, new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    const buf = new Float32Array(G * G * 4);
+    ctx.renderer.readRenderTargetPixels(rt, 0, 0, G, G, buf);
+    ctx.renderer.setRenderTarget(prev); rt.dispose(); m.dispose();
+    const win = placement.uniforms.uVegWin.value, cam = ctx.camera.position, org = ctx.world.origin;
+    const cx = cam.x + org.x, cz = cam.z + org.z, out = [];
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+      const k = (j * G + i) * 4; if (buf[k] <= minH) continue;
+      const ci = win.x + ((i - (win.x % G) + 2 * G) % G), cj = win.y + ((j - (win.y % G) + 2 * G) % G);
+      const dx = (ci + 0.5) * TREE_CELL - cx, dz = (cj + 0.5) * TREE_CELL - cz, d = Math.hypot(dx, dz);
+      if (d < rMax) out.push([+dx.toFixed(1), +dz.toFixed(1), +buf[k].toFixed(1), buf[k + 1] | 0, +buf[k + 3].toFixed(2), d]);
+    }
+    out.sort((a, b) => a[5] - b[5]);
+    return out.slice(0, maxN).map((a) => a.slice(0, 5));
+  };
   const vtexBytes = meshes.texture.image.data.byteLength;
   stats.textureMB = +((imp.bytes + 1024 * 1024 * 4 * 4 / 3 + vtexBytes + G * G * 8 + (tier.grass ? tier.grass ** 2 * 8 : 0) + nn.textureBytes) / 1048576).toFixed(1);
   let lastTime = -1;
@@ -142,17 +185,18 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
       const doy = ctx.time?.dayOfYear ?? 172;
       U.uVegSeason.value.x = Math.max(0, Math.min(1, (doy - 262) / 30)) * (1 - Math.max(0, Math.min(1, (doy - 325) / 20)));
       if (near) { near.update(camWX, camWZ); near.mesh.castShadow = shadowsOn(); }
+      if (nearU) { nearU.update(camWX, camWZ); nearU.mesh.castShadow = false; }    // understory: receives only (saves a depth pass)
       if (grass) grass.update(camWX, camWZ, org, Hd);
       if (turf) { turf.update(camWX, camWZ, org, Hd); uniforms.uTurfShell.value.x = turf.mesh.visible ? 1 : 0; }
       if (blades) { blades.update(camWX, camWZ, org, Hd, airfield); uniforms.uTurfShell.value.z = blades.mesh.visible ? bladeTier.R1 : 0; }
       const bladesOn = blades && blades.mesh.visible;
-      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0) + (bladesOn ? 1 : 0);
-      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0) + (turf && turf.mesh.visible ? turf.stats.triangles : 0) + (bladesOn ? blades.stats.triangles : 0);
+      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + (nearU ? 1 : 0) + 1 + (farU ? 1 : 0) + (gsh ? 1 : 0) + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0) + (bladesOn ? 1 : 0);
+      stats.trianglesSubmitted = nearTris * (nearU ? 2 : 1) + G * G * 2 * (farU ? 2 : 1) + (gsh ? gsh.triangles : 0) + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0) + (turf && turf.mesh.visible ? turf.stats.triangles : 0) + (bladesOn ? blades.stats.triangles : 0);
       stats.turf = turf ? turf.stats : null;
       stats.blades = blades ? blades.stats : null;
     },
     dispose() {
-      placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose(); turf?.dispose(); blades?.dispose();
+      placement.dispose(); near?.dispose(); far.dispose(); nearU?.dispose(); farU?.dispose(); gsh?.dispose(); grass?.dispose(); turf?.dispose(); blades?.dispose();
       uniforms.uTurfShell.value.x = 0;
       uniforms.uTerrTree.value.x = 0;
     },
