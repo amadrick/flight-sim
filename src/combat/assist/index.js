@@ -4,17 +4,20 @@
 // It reads ctx.controls.pitch / roll as the player's INTENT (a nose rate) and overwrites pitch / roll / yaw with what
 // the aircraft needs; throttle and speedbrake stay the player's (rookie auto-throttle aside).
 //
-//   stick     → rotates a commanded NOSE direction A in a horizon-referenced frame: right = the nose goes right (a
-//               level turn when the nose is level), back = nose up, diagonal = both. Rate = available turn rate × expo:
-//               taps give small corrections, a held stick gives the maximum-performance turn (AoA / G limit).
-//   release   → A stops: the nose holds where it is, the flight path straightens out (gravity compensated, so it rolls
-//               wings level near level flight) and a deliberate dive or climb is kept.
-//   flying A  → ai/fly.js flight controller: rolls the lift vector, pulls the G, nose-tracks near the aim with a
-//               little rudder for small lateral corrections (no roll-pull-roll dance), limits AoA and G.
-//   gun help  → with a target selected, in gun range, and its lead solution a few degrees off the nose, A is drawn to
+//   stick     → turns a commanded NOSE direction N (assist.command — the HUD can draw it as the "nose goes here"
+//               reticle) at a nose rate in the stick frame: right = the nose goes right (a level turn in the default
+//               horizon frame), back = nose up, diagonal = both. Rate = available turn rate × expo: taps give small
+//               corrections, a held stick builds to the maximum-performance turn (AoA / G limit).
+//   flying N  → the flight path P that puts the nose on N (N less the AoA along the commanded lift, plus a slow
+//               integral), flown by ai/fly.js lift-vector steering with gravity compensation and the commanded rate as
+//               feed-forward; gentle for small errors (small bank, no roll-pull-roll), pushes rather than rolls for
+//               small or nose-down corrections.
+//   release   → after a held hard turn: roll-out on the flight path (no reversal), then the path holds; after a tap N
+//               simply stays. Near level the gravity-compensated lift brings the wings level; a dive or climb is kept.
+//   gun help  → with a target selected, in gun range, and its lead solution a few degrees off the nose, N is drawn to
 //               the solution, scaled by how close the player already is and faded by stick opposition.
-//   pointer   → aim.active: A = the camera ray through screen point aim.{x, y} (mouse-aim style).
-//   protects  → AoA / G limit, low-speed nose-down (rookie, veteran), ground pull-up cue (all) that takes over at the
+//   pointer   → aim.active: N = the camera ray through screen point aim.{x, y} (mouse-aim style).
+//   protects  → AoA / G limit, low-speed nose cap (rookie, veteran), ground pull-up cue (all) that takes over at the
 //               last moment (rookie), auto-throttle after the throttle sits untouched (rookie).
 //
 // Pure logic: no DOM; allocations only when the player's aircraft changes.
@@ -34,23 +37,24 @@ export const ASSIST_DIFFICULTY = {
 export const ASSIST_TUNING = {
   mRise: 4,            // 1/s: fastest growth of the stick magnitude
   expo: 0.75,          // stick shaping: rate = m·(1 − expo + expo·m²) of the maximum
-  leadMin: 0.035,      // rad: how far A may sit ahead of the nose with the stick released
+  leadMin: 0.035,      // rad: how far N may sit ahead of the nose with the stick released
   leadMax: 0.32,       // rad: … at full stick
   pushG: 0.5,          // g: below this much lift a small correction pushes instead of rolling
   gainSmall: 1.2,      // 1/s: flight-path steering gain for small errors (bank stays small)
   gainBig: 2.5,        // 1/s: … for large errors
   smallLo: 0.03, smallHi: 0.1,    // rad: path errors where the small gain hands over to the large one
   releaseNose: 0.5,    // on a release from a hard turn the path aim keeps this share of the extra AoA ahead
+  settleHold: 0.7,     // s: a hard turn held this long gets the roll-out on release (taps do not)
   settleMax: 1.5,      // s: longest roll-out after a release
   settleRate: 0.035,   // rad/s: the roll-out ends once the flight path turns slower than this
   aoaShare: 0.8,       // share of the AoA taken off nose aims (the integral below trims the rest)
   noseKi: 1.0,         // 1/s: integral of the nose error near the aim
   liftTau: 0.2,        // s: smoothing of the lift direction used for the same
-  aoaTau: 0.15,         // s: smoothing of the AoA used to turn nose aims into path aims (faster = G oscillation)
+  aoaTau: 0.15,        // s: smoothing of the AoA used to turn nose aims into path aims (faster = G oscillation)
   rudder: 0,         // rudder per rad of small lateral nose error
   frameRelax: 2.5,     // rad/s: the stick frame re-erects to the horizon when not pulling through the vertical
   gunWin: 0.1,         // rad: gun help acts inside this angle between the nose and the lead solution
-  gunRate: 7,          // 1/s: how fast A is drawn to the solution at full help
+  gunRate: 7,          // 1/s: how fast N is drawn to the solution at full help
   gunRange: 1400,      // m
   thrIdle: 3,          // s untouched before the rookie auto-throttle engages
   thrHold: 10,         // s off after any throttle input
@@ -87,7 +91,7 @@ export function createAssist(combat) {
   const st = {
     ent: null, prof: null, fc: null, engaged: false, t: 0, blend: 0,
     A: new THREE.Vector3(0, 0, -1), P: new THREE.Vector3(0, 0, -1), R: new THREE.Vector3(1, 0, 0), U: new THREE.Vector3(0, 1, 0),
-    aoaS: 0, safeT: 0, clear: 1e9, mPrev: 0, mEff: 0, mPeak: 0, settle: 0, Ps: new THREE.Vector3(), vPrev: new THREE.Vector3(), nAero: 9, nI: new THREE.Vector3(), Ld: new THREE.Vector3(0, 1, 0), recovering: false, recHdg: 0,
+    aoaS: 0, safeT: 0, clear: 1e9, mPrev: 0, mEff: 0, holdT: 0, holdHi: 0, settle: 0, Ps: new THREE.Vector3(), vPrev: new THREE.Vector3(), nAero: 9, nI: new THREE.Vector3(), Ld: new THREE.Vector3(0, 1, 0), recovering: false, recHdg: 0,
     thrWritten: -1, thrTouchT: -1e9, thrTouched: false, auto: false,
     modeSet: false, aimSet: false,
   };
@@ -136,7 +140,7 @@ export function createAssist(combat) {
   }
   function bind(e) {
     st.ent = e; st.prof = profileOf(e.def, e.sim); st.fc = createFlightController(e, st.prof);
-    st.engaged = false;
+    st.engaged = false; st.thrTouchT = st.t; st.thrTouched = false; st.thrWritten = -1;
   }
   /** Flight path direction → the nose direction that flies it (in place; inverse of noseToPath). */
   function pathToNose(v) {
@@ -233,7 +237,7 @@ export function createAssist(combat) {
     const mRaw = Math.min(1, Math.hypot(sx, sy));
     st.mEff = mRaw < st.mEff ? mRaw : Math.min(mRaw, st.mEff + T.mRise * dt);
     const m = st.mEff, sh = shapeRate(m), w = sh * wMax;
-    st.mPeak = Math.max(m, st.mPeak * Math.exp(-dt / 0.5));
+    st.holdT = m > 0.6 ? st.holdT + dt : m < 0.3 ? 0 : st.holdT;     // how long a hard turn has been held
     _ff.set(0, 0, 0);
     if (m > 1e-3) {
       const ux = sx / Math.max(mRaw, 1e-6), uy = sy / Math.max(mRaw, 1e-6);
@@ -257,8 +261,9 @@ export function createAssist(combat) {
       const L = m >= 0.05 ? T.leadMin + (T.leadMax - T.leadMin) * sh : T.leadMin;
       if (N.dot(F) < Math.cos(L)) { _d.copy(N); N.copy(F); rotateToward(N, _d, L); }
       st.settle = 0;
+      if (m > 0.3) st.holdHi = st.holdT;
       // released after a real manoeuvre: roll out on the flight path first (below)
-      if (m < 0.05 && st.mPeak > 0.6) {
+      if (m < 0.05 && st.holdHi > T.settleHold) {
         const n = Math.max(Math.abs(s.gLoad || 1), 1);
         st.Ps.copy(F).sub(vh).multiplyScalar(T.releaseNose * (1 - 1 / n)).add(vh).normalize();
         st.settle = T.settleMax;
@@ -333,7 +338,7 @@ export function createAssist(combat) {
     if (st.safeT <= 0) {
       st.safeT = 0.1;
       RS.x = p.x; RS.y = p.y - 3; RS.z = p.z; RS.vx = s.velocity.x; RS.vy = s.velocity.y; RS.vz = s.velocity.z; RS.roll = s.roll; RS.psi = s.heading || 0;
-      RP.nz = Math.max(1.3, Math.min(gLim * 0.85, nAvail * 0.85)); RP.rollRate = Math.min(prof.rollRate, 3) * 0.8;
+      RP.nz = Math.max(1.3, Math.min(gLim * 0.85, nAvail * 0.85, fc.nzFull * 0.9));   // nzFull: what full stick gives now (heavy jets run out of elevator when fast) RP.rollRate = Math.min(prof.rollRate, 3) * 0.8;
       RP.climb = 0.3; RP.turn = 0; RP.horizon = clamp(V / 22, 6, 16); RP.delay = st.recovering ? 0 : 0.3;
       predictRecovery(ground, RS, RP, REC);
       st.clear = REC.clear;
@@ -362,11 +367,12 @@ export function createAssist(combat) {
     const err = Math.acos(clamp(vh.dot(P), -1, 1));
     const wBig = clamp((err - T.smallLo) / (T.smallHi - T.smallLo), 0, 1);
     fc.steer(P, gUse, T.gainSmall + (T.gainBig - T.gainSmall) * wBig, _ff, 0);
-    // small corrections that need less than ~1/2 g of lift (or negative lift) are made by easing off / pushing with the
-    // wings where they are, not by rolling the lift vector round (at low G its direction means nothing)
+    // small corrections, and nose-down requests, that need less than ~1/2 g of lift (or negative lift) are made by easing
+    // off / pushing with the wings where they are, not by rolling the lift vector round (at low G its direction means
+    // nothing, and a push on the stick should not roll the aircraft inverted)
     {
       const Lw = fc.liftWorld, up = Lw.dot(e.up || UP), lat = Lw.dot(e.right || R);
-      if (up < T.pushG * G0 && wBig < 1 && !st.recovering) {
+      if (up < T.pushG * G0 && (wBig < 1 || Math.abs(lat) < 0.5 * (G0 - up)) && !st.recovering) {
         _d.copy(e.up || UP).multiplyScalar(T.pushG * G0).addScaledVector(e.right || R, lat * clamp(up / (T.pushG * G0), 0, 1));
         fc.setLift(_d, T.pushG, gUse);
         fc.nzCmd = clamp(up / G0, -1, gUse);

@@ -148,7 +148,7 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
         ix = Math.max(-0.8, Math.min(0.8, ix * (1 - 0.3 * dt) + KI * (px / SPAN) * dt));
         iy = Math.max(-0.8, Math.min(0.8, iy * (1 - 0.3 * dt) + KI * (py / SPAN) * dt));
         sx = Math.max(-1, Math.min(1, px / SPAN + ix)); sy = Math.max(-1, Math.min(1, py / SPAN + iy));
-        if (Math.abs(px) > Math.PI / 2 || fz < 0) { sx = Math.sign(px) || 1; ix = iy = 0; }
+        if (Math.abs(px) > Math.PI / 2 || fz < 0) { sx = Math.sign(px) || 1; sy = Math.max(-0.3, Math.min(0.5, py / SPAN)); ix = iy = 0; }
       } else {
         // direct controls (roll-rate / G stick): roll the target toward "above the canopy", pull when it is there;
         // near the centre fine corrections on both axes; the pull a steady turn needs is held (integral part)
@@ -160,6 +160,12 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
         } else {
           sx = Math.max(-1, Math.min(1, px / (SPAN * 1.5))); sy = Math.max(-1, Math.min(1, py / (SPAN * 0.6) + iy));
         }
+      }
+      // the ground: a player who sees it coming pulls out (wings level, then pull)
+      const agl = s.position.y - (c.ctx.world.groundHeightAt?.(s.position.x, s.position.z) ?? 0);
+      if (s.velocity.y < -15 && agl + s.velocity.y * 10 < 600) {
+        if (mode === 'assist') { sx = 0; sy = 1; }
+        else { sx = Math.max(-1, Math.min(1, -s.roll * 1.2)); sy = Math.abs(s.roll) < 1.0 ? 1 : 0.1; }
       }
       if (stick === 'digital') {
         // arrow keys: held while far off, tapped near the aim (tap length ~ the deflection the thumb would like)
@@ -205,6 +211,10 @@ export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill
       // the thumb acts for the NEXT frame's combat.pre (input happens before the assist)
       thumb.update(dt);
       if (c.assist.info.gunAssist) rec.gunAssistT += dt;
+      if (globalThis.__duelTrace && Math.round(c.clock * 60) % Math.round(globalThis.__duelTrace * 60) === 0) {
+        const s = P.state, i = c.assist.info;
+        console.log(`t ${c.clock.toFixed(0)} alt ${s.position.y.toFixed(0)} ias ${(s.ias / KT).toFixed(0)} g ${s.gLoad.toFixed(1)} roll ${(s.roll / DEG).toFixed(0)} pitch ${(s.pitch / DEG).toFixed(0)} vy ${s.velocity.y.toFixed(0)} stick ${P.controls.pitch.toFixed(2)},${P.controls.roll.toFixed(2)} thr ${P.controls.throttle.toFixed(2)} lim ${i.limiting} ${i.pullUp ? 'PULLUP' : ''} r ${B.state.position.distanceTo(s.position).toFixed(0)} B ${B.pilot.mode}`);
+      }
       const l = c.assist.info.limiting; if (l) rec.limiting[l] = (rec.limiting[l] || 0) + dt;
     }
     if ((!P.alive || !B.alive) && end === null) end = c.clock;
