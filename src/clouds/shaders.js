@@ -728,8 +728,9 @@ float clSurfMu(vec3 pa, vec4 wx, float lod, float F0, float fp, float lam0) {
 }
 // Optical depth toward the light: a few exponentially spaced samples of the cheap density (cone/light march of
 // [Schneider15], shortened), then the baked shadow map for everything farther away (other clouds, upper layers).
+float clTauDbgM = 0.0, clTauDbgF = 0.0;     // round seven debug (clDbg=12): optical depth toward the sun from the light march (first km), far path flag
 float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, float edge) {
-  float tau = 0.0, d0 = 0.0;
+  float tau = 0.0, d0 = 0.0; clTauDbgM = -1.0; clTauDbgF = 0.0;
   float offL = clLightOffIn; clLightOffIn = 0.0;
   vec4 info;
   // round six, inside the anvil: the ice slab is nearly uniform, so its optical depth toward the sun is its extinction x
@@ -756,13 +757,13 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
         float a0 = j == 0 ? 0.0 : 250.0, a1 = j == 0 ? 250.0 : 1000.0;
         vec3 pl = pa + uClLightDir * mix(a0, a1, fract(jit + 0.618 * float(j)));
         clLightOff = offL * clSat(1.0 - 0.5 * (a0 + a1) / clLightOffR);
-        t1 += clDensityBase(pl, wx, lod + 1.0 + float(j), info) * info.w * (a1 - a0);
+        t1 += clDensityBase(pl, wx, uClR7.w < 0.0 ? 1.0 : lod + uClR7.w * (1.0 + float(j)), info) * info.w * (a1 - a0);
       }
       clLightOff = 0.0;
       vec3 pe = pa + uClLightDir * 1000.0;
       float sl = length(uCloudShadowB.xy), texM = 1.0 / (uCloudShadowA.z * float(textureSize(tCloudShadowMap, 0).x));
       vec2 jo = uCloudShadowB.xy / max(sl, 1e-3) * ((jit - 0.5) * 2.0 * texM * max(uClFullRes.w, 1.0));
-      clNF += 4.0;
+      clNF += 4.0; clTauDbgM = t1 * uClNoise.w * 0.8 * uClR7.y; clTauDbgF = 1.0;
       return t1 * uClNoise.w * 0.8 * uClR7.y + cloudShadowTauF(pe.xz + uCloudShadowC.xy + jo, pe.y, true);
     }
     if (rm < 30000.0) {
@@ -825,6 +826,7 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
   }
   clLightOff = 0.0;
   tau *= uClNoise.w * 0.8 * uClR7.y;                               // 0.8: base density is not eroded (round seven: x clTauK)
+  clTauDbgM = tau;
   vec3 pe = pa + uClLightDir * 1000.0;
   // undo the air-mass offset: cloudShadowTau wants world XZ (it subtracts the wind offset itself)
   // At low sun the 2.5D shadow map projects its horizontal structure onto cloud faces compressed by tan(elevation),
@@ -1171,6 +1173,9 @@ void main() {
           vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
           #endif
           #ifdef CL_MS5
+          if (uClDet3.x > 13.5) S = vec3(ds * 0.01, fp * 0.01, edge * 10.0); else   // round seven debug: step (100 m), footprint (100 m), edge (100 m)
+          if (uClDet3.x > 12.5) { vec4 i2; S = vec3(ts * 1e-3, d * uClNoise.w * 100.0, clDensityBase(pa, wx, 1.0, i2) * i2.w * uClNoise.w * 100.0); } else   // round seven debug: distance (km), full and cheap extinction (1/100 m)
+          if (uClDet3.x > 11.5) S = clTauDbgM < 0.0 ? vec3(0.0, min(tauSun, 60.0), 2.0) : vec3(min(clTauDbgM, 60.0), min(tauSun - clTauDbgM, 60.0), clTauDbgF); else   // round seven debug: march part, map part, far path flag
           if (uClDet3.x > 10.5) S = clDbgTap; else                                                        // round seven debug: summed taps up, down, fwd
           if (uClDet3.x > 9.5) S = vec3(min(tauSun, 60.0), min(-log(max(T, 1e-30)), 60.0), 0.0); else    // round seven debug: tauSun, tauCam
           if (uClDet3.x > 7.5) S = E * msLast.x * jK * occM.x + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;    // round seven debug: all multiple scattering

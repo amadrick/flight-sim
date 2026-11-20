@@ -547,7 +547,7 @@ export async function createClouds(ctx) {
     // entrainment skin of growing turrets (clSkin x round five's 20 m), lobe lighting in the learned-MS path and the
     // bubble-field lobe orientation (clLobe), the largest bubble octave in the cheap density (light march, shadow map: lobe
     // self-shadowing; clLobeSh), analytic sun path through the anvil slab (clAnvL: no contour arcs under the anvil)
-    U.uClR7.value.set(dbg('clFarN', 1), dbg('clTauK', 1), dbg('clTapK', 1), 0);
+    U.uClR7.value.set(dbg('clFarN', 1), dbg('clTauK', 1), dbg('clTapK', 1), dbg('clFarLod', 1));
     U.uClRef.value.set(dbg('clRefL', 0), dbg('clRefS', 0.06), dbg('clRefG', 0.025), 0);
     U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 1), dbg('clEdgeS', 0.75));
     U.uClBub4.value.set(dbg('clSph', 0), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
