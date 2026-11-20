@@ -90,14 +90,15 @@ const _rt = new THREE.Vector3(), _B = new THREE.Vector3(), _err = new THREE.Vect
  * acceleration prediction, drag + drop). out: { point (world aim point = shooter position + f·range), dir (unit f),
  * tof, range, inRange }.
  */
-export function solveGun(sState, tState, spec, portBody, out) {
+export function solveGun(sState, tState, spec, portBody, out, accel = null) {
   const k = gunK(spec, rhoAt(0.5 * (sState.position.y + tState.position.y)));
   const vs = sState.velocity, tp = tState.position, tv = tState.velocity;
   _M.copy(sState.position);
   if (portBody && sState.quaternion) _M.add(_pw.set(portBody[0], portBody[1], portBody[2]).applyQuaternion(sState.quaternion));
   // target acceleration (kinematic, includes manoeuvre), capped at 12 g
   _ta.set(0, 0, 0);
-  if (tState.acceleration) { _ta.copy(tState.acceleration); const a = _ta.length(); if (a > 12 * G) _ta.multiplyScalar(12 * G / a); }
+  const acc = accel || tState.acceleration;
+  if (acc) { _ta.copy(acc); const a = _ta.length(); if (a > 12 * G) _ta.multiplyScalar(12 * G / a); }
   const range = _rt.copy(tp).sub(sState.position).length();
   _f.copy(tp).sub(_M); const r0 = _f.length() || 1; _f.divideScalar(r0);
   let t = Math.min(pathTime(spec.muzzleVelocity, k, r0), 6);
