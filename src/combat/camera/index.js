@@ -454,7 +454,8 @@ export async function createCombatCamera(combat) {
     const sf = clamp((st.tas || sp) / (p.def?.specs?.cruiseSpeed || 240), 0, 1.3);
     const dT = FP.dist * big * (1 + 0.12 * sf + FP.pullG * saturate((fv.g - 1) / 8) + FP.pullAB * fv.ab);
     fv.dist = fv.fresh ? dT : damp(fv.dist, dT, 3, dt);
-    const h = 0.11 * fv.dist + 0.3 * H;
+    // with a gun solution the camera rises a little so the jet's fin drops clear of the pipper / target
+    const h = (0.11 + 0.08 * fv.zoomK) * fv.dist + 0.3 * H;
     t3.set(0, h, fv.dist).applyQuaternion(fv.qf);
     fightPose.pos.copy(P).add(t3);
     const gy = groundY(fightPose.pos) + 2.5; if (fightPose.pos.y < gy) fightPose.pos.y = gy;
@@ -499,7 +500,7 @@ export async function createCombatCamera(combat) {
       // gun line: look along the nose (the pipper sits there), jet low in the frame
       t6.copy(p.forward).applyQuaternion(q1);
       const gy2 = Math.atan2(t6.x, -t6.z), gp2 = Math.atan2(t6.y, Math.hypot(t6.x, t6.z));
-      yaw += (gy2 - yaw) * zk * 0.7; pitch += (gp2 - pitch) * zk * 0.7;
+      yaw += (gy2 - yaw) * zk * 0.55; pitch += (gp2 - pitch) * zk * 0.55;
     }
     // turn the view about the frame's up, then tilt about the new right: the horizon keeps its (partial) level
     t6.copy(t5).sub(fightPose.pos).normalize();
