@@ -164,16 +164,16 @@ export const TRAINING = [
     script(s) {
       // Two ways to pass: hold a guns-tracking position behind Ridgeback for a total of `hold` seconds, or land `need`
       // scored gun hits. Ridgeback flies well below her real skill on rookie.
-      const need = s.n(4, 6, 9), hold = s.n(12, 18, 26), limit = s.n(24, 16, 10);
+      const need = s.n(4, 6, 8), hold = s.n(12, 18, 22), limit = s.n(24, 16, 12);
       const rb = s.group('instructor', {
-        type: 'f16', callsign: 'Ridgeback', single: true, loadout: { ...GUNS_ONLY, invulnerable: true }, invulnerable: true, skill: s.n(0.12, 0.38, 0.7),
+        type: 'f16', callsign: 'Ridgeback', single: true, loadout: { ...GUNS_ONLY, invulnerable: true }, invulnerable: true, skill: s.n(0.12, 0.38, 0.6),
         at: { rel: -6, dist: 7000 }, heading: { rel: 180 }, role: 'instructor', noCount: true, points: 0, mark: 'RIDGEBACK',
       });
       const pass = s.objective('pass', `Hold guns position behind Ridgeback for ${hold} s, or score ${need} hits`, { progress: `0 / ${hold} s · hits 0 / ${need}`, points: 400 });
       const taken = s.objective('taken', `Take fewer than ${limit} gun hits`, { standing: true, progress: `0 / ${limit}`, points: 200 });
       const first = s.objective('first', 'First hit inside 60 seconds', { optional: true });
       const clean = s.objective('clean', 'Win without taking a hit', { hidden: true, points: 300 });
-      s.countdown(s.n(270, 240, 210), 'Fight time', () => s.lose('Out of time', [[0.5, 'instructor', 'Knock it off, knock it off. Time. We\'ll debrief the part where you didn\'t shoot me.']]));
+      s.countdown(s.n(270, 240, 240), 'Fight time', () => s.lose('Out of time', [[0.5, 'instructor', 'Knock it off, knock it off. Time. We\'ll debrief the part where you didn\'t shoot me.']]));
       s.steer(rb.leader, 'RIDGEBACK');
       s.chat([
         [1, 'instructor', 'Ridgeback is head-on, {cs}. Training rounds hot. Pass left to left.'],

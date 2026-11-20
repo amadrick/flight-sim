@@ -106,7 +106,7 @@ export const INSTANT = [
       const next = () => {
         if (s.ended) return;
         wave++;
-        const n = Math.min(6, 1 + Math.floor((wave - 1) / 2) + s.n(0, 0, 1));
+        const n = Math.min(6, 1 + Math.floor((wave - 1) / 2) + (wave > 2 ? s.n(0, 0, 1) : 0));
         const skill = Math.min(0.97, s.skill('enemy', -0.2) + 0.05 * wave);
         // the first waves warm you up: guns only, then one heater each, then full racks
         const loadout = wave <= 2 ? { ir: 0, radar: 0 } : wave <= 4 ? { ir: 1, radar: 0 } : undefined;

@@ -10,14 +10,14 @@ const MARK_COLOR = { target: '#ff5a4e', protect: '#5ad1ff', nav: '#ffd166', zone
 
 /** Skill by role and difficulty (0..1, passed to world.spawnAircraft). */
 export const SKILLS = {
-  enemy: { rookie: 0.18, veteran: 0.5, ace: 0.8 },
-  elite: { rookie: 0.32, veteran: 0.66, ace: 0.95 },
-  wing: { rookie: 0.8, veteran: 0.62, ace: 0.48 },
+  enemy: { rookie: 0.18, veteran: 0.5, ace: 0.72 },
+  elite: { rookie: 0.32, veteran: 0.66, ace: 0.88 },
+  wing: { rookie: 0.8, veteran: 0.62, ace: 0.55 },
   target: { rookie: 0.1, veteran: 0.25, ace: 0.4 },
 };
 /** The Cendrine Directorate flies a mixed bag. */
 /** Default missiles on Directorate fighters by difficulty. */
-export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0, flares: 4 }, veteran: { ir: 2, radar: 0, flares: 10 }, ace: { ir: 2, radar: 2, flares: 20 } };
+export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0, flares: 4 }, veteran: { ir: 2, radar: 0, flares: 10 }, ace: { ir: 2, radar: 1, flares: 16 } };
 export const ADVERSARY_MIX = ['f16', 'f15', 'fa18', 'f14', 'f16', 'f35'];
 
 export function createRuntime(combat, director, mission, options = {}) {
