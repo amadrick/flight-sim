@@ -307,6 +307,7 @@ float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px +
 // pixel and far above the ground) and the factor is normalised to mean 1, so the colour the distance converges to
 // does not change. The grain sits in the camera's frame: it does not swim with rotation, only with travel.
 uniform vec4 uTerrNear;          // low-eye ground: x = radians per pixel, y = 3-D crop plant radius (m), z = 3-D blade radius (m)
+float gSwAmp = 0.0;              // strength of the grain at this pixel (terrSward)
 vec4 terrSwHash(vec2 c) {
   uvec2 q = uvec2(ivec2(c) + 1048576);
   uint h = q.x * 0x8da6b343u + q.y * 0xd8163841u + 0x9e3779b9u;
@@ -326,6 +327,7 @@ vec4 terrSward(vec3 rp, float Hs, float cellPx, float hw0, float ear, float M, f
   float amp = ss(1.5, 5.0, hpx) * ss(0.05, 0.4, (hc - Hs) / max(Hs, 0.01)) * step(0.005, Hs);
   // a cell many plants wide averages them: the grain's contrast falls with range (spacing = plant spacing, m)
   amp *= clamp(pow(spacing / (r * cellPx * pa), 0.35), 0.3, 1.0);
+  gSwAmp = amp;
   if (amp < 0.004) return vec4(1.0, 0.0, 0.0, 0.0);
   float Lg = log(hc / max(hc - Hs, 0.01));
   float N = floor(6.2831853 / (cellPx * pa));
@@ -478,8 +480,8 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   } else if (t < 0.73) {          // stubble: straw rows from the combine, bales on some, soil and green volunteers through it
     c = mix(vec3(0.272, 0.228, 0.146), vec3(0.212, 0.178, 0.112), vig * 0.5 + moist * 0.5);
     c = mix(c, soil, 0.22 + 0.25 * (1.0 - stage));
-    c = mix(c, vec3(0.085, 0.108, 0.046), ss(0.45, 0.95, stage) * ss(0.42, 0.72, n4.g * 0.5 + n3.g * 0.5) * 0.65);
-    swP = 7.6; swA = -0.14 * step(0.35, id3);
+    c = mix(c, vec3(0.085, 0.108, 0.046), ss(0.45, 0.95, stage) * ss(0.42, 0.72, n4.g * 0.5 + n3.g * 0.5) * 0.35);
+    swP = 7.6; swA = -0.18 * step(0.25, id3);
     rowP = 0.125; rowA = 0.12; tram = 1.0; cover = 0.06; preset = 3.0;
     gCropH = 0.12 + 0.06 * id2;
   } else if (t < 0.80) {          // grass ley for hay / silage: lush, or cut and lying in swaths, or bare-ish after the harvest
@@ -955,6 +957,11 @@ TerrSurf terrSurface(vec3 rp) {
       col *= 1.0 + kAll * SW.w * mix(vec3(-0.07, -0.01, 0.10), vec3(-0.04, -0.02, 0.0), cW);             // every blade its own green
       col = mix(col, col * mix(vec3(1.06, 1.05, 0.86), vec3(1.10, 1.06, 0.92), ear), SW.y * 0.4 * kAll); // lit tips a touch yellower; ears
       col = mix(col, vec3(0.26, 0.225, 0.14), SW.z * 0.4 * kAll);                                       // dead blades, straw
+      // into a low sun the eye sees the shaded sides of the standing stalks (the 3-D crop plants show the same): the
+      // crop's grain goes darker toward the sun, the sheen of the far field (crop reflectance) stays
+      vec2 vh = -Vw.xz / max(length(Vw.xz), 1.0e-3), sh2 = uSunDir.xz / max(length(uSunDir.xz), 1.0e-3);
+      float back = max(dot(vh, sh2), 0.0) * ss(0.7, 0.1, uSunDir.y) * ss(-0.02, 0.08, uSunDir.y);
+      col *= 1.0 - 0.45 * back * back * gSwAmp * cW * min(gCropH / 0.5, 1.0);
     }
   }
 

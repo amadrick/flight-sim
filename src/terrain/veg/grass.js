@@ -216,10 +216,12 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         if (fo.a < 0.5) discard;
         // the surface shader's grass colours (meadow / turf / reeds), slightly brighter toward the tips
         vec3 gc = mix(vec3(0.068, 0.098, 0.036), vec3(0.128, 0.140, 0.060), vGM.a);
-        gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
+        gc = mix(gc, mix(vec3(0.200, 0.172, 0.085), vec3(0.150, 0.140, 0.068), vGM.a), vGM.b * 0.7);
         if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.090, 0.122, 0.048), vec3(0.205, 0.180, 0.105), 0.45 * vGM.a + 0.25) * (0.95 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);
-        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.8, 1.08, vGFade.y);
+        // (a tuft is a clump: its lower half sits in its own shade and the sward's - lit like a lawn top all the way
+        // down, the margin tufts read as pale paper bushes against the crop)
+        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.25, 1.12, 0.8), fo.g * 0.5) * mix(0.5, 1.0, vGFade.y * vGFade.y);
         gc *= 0.8 + 0.4 * vGM.w;      // per-tuft variation
         diffuseColor.rgb = gc;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
