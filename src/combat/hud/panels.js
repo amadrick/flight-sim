@@ -121,7 +121,12 @@ export function createPanels(root, opts) {
     const r = el('div', 'cbt-hud-hint', hints, `${h.keys.map((k) => `<span class="cbt-hud-kbd">${esc(k)}</span>`).join('')}<span>${esc(h.text)}</span>`);
     hintEls.set(h.cmd, r);
   }
-  let hintT = -1, hintsLeft = 0;
+  let hintT = -1, hintsLeft = 0, hintsBlocked = false;
+  /** the simulator's own controls card is up (same corner): hold ours back until it goes */
+  function setHintsBlocked(b) {
+    if (b === hintsBlocked) return;
+    hintsBlocked = b; hints.style.visibility = b ? 'hidden' : '';
+  }
   function startHints(on) {
     hintT = on ? 0 : -1; hints.hidden = !on; hints.classList.remove('cbt-hud-out');
     hintsLeft = HINTS.length;
@@ -177,7 +182,7 @@ export function createPanels(root, opts) {
       if (a !== subAlpha[i]) { subAlpha[i] = a; subEls[i].style.opacity = String(a); }
     }
     // hints
-    if (hintT >= 0 && live) {
+    if (hintT >= 0 && live && !hintsBlocked) {
       hintT += rdt;
       if (hintT > HINT_LIFE) hints.classList.add('cbt-hud-out');
       if (hintT > HINT_LIFE + 1) { hintT = -1; hints.hidden = true; }
@@ -187,7 +192,7 @@ export function createPanels(root, opts) {
   return {
     obj, side, radarBox, radarCv, statBox, statCv, subs,
     renderObjectives, setTimer, setScore, addKill, addPop, showBanner, hideBanner() { banner.hidden = true; },
-    startHints, usedHint, setSubsBottom, reset, tick, subQ,
+    startHints, usedHint, setHintsBlocked, setSubsBottom, reset, tick, subQ,
     get hintsVisible() { return hintT >= 0; },
   };
 }

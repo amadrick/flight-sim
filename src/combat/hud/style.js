@@ -33,7 +33,7 @@ export const CSS = `
 .cbt-hud-obj-f b{font:600 13px/1 var(--font-mono,monospace);color:var(--fg,#f2f6fa)}
 
 /* right column: radar, own-ship status, kill feed */
-.cbt-hud-side{position:absolute;right:var(--cbt-gr);top:var(--cbt-gt);width:var(--cbt-side);display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.cbt-hud-side{position:absolute;right:var(--cbt-gr);top:calc(var(--cbt-gt) + 54px);width:var(--cbt-side);display:flex;flex-direction:column;gap:10px;align-items:stretch}
 .cbt-hud-radar{--r:24px;aspect-ratio:1;overflow:hidden;pointer-events:auto;cursor:pointer;touch-action:manipulation}
 .cbt-hud-radar canvas,.cbt-hud-stat canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1}
 .cbt-hud-radar.cbt-hud-mini{aspect-ratio:auto;height:34px;width:84px;align-self:flex-end;--r:17px}

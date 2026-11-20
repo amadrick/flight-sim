@@ -191,7 +191,7 @@ export function createOverlay(H) {
       if (l > 2) { const k = Math.min(l, s * 2.2) / l; dx *= k; dy *= k; g.strokeStyle = col; g.lineWidth = 1.6; g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + dx, ty + dy); g.stroke(); }
     }
     // data block
-    const bx = tx + s + 8, fs = H.fs;
+    const bx = tx + s + 15, fs = H.fs;
     text(t.callsign || 'TGT', bx, ty - s + fs * 0.5, H.C.fg, H.fontB, 'left');
     text(upper(t.def?.id), bx, ty - s + fs * 1.7, H.C.dim, H.fontXS, 'left');
     const rn = geo.range / NM;
@@ -405,7 +405,7 @@ export function createOverlay(H) {
       g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(P.cx - w / 2, cy - hh / 2, w, hh);
       g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
       text('LOCKED', P.cx, cy + 1, H.C.amber, H.fontWarnS, 'center');
-      if (e.callsign) text(e.callsign, P.cx, cy + hh / 2 + H.fs * 1.1, H.C.amber, H.fontXS, 'center');
+      if (e.callsign) text(e.callsign, P.cx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
       line = 1;
     }
     // bandit on the six

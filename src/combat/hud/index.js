@@ -234,7 +234,7 @@ export async function createCombatHud(combat) {
     if (!simHint) simHint = doc.querySelector('.hud-hint');
     const up = !!simHint && !simHint.hidden && !simHint.classList.contains('off');
     const want = up ? simHint.offsetHeight + 10 : 0;
-    if (want !== hintShift) { hintShift = want; panels.obj.style.transform = want ? `translateY(${want}px)` : ''; }
+    if (want !== hintShift) { hintShift = want; panels.obj.style.transform = want ? `translateY(${want}px)` : ''; panels.setHintsBlocked(up); }
   }
 
   let shown = false, lastStat = -1, frame = 0;
