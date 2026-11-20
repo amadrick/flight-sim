@@ -536,6 +536,7 @@ export function createOverlay(H) {
   const LIMIT_TXT = { aoa: 'MAX TURN', g: 'G LIMIT', speed: 'TOO SLOW', over: 'OVERSPEED' };
   function drawAssist(p) {
     const A = H.combat.assist, info = A?.info;
+    H.pullShown = false;
     if (!info?.active || !A.command) { lim.shown = ''; lim.want = ''; lim.pull = 0; return; }
     const ps = p.state.position, cmd = A.command, D = H.boreD || 1000;
     // debounced limit cue (0.3 s on and off); PULL UP comes on at once and holds 0.3 s after it clears
@@ -560,7 +561,7 @@ export function createOverlay(H) {
         }
       }
       if (!mouse) {
-        g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(rx + 8, ry); g.arc(rx, ry, 8, 0, TAU); g.stroke();
+        g.strokeStyle = col; g.lineWidth = 2.2; g.beginPath(); g.moveTo(rx + 9, ry); g.arc(rx, ry, 9, 0, TAU); g.stroke();
         g.fillStyle = col; g.fillRect(Math.round(rx) - 1.5, Math.round(ry) - 1.5, 3, 3);
         if (info.gunAssist) {
           g.lineWidth = 2; g.beginPath();
@@ -577,11 +578,13 @@ export function createOverlay(H) {
     }
     if (lim.shown && !lim.pull) text(LIMIT_TXT[lim.shown] || '', rx, ry + 24, H.C.amber, H.fontXS, 'center', 'alphabetic');
     if (lim.pull > 0) {
-      const on2 = flashOn(2.5), y = P.cy - H.cueOff * 0.55, w = H.fsWarn * 5.2, hh = H.fsWarn * 1.45;
+      // in the shoot-cue slot below the centre (no SHOOT while the ground is coming): fixed, away from the target box
+      const on2 = flashOn(2.5), y = P.cy + H.cueOff, w = H.fsWarn * 5.2, hh = H.fsWarn * 1.45;
+      H.pullShown = true;
       g.fillStyle = 'rgba(80,0,0,0.6)'; g.fillRect(P.cx - w / 2, y - hh / 2, w, hh);
       g.strokeStyle = H.C.red; g.lineWidth = 3; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));
       text('PULL UP', P.cx, y + 1, on2 ? '#ffffff' : H.C.red, H.fontWarn, 'center');
-      g.beginPath(); arrowHead(P.cx, y - hh / 2 - 34, -Math.PI / 2, 26); g.fillStyle = H.C.red; g.fill();
+      g.beginPath(); arrowHead(P.cx, y - hh / 2 - 30, -Math.PI / 2, 24); g.fillStyle = H.C.red; g.fill();
     }
   }
 
@@ -643,7 +646,7 @@ export function createOverlay(H) {
     drawHit();
     drawSplash();
     drawThreats(p);
-    if (!H.cine) drawCue();
+    if (!H.cine && !H.pullShown) drawCue();
     drawCamLabel(p);
   }
   /** After the player is down: splash stamps / damage only. */
