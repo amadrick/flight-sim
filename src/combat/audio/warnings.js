@@ -5,7 +5,7 @@ import { createPool } from './sfx.js';
 
 export const SEEKER_MODES = ['none', 'ir-search', 'ir-lock', 'rdr-search', 'rdr-lock'];
 // level of each warning voice into the warning bus
-export const WARN_LEVEL = { seeker: 0.16, launch: 0.2, rwr: 0.15, fire: 0.17, blip: 0.16 };
+export const WARN_LEVEL = { seeker: 0.16, launch: 0.2, rwr: 0.24, fire: 0.32, blip: 0.18 };
 
 export function createWarnings(ac, dest) {
   const pool = createPool(10);
@@ -13,7 +13,7 @@ export function createWarnings(ac, dest) {
   // ---- seeker tone voice ----
   const sk = OSC(ac, 'sine', 1250), skAm = G(ac, 1), skLp = BQ(ac, 'lowpass', 6000, 0.5), skOut = G(ac, 0);
   const lfo = OSC(ac, 'square', 5), lfoG = G(ac, 0); lfo.connect(lfoG); lfoG.connect(skAm.gain);
-  const fmN = noise(ac, 'white'), fmF = BQ(ac, 'lowpass', 25, 0.5), fmG = G(ac, 0); fmN.connect(fmF); fmF.connect(fmG); fmG.connect(sk.detune);
+  const fmN = noise(ac, 'brown'), fmF = BQ(ac, 'lowpass', 40, -3), fmG = G(ac, 0); fmN.connect(fmF); fmF.connect(fmG); fmG.connect(sk.detune);
   sk.connect(skAm); skAm.connect(skLp); skLp.connect(skOut); skOut.connect(bus);
   sk.start(); lfo.start(); fmN.start();
   let mode = 'none';
@@ -21,7 +21,7 @@ export function createWarnings(ac, dest) {
     if (m === mode) return; mode = m;
     const P = {
       'none': null,
-      'ir-search': { type: 'triangle', f: 430, lfoT: 'sawtooth', lfoF: 19, depth: 0.5, base: 0.5, fm: 1400, lp: 2200, lvl: 1.0 },
+      'ir-search': { type: 'triangle', f: 430, lfoT: 'sawtooth', lfoF: 23, depth: 0.5, base: 0.5, fm: 2400, lp: 2200, lvl: 1.0 },
       'ir-lock': { type: 'sine', f: 1250, lfoT: 'sine', lfoF: 5, depth: 0, base: 1, fm: 0, lp: 6000, lvl: 0.8 },
       'rdr-search': { type: 'square', f: 880, lfoT: 'square', lfoF: 5, depth: 0.5, base: 0.5, fm: 0, lp: 2400, lvl: 0.5 },
       'rdr-lock': { type: 'square', f: 1560, lfoT: 'sine', lfoF: 5, depth: 0, base: 1, fm: 0, lp: 3200, lvl: 0.5 },

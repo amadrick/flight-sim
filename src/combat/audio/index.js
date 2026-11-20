@@ -107,7 +107,7 @@ export async function createCombatAudio(combat) {
     guns.get(shooter)?.stop(now());
     const G0 = gunOf(shooter);
     if (isP(shooter)) {
-      const v = gunVoice(A.ac, A.pool, A.cockpitD.in, now() + 0.005, { rof: G0.rof, heavy: G0.heavy, level: G0.heavy ? 1.15 : G0.medium ? 1.05 : 1, spin0: 0.4, spinTc: (shooter.loadout?.gun?.spec?.spinUp ?? 0.35) / 3 });
+      const v = gunVoice(A.ac, A.pool, A.cockpitD.in, now() + 0.005, { rof: G0.rof, heavy: G0.heavy, level: G0.heavy ? 0.9 : G0.medium ? 1.05 : 1, spin0: 0.4, spinTc: (shooter.loadout?.gun?.spec?.spinUp ?? 0.35) / 3 });
       if (v) guns.set(shooter, v);
     } else {
       let far = 0; for (const v of guns.keys()) if (!isP(v)) far++;
