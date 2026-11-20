@@ -41,6 +41,12 @@
   missileMode ('auto'|'ir'|'radar'), missile (selected seeker), missiles { ir, radar }, rounds, flares, flareProgram,
   padlock, aim, aimLocked, lastNoLock }`.
 - `setTouchButtons(false)` hides this module's own fire buttons (the dock owns them); `true` brings them back.
+  The own buttons (and their CSS) are only built when `ctx.input.touch` does not exist (old base input): with the dock
+  present nothing of `.cbt-inp-touch` / `TOUCH_PLACE` is created.
+- Rail: on `mission:start` combat adds **Boost** (hold) and, with both IR and radar aboard, **Missile** (sub-label
+  Auto / IR / Radar) via `ctx.input.touch.addButton`; removed on `mission:end` / `mission:abort`.
+- `actions.viewDown()` / `actions.viewUp()`: tap = padlock toggle, hold > 0.3 s = `combat.camera.peek(true)` while held;
+  `actions.peek(on)`; `state.peek`.
 
 `combat.start(id, { aircraft, difficulty, custom })` is called with `custom` only for a custom mission
 (`id === 'instant-custom'` or `def.custom`): `{ enemies 1..8, wingmen 0..3, enemyType id|'mixed', gunsOnly, startRange m,
@@ -55,7 +61,7 @@ missiles, missileHits, damageTaken, score, rating, breakdown [{label, points}], 
 Flight assist (COMBAT.md §15): `combat.assist.setMode('assist'|'off')` from `flightModeFor(settings.flightMode, difficulty)` (Assisted on rookie / veteran, Direct on ace, unless the player chose) and `setAimAssist(v)` from `aimHelpFor(aimHelp, difficulty)` (Off 0, Low 0.35, High 0.8, Auto: rookie 0.8 / veteran 0.45 / ace 0); applied at boot, live, on difficulty change and on `mission:start`. URL `?music=0` / `?radiovoice=0` override the stored sound switches.
 Settings applied (every setter optional, called only when the value differs): `combat.audio.setMusicEnabled(on)` (or
 `musicEnabled =`), `setMusicVolume(v)`, `setRadioVoice(on)`, `setRadioVolume(v)`, `setSfxVolume(v)`;
-`combat.camera.setKillCam(on)`, `combat.camera.setFeel(on)` (shake on / off; no intensity scale yet). Applied at boot,
+`combat.camera.setKillCam(on)`, `setFightCam(on)`, `setGunZoom(on)`, `setFeel(0..1)` (store keys camKillCam, camFight, camGunZoom, camFeel, shared with the camera). Applied at boot,
 live on every change, and again on every `mission:start` (the camera is created after the UI). Default difficulty seeds
 the briefing's difficulty selector.
 
@@ -66,15 +72,15 @@ the briefing's difficulty selector.
   buttons gone, combat HUD hidden), and its Restart restarts the mission.
 - **First run** (no attempt saved): the gunnery training mission is preselected, tagged **Start here** in the list, with
   a one-line hint in its briefing.
-- **Combat settings**: Controls (flight controls Assisted / Direct, gun aim help Off / Low / High / Auto, vibration), Sound (music on/off + volume, radio voice on/off + volume, effects volume), Camera (kill cam,
-  camera shake), Default difficulty. Header button on mission select; pause menu during a mission. `?cbtui=missions[&cbtmission=<id>]` / `?cbtui=settings` open a screen at boot.
+- **Combat settings**: Controls (flight controls Assisted / Direct, gun aim help Off / Low / High / Auto, vibration), Sound (music on/off + volume, radio voice on/off + volume, effects volume), Camera (kill cam, fight camera, gun zoom,
+  shake 0..1), Default difficulty. Header button on mission select; pause menu during a mission. `?cbtui=missions[&cbtmission=<id>]` / `?cbtui=settings` open a screen at boot.
 - **Mission select** lists `combat.director.missions` by category (Training, Campaign, Instant action, then anything
   else) in `order`, with completion ticks, best rating and threat. Wide screens show list and briefing side by side;
   at ≤ 720 px the list opens the briefing as its own page (Back / Esc returns).
 - **Briefing**: category and number, title, tagline, threat / length / best, location · time · weather, tactical map,
   brief, objectives, custom setup (custom mission only), aircraft (choices, else "assigned"), difficulty
   (Rookie / Veteran / Ace → `combat.difficulty`, remembered), **Flight controls** (Assisted / Direct with a one-line
-  explanation; also in the Sortie line), **Fly mission**.
+  explanation; a compact selector also sits in the always-visible footer above Fly, so no scrolling is needed), **Fly mission**.
 - **Debrief**: 3.5 s after a success / 4.2 s after a failure (real time, counted only while unpaused and no menu is
   up), over the **frozen** world (the sim is paused; the camera slowly orbits the aircraft in `showcase`). Outcome +
   reason, rating badge, score count-up with "New best", breakdown, flight stats, awards. Primary action:
@@ -105,8 +111,9 @@ Backspace restart, Esc menu; right-drag look, wheel zoom.
 | Most dangerous target | hold `Tab` | | | | double-tap TGT |
 | Target nearest the nose | `Y` | middle click | Y | – | |
 | Missile type Auto / IR / radar | `Z` | | LB | – | |
-| Boost (afterburner while held) | `Shift` | | | | |
-| Target view (padlock) | `O` | | right stick click | Home | VIEW |
+| Boost (afterburner while held) | `Shift` | | | | BOOST (rail) |
+| Missile type Auto / IR / radar (two types aboard) | `Z` | | | | Missile (rail, sub-label) |
+| Target view: tap = padlock, hold > 0.3 s = peek while held | `O` | | right stick click | Home | VIEW (dock) |
 | Missile camera | `;` | | | | |
 
 Two hands: right on the arrows or the mouse, left on Space (gun), Shift (boost), Tab (target), X (missile), V (flares),

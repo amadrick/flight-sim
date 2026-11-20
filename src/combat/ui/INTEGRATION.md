@@ -81,6 +81,9 @@ The mobile thread's dock can own the fire buttons: call `combat.input.setTouchBu
 existing buttons is unchanged this round.
 
 ## Requests (owned by others)
+- Touch dock (src/input/touch.js): VIEW has only `onDown → actions.toggleView()`. For long-press peek, wire
+  `onDown → actions.viewDown()` and `onUp → actions.viewUp()` (both exist; tap still toggles padlock on release,
+  hold > 0.3 s peeks while held); light VIEW from `state.padlock || state.peek`.
 - Simulator HUD (`src/ui/hud`): hides on `ctx.menu.isOpen` or the `showcase` camera; the combat screens switch the
   camera to `showcase`, so it hides today. A direct `|| ctx.combat?.ui?.isOpen` would be more robust.
 - Combat HUD: hide while `combat.ui.isOpen` (agreed). The placeholder HUD still draws under the debrief.

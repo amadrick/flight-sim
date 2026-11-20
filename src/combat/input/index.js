@@ -11,14 +11,18 @@
 // types in a field, and when no mission is live; the trigger is released on blur, tab switch, pause and menu.
 import {
   keyAction, padStep, PAD_MAP, PAD_FREE, PAD_OWNED, TOUCH_BUTTONS, COMBAT_BINDINGS, COMBAT_PAD_BINDINGS, PAD_FALLBACK_BINDINGS,
-  TAB_HOLD, DOUBLE_TAP, FLARE_PROGRAM, missileShot, NOLOCK_TEXT, nextMissileMode, aimFromPointer, accumulateAim, HAPTICS,
+  TAB_HOLD, DOUBLE_TAP, PEEK_HOLD, FLARE_PROGRAM, missileShot, NOLOCK_TEXT, nextMissileMode, aimFromPointer, accumulateAim, HAPTICS,
 } from './map.js';
 
 export { COMBAT_BINDINGS };
 const DEG = Math.PI / 180;
+const ICON_BOOST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17l6-6 6 6M6 11l6-6 6 6"/></svg>';
 const STICK_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
 
-// Touch fire controls. PLACEMENT IS ONE BLOCK: TOUCH_PLACE (CSS for the container) + mountTouch() (which parent the
+// Touch fire controls: FALLBACK ONLY. The simulator's touch layer (ctx.input.touch, src/input/touch.js) owns GUN / MSL /
+// TGT / FLR / VIEW in its dock and calls combat.input.actions; when ctx.input.touch exists nothing below is created.
+// Combat adds BOOST and (two missile types aboard) a missile-type button to its rail via ctx.input.touch.addButton.
+// PLACEMENT OF THE FALLBACK IS ONE BLOCK: TOUCH_PLACE (CSS for the container) + mountTouch() (which parent the
 // container goes into). Today: own container on the right edge, upper half — thumb reach above any bottom-right
 // throttle, clear of a bottom-left stick, the top-right buttons and the centre of the view (camera-safe: nothing over
 // the gun sight / the padlock target area). When the base input exposes a touch "slot" for action buttons, change
@@ -40,6 +44,8 @@ const CSS = TOUCH_PLACE + `
 .cbt-inp-btn.on{box-shadow:inset 0 0 0 1.5px rgb(255 176 0 / .8)!important;color:var(--amber-soft,#ffd27a)!important}
 .cbt-inp-btn.cbt-inp-gun.down{background:rgb(255 90 60 / .7)!important;color:#fff!important}
 @media (prefers-reduced-motion:reduce){.cbt-inp-btn{transition:none!important}}
+`;
+const AIM_CSS = `
 .cbt-inp-aim{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none;z-index:6}
 .cbt-inp-aim[hidden]{display:none}
 .cbt-inp-aim-ring{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border:1.5px solid rgba(93,255,155,.9);border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 8px rgba(93,255,155,.35)}
@@ -92,7 +98,7 @@ export async function createCombatInput(combat) {
     live: false, gun: false, firing: false, boost: false,
     target: null, targetName: '', lock: 'none', lockProgress: 0, lockSeeker: '',
     missileMode: 'auto', missile: '', missiles: { ir: 0, radar: 0 }, rounds: 0, flares: 0, flareProgram: false,
-    padlock: false, aim: false, aimLocked: false, lastNoLock: '',
+    padlock: false, peek: false, aim: false, aimLocked: false, lastNoLock: '',
   };
   const actions = {
     gun(on) { held.api = !!on; },
@@ -105,6 +111,10 @@ export async function createCombatInput(combat) {
     /** touch TGT semantics: tap = next, double tap = most dangerous */
     targetTap() { tgtTap(); },
     toggleView() { if (live()) emit('padlock'); },
+    /** VIEW with long press: viewDown() on press, viewUp() on release — tap toggles padlock, hold > PEEK_HOLD s peeks while held */
+    viewDown() { viewHold.down(); },
+    viewUp() { viewHold.up(); },
+    peek(on) { setPeek(on); },
     switchMissile() { switchMissile(); },
     boost(on) { held.boostApi = !!on; if (on && live()) emit('boost'); },
   };
@@ -133,7 +143,7 @@ export async function createCombatInput(combat) {
   }
   function release() {
     held.key = held.mouse = held.touch = held.pad = held.api = held.boostKey = held.boostApi = false; held.mouseId = -1;
-    tab.down = false;
+    tab.down = false; viewHold.isDown = false; setPeek(false);
     input.trigger = false;
     touchBtns?.release();
     endBoost();
@@ -219,6 +229,22 @@ export async function createCombatInput(combat) {
     boostSaved = null;
   }
 
+  // ---- target view: tap = padlock on / off, hold = peek while held (O key, actions.viewDown / viewUp) ---------------------
+  let peeking = false;
+  function setPeek(on) {
+    on = !!on && live();
+    if (on === peeking) return;
+    peeking = on;
+    const cam = combat.camera;
+    if (typeof cam?.peek === 'function') cam.peek(on); else emit(on ? 'peekOn' : 'peekOff');
+  }
+  const viewHold = {
+    isDown: false, t: 0,
+    down() { if (!live() || this.isDown) return; this.isDown = true; this.t = 0; },
+    up() { if (!this.isDown) return; this.isDown = false; if (peeking) setPeek(false); else if (live()) emit('padlock'); },
+    step(rdt) { if (this.isDown && !peeking) { this.t += rdt; if (this.t >= PEEK_HOLD) setPeek(true); } if (!live()) { this.isDown = false; if (peeking) setPeek(false); } },
+  };
+
   // ---- targets: Tab tap = next by nose, hold = most dangerous; touch TGT double tap = most dangerous ---------------------
   const tab = { down: false, t: 0, fired: false };
   let tgtLast = -1;
@@ -239,12 +265,14 @@ export async function createCombatInput(combat) {
     }
     if (e.code === 'Tab' || e.code === 'Enter' || e.code === 'NumpadEnter') e.preventDefault();   // keep focus where it is
     if (a === 'boost') { if (!held.boostKey) { held.boostKey = true; emit('boost'); } return; }
+    if (a === 'padlock' && e.code === 'KeyO') { if (!e.repeat) viewHold.down(); return; }
     if (a === 'targetNext' && e.code === 'Tab') { if (!e.repeat && !tab.down) { tab.down = true; tab.t = 0; tab.fired = false; } return; }
     if (!e.repeat) act(a);
   });
   window.addEventListener('keyup', (e) => {
     if (e.code === 'Space') held.key = false;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') held.boostKey = false;
+    if (e.code === 'KeyO') viewHold.up();
     if (e.code === 'Tab' && tab.down) { tab.down = false; if (!tab.fired && live()) emit('targetNext'); }
   });
 
@@ -397,12 +425,12 @@ export async function createCombatInput(combat) {
 
   // ---- touch ---------------------------------------------------------------------------------------------------
   let touchEl = null, touchBtns = null, padOn = false;
-  function ensureStyle() {
-    if (document.getElementById('cbt-inp-style')) return;
-    const st = document.createElement('style'); st.id = 'cbt-inp-style'; st.textContent = CSS; document.head.appendChild(st);
+  function ensureStyle(id = 'cbt-inp-aim-style', css = AIM_CSS) {
+    if (document.getElementById(id)) return;
+    const st = document.createElement('style'); st.id = id; st.textContent = css; document.head.appendChild(st);
   }
   function buildTouch() {
-    ensureStyle();
+    ensureStyle('cbt-inp-style', CSS);
     touchEl = document.createElement('div'); touchEl.className = 'cbt-inp-touch'; touchEl.hidden = true;
     touchBtns = createTouchButtons(touchEl, (id) => { if (!live()) return; if (id === 'targetNext') tgtTap(); else act(id); }, (on) => { held.touch = on; });
     mountTouch().appendChild(touchEl);
@@ -415,6 +443,35 @@ export async function createCombatInput(combat) {
     input.touchVisible = !!v && !!touchEl;
   }
 
+  // ---- extra buttons on the touch layer's rail (ctx.input.touch.addButton): BOOST, missile type -------------------------
+  // Added on mission start (once the loadout is known), removed on mission end / abort. BOOST stays with auto-throttle
+  // on (combat.assist.info.autoThrottle): it is the override.
+  const rail = { want: false, boost: null, type: null, sub: '' };
+  const MODE_SUB = { auto: 'Auto', ir: 'IR', radar: 'Radar' };
+  function railRemove() {
+    for (const k of ['boost', 'type']) { try { rail[k]?.remove(); } catch {} rail[k] = null; }
+    rail.sub = ''; held.boostApi = false;
+  }
+  function stepRail() {
+    const T = ctx.input?.touch;
+    if (!rail.want || typeof T?.addButton !== 'function') return;
+    const p = player(); if (!p?.loadout) return;
+    rail.want = false;
+    railRemove();
+    rail.boost = T.addButton({ id: 'cbt-boost', label: 'Boost', aria: 'Boost: full afterburner while held', icon: ICON_BOOST,
+      onDown() { actions.boost(true); rail.boost?.setActive(true); }, onUp() { actions.boost(false); rail.boost?.setActive(false); } });
+    const mx = p.loadout.missilesMax || p.loadout.missiles || {};
+    if ((mx.ir | 0) > 0 && (mx.radar | 0) > 0) {
+      rail.type = T.addButton({ id: 'cbt-msltype', label: 'Missile', aria: 'Missile type: Auto, IR or radar', onDown() { switchMissile(); } });
+    }
+  }
+  function syncRail() {
+    if (rail.type) { const sub = MODE_SUB[missileMode] || 'Auto'; if (sub !== rail.sub) { rail.sub = sub; rail.type.setSub(sub); } }
+  }
+  combat.events.on('mission:start', () => { rail.want = true; });
+  combat.events.on('mission:end', () => { rail.want = false; railRemove(); });
+  combat.events.on('mission:abort', () => { rail.want = false; railRemove(); });
+
   // ---- per frame (combat.pre, only while a mission is loaded) ---------------------------------------------------------
   let lastNow = 0;
   function update(dt) {
@@ -423,15 +480,18 @@ export async function createCombatInput(combat) {
     pollPad();
     if (!isLive) { held.key = held.mouse = held.pad = held.api = false; tab.down = false; }
     if (tab.down) { tab.t += rdt; if (!tab.fired && tab.t >= TAB_HOLD) { tab.fired = true; emit('targetThreat'); } }
-    const touchOn = ownButtons && !!ctx.input?.touchEnabled && combat.active && !screensOpen() && ctx.cameraRig?.mode !== 'showcase';
+    const touchOn = ownButtons && !ctx.input?.touch && !!ctx.input?.touchEnabled && combat.active && !screensOpen() && ctx.cameraRig?.mode !== 'showcase';
     setTouchVisible(touchOn);
     if (!touchOn) held.touch = false;
     input.trigger = isLive && airborne() && (held.key || held.mouse || held.touch || held.pad || held.api);
+    viewHold.step(rdt);
+    stepRail();
     stepFlares(dt || 0);
     stepBoost();
     stepAim(rdt);
     stepHaptics(dt || 0);
     if (touchBtns && input.touchVisible) { const on = combat.camera?.mode === 'padlock'; if (on !== padOn) { padOn = on; touchBtns.button('padlock')?.classList.toggle('on', on); } }
+    syncRail();
     syncState(isLive);
   }
   function syncState(isLive) {
@@ -443,7 +503,7 @@ export async function createCombatInput(combat) {
     state.missileMode = missileMode; state.missile = lo?.selected || '';
     state.missiles.ir = lo?.missiles?.ir | 0; state.missiles.radar = lo?.missiles?.radar | 0;
     state.rounds = lo?.gun?.rounds | 0; state.flares = lo?.flares | 0; state.flareProgram = flareQ.left > 0;
-    state.padlock = combat.camera?.mode === 'padlock'; state.aim = !!combat.assist?.aim?.active; state.aimLocked = aim.locked;
+    state.padlock = combat.camera?.mode === 'padlock'; state.peek = peeking; state.aim = !!combat.assist?.aim?.active; state.aimLocked = aim.locked;
     state.lastNoLock = lastNoLock;
   }
   return input;

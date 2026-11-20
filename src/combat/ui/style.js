@@ -78,6 +78,10 @@ export const CSS = /* css */`
 .cbt-ui-fixed small { color: var(--fg-dim); font-size: 12px; margin-left: 6px; }
 .cbt-ui-bfoot { flex: none; padding: 8px 2px 2px; display: flex; flex-direction: column; gap: 6px; }
 .cbt-ui-bfoot .menu-fly { font-size: 22px !important; letter-spacing: 0.26em !important; padding-left: 0.26em !important; }
+.cbt-ui-footrow { display: flex; align-items: center; gap: 10px; padding: 0 2px 0 10px; }
+.cbt-ui-footlbl { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; flex: none; }
+.cbt-ui-footmode { flex: 1; min-width: 0; }
+.cbt-ui-footmode .menu-segbtn { min-height: 36px; }
 .cbt-ui-flyline { display: flex; justify-content: space-between; gap: 10px; padding: 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; }
 .cbt-ui-flyline b { font-family: var(--font-mono); font-weight: 400; letter-spacing: 0.02em; color: var(--fg); text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
