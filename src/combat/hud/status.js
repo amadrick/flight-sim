@@ -78,12 +78,12 @@ export function createStatus(cv, tok, specs) {
     max.flares = Math.max(max.flares, lo.flaresMax || 0, lo.flares || 0);
     for (const k in lo.missiles) max.m[k] = Math.max(max.m[k] || 0, lo.missilesMax?.[k] || 0, lo.missiles[k] || 0);
     collectChips(p, chips);
+    const worst = partsInfo(p.damage?.parts), diag = worst >= 0.05;
     const hp = Math.max(0, Math.round(100 * (p.hp ?? 0) / (p.maxHp || 100)));
     // change key (strings built only when something changed would still allocate; numbers combined into one key)
     let k = rounds * 1e6 + (lo.flares || 0) * 1e3 + hp;
     let mk = 0; for (const t in lo.missiles) mk = mk * 13 + (lo.missiles[t] || 0);
     const key2 = (diag ? partsInfo.key * 1e4 : 0) + mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0);
-    const worst = partsInfo(p.damage?.parts), diag = worst >= 0.05;
     const h = heightFor(w, chips.length / 2, diag);
     if (k === draw.k && key2 === draw.k2 && sizeKey === w + ':' + h + ':' + d && chipKey() === last) return h;
     draw.k = k; draw.k2 = key2; last = chipKey();
@@ -110,7 +110,7 @@ export function createStatus(cv, tok, specs) {
     for (const t in lo.missiles) {
       const n = lo.missiles[t] || 0, m = max.m[t] || n, sel = lo.selected === t;
       const short = specs?.missiles?.[t]?.short || t.toUpperCase();
-      g.font = fL; const lw = short.length * fs * 0.52;
+      g.font = fL; const lw = short.length * fs * 0.6;
       if (sel) { g.strokeStyle = C.amber; g.lineWidth = 1.2; g.strokeRect(Math.round(x - 4) + 0.5, Math.round(y - row * 0.42) + 0.5, Math.round(lw + 8 + m * fs * 0.78), Math.round(row * 0.84)); }
       label(short, x, sel ? C.amber : C.dim);
       x += lw + 5;

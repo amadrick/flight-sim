@@ -8,8 +8,11 @@ None are required for the HUD to work; these make it better.
    the card with `document.querySelector('.hud-hint')`.
 2. **Missions**: `director.home = { position: {x, z}, label }` for the radar's home-base symbol (falls back to
    `ctx.player.airport.position`). `director.markers[]` entries may carry `{ position | entity, label, color }`.
-3. **Weapons**: please document whether `gunTrajectory(shooter, tof, out)` includes the shooter's own velocity. The HUD
-   detects it (|offset at 1 s| > muzzle velocity + ½ airspeed) but a flag (`weapons.gunTrajectoryRelative = true`) would be
-   cleaner. `rwr:lock` for IR locks too (today only radar locks emit it — the HUD also scans enemy `lock` states).
+3. **Weapons** (merged): `threatsTo(e, out)` sets `out.length = n`, dropping the pooled objects when the count shrinks, so
+   they are re-allocated later; keeping the array length and returning `n` (or a separate count) would make it
+   allocation-free for the HUD.
 4. **Menu (`src/ui/menu/`)**: the in-flight corner buttons sit top right; the combat right column starts 54 px below the
-   top gutter to clear them. If they move, adjust `.cbt-hud-side` top in `style.js`.
+   top gutter to clear them (`SEATS.sideTop` in `seats.js`).
+5. **Mobile pass**: every panel anchor is in `seats.js`; after the simulator's mobile layout lands, adjust that table
+   (narrow mode already keeps the bottom corners and bottom edge free). On wide screens the subtitles sit above the
+   flight-data strip using an estimate of its height (`math.js stripTop`) — item 1 would replace it.
