@@ -431,8 +431,13 @@ export async function createCombatFx(combat) {
     }
     pos.y = Math.max(pos.y, gnd.height) + 0.5;
     E.explosion(ps, smoke, pos, vel, scale, q);
-    R.flash(ps, pos, null, 60 * scale, 200, 1, 0.75, 0.45, 0.4);
-    if (fireballs) {
+    // fuel fireball rising off the impact (same recipe as the air kill, pushed upward) and a soot column
+    // (centred ~10 m up: the ball must clear a forest canopy, which otherwise hides it through the depth test)
+    pos.y += 14 * scale;
+    R.airFireball(ps, smoke, pos, v2.set(vel.x * 0.05, 22, vel.z * 0.05), scale * 2.6, q, false, 2.2);
+    R.sootColumn(smoke, pos, scale, q);
+    pos.y -= 14 * scale;
+    if (fireballs && raw.cfxgfb === '1') {   // neural fireball reads as a dull dome here; kept behind a flag
       warmFireballs();
       if (fireballs) {
         windDir(pos, wind);
