@@ -13,7 +13,7 @@ const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _l = new THREE.Vector3
 
 /** Inverse of fcs.js shape(): stick deflection that produces normalised command s (|s| <= 1) with shaping factor k. */
 // nose-error roll loop gains for gun tracking (higher gains oscillate through the roll / pitch coupling)
-const LAT_KP = 0.5, LAT_KD = 0;
+const LAT_KP = 0.5, LAT_KD = 0, LAT_KI = 0.5;
 export function invShape(s, k) {
   const a = Math.abs(s) > 1 ? Math.sign(s) : s;
   if (k <= 1e-6) return a;
@@ -157,7 +157,7 @@ export function createFlightController(e, prof) {
       // nose answers the stick long before the velocity vector does)
       const c = clamp(f.dot(aimDir), -1, 1);
       const err = Math.acos(c);
-      if (!fc.trackValid) { fc.exValid = false; fc.exDot = 0; fc.trackPrev.copy(aimDir); if (w0) fc.trackRate.copy(w0); else fc.trackRate.set(0, 0, 0); fc.trackValid = true; fc.trackInt = 0; }
+      if (!fc.trackValid) { fc.exValid = false; fc.exDot = 0; fc.trackPrev.copy(aimDir); if (w0) fc.trackRate.copy(w0); else fc.trackRate.set(0, 0, 0); fc.trackValid = true; fc.trackInt = 0; fc.exInt = 0; }
       _v.crossVectors(fc.trackPrev, aimDir).multiplyScalar(1 / Math.max(dt, 1e-3));
       fc.trackRate.lerp(_v, Math.min(1, dt / 0.12));
       fc.trackPrev.copy(aimDir);
@@ -178,16 +178,17 @@ export function createFlightController(e, prof) {
         const ex = _n.dot(e.right);
         const exd = fc.exValid ? (ex - fc.exPrev) / Math.max(dt, 1e-3) : 0;
         fc.exDot += (exd - fc.exDot) * Math.min(1, dt / 0.08); fc.exPrev = ex; fc.exValid = true;
-        const lat = _l.dot(e.right) + (LAT_KP * ex + LAT_KD * fc.exDot) * V, upc = Math.max(_l.dot(e.up) + kp * ey * V + fc.trackInt, 0.5 * G0);
+        fc.exInt = clamp(fc.exInt + LAT_KI * ex * dt * (err < 0.08 ? 1 : 0), -0.04, 0.04);   // trims the steady lateral offset
+        const lat = _l.dot(e.right) + (LAT_KP * ex + LAT_KD * fc.exDot + fc.exInt) * V, upc = Math.max(_l.dot(e.up) + kp * ey * V + fc.trackInt, 0.5 * G0);
         const rn = Math.atan2(lat, upc), w = clamp((0.2 - err) / 0.1, 0, 1);
         re = rv ? rollErr + (rn - rollErr) * w : rn; rv = true;
       }
-      fc.rollErr = re; fc.rollValid = rv;
+      fc.rollErr = re; fc.rollValid = rv; fc.dbgEy = _n.dot(e.up); fc.dbgEx = _n.dot(e.right);
       fc.nzCmd = clamp(Math.abs(re) > 0.5 ? Math.min(nz, 2) : nz, -1, gLimit);
       fc.yawCmd = err < 0.05 ? clamp(_n.dot(e.right) * 12, -0.4, 0.4) : 0;
       return err;
     },
-    nzFull: prof.gMax, exPrev: 0, exDot: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
+    nzFull: prof.gMax, exPrev: 0, exDot: 0, exInt: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
 
     /** Speed hold: target IAS (m/s). opts: { ab: allow afterburner, brake: allow the speedbrake, min, max lever } */
     speed(ias, ab = true, brake = true, minLever = 0) {

@@ -68,7 +68,7 @@ export function createPilot(combat, team, e, o = {}) {
     /** true = never attacks, flies its order and evades (missions may set this directly, as well as order.passive) */
     passive: !!o.passive,
     /** debugging / tools: current steering request and safety state */
-    debug: { want, gun: gunDbg, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; } },
+    debug: { want, gun: gunDbg, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; }, get mistake() { return mistake; } },
     setOrder(ord) {
       order = ord || { type: 'engage' };
       if (order.type === 'orbit' && !order.center) orbitC.copy(e.state.position);
@@ -474,7 +474,13 @@ export function createPilot(combat, team, e, o = {}) {
       combat.weapons.gunSolution(e, T, SOL);
       A.copy(SOL.point).sub(s.position).normalize();
       const lead = Math.acos(clamp(A.dot(e.forward), -1, 1));
-      if (pilot.mode === 'guns' ? gunErrS < GUN_EXIT || lead < 0.3 : lead < GUN_ENTER) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
+      // skilled pilots close to the ideal gun range before pulling lead (lead bleeds the speed needed to close);
+      // poor ones start tracking (and spraying) as soon as the pipper is near
+      const far = skill > 0.35 && geo.range > sk.gunIdeal * (pilot.mode === 'guns' ? 2.1 : 1.6) && geo.closure < (pilot.mode === 'guns' ? -5 : 20);
+      // tracking needs a low aspect (or very close); at high angle-off keep flying the pursuit (snapshots only)
+      const aspectOk = geo.aa < lerp(75, 45, skill) * DEG * (pilot.mode === 'guns' ? 1.3 : 1) || geo.range < 350;
+      if (!far && aspectOk && (pilot.mode === 'guns' ? gunErrS < GUN_EXIT || lead < 0.3 : lead < GUN_ENTER)) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
+      if (far && geo.aa < 60 * DEG) { setMode('pursuit', 0, 'pure'); return; }
       if (geo.aa < 90 * DEG && !(geo.range < 600 && geo.closure > 60)) { setMode('pursuit', 0, 'lead'); return; }
     }
     // overshoot coming: closing fast with angle off and little time to go. Lag first (throttle and speedbrake solve
@@ -574,7 +580,7 @@ export function createPilot(combat, team, e, o = {}) {
     if (geo.range > 4000) v = Math.max(corner + 70, (T.state.ias || 0) + 50);
     else if (geo.range > 1300 || geo.aa > 100 * DEG) v = clamp((T.state.ias || 0) + (geo.range - 650) * 0.05 - geo.closure * 0.15, corner * lerp(0.8, 1.02, skill), corner + 110);
     else if (geo.range > 700) v = clamp((T.state.ias || 0) + (geo.range - sk.gunIdeal) * 0.08 - geo.closure * lerp(0.2, 0.5, skill), corner * lerp(0.7, 0.85, skill), corner + 60);
-    else v = Math.max((T.state.ias || 0) - 10 - Math.max(geo.closure, 0) * 0.3, corner * lerp(0.6, 0.9, skill));
+    else v = clamp((T.state.ias || 0) + (geo.range - sk.gunIdeal) * 0.1 - geo.closure * lerp(0.3, 0.6, skill), corner * lerp(0.6, 0.8, skill), corner + 40);
     // turning fight (nose well off the bandit): fly corner speed, the best turn rate; poor pilots drift off it
     if (geo.ata > 40 * DEG && geo.range < 4000) v = prof.corner + sk.speedBias * 0.5 + (1 - skill) * 35;
     if (mistake === 'slow') v -= 40;
@@ -596,10 +602,16 @@ export function createPilot(combat, team, e, o = {}) {
           // aim at a point well behind the bandit on its flight path (its turn circle), toward its six
           pursuitPoint(e, T, 'lag', aim, 2.2);
           aimAt(aim); want.g = gHard; want.spd = prof.corner + sk.speedBias * 0.5;
+          energyTilt(want.spd);
           return;
         }
         pursuitPoint(e, T, pilot.sub || 'pure', aim, 1);
         aimAt(aim);
+        energyTilt(prof.corner + sk.speedBias * 0.5);
+        // slow: a skilled pilot eases the pull (max AoA at low speed only bleeds more) and unloads to get the speed back
+        { const vs = prof.corner * 0.72, v = s.ias;
+          if (v < vs && skill > 0.3 && mistake !== 'slow') want.g = Math.min(want.g, Math.max(1.3, gHard * (v / vs) ** (2 + 3 * skill))); }
+        snapshot(dt, T);
         if ((pilot.sub === 'lead' || pilot.sub === 'pure') && T.state.acceleration && geo.range < 3000) { want.ff.copy(T.state.acceleration).multiplyScalar(pilot.sub === 'lead' ? 0.7 : 0.4); want.useFF = true; }
         // radar crank: own radar missile in flight and the target still far: hold it near the edge of the radar cone
         if (geo.range > 7000 && ownMissileInFlight(T, 'radar')) crank(T);
@@ -650,6 +662,19 @@ export function createPilot(combat, team, e, o = {}) {
     }
   }
 
+  // energy plane: when fast, tilt the turn up out of the horizontal (trade the excess speed for height and turn
+  // rate instead of spiralling nose-low to the floor); when slow with height to spare, let the nose fall. Skilled
+  // pilots do this much more than poor ones
+  function energyTilt(vT) {
+    const dv = e.state.ias - vT, agl = aglAt();
+    let ph = dv > 0 ? clamp(dv / 70, 0, 0.75) : -clamp(-dv / 60, 0, 0.35) * clamp((agl - sk.deck - 1500) / 1500, 0, 1);
+    if (dv > 0 && agl < sk.deck + 1500) ph = Math.max(ph, 0.3);
+    ph *= lerp(0.25, 1, skill);
+    const d = want.dir, h = Math.hypot(d.x, d.z);
+    if (Math.abs(ph) < 0.02 || h < 0.05) return;
+    const el = clamp(Math.asin(clamp(d.y, -1, 1)) + ph, -1.1, 1.2), k = Math.cos(el) / h;
+    d.x *= k; d.z *= k; d.y = Math.sin(el);
+  }
   function aimAt(p) { want.dir.copy(p).sub(e.state.position); const l = want.dir.length(); if (l > 1e-3) want.dir.multiplyScalar(1 / l); else want.dir.copy(e.forward); }
 
   function ownMissileInFlight(T, type) {
@@ -700,7 +725,7 @@ export function createPilot(combat, team, e, o = {}) {
     A.copy(SOL.point).sub(s.position).normalize();
     const err = Math.acos(clamp(A.dot(e.forward), -1, 1));
     gunErrS += (err - gunErrS) * Math.min(1, dt / 0.6);
-    const tol = (sk.fireTol + (T.radius || 5) / Math.max(r, 50) * 0.8) * lerp(1.2, 1.7, skill);
+    const tol = sk.fireTol + (T.radius || 5) / Math.max(r, 50);
     const good = err < tol && r < sk.gunMax * (losRate < 0.05 && geo.aa < 40 * DEG ? 1.35 : 1) && SOL.inRange !== false && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
     { const g = gunDbg; g.err = err; g.tol = tol; g.r = r; g.good = good; g.losRate = losRate; }
     settleT = good ? settleT + dt : 0;
@@ -713,6 +738,20 @@ export function createPilot(combat, team, e, o = {}) {
     } else if (gapT <= 0 && err < tol * 2.2 && err < prevGunErr && r < sk.gunMax * 0.8 && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r)) {
       // snapshot: the pipper sweeps through the target while we can't track it: a short burst as it passes
       burstT = lerp(0.25, 0.45, rng()); want.fire = true;
+    }
+    prevGunErr = err;
+  }
+
+  // snapshot from a pursuit (no tracking): a short burst as the lead point sweeps through the nose, close in
+  function snapshot(dt, T) {
+    gapT -= dt;
+    if (burstT > 0) { burstT -= dt; want.fire = true; if (burstT <= 0) gapT = lerp(sk.burstGap[0], sk.burstGap[1], rng()); return; }
+    if (geo.range > sk.gunMax * 0.8 || geo.ata > 0.25 || geo.aa > sk.headOnGuns || e.loadout?.gun?.rounds === 0 || !combat.weapons) { prevGunErr = 9; return; }
+    combat.weapons.gunSolution(e, T, SOL);
+    A.copy(SOL.point).sub(e.state.position).normalize();
+    const err = Math.acos(clamp(A.dot(e.forward), -1, 1)), tol = sk.fireTol + (T.radius || 5) / Math.max(SOL.range, 50);
+    if (gapT <= 0 && err < tol * 1.6 && err < prevGunErr && SOL.inRange !== false && !friendlyInLine(T, SOL.range)) {
+      burstT = lerp(0.2, 0.4, rng()); want.fire = true;
     }
     prevGunErr = err;
   }

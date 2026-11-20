@@ -34,7 +34,7 @@ export function makeSkill(skill, personality, rng) {
     // gun aim: tracking wander (rad, 1σ) and its correlation time (s); fire tolerance (rad) and settle time (s)
     aimSigma: lerp(0.016, 0.0045, s) * j(),
     aimTau: lerp(0.5, 0.9, s),
-    fireTol: lerp(0.04, 0.02, s),
+    fireTol: lerp(0.022, 0.007, s),
     settle: lerp(0.08, 0.15, s),
     burst: [lerp(0.9, 0.3, s), lerp(2.0, 0.7, s)],
     burstGap: [lerp(0.5, 0.8, s), lerp(1.2, 1.8, s)],
