@@ -18,6 +18,7 @@ const CA = { t: 0, miss: 0 }, REC = { clear: 0, at: 0, ground: 0 }, RS = { x: 0,
 const RP = { nz: 4, rollRate: 3, climb: 0.3, turn: 0, horizon: 12, dt: 0.4, delay: 0.1 };
 const DISTS = [400, 1000, 2000, 3500, 5500], FRAC = [0.15, 0.4, 0.8, 1.4, 2.2];
 const SOL = { point: new THREE.Vector3(), tof: 0, range: 0, inRange: false }, solA = new THREE.Vector3();
+const OFFENSE_MODES = new Set(['pursuit', 'guns', 'yoyo-high', 'yoyo-low', 'lag-roll', 'scissors', 'merge', 'vertical', 'intercept']);
 const FIGHT_MODES = new Set(['pursuit', 'lead', 'pure', 'lag', 'guns', 'yoyo-high', 'yoyo-low', 'lag-roll', 'scissors', 'break', 'jink', 'extend',
   'merge', 'vertical', 'split-s', 'defend-missile', 'crank', 'reattack', 'bugout']);
 export const isFightMode = (m) => FIGHT_MODES.has(m);
@@ -106,7 +107,13 @@ export function createPilot(combat, team, e, o = {}) {
     want.direct = false; want.useFF = false; want.fire = false; want.ab = true; want.brake = true; want.minLever = 0; want.track = false; want.bias = 0;
     want.g = 3; want.gain = 1.3;
     act(dt);
+    if (mistake === 'relax' && (pilot.mode === 'break' || pilot.mode === 'jink')) { want.g = Math.min(want.g, Math.max(2.5, want.g * 0.5)); want.nz = Math.min(want.nz, 2.5); }
     guard(dt);
+    // ---- AoA discipline (energy): offensive manoeuvring at the best sustained-turn AoA, the full fight AoA only to
+    // defend, to recover, or to pull the last degrees onto a gun solution. Rookies pull to the limit and bleed
+    const offensive = OFFENSE_MODES.has(pilot.mode) && pilot.sub !== 'terrain' && !(pilot.mode === 'guns' && gunErrS < 0.12) &&
+      Math.abs(s.pitch) < 0.45 && want.dir.y > -0.3 && !recovering;
+    fc.alphaLimit = offensive ? lerp(prof.alphaFight, prof.alphaFight * 0.58, clamp((skill - 0.2) / 0.6, 0, 1) * clamp((prof.corner * 0.95 - s.ias) / (prof.corner * 0.25), 0, 1)) : prof.alphaFight;
     // ---- fly
     if (want.direct) fc.direct(want.nz, want.bank, want.g);
     else if (want.track) fc.track(want.dir, want.useFF ? want.ff : null, want.g, want.kp, want.kd, dt, want.w0, want.bias);
@@ -266,6 +273,7 @@ export function createPilot(combat, team, e, o = {}) {
       if (L && (L.ir || 0) + (L.radar || 0) === 0 && lastShot > 0 && !winchesterSent) { winchesterSent = true; call('winchester'); }
     }
     // ---- manoeuvre decision
+    if (fighting && T) { classify(e, T, geo); rollMistake(T); }
     decide(T);
   }
 
@@ -405,9 +413,14 @@ export function createPilot(combat, team, e, o = {}) {
     if (mistake === 'lost' && lostSightT > 0) { setMode('pursuit', 0, 'lost'); return; }
     // guns: in range with the nose near the target; give it up when the lead can't be pulled (the target out-rates us):
     // lag, keep the energy, wait for it to bleed its speed, then convert
-    if (pilot.mode === 'guns' && gunErrS > lerp(0.4, 0.22, skill) && manT <= 0) { setMode('pursuit', 0, 'lag'); manT = lerp(0.8, 1.6, skill); gunErrS = 0; return; }
-    if (pilot.mode === 'pursuit' && pilot.sub === 'lag' && manT > 0) return;
-    if (geo.range < Math.max(sk.gunMax * 1.4, 1100) && geo.ata < 22 * DEG && geo.aa < 120 * DEG) { if (pilot.mode !== 'guns') gunErrS = geo.ata; setMode('guns'); return; }
+    if (geo.range < Math.max(sk.gunMax * 1.5, 1200) && geo.aa < 120 * DEG && geo.ata < 50 * DEG) {
+      // the angle the nose still has to move to the gun solution decides between tracking and pulling lead
+      combat.weapons.gunSolution(e, T, SOL);
+      A.copy(SOL.point).sub(s.position).normalize();
+      const lead = Math.acos(clamp(A.dot(e.forward), -1, 1));
+      if (pilot.mode === 'guns' ? gunErrS < lerp(0.4, 0.28, skill) || lead < 0.2 : lead < lerp(0.12, 0.18, skill)) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
+      if (geo.aa < 90 * DEG && !(geo.range < 600 && geo.closure > 60)) { setMode('pursuit', 0, 'lead'); return; }
+    }
     const myR = turnRadius(Math.max(s.tas, 60), gFight);
     // overshoot coming: too fast, too close, too much angle
     if (geo.range < Math.max(1100, myR * 1.4) && geo.closure > 45 && (geo.hca > 45 * DEG || geo.ata > 30 * DEG) && geo.aa < 110 * DEG && mistake !== 'overshoot') {
@@ -422,16 +435,26 @@ export function createPilot(combat, team, e, o = {}) {
     // slow, close, neutral, crossing: scissors
     if (geo.situation === 'neutral' && geo.range < 900 && geo.hca > 100 * DEG && V < corner * 0.85) { setMode('scissors'); return; }
     // pursuit geometry by range / aspect
+    // turn-circle thinking (skilled pilots): in front of the bandit's 3–9 line, fly to its tail (lag) instead of
+    // pointing at it, which only buys another head-on pass; rookies point their nose at the bandit
+    const circle = skill > 0.4 || (skill > 0.3 && personality === 'turn');
     if (geo.range > 4000) setMode('pursuit', 0, geo.aa > 50 * DEG ? 'lead' : 'pure');
+    else if (circle && geo.aa > 95 * DEG && geo.range > 400) setMode('pursuit', 0, 'tail');
     else if (geo.range < 900 && geo.closure > 25) setMode('pursuit', 0, 'lag');
     else setMode('pursuit', 0, geo.ata > 12 * DEG ? 'lead' : 'pure');
-    // occasional human mistakes
-    if (mistakeT <= 0 && rng() < sk.mistake) {
-      const r = rng();
-      mistake = r < 0.4 ? 'lost' : r < 0.7 ? 'overshoot' : r < 0.85 ? 'slow' : 'fixate';
-      mistakeT = 2 + 3 * rng();
-      if (mistake === 'lost') { lostSightT = mistakeT; lastKnown.copy(T.state.position); }
-    } else if (mistakeT <= 0) mistake = '';
+  }
+
+  /** Occasional human mistakes while fighting (rolled every think, attacking or defending). */
+  function rollMistake(T) {
+    if (mistakeT > 0) return;
+    mistake = '';
+    if (!T || rng() >= sk.mistake) return;
+    const r = rng();
+    const defending = pilot.mode === 'break' || pilot.mode === 'jink' || pilot.mode === 'split-s';
+    if (defending) mistake = r < 0.6 ? 'relax' : 'fixate';           // eases the pull / keeps looking at the wrong thing
+    else mistake = r < 0.35 && geo.ata > 60 * DEG ? 'lost' : r < 0.55 ? 'slow' : r < 0.8 ? 'overshoot' : 'fixate';
+    mistakeT = 2 + 3 * rng();
+    if (mistake === 'lost') { lostSightT = mistakeT; lastKnown.copy(T.state.position); }
   }
 
   function setMode(m, lock = 0, sub = '') {
@@ -484,8 +507,8 @@ export function createPilot(combat, team, e, o = {}) {
     const corner = prof.corner + sk.speedBias;
     let v;
     if (geo.range > 4000) v = Math.max(corner + 70, (T.state.ias || 0) + 50);
-    else if (geo.range > 700) v = clamp((T.state.ias || 0) + (geo.range - 650) * 0.05 - geo.closure * 0.15, corner * 0.8, corner + 110);
-    else v = (T.state.ias || 0) - 10 - Math.max(geo.closure, 0) * 0.3;
+    else if (geo.range > 700) v = clamp((T.state.ias || 0) + (geo.range - 650) * 0.05 - geo.closure * 0.15, corner * lerp(0.8, 1.02, skill), corner + 110);
+    else v = Math.max((T.state.ias || 0) - 10 - Math.max(geo.closure, 0) * 0.3, corner * lerp(0.6, 0.9, skill));
     // turning fight (nose well off the bandit): fly corner speed, the best turn rate; poor pilots drift off it
     if (geo.ata > 40 * DEG && geo.range < 4000) v = prof.corner + sk.speedBias * 0.5 + (1 - skill) * 35;
     if (mistake === 'slow') v -= 40;
@@ -503,6 +526,12 @@ export function createPilot(combat, team, e, o = {}) {
       case 'guns': guns(dt, T); return;
       case 'pursuit': {
         if (pilot.sub === 'lost') { aimAt(lastKnown); want.g = gHard * 0.7; return; }
+        if (pilot.sub === 'tail') {
+          // aim at a point well behind the bandit on its flight path (its turn circle), toward its six
+          pursuitPoint(e, T, 'lag', aim, 2.2);
+          aimAt(aim); want.g = gHard; want.spd = prof.corner + sk.speedBias * 0.5;
+          return;
+        }
         pursuitPoint(e, T, pilot.sub || 'pure', aim, 1);
         aimAt(aim);
         if ((pilot.sub === 'lead' || pilot.sub === 'pure') && T.state.acceleration && geo.range < 3000) { want.ff.copy(T.state.acceleration).multiplyScalar(pilot.sub === 'lead' ? 0.7 : 0.4); want.useFF = true; }
@@ -598,7 +627,7 @@ export function createPilot(combat, team, e, o = {}) {
     want.track = true; want.kp = lerp(1.8, 2.6, sk.precision); want.kd = 0.6;
     if (!fc.trackValid) { D.copy(T.state.position).sub(s.position); E.copy(T.state.velocity).sub(s.velocity); want.w0.crossVectors(D, E).multiplyScalar(1 / Math.max(D.lengthSq(), 100)); }
     // closure control in the gun envelope
-    want.spd = clamp(T.state.ias + (r - sk.gunIdeal) * 0.08 - geo.closure * 0.4, Math.max(prof.stall * 1.4, prof.corner * lerp(0.55, 0.75, skill)), prof.corner + 25);
+    want.spd = clamp(T.state.ias + (r - sk.gunIdeal) * 0.08 - geo.closure * 0.4, Math.max(prof.stall * 1.4, prof.corner * (r < 900 ? lerp(0.55, 0.75, skill) : lerp(0.6, 1.0, skill))), Math.max(prof.corner + 30, T.state.ias + 45));
     want.ab = want.spd > s.ias + 20; want.brake = true;
     if (r < 180 && geo.closure > 0) { pursuitPoint(e, T, 'lag', aim, 1); aimAt(aim); want.useFF = false; want.track = false; }
     // fire control
@@ -606,7 +635,7 @@ export function createPilot(combat, team, e, o = {}) {
     const err = Math.acos(clamp(A.dot(e.forward), -1, 1));
     gunErrS += (err - gunErrS) * Math.min(1, dt / 0.6);
     const tol = sk.fireTol + (T.radius || 5) / Math.max(r, 50) * 0.8;
-    const good = err < tol && r < sk.gunMax && SOL.inRange !== false && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
+    const good = err < tol && r < sk.gunMax * (losRate < 0.05 && geo.aa < 40 * DEG ? 1.35 : 1) && SOL.inRange !== false && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
     if (globalThis.__AIDBG) globalThis.__AIDBG(e, { err, tol, r, aa: geo.aa, ata: geo.ata, settleT, good, losRate, burstT, gapT, ex: A.dot(e.right), ey: A.dot(e.up) });
     settleT = good ? settleT + dt : 0;
     gapT -= dt;
@@ -924,7 +953,7 @@ export function createPilot(combat, team, e, o = {}) {
     // ---- energy discipline: slow in a fight, stop climbing and ease the pull until the speed comes back (rookies
     // notice late). Not while a guns solution is settling
     if (FIGHT_MODES.has(pilot.mode) && !want.direct && !(pilot.mode === 'guns' && gunErrS < 0.08)) {
-      const slowF = clamp((prof.corner * 0.78 - s.ias) / (prof.corner * 0.35), 0, 1) * lerp(0.45, 1, skill);
+      const slowF = clamp((prof.corner * lerp(0.72, 0.9, skill) - s.ias) / (prof.corner * 0.3), 0, 1) * lerp(0.45, 1, skill);
       if (slowF > 0) {
         const yMax = lerp(0.6, -0.12, slowF);
         if (want.dir.y > yMax) {

@@ -35,7 +35,7 @@ export function makeSkill(skill, personality, rng) {
     aimSigma: lerp(0.016, 0.0045, s) * j(),
     aimTau: lerp(0.5, 0.9, s),
     fireTol: lerp(0.035, 0.012, s),
-    settle: lerp(0.08, 0.3, s),
+    settle: lerp(0.08, 0.15, s),
     burst: [lerp(0.9, 0.3, s), lerp(2.0, 0.7, s)],
     burstGap: [lerp(0.5, 0.8, s), lerp(1.2, 1.8, s)],
     // gun employment range (m) and the most head-on aspect the pilot will snapshot at (rad off the target's tail)
@@ -60,7 +60,7 @@ export function makeSkill(skill, personality, rng) {
     // speed discipline: how far below the fight speed before the pilot notices (m/s)
     slack: lerp(45, 10, s),
     // out-of-plane jink against a guns threat: chance to jink (vs. just turning), interval (s)
-    jink: lerp(0.35, 1, s), jinkGap: [lerp(1.2, 0.5, s), lerp(2.2, 1.2, s)],
+    jink: lerp(0.0, 0.85, clamp((s - 0.2) / 0.8, 0, 1)), jinkGap: [lerp(2.0, 0.8, s), lerp(3.5, 1.6, s)],
     // situational awareness: chance per check to notice an attacker in the rear quarter
     checkSix: lerp(0.35, 0.95, s),
   };

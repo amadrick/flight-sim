@@ -1,0 +1,14 @@
+import * as THREE from 'three';
+import { createSandbox } from './sandbox.mjs';
+import { createFlightController, profileOf } from '../fly.js';
+import { classify } from '../geom.js';
+const skill = +(process.argv[2] || 0.9), tg = +(process.argv[3] || 5);
+const b = await createSandbox({ seed: 1 });
+const w = b.combat.world;
+const T = w.spawnAircraft({ aircraft: 'f16', team: 'red', position: new THREE.Vector3(0, 5000, 0), heading: 0, speed: 210, loadout: { ir: 0, radar: 0 } });
+const fc = createFlightController(T, profileOf(T.def, T.sim));
+T.pilot = { mode: 'target', update(dt) { fc.direct(tg, Math.acos(1 / tg), 9); fc.speed(+(process.env.TSPD || 180)); fc.apply(dt); } };
+const A = w.spawnAircraft({ aircraft: 'f16', team: 'blue', position: new THREE.Vector3(0, 5000, 900), heading: 0, speed: 220, skill, loadout: { ir: 0, radar: 0 }, order: { type: 'cruise', heading: 0, alt: 5000, weaponsHold: true } });
+const g = {}; let n = 0;
+b.run(40, (t) => { if (t > 3 && A.pilot.order.type !== 'engage') A.pilot.setOrder({ type: 'engage', target: T });
+  if (++n % 30 === 0) { classify(A, T, g); console.log(`${t.toFixed(1)} r ${g.range.toFixed(0)} ata ${(g.ata*57.3).toFixed(0)} aa ${(g.aa*57.3).toFixed(0)} cl ${g.closure.toFixed(0)} | ${A.pilot.mode}/${A.pilot.sub} v${A.state.ias.toFixed(0)} g${A.state.gLoad.toFixed(1)} aoa ${(A.state.aoa*57.3).toFixed(0)} h${A.state.position.y.toFixed(0)} | T v${T.state.ias.toFixed(0)} g${T.state.gLoad.toFixed(1)}`); } });
