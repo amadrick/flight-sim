@@ -7,9 +7,9 @@ import { F } from '../../ui/hud/common.js';
 const PART_KEYS = ['fuselage', 'cockpit', 'wingL', 'wingR', 'tail'];
 const WING_L = [17, 16, 2, 26, 2, 29, 17, 26], WING_R = [23, 16, 38, 26, 38, 29, 23, 26], TAIL = [17, 31, 10, 36, 10, 38, 30, 38, 30, 36, 23, 31];
 
-export function createStatus(cv, tok, specs) {
+export function createStatus(cv, tok, specs, assistInfo) {
   const g = cv.getContext('2d');
-  let W = 1, Hh = 1, dpr = 1, sizeKey = '', last = '';
+  let W = 1, Hh = 1, dpr = 1, sizeKey = false, last = '';
   const max = { gun: 0, flares: 0, m: Object.create(null) };
   const C = { hud: tok.hud, fg: tok.fg, dim: 'rgba(214,226,238,0.6)', faint: 'rgba(214,226,238,0.16)', amber: tok.accent, red: tok.warn };
   const chips = [];
@@ -54,6 +54,8 @@ export function createStatus(cv, tok, specs) {
   function collectChips(p, out) {
     out.length = 0;
     const d = p.damage || {}, lo = p.loadout, s = p.state;
+    const ai = assistInfo?.();
+    if (ai?.active && ai.autoThrottle) out.push('A/THR', tok.ok);
     if (d.fire > 0.05) out.push('FIRE', C.red);
     if (d.leak > 0.05) out.push('FUEL LEAK', C.amber);
     if (Array.isArray(d.engineOut) ? d.engineOut.some(Boolean) : d.engineOut) out.push('ENG OUT', C.red);
@@ -70,6 +72,10 @@ export function createStatus(cv, tok, specs) {
     return out;
   }
 
+  /** the dock shows the counts on its buttons: keep only the warnings it cannot show (empty gun / no missiles stay) */
+  function dropStoresChips(c) {
+    for (let i = c.length - 2; i >= 0; i -= 2) if (c[i] === 'GUN LOW') c.splice(i, 2);
+  }
   /** Returns the panel height wanted (CSS px) so the caller can size the glass box. */
   function draw(p, w, d, compact) {
     const lo = p?.loadout; if (!lo) return 0;
@@ -83,14 +89,17 @@ export function createStatus(cv, tok, specs) {
     // change key (strings built only when something changed would still allocate; numbers combined into one key)
     let k = rounds * 1e6 + (lo.flares || 0) * 1e3 + hp;
     let mk = 0; for (const t in lo.missiles) mk = mk * 13 + (lo.missiles[t] || 0);
-    const key2 = (diag ? partsInfo.key * 1e4 : 0) + mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0) + (compact ? 0.25 : 0);
+    const key2 = (diag ? partsInfo.key * 1e4 : 0) + mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0) + (compact ? 0.25 * compact : 0);
     if (compact && worst >= 0.4) chips.push('DAMAGE', C.red);
+    if (compact === 2) dropStoresChips(chips);
     const crow = 22;
-    const h = compact ? crow + 6 + (chips.length ? crow - 2 : 0) : heightFor(w, chips.length / 2, diag);
-    if (k === draw.k && key2 === draw.k2 && sizeKey === w + ':' + h + ':' + d && chipKey() === last) return h;
+    const h = compact === 2 ? hullHeight(w, crow) : compact ? crow + 6 + (chips.length ? crow - 2 : 0) : heightFor(w, chips.length / 2, diag);
+    const same = w === W && h === Hh && d === dpr && sizeKey;
+    if (k === draw.k && key2 === draw.k2 && same && chipKey() === last) return h;
     draw.k = k; draw.k2 = key2; last = chipKey();
-    if (sizeKey !== w + ':' + h + ':' + d) { sizeKey = w + ':' + h + ':' + d; W = w; Hh = h; dpr = d; cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
+    if (!same) { sizeKey = true; W = w; Hh = h; dpr = d; cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, Hh);
+    if (compact === 2) { drawHull(hp, crow); return h; }
     if (compact) { drawCompact(lo, rounds, hp, crow); return h; }
     const fs = w < 170 ? 10 : 12, row = Math.round(fs * 1.75), padX = w < 170 ? 10 : 13;
     const fL = `600 ${fs}px ${tok.display}`, fV = `600 ${fs + 1}px ${tok.mono}`;
@@ -181,6 +190,39 @@ export function createStatus(cv, tok, specs) {
         g.fillStyle = col; g.textAlign = 'center'; g.fillText(txt, x + cw / 2, y + 0.5); g.textAlign = 'left';
         x += cw + 6;
       }
+    }
+  }
+  // touch layout: the dock's buttons carry rounds / missiles / flares, so only HULL and the warning chips remain
+  const HF = 11, HULL_W = 10 + HF * 0.58 * 4 + 6 + 40 + 6 + HF * 0.62 * 3 + 12;
+  const chipW = (txt) => txt.length * (HF - 1) * 0.56 + 10;
+  function hullHeight(w, row) {
+    let x = HULL_W, lines = 1;
+    for (let i = 0; i < chips.length; i += 2) {
+      const cw = chipW(chips[i]);
+      if (x + cw > w - 8) { if (lines === 2) break; lines = 2; x = 10; }
+      x += cw + 6;
+    }
+    return lines === 1 ? row + 4 : row * 2 + 2;
+  }
+  function drawHull(hp, row) {
+    const fL = `600 ${HF}px ${tok.display}`, fV = `700 ${HF + 1}px ${tok.mono}`;
+    let x = 10, y = 2 + row / 2;
+    const col = hp < 30 ? C.red : hp < 60 ? C.amber : C.hud;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.font = fL; g.fillStyle = C.dim; g.fillText('HULL', x, y + 0.5); x += HF * 0.58 * 4 + 6;
+    g.fillStyle = C.faint; g.fillRect(x, Math.round(y - 2), 40, 4);
+    g.fillStyle = col; g.fillRect(x, Math.round(y - 2), Math.round(40 * Math.max(0, Math.min(1, hp / 100))), 4);
+    x += 46;
+    g.font = fV; g.fillStyle = hp < 30 ? C.red : C.fg; g.fillText(F.int(hp), x, y + 0.5);
+    x = HULL_W;
+    g.font = `700 ${HF - 1}px ${tok.display}`;
+    let lines = 1;
+    for (let i = 0; i < chips.length; i += 2) {
+      const txt = chips[i], c = chips[i + 1], cw = chipW(txt);
+      if (x + cw > W - 8) { if (lines === 2) break; lines = 2; x = 10; y += row - 2; }
+      g.strokeStyle = c; g.lineWidth = 1.2; g.strokeRect(Math.round(x) + 0.5, Math.round(y - 8) + 0.5, Math.round(cw), 16);
+      g.fillStyle = c; g.textAlign = 'center'; g.fillText(txt, x + cw / 2, y + 0.5); g.textAlign = 'left';
+      x += cw + 6;
     }
   }
   function chipKey() { let s = 0; for (let i = 0; i < chips.length; i += 2) s = s * 31 + chips[i].length + chips[i].charCodeAt(0); return s; }

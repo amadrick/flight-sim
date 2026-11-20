@@ -78,11 +78,19 @@ export const CSS = /* css */`
 .cbt-ui-fixed small { color: var(--fg-dim); font-size: 12px; margin-left: 6px; }
 .cbt-ui-bfoot { flex: none; padding: 8px 2px 2px; display: flex; flex-direction: column; gap: 6px; }
 .cbt-ui-bfoot .menu-fly { font-size: 22px !important; letter-spacing: 0.26em !important; padding-left: 0.26em !important; }
+.cbt-ui-footrow { display: flex; align-items: center; gap: 10px; padding: 0 2px 0 10px; }
+.cbt-ui-footlbl { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; flex: none; }
+.cbt-ui-footmode { flex: 1; min-width: 0; }
+.cbt-ui-footmode .menu-segbtn { min-height: 36px; }
 .cbt-ui-flyline { display: flex; justify-content: space-between; gap: 10px; padding: 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; }
 .cbt-ui-flyline b { font-family: var(--font-mono); font-weight: 400; letter-spacing: 0.02em; color: var(--fg); text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* first run + settings rows */
 .cbt-ui-start { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+.cbt-ui-modeline { margin: 8px 0 0; color: var(--fg, #f2f6fa); background: rgb(255 255 255 / 0.06); box-shadow: inset 0 0 0 1px rgb(143 161 179 / 0.3); }
+.cbt-ui-segfield { flex-wrap: wrap; gap: 8px 12px; }
+.cbt-ui-segfield .menu-seg { flex: 1 1 220px; min-width: 0; }
+.cbt-ui-segfield + .menu-note { margin: 0 12px 6px; }
 .cbt-ui-hint { margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r-m); font-size: 13px; line-height: 1.4; color: var(--amber-soft); background: rgb(255 176 0 / 0.1); box-shadow: inset 0 0 0 1px rgb(255 176 0 / 0.35); }
 .cbt-ui-rl { font-size: 13px; color: var(--fg-dim); min-width: 62px; flex: none; }
 .cbt-ui-volfield { gap: 14px; }

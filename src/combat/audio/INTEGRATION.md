@@ -28,12 +28,12 @@ nothing at all before then.
 ## What it reads
 
 - `combat.world.{player, aircraft}`, `combat.weapons.{threatsTo, missiles, specs}`, `combat.result`, `combat.mission.{id, music, start.tod}`, `combat.input.trigger`.
-- `ctx.cameraRig.{worldPosition, velocity}`, `ctx.camera.quaternion`, `ctx.time.{paused, realDt, timeOfDay}`, `ctx.menu.isOpen`, `ctx.params.raw.{music, radiovoice}`.
+- `ctx.cameraRig.{worldPosition, velocity}`, `ctx.camera.quaternion`, `ctx.time.{paused, realDt, timeOfDay}`, `ctx.menu.isOpen`, `ctx.params.raw.{music, radiovoice, audioprofile}`, `navigator.deviceMemory`, `matchMedia('(pointer: coarse)')`.
 - From the player entity: `lock.{state, seeker, target}`, `loadout.gun.{type, spec.rof, spec.spinUp, spin, rounds, max}`, `damage.fire`, `hp/maxHp`, `callsign`.
 
 ## Events it listens to
 
-`gun:start/stop`, `missile:launch`, `flare`, `damage`, `bullet:hit`, `bullet:near`, `missile:hit`, `missile:miss` (only when `detonated`), `kill`, `wreck:impact`, `collision`, `rwr:lock`, `rwr:launch`, `missile:active`, `weapon:nolock`, `target:change`, `weapon:select`, `fire:start`, `engine:out`, `radio`, `mission:start`, `mission:abort`, `player:down`.
+`gun:start/stop`, `missile:launch`, `flare`, `damage`, `bullet:hit`, `bullet:near`, `missile:hit`, `missile:miss` (only when `detonated`), `kill`, `wreck:impact`, `collision`, `rwr:lock`, `rwr:launch`, `missile:active`, `weapon:nolock`, `target:change`, `weapon:select`, `fire:start`, `engine:out`, `radio`, `mission:start`, `mission:abort`, `player:down`, `briefing:open`.
 
 The player's own death is left to the simulator's crash audio. A kill where the victim `isPlayer` makes no explosion.
 
@@ -48,6 +48,15 @@ The player's own death is left to the simulator's crash audio. A kill where the 
 - `mood` and `info` are for diagnostics (cue, section, bar, voices, current radio line).
 
 Nothing is persisted, so the UI should store these settings if it wants them to survive a reload.
+
+## Music stems (round 3)
+
+- Rendering starts on `briefing:open` { missionId } (or `combat.audio.prepare(id)`), on the first AudioContext and on `mission:start`. It needs no user gesture.
+- Stems are cached per cue (a phone keeps 1 cue, a desktop 2) and survive restarts. Memory per cue: phone ≤ 24 MB (18.8 / 22.4 MB), desktop ≤ 40 MB (31.7 / 37.8 MB).
+- The renderer slows down while frames are slow (> 34 ms) during a mission. It runs at full speed in pauses and menus (`ctx.time.paused`, `ctx.menu.isOpen`).
+- If a section is not rendered when it is needed, a live fallback band plays it, so the music is never silent. The engine hands over to the stem at the next section boundary.
+- `music=0` skips the rendering altogether.
+- Speech: `speechSynthesis` is used only when it lists voices. A line that has not started within 1.5 s is cancelled and replaced by the radio murmur. The subtitle comes from the UI as before.
 
 ## Requests for other modules (optional)
 

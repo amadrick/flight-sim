@@ -12,11 +12,12 @@ import { createRadio } from './radio.js';
 import { roleOf } from './radio-queue.js';
 import { createJets } from './jets.js';
 import { createMusic } from './music/engine.js';
+import { getStems, setLoad, deviceProfile, ORDER } from './music/render.js';
 import { createMood } from './music/mood.js';
 import { CUE_IDS } from './music/cues.js';
 import { hash } from './music/theory.js';
 
-export const MIX = { sfx: 1.0, cockpitInt: 1.0, warnings: 1.0, warnExterior: 0.75, radio: 1.0, music: 0.8, musicPaused: 0.35, musicMenu: 0.5, duckRadio: 0.6, duckWarn: 0.75 };
+export const MIX = { sfx: 1.0, cockpitInt: 1.0, warnings: 1.0, warnExterior: 0.75, radio: 1.0, music: 0.8, musicPaused: 0.35, musicMenu: 0.5, duckRadio: 0.45, duckWarn: 0.6 };
 const C = 340, MAX_DELAY = 20;
 const SEEK = { ir: ['ir-search', 'ir-lock'], rdr: ['rdr-search', 'rdr-lock'] };
 
@@ -26,13 +27,19 @@ export async function createCombatAudio(combat) {
   const set = {
     musicVolume: 0.8, musicOn: raw.music !== '0', radioVoice: raw.radiovoice !== '0', radioVolume: 1, sfxVolume: 1,
   };
+  const profile = deviceProfile(raw.audioprofile);
+  /** Start rendering a mission's music (works before the AudioContext exists: offline rendering needs no unlock). */
+  function prepareMusic(mission) {
+    if (!set.musicOn) return null;
+    try { const st = getStems(pickCue(mission), { profile }); st.prepare(ORDER); return st; } catch (e) { warn(e); return null; }
+  }
   let A = null, failed = false;                   // the built graph
   const mood = createMood();
   const moodIn = { dt: 0, active: false, alive: true, result: null, enemyDist: Infinity, enemyCount: 0, friendCount: 0, weaponsAgo: Infinity, lockAny: false, threat: false, hp: 1, killAgo: Infinity };
   const st = { lastWeapon: -1e9, lastKill: -1e9, lastTick: 0, lastHit: 0, lastImpact: 0, lastFlare: 0, lastDry: 0, lastNear: 0, lowAmmo: false, winchester: false,
     rwrUntil: 0, launchUntil: 0, urgentUntil: 0, missileHit: null, missileHitT: -9, hpCaution: false, clock: 0 };
   const guns = new Map();                         // shooter -> gun voice
-  const threats = [], flags = { rwrLock: false, launch: false, urgent: false, fire: false };
+  const threats = [], flags = { rwrLock: false, launch: false, urgent: false, fire: false }, sig = { push: false };
   const camW = new THREE.Vector3(), tmpC = new THREE.Vector3(), zero = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3();
   const warn = (e) => { try { console.warn('[combat audio]', e); } catch {} };
 
@@ -53,8 +60,9 @@ export async function createCombatAudio(combat) {
     const radioBus = G(ac, MIX.radio); radioBus.connect(g.flightIn);
     const musicBus = G(ac, 1); musicBus.connect(g.master);         // own pause / menu ducking (the flight bus is muted in pause)
     const pool = createPool(24);
-    const music = createMusic(ac, musicBus, { cue: pickCue() });
+    const music = createMusic(ac, musicBus, { cue: pickCue(), profile });
     music.setVolume(set.musicVolume * MIX.music); music.setEnabled(set.musicOn);
+    if (set.musicOn) music.preload();                              // render the stems now, off the main thread
     return {
       ac, g, sfxBus, cockpitD, worldD, warnBus, radioBus, musicBus, pool, music,
       warnings: createWarnings(ac, warnBus),
@@ -62,8 +70,8 @@ export async function createCombatAudio(combat) {
       jets: createJets(ac, worldD.in, pool),
     };
   }
-  function pickCue() {
-    const m = combat.mission;
+  function pickCue(mission) {
+    const m = mission || combat.mission;
     if (m?.music && CUE_IDS.includes(m.music)) return m.music;
     const tod = m?.start?.tod ?? ctx.time?.timeOfDay;
     if (tod != null && (tod < 6.5 || tod > 19)) return 'nightfall';
@@ -121,7 +129,7 @@ export async function createCombatAudio(combat) {
     const v = guns.get(shooter); if (!v) return; guns.delete(shooter);
     const t = now() + (v.delay || 0);
     v.stop(t);
-    if (isP(shooter)) gunTail(A.ac, A.pool, A.cockpitD.in, t + 0.02, 1, gunOf(shooter).heavy);
+    if (isP(shooter)) { const g0 = gunOf(shooter); gunTail(A.ac, A.pool, A.cockpitD.in, t + 0.02, 1, g0.heavy, g0.rof); }
   });
   on('missile:launch', ({ shooter }) => {
     st.lastWeapon = st.clock;
@@ -188,10 +196,19 @@ export async function createCombatAudio(combat) {
   on('engine:out', ({ target }) => { if (isP(target)) A.warnings.caution(now()); });
   on('radio', (r) => { if (r.text) A.radio.say({ text: r.text, from: r.from, priority: r.priority, role: roleOf(r, combat.world?.player?.callsign || '') }, now()); });
   on('mission:start', () => {
-    A.music.stop(0.2); A.music.setCue(pickCue()); mood.reset();
+    A.music.stop(0.2); A.music.setCue(pickCue()); mood.reset(); if (set.musicOn) A.music.preload();
     st.lowAmmo = st.winchester = st.hpCaution = false; st.lastKill = st.lastWeapon = -1e9; st.rwrUntil = st.launchUntil = st.urgentUntil = 0;
   });
   on('mission:abort', () => stopAll(0.4));
+  // the briefing screen: start rendering as soon as a mission is chosen (before the AudioContext may even exist)
+  // ('briefing:open' { missionId } from the mission screens; the stems stay cached if the player backs out)
+  const brief = (p) => { const id = p?.missionId ?? p?.id; const m = p?.mission || (id && combat.director?.getMission?.(id)) || null; if (!m) return;
+    // a phone keeps one cue: browsing another mission mid-fight must not evict the music that is playing
+    if (combat.active && profile.keep < 2 && A?.music?.info && pickCue(m) !== A.music.info.cue) return;
+    prepareMusic(m); };
+  ev.on('briefing:open', brief);
+  try { const id = combat.ui?.briefingMission; if (id) brief({ missionId: id }); } catch {}   // a briefing already on screen
+  ev.on('mission:start', (p) => { if (!A) prepareMusic(p?.mission || combat.mission); });
   on('player:down', () => { stopGuns(); A.warnings.stopAll(now()); });
   // radio lines and the like may arrive before the AudioContext runs; mission:abort must still reset state
   ev.on('mission:abort', () => { mood.reset(); });
@@ -205,6 +222,7 @@ export async function createCombatAudio(combat) {
 
   // ---- per frame ----------------------------------------------------------------------------------------------
   function update(dt) {
+    setLoad(ctx.time?.realDt ?? dt, !!ctx.time?.paused || !!ctx.menu?.isOpen || !combat.active);   // gates the stem rendering
     if (!ensure()) return;
     const ac = A.ac, t = ac.currentTime, rdt = Math.min(0.1, Math.max(0.001, ctx.time?.realDt || dt || 1 / 60));
     st.clock += dt > 0 ? dt : 0;
@@ -258,20 +276,23 @@ export async function createCombatAudio(combat) {
     const m = mood.update(moodIn);
     A.musicBus.gain.setTargetAtTime(paused ? MIX.musicPaused : menu ? MIX.musicMenu : 1, t, 0.25);
     A.music.setDuck(A.radio.speaking ? MIX.duckRadio : A.warnings.launchOn ? MIX.duckWarn : 1);
-    try { A.music.update(t, set.musicOn ? m : 'off'); } catch (e) { warn(e); failed = true; A.music.dispose(); A.music.update = () => {}; }
+    sig.push = moodIn.active && alive && (p.lock?.state === 'locked' || moodIn.killAgo < 10);
+    try { A.music.update(t, set.musicOn ? m : 'off', sig); } catch (e) { warn(e); failed = true; A.music.dispose(); A.music.update = () => {}; }
   }
 
   const api = {
     update,
+    /** start rendering the music of a mission (id or mission object), e.g. when its briefing opens */
+    prepare(mission) { brief(typeof mission === 'string' ? { id: mission } : { mission }); },
     get mood() { return mood.mood; },
     /** diagnostics: { cue, section, bar, mood, playing, voices } */
-    get info() { return A ? { ...A.music.info, voices: A.pool.live, refused: A.pool.refused, radio: A.radio.current?.text || null, seeker: A.warnings.seeker } : null; },
+    get info() { return A ? { ...A.music.info, musicVoices: A.music.info.voices, voices: A.pool.live, refused: A.pool.refused, radio: A.radio.current?.text || null, seeker: A.warnings.seeker } : null; },
     get musicVolume() { return set.musicVolume; },
     /** music level 0..1 (default 0.8) */
     setMusicVolume(v) { set.musicVolume = Math.max(0, Math.min(1, +v || 0)); A?.music.setVolume(set.musicVolume * MIX.music); },
     get musicEnabled() { return set.musicOn; },
     set musicEnabled(on) { api.setMusicEnabled(on); },
-    setMusicEnabled(on) { set.musicOn = !!on; A?.music.setEnabled(set.musicOn); },
+    setMusicEnabled(on) { set.musicOn = !!on; A?.music.setEnabled(set.musicOn); if (set.musicOn) A?.music.preload(); },
     get radioVoice() { return set.radioVoice; },
     /** speak radio lines with speech synthesis (true) or use the procedural radio murmur only (false) */
     setRadioVoice(on) { set.radioVoice = !!on; A?.radio.setVoice(set.radioVoice); },

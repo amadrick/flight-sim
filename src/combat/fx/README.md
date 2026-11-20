@@ -48,5 +48,5 @@ in the hot paths (records are created on first sight of an entity / on events).
 Counts scale with `ctx.quality.particles` (spawn rates); fixed capacities.
 
 ## Debug params
-`cfxfb=0` no neural fireball · `cfxairfb=1` neural fireball for air kills too · `cfxdmg=<0..1>` damage on all aircraft ·
+`cfxfb=0` no neural fireball · `cfxairfb=1` neural fireball for air kills · `cfxgfb=1` neural fireball for ground crashes (default: particle fireball + soot column) · `cfxdmg=<0..1>` damage on all aircraft ·
 `cfxcontrail=1` · `cfxvapor=1` · `cfxoff=sprites,ribbons,ps,smoke` hide systems · `cfxnoemis=1` no trail emission.

@@ -56,7 +56,7 @@ export async function createAudio(ctx) {
     try { if (a.state !== 'running') a.resume()?.catch?.(() => {}); } catch {}
   }
   // first user gesture
-  const gestureEvents = ['pointerdown', 'keydown', 'touchstart', 'mousedown'];
+  const gestureEvents = ['pointerdown', 'pointerup', 'keydown', 'touchstart', 'touchend', 'mousedown', 'click'];
   const onGesture = () => {
     resume();
     if (ac && ac.state === 'running') for (const n of gestureEvents) window.removeEventListener(n, onGesture, true);

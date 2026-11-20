@@ -16,6 +16,7 @@ import {
   DEFAULT_BINDINGS, BINDING_GROUPS, bindingSegments, TOD_PRESETS, START_MODES, QUALITY_NOTES,
   CATEGORY_CODE, isCommercial, specRows, engineLine, metar, clearanceLine, fmtClock, group3, toFt, toKt, phaseOf, AC_FILTERS,
 } from './data.js';
+import { TOUCH_HELP, defaultQualityFor } from './data.js';
 
 const STORE_KEY = 'skyward.menu.v1';
 const WX_CODE = { clear: 'SKC', fair: 'FEW', scattered: 'SCT', broken: 'BKN', overcast: 'OVC -RA', storm: 'TSRA CB' };
@@ -88,6 +89,11 @@ export async function createMenu(ctx) {
   };
   if (saved.airport === sel.airport) { sel.runway = saved.runway | 0; sel.end = saved.end ? 1 : 0; }
   if (!params.quality && saved.quality && QUALITY_LEVELS[saved.quality] && saved.quality !== ctx.quality.level) ctx.quality.set(saved.quality);
+  else if (!params.quality && !saved.quality) {
+    // first run on a phone / tablet: start at a tier its GPU can hold (the pilot can raise it in Settings)
+    const q = defaultQualityFor(ctx.input?.touchEnabled, window.screen?.width, window.screen?.height, ctx.quality.level);
+    if (q !== ctx.quality.level && QUALITY_LEVELS[q]) ctx.quality.set(q);
+  }
   if (Number.isFinite(saved.volume)) ctx.audio?.setMasterVolume?.(sel.volume);
   let hudOn = params.hud !== false;
 
@@ -284,11 +290,35 @@ export async function createMenu(ctx) {
   const fsRowBtn = sw('menu-fs-setting', 'Fullscreen', toggleFullscreen);
   const glassBtn = sw('menu-glass', 'Glass effects', () => { sel.glassReduced = !sel.glassReduced; glass.setReduced(sel.glassReduced); save(); sync(); });
   const field = (t, d, ctl) => h('div', { class: 'menu-field' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: t }), d ? h('span', { class: 'menu-field-d', text: d }) : null), ctl);
+  // touch controls (prefs live in input: ctx.input.touch.prefs); shown on touch screens only
+  const tPrefs = ctx.input?.touch?.prefs || null;
+  const tSet = (patch) => { try { tPrefs && tPrefs.set(patch); } catch {} sync(); };
+  const sensRange = h('input', { class: 'menu-range menu-range-plain', type: 'range', id: 'menu-touch-sens', min: '50', max: '200', step: '5', 'aria-label': 'Stick sensitivity' });
+  const sensRead = h('span', { class: 'menu-vol-read' });
+  sensRange.addEventListener('input', () => { sensRead.textContent = sensRange.value + '%'; sensRange.style.setProperty('--v', ((+sensRange.value - 50) / 1.5) + '%'); });
+  sensRange.addEventListener('change', () => tSet({ sensitivity: +sensRange.value / 100 }));
+  const leftyBtn = sw('menu-touch-lefty', 'Left-handed', () => tSet({ lefty: !tPrefs?.get().lefty }));
+  const rudBtn = sw('menu-touch-rudder', 'Rudder slider', () => tSet({ rudder: !tPrefs?.get().rudder }));
+  const centreBtn = sw('menu-touch-centre', 'Stick auto-centre', () => tSet({ autoCentre: !tPrefs?.get().autoCentre }));
+  const hapBtn = sw('menu-touch-haptics', 'Vibration', () => tSet({ haptics: !tPrefs?.get().haptics }));
+  const sysBtn = sw('menu-touch-sys', 'All systems buttons', () => tSet({ drawer: tPrefs?.get().drawer === 'open' ? 'auto' : 'open' }));
+  const COARSE = (() => { try { return matchMedia('(pointer: coarse)').matches; } catch { return false; } })();
+  const canVibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+  const touchSec = tPrefs ? sec('Touch controls', null, h('div', { class: 'menu-group' },
+    h('div', { class: 'menu-field-l', style: 'padding-top:10px' }, h('span', { class: 'menu-field-t', text: 'Stick sensitivity' }), h('span', { class: 'menu-field-d', text: 'Higher: full deflection with less thumb travel (also the look drag)' })),
+    h('div', { class: 'menu-vol' }, sensRange, sensRead),
+    field('Left-handed', 'Stick under the left thumb, throttle under the right', leftyBtn),
+    field('Rudder slider', 'Off: the rudder follows the stick (coordinated turns)', rudBtn),
+    field('Stick auto-centre', 'Off: the stick holds its last position when you let go', centreBtn),
+    canVibrate ? field('Vibration', 'A light tick on buttons and throttle detents', hapBtn) : null,
+    field('All systems buttons', 'Off: gear, flaps and brakes appear near the ground; Sys opens the rest', sysBtn))) : null;
+  if (touchSec) touchSec.id = 'menu-touch-settings';
   const settingsBack = h('button', { class: 'menu-back', id: 'menu-settings-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
   const vSettings = h('section', { class: 'menu-view menu-dock menu-dock-r', 'data-view': 'settings', style: '--origin: top center' },
     h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Settings' },
       h('div', { class: 'menu-subhead' }, settingsBack, h('span', { class: 'menu-subtitle', text: 'Settings' })),
       h('div', { class: 'menu-scroll' },
+        touchSec,
         sec('Graphics quality', null, qGroup, h('p', { class: 'menu-note', text: 'Applies immediately. Resolution also scales down on its own to hold the frame rate.' })),
         sec('Sound', null, h('div', { class: 'menu-group' }, h('div', { class: 'menu-field-l', style: 'padding-top:10px' }, h('span', { class: 'menu-field-t', text: 'Master volume' })), h('div', { class: 'menu-vol' }, volRange, volRead))),
         sec('Display', null, h('div', { class: 'menu-group' },
@@ -300,11 +330,19 @@ export async function createMenu(ctx) {
   // ---- CONTROLS ---------------------------------------------------------------------------------
   const keysWrap = h('div', { class: 'menu-keys' });
   function renderKeys() {
+    // groups other modules appended (combat adds [data-cbt] rows at runtime) survive the re-render, kept at the end
+    const foreign = [...keysWrap.children].filter(el => el.dataset && Object.keys(el.dataset).length);
     keysWrap.textContent = '';
     let src = Array.isArray(ctx.input?.bindings) && ctx.input.bindings.length ? ctx.input.bindings : DEFAULT_BINDINGS;
     // F1 (the in-flight controls card) is handled here and in the HUD, not by input
     if (!src.some(b => /controls card/i.test(b.action || ''))) src = [...src, { group: 'Sim', action: 'Controls card show / hide', keys: ['F1'] }];
     const groupNames = [...BINDING_GROUPS, ...new Set(src.map(b => b.group).filter(g => g && !BINDING_GROUPS.includes(g)))];
+    // touch screens: the on-screen controls come first; the keyboard table stays below for a paired keyboard
+    if (ctx.input?.touchEnabled) {
+      keysWrap.append(h('div', { class: 'menu-keygroup menu-keygroup-touch' },
+        h('div', { class: 'menu-h' }, h('span', { text: 'Touch' })),
+        h('div', { class: 'menu-group' }, TOUCH_HELP.map(([a, k]) => h('div', { class: 'menu-keyrow' }, h('span', { class: 'menu-keyrow-a', text: a }), h('span', { class: 'menu-keyrow-k menu-keytext', text: k }))))));
+    }
     for (const g of groupNames) {
       const rows = src.filter(b => (b.group || 'Sim') === g);
       if (!rows.length) continue;
@@ -319,6 +357,7 @@ export async function createMenu(ctx) {
           return h('div', { class: 'menu-keyrow' }, h('span', { class: 'menu-keyrow-a', text: b.action }), k);
         }))));
     }
+    keysWrap.append(...foreign);
   }
   const controlsBack = h('button', { class: 'menu-back', id: 'menu-controls-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
   const vControls = h('section', { class: 'menu-view menu-dock menu-dock-c menu-dock-wide', 'data-view': 'controls', style: '--origin: top center' },
@@ -328,7 +367,7 @@ export async function createMenu(ctx) {
         h('div', { class: 'menu-devices' },
           h('div', { class: 'menu-device' }, h('b', { text: 'Mouse' }), 'M turns the mouse into a yoke. Right-drag looks around, wheel zooms.'),
           h('div', { class: 'menu-device' }, h('b', { text: 'Gamepad' }), 'Standard controllers connect automatically. Left stick flies, right stick looks.'),
-          h('div', { class: 'menu-device' }, h('b', { text: 'Touch' }), 'On-screen stick and throttle appear on touch screens. Menu, top right, opens this screen.')))));
+          h('div', { class: 'menu-device' }, h('b', { text: 'Touch' }), 'Right thumb flies (drag anywhere on the right), left thumb sets the throttle. Menu, top right, pauses and opens this screen.')))));
 
   // ---- PAUSE ----------------------------------------------------------------------------------------
   const pauseSub = h('div', { class: 'menu-pause-sub' });
@@ -456,6 +495,13 @@ export async function createMenu(ctx) {
     const fs = !!document.fullscreenElement;
     fsRowBtn.setAttribute('aria-pressed', String(fs)); fsRowBtn.setAttribute('aria-checked', String(fs));
     for (const b of document.querySelectorAll('.menu-fsbtn')) b.setAttribute('aria-pressed', String(fs));
+    if (touchSec) {
+      const tp = tPrefs.get();
+      touchSec.hidden = !(ctx.input?.touchEnabled || COARSE);
+      if (document.activeElement !== sensRange) sensRange.value = String(Math.round(tp.sensitivity * 100));
+      sensRange.style.setProperty('--v', ((tp.sensitivity * 100 - 50) / 1.5) + '%'); sensRead.textContent = Math.round(tp.sensitivity * 100) + '%';
+      for (const [b, on] of [[leftyBtn, tp.lefty], [rudBtn, tp.rudder], [centreBtn, tp.autoCentre], [hapBtn, tp.haptics], [sysBtn, tp.drawer === 'open']]) { b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-checked', String(on)); }
+    }
     // pause
     syncPause();
     syncClock();
@@ -541,6 +587,7 @@ export async function createMenu(ctx) {
     tabBar.hidden = flight;
     for (const [k, t] of Object.entries(tabs)) { if ((k === 'hangar' ? 'main' : k) === v) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); }
     if (v === 'pause') syncPause();
+    if (v === 'controls') renderKeys();   // touch rows come and go with ctx.input.touchEnabled (hybrid devices)
     if (v !== 'main') setAptOpen(false);
     // panels grow out of the control that opened them: tabs (top centre) or the corner Menu button (top right)
     if (v === 'pause') views[v].style.setProperty('--origin', 'top right');
@@ -722,6 +769,8 @@ export async function createMenu(ctx) {
     get view() { return view; },
     get selection() { return { ...sel }; },
     get glass() { return glass; },
+    /** The post-crash Restart / Back to hangar dialog is up (the HUD then hides its own crash card). */
+    get crashDialogOpen() { return !crash.hidden; },
     update() {
       const rdt = ctx.time.realDt || 0;
       glass.update(rdt, menu.isOpen);

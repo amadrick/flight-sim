@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CUES, CUE_IDS, DRUMS, GTR, BASS } from './cues.js';
+import { CUES, CUE_IDS, DRUMS, GTR, BASS, STABS } from './cues.js';
 import { genSection, createArranger, fillSteps } from './arranger.js';
 import { createMood } from './mood.js';
 import { createClock } from './clock.js';
@@ -30,7 +30,7 @@ for (const id of CUE_IDS) {
           for (const n of notes) {
             assert.ok(Number.isFinite(n), `${name} ${e.i} finite`);
             if (e.i === 'gtr' || e.i === 'bass') { assert.ok(n >= cue.gtrLow - 12 && n <= cue.gtrLow + 26, `${name} ${e.i} range ${n}`); continue; }  // riffs use chromatic passing roots
-            if (e.i === 'lead' || e.i === 'lead2') assert.ok(n >= 55 && n <= 92, `${name} lead range ${n}`);
+            if (e.i === 'lead' || e.i === 'lead2' || e.i === 'bell') assert.ok(n >= 55 && n <= 92, `${name} lead range ${n}`);
             assert.ok(ok.has(pc(n)) || ch.tones.includes(pc(n)), `${id}/${name} bar ${bar.index} step ${k} ${e.i} ${n} not in key over ${ch.sym}`);
           }
           if (e.i === 'lead' && k === 0 && e.d >= 4 && ch.quality !== '5') assert.ok(ch.tones.includes(pc(e.n)) || cue.sections[name].group === 'danger', `${id}/${name} bar ${bar.index}: downbeat lead note ${e.n} is a chord tone of ${ch.sym}`);
@@ -41,7 +41,7 @@ for (const id of CUE_IDS) {
   });
   test(`${id}: riff cells lie on the grid, hooks are 8 bars`, () => {
     for (const cell of Object.values(cue.riffs)) for (const [k, , len] of cell) assert.ok(k >= 0 && k + len <= 16);
-    assert.equal(cue.hooks.hook.length, 8);
+    assert.equal(cue.hooks.hook.length, 8); assert.equal(cue.hooks.solo.length, 8); assert.ok(!cue.sections.chorus2); assert.equal(cue.hooks.bell.length, 8); assert.equal(cue.hooks.pre.length, 4);
     assert.ok(cue.bpm >= 96 && cue.bpm <= 150);
   });
 }
@@ -50,34 +50,73 @@ test('pattern strings are 16 steps', () => {
   for (const p of Object.values(DRUMS)) for (const s of Object.values(p)) assert.equal(s.length, 16);
   for (const s of Object.values(GTR)) assert.equal(s.length, 16);
   for (const s of Object.values(BASS)) assert.equal(s.length, 16);
+  for (const s of Object.values(STABS)) assert.equal(s.length, 16);
   assert.ok(fillSteps('fillBig').slice(0, 8).every((a) => a.length === 0));
 });
 
-test('arranger: calm -> fight enters the riff with a big fill, kills bring the chorus, danger, victory sting then silence', () => {
+const walk = (a, moods, sig) => moods.map((m) => { const b = a.next(m, sig); return b ? b.section + b.index : null; });
+const starts = (seq) => seq.filter((x) => x && /^[a-z]+0$/.test(x)).map((x) => x.slice(0, -1));
+
+test('arranger: the fight is a song (intro, verse, pre, chorus, interlude, verse, pre, chorus, solo, chorus)', () => {
   const a = createArranger(CUES.sweep);
   assert.equal(a.next('off'), null);
-  let b = a.next('calm'); assert.equal(b.section, 'calm');
-  assert.equal(a.fillFor('fight'), 'fillBig');
-  b = a.next('fight'); assert.equal(b.section, 'riff'); assert.equal(b.index, 0);
-  assert.ok(b.steps[0].some((e) => e.i === 'crash'));
-  b = a.next('hero'); assert.equal(b.section, 'riff'); assert.equal(b.index, 1, 'waits for the 4-bar phrase');
-  a.next('hero'); a.next('hero'); b = a.next('hero'); assert.equal(b.section, 'chorus');
-  for (let i = 1; i < 8; i++) b = a.next('fight');
-  assert.equal(b.section, 'chorus'); assert.equal(b.index, 7, 'the chorus is not cut off');
-  b = a.next('fight'); assert.equal(b.section, 'riff');
-  assert.equal(a.fillFor('danger'), 'fillBig');
-  b = a.next('danger'); assert.equal(b.section, 'danger');
-  assert.equal(a.fillFor('victory'), 'fillRoll');
-  const seen = [];
-  for (let i = 0; i < 8; i++) { b = a.next('victory'); seen.push(b ? b.section + b.index : null); }
-  assert.deepEqual(seen, ['win0', 'win1', 'win2', 'win3', null, null, null, null]);
-  b = a.next('calm'); assert.equal(b.section, 'calm', 'a new mission restarts the score');
+  assert.equal(a.next('calm').section, 'calm');
+  assert.equal(a.fillFor('fight'), 'fillBig', 'big fill into the band');
+  assert.equal(a.entering('fight'), true, 'riser into the first merge');
+  const seq = walk(a, Array(4 + 8 + 4 + 8 + 4 + 8 + 4 + 8 + 8 + 8 + 4).fill('fight'));
+  assert.deepEqual(starts(seq), ['intro', 'verse', 'pre', 'chorus', 'intro', 'verse', 'pre', 'chorus', 'solo', 'chorus', 'intro']);
 });
 
-test('arranger: fight sequence cycles riff -> riff2 -> bridge -> riff', () => {
-  const a = createArranger(CUES.nightfall); const order = [];
-  for (let i = 0; i < 24; i++) { const b = a.next('fight'); if (b.index === 0) order.push(b.section); }
-  assert.deepEqual(order, ['riff', 'riff2', 'bridge', 'riff']);
+test('arranger: a lock pushes the verse to the pre-chorus at the phrase; hero after a chorus brings the solo', () => {
+  const a = createArranger(CUES.sweep);
+  walk(a, Array(4).fill('fight'));                                   // intro
+  let seq = walk(a, ['fight', 'fight'], { push: true });              // verse 0, 1
+  assert.deepEqual(seq, ['verse0', 'verse1']);
+  seq = walk(a, ['fight', 'fight', 'fight'], { push: true });
+  assert.deepEqual(seq, ['verse2', 'verse3', 'pre0'], 'jumps at the 4-bar phrase, not mid-phrase');
+  seq = walk(a, Array(3 + 8).fill('hero'));
+  assert.equal(seq[3], 'chorus0');
+  assert.equal(a.next('hero').section, 'solo', 'hero at the end of a chorus: solo');
+  seq = walk(a, Array(7 + 8).fill('hero'));
+  assert.equal(seq[7], 'chorus0', 'solo -> chorus');
+  assert.equal(a.next('hero').section, 'intro', 'only one solo per chorus');
+});
+
+test('arranger: mood flickers never restart the song; danger resumes the interrupted section', () => {
+  const a = createArranger(CUES.nightfall);
+  walk(a, Array(4 + 8 + 4 + 2).fill('fight'));                       // into the chorus (bar 1)
+  assert.equal(a.current.name, 'chorus');
+  assert.equal(a.fillFor('danger'), 'fillBig');
+  assert.equal(a.next('danger').section, 'danger', 'danger cuts in on the next bar');
+  walk(a, ['danger', 'danger']);
+  assert.equal(a.fillFor('fight'), 'fillBig');
+  const b = a.next('fight'); assert.equal(b.section + b.index, 'chorus0', 'back to the interrupted chorus, not the intro');
+  // the fight dies down: cool-down, then tension; coming back soon resumes at a verse
+  const cool = walk(a, ['tension', 'tension', 'tension']);
+  assert.deepEqual(cool, ['cool0', 'cool1', 'tension0']);
+  assert.equal(a.next('fight').section, 'verse', 'a quick return skips the intro');
+});
+
+test('arranger: victory and defeat tags play once, then silence; a new mission restarts', () => {
+  const a = createArranger(CUES.sweep);
+  walk(a, Array(6).fill('fight'));
+  assert.equal(a.fillFor('victory'), 'fillRoll');
+  assert.deepEqual(walk(a, Array(6).fill('victory')), ['win0', 'win1', 'win2', null, null, null]);
+  assert.equal(a.next('calm').section, 'calm');
+  const b = createArranger(CUES.sweep); walk(b, Array(5).fill('fight'));
+  assert.equal(b.fillFor('defeat'), null);
+  assert.deepEqual(walk(b, Array(5).fill('defeat')), ['lose0', 'lose1', 'lose2', null, null]);
+});
+
+test('sections: song parts carry their layers (gated snare, verse synth pulse, chorus brass and melody, calm FM bell)', () => {
+  for (const id of CUE_IDS) {
+    const has = (name, inst) => genSection(CUES[id], name).some((bar) => bar.steps.some((s) => s.some((e) => e.i === inst)));
+    for (const [name, inst] of [['verse', 'sbass'], ['verse', 'arp'], ['chorus', 'stab'], ['chorus', 'lead'], ['chorus', 'horn'], ['chorus', 'lead2'], ['calm', 'bell'], ['solo', 'lead'], ['pre', 'riser'], ['chorus', 'ohat'], ['intro', 'crash'], ['solo', 'scrape']])
+      assert.ok(has(name, inst), `${id}/${name} has ${inst}`);
+    const v = genSection(CUES[id], 'verse')[0];
+    assert.ok(v.steps[8].some((e) => e.i === 'snare') && !v.steps[4].some((e) => e.i === 'snare'), 'verse drums are half-time');
+    assert.ok(genSection(CUES[id], 'verse')[0].steps.flat().filter((e) => e.i === 'gtr' && e.m).length >= 8, 'verse guitars are palm-muted chugs');
+  }
 });
 
 test('mood: hysteresis and priorities', () => {

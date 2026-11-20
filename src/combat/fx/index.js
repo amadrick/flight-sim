@@ -48,7 +48,7 @@ export async function createCombatFx(combat) {
   const ribbons = createRibbons(ctx, U, S.header, S.anchor);
   const sprites = createSprites(ctx, U, S.header, 2048);
   const missileMesh = createMissileMesh(ctx, 48);
-  const debris = createDebris(ctx, ribbons, 128);
+  const debris = createDebris(ctx, ribbons, 128, sprites);
   let fireballs = null;
   try { fireballs = raw.cfxfb === '0' ? null : createFireballSystem(ctx, U, S.header, 3); } catch (err) { console.warn('[combat fx] neural fireball unavailable', err); fireballs = null; }
   let fbWarm = false;
@@ -410,7 +410,7 @@ export async function createCombatFx(combat) {
     const n = Math.round((gone ? 34 : missile ? 16 : 8) * Math.max(0.5, q));
     debris.burst(pos, s.velocity, n, { colour: airframeTint(victim), size: r.length * 0.06, spread: missile || gone ? 55 : 30, burnFrac: 0.45,
       ribbons: gone ? 6 : missile ? 4 : 2, big: gone ? 5 : 0, span: r.span, length: r.length });
-    lightFlash(pos, 9e4 * k * r.scale, 0.9, 1, 0.6, 0.3);
+    lightFlash(pos, 3000 * k * r.scale, 0.3, 1, 0.6, 0.3);
     r.deadT = ctx.time.now;
   }
 
@@ -431,8 +431,13 @@ export async function createCombatFx(combat) {
     }
     pos.y = Math.max(pos.y, gnd.height) + 0.5;
     E.explosion(ps, smoke, pos, vel, scale, q);
-    R.flash(ps, pos, null, 60 * scale, 200, 1, 0.75, 0.45, 0.4);
-    if (fireballs) {
+    // fuel fireball rising off the impact (same recipe as the air kill, pushed upward) and a soot column
+    // (centred ~10 m up: the ball must clear a forest canopy, which otherwise hides it through the depth test)
+    pos.y += 14 * scale;
+    R.airFireball(ps, smoke, pos, v2.set(vel.x * 0.05, 22, vel.z * 0.05), scale * 2.6, q, false, 2.2);
+    R.sootColumn(smoke, pos, scale, q);
+    pos.y -= 14 * scale;
+    if (fireballs && raw.cfxgfb === '1') {   // neural fireball reads as a dull dome here; kept behind a flag
       warmFireballs();
       if (fireballs) {
         windDir(pos, wind);
@@ -450,7 +455,7 @@ export async function createCombatFx(combat) {
     let gf = groundFires.find((f) => f.t > 200);
     if (!gf) { gf = { t: 0, pos: new THREE.Vector3(), fireAcc: 0, smokeAcc: 0, scale: 1 }; if (groundFires.length < 8) groundFires.push(gf); else gf = groundFires[0]; }
     gf.t = 0; gf.pos.copy(pos); gf.fireAcc = 0; gf.smokeAcc = 0; gf.scale = scale;
-    lightFlash(pos, 1.2e5 * scale, 1.5, 1, 0.55, 0.25);
+    lightFlash(pos, 8000 * scale, 1.2, 1, 0.55, 0.25);
   }
 
   // =============================================================================================== events
@@ -471,12 +476,12 @@ export async function createCombatFx(combat) {
     const s = missile?.state; if (!s) return;
     back.copy(FWD).applyQuaternion(shooter?.state?.quaternion || s.quaternion).negate();
     R.launchPuff(ps, smoke, s.position, s.velocity, back, q0());
-    lightFlash(s.position, 3000, 0.25, 1, 0.75, 0.45);
+    lightFlash(s.position, 300, 0.25, 1, 0.75, 0.45);
   });
   on('missile:hit', ({ position, target, missile }) => {
     if (!position) return;
     R.warhead(ps, smoke, position, target?.state?.velocity ? v.copy(target.state.velocity).multiplyScalar(0.6) : missile?.state?.velocity || null, q0(), 1);
-    lightFlash(position, 6e4, 0.5, 1, 0.75, 0.45);
+    lightFlash(position, 2500, 0.35, 1, 0.75, 0.45);
   });
   on('missile:miss', ({ position, missile, reason, detonated }) => {
     if (detonated === false && reason !== 'ground') return;   // a dud / lost missile just falls: no burst
@@ -485,7 +490,7 @@ export async function createCombatFx(combat) {
       return;
     }
     R.warhead(ps, smoke, position, missile?.state?.velocity ? v.copy(missile.state.velocity).multiplyScalar(0.3) : null, q0(), 0.5);
-    lightFlash(position, 2e4, 0.35, 1, 0.75, 0.45);
+    lightFlash(position, 1200, 0.3, 1, 0.75, 0.45);
   });
   on('kill', ({ victim, weapon, info }) => {
     if (!victim || victim.kind !== 'aircraft') return;
@@ -567,7 +572,7 @@ export async function createCombatFx(combat) {
       const q = q0();
       R.airFireball(ps, smoke, worldPos, opts.velocity || v3.set(0, 0, 0), scale, q, false);
       if (opts.debris !== false) debris.burst(worldPos, opts.velocity || v3.set(0, 0, 0), Math.round(8 * scale * Math.max(0.5, q)), { size: 1.2 * scale, spread: 35 * scale, burnFrac: 0.5, ribbons: 2 });
-      lightFlash(worldPos, 9e4 * scale, 0.9);
+      lightFlash(worldPos, 4000 * scale, 0.6);
     },
     clear: clearAll,
     stats() {

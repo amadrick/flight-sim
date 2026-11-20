@@ -20,11 +20,12 @@
 `createCombatUi(combat)` → `{ update(dt), openMissions(), isOpen }` (COMBAT.md §12), plus (additive):
 - `openMissions(missionId?)` — with an id, opens straight into that mission's briefing.
 - `debrief()` — show the debrief for the last decided mission now (skips the delay; tests / shots).
+- `briefingMission` — id of the mission whose briefing is on screen, else null. Events: `combat.events` **`'briefing:open'` `{ missionId }`** when a briefing is shown (open or new selection) and **`'briefing:close'` `{ missionId, launched }`** when the screens leave it.
 - `openSettings()` — open Combat settings (from mission select, the pause menu, or `?cbtui=settings`); Back returns there.
 - `close()` — leave the screens (back to wherever they were opened from).
 - `view` — `'missions' | 'settings' | 'debrief' | null`.
 - `progress` — the progress store (`best(id)`, `completed(id)`, `mission(id)`, `record(id, difficulty, result)`, `getSetting`, `setSetting`).
-- `settings` — `{ musicOn, musicVolume, radioVoice, radioVolume, sfxVolume, camKillCam, camFeel }` as remembered (plus `difficulty`).
+- `settings` — `{ musicOn, musicVolume, radioVoice, radioVolume, sfxVolume, camKillCam, camFeel, flightMode (null = by difficulty | 'assist' | 'off'), aimHelp ('off'|'low'|'high'|'auto'), vibration }` as remembered (plus `difficulty`).
 
 `createCombatInput(combat)` → `{ update(dt), trigger, bindings }` (COMBAT.md §9), plus (additive):
 - `bindings` rows carry `id` (`gun, missile, flare, targetNext, targetPrev, targetNearest, weaponNext, restart`),
@@ -33,6 +34,19 @@
 - `padHooked()` — whether the simulator's input honours `padOwns` (`ctx.input.combatPadHook`).
 - `padOwns(i)` — true when combat owns standard-gamepad button `i` this frame (src/input skips it).
 - `touchVisible`, `release()` (drops the trigger). Export `createTouchButtons(parent, onPress, onHold)`.
+- `actions` — plain functions for a touch dock: `gun(on)`, `missile()`, `flares()`, `targetNext()`, `targetPrev()`,
+  `targetNearest()`, `targetThreat()`, `targetTap()` (tap = next, double tap = most dangerous), `toggleView()`,
+  `switchMissile()`, `boost(on)`. All stand down unless a mission is live.
+- `state` — refreshed every frame: `{ live, gun, firing, boost, target, targetName, lock, lockProgress, lockSeeker,
+  missileMode ('auto'|'ir'|'radar'), missile (selected seeker), missiles { ir, radar }, rounds, flares, flareProgram,
+  padlock, aim, aimLocked, lastNoLock }`.
+- `setTouchButtons(false)` hides this module's own fire buttons (the dock owns them); `true` brings them back.
+  The own buttons (and their CSS) are only built when `ctx.input.touch` does not exist (old base input): with the dock
+  present nothing of `.cbt-inp-touch` / `TOUCH_PLACE` is created.
+- Rail: on `mission:start` combat adds **Boost** (hold) and, with both IR and radar aboard, **Missile** (sub-label
+  Auto / IR / Radar) via `ctx.input.touch.addButton`; removed on `mission:end` / `mission:abort`.
+- `actions.viewDown()` / `actions.viewUp()`: tap = padlock toggle, hold > 0.3 s = `combat.camera.peek(true)` while held;
+  `actions.peek(on)`; `state.peek`.
 
 `combat.start(id, { aircraft, difficulty, custom })` is called with `custom` only for a custom mission
 (`id === 'instant-custom'` or `def.custom`): `{ enemies 1..8, wingmen 0..3, enemyType id|'mixed', gunsOnly, startRange m,
@@ -44,9 +58,10 @@ also `start { airport, offset { bearing, distance }, hdg }`, `enemies / friends 
 shape) or `map { center {x,z}, radius, player {x,z,hdg}, hostiles [{x,z}], friendlies [{x,z}] }`.
 Result fields read (all optional): `combat.result = { outcome, reason, time, stats: { kills, assists, losses, shots, hits,
 missiles, missileHits, damageTaken, score, rating, breakdown [{label, points}], medals [{id, title, text}] } }`.
+Flight assist (COMBAT.md §15): `combat.assist.setMode('assist'|'off')` from `flightModeFor(settings.flightMode, difficulty)` (Assisted on rookie / veteran, Direct on ace, unless the player chose) and `setAimAssist(v)` from `aimHelpFor(aimHelp, difficulty)` (Off 0, Low 0.35, High 0.8, Auto: rookie 0.8 / veteran 0.45 / ace 0); applied at boot, live, on difficulty change and on `mission:start`. URL `?music=0` / `?radiovoice=0` override the stored sound switches.
 Settings applied (every setter optional, called only when the value differs): `combat.audio.setMusicEnabled(on)` (or
 `musicEnabled =`), `setMusicVolume(v)`, `setRadioVoice(on)`, `setRadioVolume(v)`, `setSfxVolume(v)`;
-`combat.camera.setKillCam(on)`, `combat.camera.setFeel(on)` (shake on / off; no intensity scale yet). Applied at boot,
+`combat.camera.setKillCam(on)`, `setFightCam(on)`, `setGunZoom(on)`, `setFeel(0..1)` (store keys camKillCam, camFight, camGunZoom, camFeel, shared with the camera). Applied at boot,
 live on every change, and again on every `mission:start` (the camera is created after the UI). Default difficulty seeds
 the briefing's difficulty selector.
 
@@ -57,14 +72,15 @@ the briefing's difficulty selector.
   buttons gone, combat HUD hidden), and its Restart restarts the mission.
 - **First run** (no attempt saved): the gunnery training mission is preselected, tagged **Start here** in the list, with
   a one-line hint in its briefing.
-- **Combat settings**: Sound (music on/off + volume, radio voice on/off + volume, effects volume), Camera (kill cam,
-  camera shake), Default difficulty. Header button on mission select; pause menu during a mission. `?cbtui=missions[&cbtmission=<id>]` / `?cbtui=settings` open a screen at boot.
+- **Combat settings**: Controls (flight controls Assisted / Direct, gun aim help Off / Low / High / Auto, vibration), Sound (music on/off + volume, radio voice on/off + volume, effects volume), Camera (kill cam, fight camera, gun zoom,
+  shake 0..1), Default difficulty. Header button on mission select; pause menu during a mission. `?cbtui=missions[&cbtmission=<id>]` / `?cbtui=settings` open a screen at boot.
 - **Mission select** lists `combat.director.missions` by category (Training, Campaign, Instant action, then anything
   else) in `order`, with completion ticks, best rating and threat. Wide screens show list and briefing side by side;
   at ≤ 720 px the list opens the briefing as its own page (Back / Esc returns).
 - **Briefing**: category and number, title, tagline, threat / length / best, location · time · weather, tactical map,
   brief, objectives, custom setup (custom mission only), aircraft (choices, else "assigned"), difficulty
-  (Rookie / Veteran / Ace → `combat.difficulty`, remembered), **Fly mission**.
+  (Rookie / Veteran / Ace → `combat.difficulty`, remembered), **Flight controls** (Assisted / Direct with a one-line
+  explanation; a compact selector also sits in the always-visible footer above Fly, so no scrolling is needed), **Fly mission**.
 - **Debrief**: 3.5 s after a success / 4.2 s after a failure (real time, counted only while unpaused and no menu is
   up), over the **frozen** world (the sim is paused; the camera slowly orbits the aircraft in `showcase`). Outcome +
   reason, rating badge, score count-up with "New best", breakdown, flight stats, awards. Primary action:
@@ -81,17 +97,36 @@ the briefing's difficulty selector.
 - `localStorage` may be missing or throw: progress and settings then live for the session only.
 
 ## Control map (combat, mission running)
+Simulator keys (src/input/bindings.js), left alone: W/S/↑/↓ pitch, A/D/←/→ roll, Q/E rudder, `,` `.` `/` trim, T autopilot,
+R = PgUp / F - PgDn throttle, 1 idle, 9 MIL, 0 max, I engines, G gear, [ ] flaps, B speedbrake, Space wheel brakes,
+K parking brake, H hook, L lights, N canopy, J wing sweep, C / Shift+C camera, M mouse yoke, U HUD, P pause,
+Backspace restart, Esc menu; right-drag look, wheel zoom.
+
 | action | keyboard | mouse | gamepad: PAD_MAP (needs `combatPadHook`) | gamepad: today (PAD_FREE) | touch |
 |---|---|---|---|---|---|
-| Gun (hold) | `Space` (airborne; wheel brake on the ground) | left button on the 3D view (airborne) | RT (dead zone 0.35 / 0.2) | right stick click | GUN (hold) |
-| Missile | `Enter`, `X` | | RB | – | MSL |
-| Flares | `V` | | B | – | FLR |
-| Next / previous target | `Tab` / `Shift+Tab` | | X / – | – | TGT |
-| Target nearest the nose | `Y` | | Y | – | |
-| Switch missile type | `Z` | | LB | – | |
-| Padlock (target view) | `O` | | right stick click | Home (where the browser exposes it) | VIEW (lit while on) |
+| Gun (hold; safe on the ground) | `Space` | left button | RT | right stick click | GUN (hold) |
+| Missile, best for the shot | `X`, `Enter` | right click | RB | – | MSL |
+| Flares (3 releases over ~1 s) | `V` | | B | – | FLR |
+| Next target, nearest the nose first / back | `Tab` / `Shift+Tab` | wheel (mouse aim on) | X / – | – | TGT |
+| Most dangerous target | hold `Tab` | | | | double-tap TGT |
+| Target nearest the nose | `Y` | middle click | Y | – | |
+| Missile type Auto / IR / radar | `Z` | | LB | – | |
+| Boost (afterburner while held) | `Shift` | | | | BOOST (rail) |
+| Missile type Auto / IR / radar (two types aboard) | `Z` | | | | Missile (rail, sub-label) |
+| Target view: tap = padlock, hold > 0.3 s = peek while held | `O` | | right stick click | Home | VIEW (dock) |
 | Missile camera | `;` | | | | |
-| Restart mission | `Backspace` (core) | | | | |
+
+Two hands: right on the arrows or the mouse, left on Space (gun), Shift (boost), Tab (target), X (missile), V (flares),
+Z, O. Only overlap with the simulator: Space (wheel brake on the ground, gun in the air) and Shift+C (camera previous
+while boosting). A right / middle *drag* stays camera look; only a click (< 350 ms, < 6 px) fires / targets.
+**Mouse aim** (Assisted mode, mouse user, simulator mouse yoke off): the pointer's offset from the screen centre is
+written to `combat.assist.aim` and a small reticle shows it; a left click on the view also takes pointer lock (motion
+then accumulates into a clamped aim point; Esc frees the mouse). Arrow / WASD keys suspend mouse aim until the mouse moves.
+With the yoke on (M), mouse aim stays inactive and the yoke flies.
+**Missile**: Auto fires IR inside its envelope, else radar; a held shot emits `weapon:nolock { entity, reason, text }`
+(no target / no missiles / off boresight / out of range / too close / locking / no lock) and a press with no target
+designates the most dangerous one. **Haptics** (Vibration setting): touch buzz while the gun fires and a thump when hit
+(navigator.vibrate); gamepad dual-rumble likewise.
 
 Restart is `Backspace` (core reset) or the pause menu, not `R` (simulator throttle). PAD_MAP applies only airborne in a
 live mission; on the ground the simulator keeps every button. PAD_FREE uses only buttons the simulator does not map, so

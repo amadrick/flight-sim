@@ -19,10 +19,21 @@ between `#view` and the HUD canvas, so the backdrop blur never touches the numbe
 scrim. `?glass=off` keeps the old opaque canvas panel. Toasts, the paused tag, the crash card and the controls card are
 glass too. The fighter HUD stays green collimated symbology, and the airliner deck stays an instrument panel.
 
+## Touch screens
+When `ctx.input.touch.layout` is set (touch controls on screen), the HUD draws only inside the regions the touch layout
+reserves, so it never sits under a thumb or a button:
+- external views: the flight-data strip docks at the top-left of `layout.hud` and drops the cells the controls already
+  show (throttle, gear / flaps / brakes / AP); the warning chip goes under the strip;
+- airliner cockpit: PFD + compact engine/config strip inside `layout.hud` (side by side when wide, stacked when tall);
+- fighter cockpit: the conformal HUD's tapes and blocks are limited to `layout.clear`; if that leaves less than
+  220 × 180 px (portrait phones) the boxed strip is drawn instead;
+- toasts start below whatever the HUD drew (`notices.setToastTop`).
+The canvas also re-fits every frame when its CSS size changed (rotation; iOS can fire `resize` late or with old sizes).
+
 ## Controls card
 Shown at the start of the first six flights (count in `localStorage` `skyward.hud.hint`; `hint=1` forces it, `hint=0`
 suppresses it), up for 7 s of unpaused flying, then it fades. `F1`, or `cmd { name: 'help' }` (the menu's corner help
-button), brings it back for 12 s or puts it away. Hidden on touch screens.
+button), brings it back for 12 s or puts it away. Never shown while `ctx.input.touchEnabled` (input shows touch coach marks instead).
 
 ## Public API
 ```js
@@ -61,3 +72,13 @@ Measured in headless Chrome (software raster, so an upper bound): fighter HUD �
 ≈ 0.4 ms at 1920×1080, external strip ≈ 0.07 ms. Static parts (panel, bezels, strip labels) are cached in offscreen canvases and
 rebuilt only on resize / font load; numbers come from memoised string caches (no per-frame string building). The glow is a CSS
 `drop-shadow` filter on the overlay canvas (GPU-composited, zero main-thread cost).
+- Dual-screen devices spanned across a vertical hinge (viewport segments) without touch: the strip docks on the left screen;
+  the conformal fighter HUD would sit on the hinge (the camera centre), so it falls back to the strip. Toasts, the paused tag,
+  the crash card and the hint card stay on one screen (CSS `horizontal-/vertical-viewport-segments` + `env(viewport-segment-*)`).
+- `ctx.hud.stripRect` → `{x, y, w, h, r}` of the exterior flight-data strip while it is drawn (else null), and
+  `ctx.hud.hintVisible` (controls card up): for overlays that must sit around the strip (combat HUD request 1).
+- Touch missions: when the touch layout is in mission mode (`layout.mission`) the strip is drawn in `layout.hud` (a
+  strip-sized box, top-left) even when it is short, and toasts / the warning chip start at `layout.toast` (under the combat
+  panel region), so they never land on combat objectives, stores or the fire cluster.
+- `ctx.hud.dismissHint()` fades the keyboard controls card out now. The card is not auto-shown while `ctx.combat?.active`,
+  and an auto-shown card goes away as soon as a mission becomes active (F1 / `cmd help` still opens it on demand).

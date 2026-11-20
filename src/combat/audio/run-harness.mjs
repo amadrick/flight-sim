@@ -11,6 +11,8 @@ const only = process.argv[2] || '';
 execFileSync('node', ['tools/build.mjs', '--dev', '--entry', 'src/combat/audio/harness.js', '--out', 'dist/cbt-audio.html'], { cwd: root, stdio: 'inherit' });
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
+const throttle = +(process.env.THROTTLE || 1);
+if (throttle > 1) { const cdp = await page.context().newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }); console.log('CPU throttle x' + throttle); }
 const errors = []; page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); }); page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));
 await page.goto(pathToFileURL(resolve(root, 'dist/cbt-audio.html')).href + (only ? '?only=' + encodeURIComponent(only) : ''));
 await page.waitForFunction(() => window.__sim && window.__sim.ready, null, { timeout: 1800000, polling: 1000 });

@@ -74,7 +74,20 @@ sits in the bottom corners or over the centre of the view. Shown only on touch d
 screen open and not in the showcase camera; hidden at once on `mission:abort`. VIEW toggles padlock and lights while the
 padlock camera is on.
 
+## Touch dock hand-over
+The mobile thread's dock can own the fire buttons: call `combat.input.setTouchButtons(false)` and wire its buttons to
+`combat.input.actions` (`gun(on)`, `missile()`, `flares()`, `targetTap()` / `targetNext()` / `targetThreat()`,
+`toggleView()`, `switchMissile()`, `boost(on)`); read `combat.input.state` for lit states and counts. Layout of the
+existing buttons is unchanged this round.
+
 ## Requests (owned by others)
+- Touch dock (src/input/touch.js): VIEW has only `onDown → actions.toggleView()`. For long-press peek, wire
+  `onDown → actions.viewDown()` and `onUp → actions.viewUp()` (both exist; tap still toggles padlock on release,
+  hold > 0.3 s peeks while held); light VIEW from `state.padlock || state.peek`.
 - Simulator HUD (`src/ui/hud`): hides on `ctx.menu.isOpen` or the `showcase` camera; the combat screens switch the
   camera to `showcase`, so it hides today. A direct `|| ctx.combat?.ui?.isOpen` would be more robust.
 - Combat HUD: hide while `combat.ui.isOpen` (agreed). The placeholder HUD still draws under the debrief.
+- Combat HUD: show `weapon:nolock`'s `text` (e.g. NO TARGET / OUT OF RANGE / TOO CLOSE / NOSE ON TARGET / LOCKING)
+  instead of the fixed "NO LOCK"; use `HUD_HINTS` from `src/combat/input/map.js` for the hint card (panels.js keeps a
+  copy today); show 'AUTO SELECTED' for `weapon:select { selected: 'auto' }` (it already does, by falling back).
+- Weapons: a single-flare release (the programme is 3 releases of the weapons' 2-flare salvo today).

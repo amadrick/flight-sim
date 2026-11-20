@@ -11,12 +11,14 @@ export function createExternalOverlay(tok) {
   const mono = tok.mono, disp = tok.display;
   C.amber = tok.accent; C.red = tok.warn; C.cyan = tok.ok;
 
-  function layout(W, H, airliner) {
-    const fsV = Math.round(clamp(Math.min(W * 0.022, H * 0.034), 15, 30));
+  // box (touch screens): the HUD's own region from the touch layout. The strip docks at its top-left and drops the
+  // cells the touch controls already show (throttle on the slider, gear / flaps / brakes / AP on the buttons).
+  function layout(W, H, airliner, box) {
+    const fsV = box ? Math.round(clamp(Math.min(box.w * 0.038, H * 0.045), 13, 22)) : Math.round(clamp(Math.min(W * 0.022, H * 0.034), 15, 30));
     const fsL = Math.round(fsV * 0.5), fsS = Math.round(fsV * 0.56);
     const rowH = Math.round(fsV * 2.75);
     const cw = fsV * 0.6;
-    const cells = [
+    let cells = [
       { id: 'att', w: rowH * 0.9 },
       { id: 'spd', label: 'IAS', unit: 'KT', w: cw * 3 + fsS * 1.6 + fsV * 0.6 },
       { id: 'alt', label: 'ALT', unit: 'FT', w: cw * 6 + fsS * 1.6 + fsV * 0.6 },
@@ -27,8 +29,9 @@ export function createExternalOverlay(tok) {
       { id: 'cfg', label: 'CONFIG', unit: '', w: fsS * 0.6 * 17 },
       { id: 'cmp', w: rowH * 0.9 },
     ];
+    if (box) cells = cells.filter(c => c.id !== 'thr' && c.id !== 'cfg' && c.id !== 'g');
     const pad = Math.round(fsV * 0.55), gap = Math.round(fsV * 0.7);
-    const maxW = W - 32;
+    const maxW = box ? box.w : W - 32;
     // greedy rows (phones get two or three rows)
     const rows = [[]]; let rw = pad * 2;
     for (const c of cells) {
@@ -40,14 +43,14 @@ export function createExternalOverlay(tok) {
     const rowWidths = rows.map(r => r.reduce((a, c) => a + c.w, 0) + gap * (r.length - 1) + pad * 2);
     const pw = Math.min(maxW, Math.max(...rowWidths));
     const ph = rows.length * rowH + (rows.length - 1) * Math.round(fsV * 0.25) + pad * 0.5;
-    const px = Math.round((W - pw) / 2), py = Math.round(H - 16 - Math.max(8, H * 0.012) - ph);
+    const px = box ? box.x : Math.round((W - pw) / 2), py = box ? box.y : Math.round(H - 16 - Math.max(8, H * 0.012) - ph);
     rows.forEach((r, ri) => {
       const used = r.reduce((a, c) => a + c.w, 0);
       const extra = (pw - pad * 2 - used - gap * (r.length - 1)) / Math.max(1, r.length);
       let x = px + pad;
       for (const c of r) { c.x = Math.round(x); c.y = Math.round(py + pad * 0.25 + ri * (rowH + fsV * 0.25)); c.w2 = c.w + extra; c.h = rowH; x += c.w + extra + gap; }
     });
-    return { fsV, fsL, fsS, rowH, cells, px, py, pw, ph, cw, gap, radius: Math.round(Math.min(fsV * 0.9, ph / 2)),
+    return { box: !!box, fsV, fsL, fsS, rowH, cells, px, py, pw, ph, cw, gap, radius: Math.round(Math.min(fsV * 0.9, ph / 2)),
       fontV: `500 ${fsV}px ${mono}`, fontS: `500 ${fsS}px ${mono}`, fontL: `600 ${fsL}px ${disp}`, fontXS: `500 ${Math.round(fsS * 0.92)}px ${mono}`,
       byId: Object.fromEntries(cells.map(c => [c.id, c])) };
   }
@@ -86,8 +89,9 @@ export function createExternalOverlay(tok) {
   function draw(g, E) {
     const { s, def, W, H, dpr, nav, t } = E;
     const airliner = def.hudType === 'airliner';
-    const k = ((W * 8192 + H) * 8 + Math.round(dpr * 2)) * 2 + (airliner ? 1 : 0);
-    if (k !== key || !layer) { key = k; L = layout(W, H, airliner); buildLayer(W, H, dpr); }
+    const bx = E.box;
+    const k = ((W * 8192 + H) * 8 + Math.round(dpr * 2)) * 2 + (airliner ? 1 : 0) + (bx ? ((bx.x * 4099 + bx.y) * 4099 + bx.w) * 4099 + bx.h : 0) * 16;
+    if (k !== key || !layer) { key = k; L = layout(W, H, airliner, bx); buildLayer(W, H, dpr); }
     g.drawImage(layer, L.px - 1, L.py - 1, layer.width / dpr, layer.height / dpr);
     const by = L.byId;
     const vY = (c) => c.y + L.fsL * 1.25 + L.fsV * 1.08;
@@ -101,11 +105,12 @@ export function createExternalOverlay(tok) {
     const sub = (c, text, color = C.dim, dx = 0) => { g.font = L.fontXS; g.fillStyle = color; g.textAlign = 'left'; g.fillText(text, c.x + dx, subY(c)); };
 
     const kias = Math.max(0, num(s.ias) / KT);
+    const aglFt = num(s.agl, 1e9) / FT;
     val(by.spd, F.int(kias), s.overspeed ? C.red : (s.stallWarning ? C.amber : C.fg));
     if (num(s.mach) >= 0.3) { sub(by.spd, 'M'); sub(by.spd, F.mach(Math.round(s.mach * 100)), C.fg, L.fsS * 1.0); }
     else { sub(by.spd, 'GS'); sub(by.spd, F.int(num(s.groundSpeed) / KT), C.fg, L.fsS * 1.6); }
 
-    const altFt = num(s.altitude) / FT, aglFt = num(s.agl, 1e9) / FT;
+    const altFt = num(s.altitude) / FT;
     val(by.alt, F.comma(Math.round(altFt / 10) * 10));
     if (aglFt < 2500) { sub(by.alt, 'AGL'); sub(by.alt, F.comma(Math.max(0, Math.round(aglFt))), C.fg, L.fsS * 2.2); }
 
@@ -126,7 +131,7 @@ export function createExternalOverlay(tok) {
     }
 
     const en = s.engines || [];
-    if (airliner) {
+    if (!by.thr) {} else if (airliner) {
       const n1 = en.length ? en.reduce((a, e) => a + num(e.n1), 0) / en.length : 0;
       val(by.thr, F.tenth(Math.round(n1 * 1000)));
     } else {
@@ -134,7 +139,7 @@ export function createExternalOverlay(tok) {
       if (ab > 0.02 || thr > 0.905) val(by.thr, 'AB', C.amber, F.int(clamp(Math.ceil(ab * 5), 1, 5)));
       else val(by.thr, F.int(Math.round(clamp(thr / 0.9, 0, 1) * 100)));
     }
-    {
+    if (by.thr) {
       const c = by.thr, x = c.x, y = Math.round(subY(c) - L.fsS * 0.35), w = Math.round(c.w2 * 0.85);
       const thr = clamp(num(s.throttle, 0), 0, 1);
       g.fillStyle = C.faint; g.fillRect(x, y, w, 2);
@@ -145,10 +150,10 @@ export function createExternalOverlay(tok) {
     }
 
     const gl = num(s.gLoad, 1);
-    val(by.g, F.tenth(Math.round(gl * 10)), s.overG || gl > num(def.specs?.maxG, 9) ? C.red : C.fg);
+    if (by.g) val(by.g, F.tenth(Math.round(gl * 10)), s.overG || gl > num(def.specs?.maxG, 9) ? C.red : C.fg);
 
     // configuration flags
-    {
+    if (by.cfg) {
       const c = by.cfg; let x = c.x; const cw = L.fsS * 0.6;
       const y1 = vY(c) - L.fsV * 0.38, y2 = subY(c);
       g.font = L.fontS; g.textAlign = 'left';
@@ -182,10 +187,14 @@ export function createExternalOverlay(tok) {
     else if (s.fuelCapacity > 0 && s.fuel < s.fuelCapacity * 0.08) { warn = 'LOW FUEL'; wc = C.amber; }
     if (warn && flash(t, 0.7)) {
       g.font = L.fontV; g.textAlign = 'center'; g.textBaseline = 'middle';
-      const w = warn.length * L.cw + L.fsV * 1.6, h = L.fsV * 1.7, x = Math.round(W / 2 - w / 2), y = Math.round(L.py - h - L.fsV * 0.5);
+      const w = warn.length * L.cw + L.fsV * 1.6, h = L.fsV * 1.7;
+      // touch missions: the chip goes to the layout's toast spot (the combat HUD sits right under the strip)
+      const ca = E.chipAt;
+      const x = ca ? Math.round(ca.x + (ca.w - w) / 2) : L.box ? L.px : Math.round(W / 2 - w / 2);
+      const y = ca ? Math.round(ca.y) : L.box ? Math.round(L.py + L.ph + L.fsV * 0.4) : Math.round(L.py - h - L.fsV * 0.5);
       g.fillStyle = 'rgba(8,10,14,0.72)'; g.beginPath(); rrect(g, x, y, w, h, 3); g.fill();
       g.strokeStyle = wc; g.lineWidth = 1.5; g.stroke();
-      g.fillStyle = wc; g.fillText(warn, W / 2, y + h / 2 + 1);
+      g.fillStyle = wc; g.fillText(warn, x + w / 2, y + h / 2 + 1);
     }
   }
 

@@ -45,8 +45,12 @@ in-flight help button and `F1` emit `cmd { name: 'help' }` (the HUD toggles its 
   the Controls screen renders from it. Key codes such as `KeyG`, `ArrowUp` and `Digit1` are shown as `G`, `↑` and `1`.
   Gamepad: while the menu is open it reads the first standard gamepad itself (D-pad / left stick move focus, A
   activates, B goes back, LB / RB switch Hangar / Settings / Controls); input already ignores those buttons while the
-  menu is open. If `ctx.input.touchEnabled`, the corner keeps only its fullscreen button and moves left of input's own
-  Pause / Menu touch buttons. The touch controls are restyled as clear glass from `style.js`.
+  menu is open. If `ctx.input.touchEnabled`, the in-flight corner is hidden: input's touch layout owns the top-right
+  corner (Cam + Menu); fullscreen stays in Settings. The Controls screen then lists the touch controls first
+  (`TOUCH_HELP` in data.js), the keyboard table below.
+- **Settings → Touch controls** (`#menu-touch-settings`, first section, shown when touch is enabled or the pointer is
+  coarse): sensitivity 50–200 % (`#menu-touch-sens`), left-handed, rudder slider, stick auto-centre, haptics (only where
+  `navigator.vibrate` exists) and "All systems buttons" (drawer open / auto). Reads and writes `ctx.input.touch.prefs`.
 - **HUD**: hides itself while `ctx.menu.isOpen`. The Settings HUD switch emits `cmd hudToggle`, and the menu tracks
   every `hudToggle` to show its state.
 - **audio**: `ctx.audio.resume()` runs on FLY and on the first pointer-down inside the menu (so the hangar can make
@@ -55,6 +59,15 @@ in-flight help button and `F1` emit `cmd { name: 'help' }` (the HUD toggles its 
 - **physics**: `crash { reason }` brings up the Restart / Back to hangar dialog after 2 s (real time). Crashes
   during the hangar are ignored. While the hangar is up the menu holds `ctx.controls.throttle = 0` and
   `brakes = 1` every frame.
+
+## Phones and tablets
+- Landscape phones keep the side-by-side hangar (aircraft left, flight setup right, each scrolling inside its panel);
+  the bottom sheet is for portrait (`max-aspect-ratio: 1/1` and ≤ 1100 px wide). Docked panels (pause, settings,
+  controls) use the full height and scroll inside.
+- `(pointer: coarse)`: every control is at least 44 px (tabs, segments, chips, runway signs, back, switches via a
+  transparent border, sliders).
+- First run without a saved quality and without `?quality=`: phones (touch, short screen side < 600 px) start at `low`,
+  tablets at `medium` at most (`defaultQualityFor` in data.js).
 
 ## Persistence
 Outside `test=1`, the last aircraft, airport, runway, start mode, liveries, quality, volume, spec-card state and the
@@ -66,3 +79,6 @@ always take priority.
 `node tools/shot.mjs --params "menu=main" --size 1280x720`. `glass=lite|plain` forces the cheap material or no refraction.
 To check the 16-type roster:
 `node tools/shot.mjs --entry src/ui/menu/harness.js --html dist/menu.html --params "menu=main&aircraft=sr71"`.
+- Dual-screen devices (CSS `horizontal-/vertical-viewport-segments: 2`, `env(viewport-segment-*)`): side by side, the hangar
+  list sits on the left screen and the plan + Fly dock on the right, Settings / Controls panels and the crash dialog keep to one
+  screen; stacked, the sheet is limited to the bottom screen. Browsers without segment support get the normal layout.

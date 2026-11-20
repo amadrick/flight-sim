@@ -177,3 +177,24 @@ export function firstRunMission(list) {
   const all = g.flatMap(x => x.missions);
   return all.find(m => m.id === 'train-gunnery') || g.find(x => x.id === 'training')?.missions[0] || all[0] || null;
 }
+
+// ---- controls (flight assist + gun aim help, COMBAT.md §15) ------------------------------------------------------------
+export const FLIGHT_MODES = [
+  { id: 'assist', label: 'Assisted', line: 'Point the stick where you want to go. The jet banks and pulls for you.' },
+  { id: 'off', label: 'Direct', line: 'The stick moves the control surfaces. You fly every bank and pull yourself.' },
+];
+export const AIM_HELP = [
+  { id: 'off', label: 'Off' }, { id: 'low', label: 'Low' }, { id: 'high', label: 'High' }, { id: 'auto', label: 'Auto', title: 'By difficulty' },
+];
+const AIM_VALUE = { off: 0, low: 0.35, high: 0.8 };
+const AIM_AUTO = { rookie: 0.8, veteran: 0.45, ace: 0 };
+/** Flight controls in effect: the player's choice, else Assisted on rookie / veteran and Direct on ace. */
+export function flightModeFor(choice, difficulty) {
+  if (choice === 'assist' || choice === 'off') return choice;
+  return difficulty === 'ace' ? 'off' : 'assist';
+}
+/** Gun aim help strength 0..1: Off / Low / High, or Auto (by difficulty). */
+export function aimHelpFor(choice, difficulty) {
+  if (choice in AIM_VALUE) return AIM_VALUE[choice];
+  return AIM_AUTO[difficulty] ?? AIM_AUTO.veteran;
+}

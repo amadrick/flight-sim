@@ -2,19 +2,13 @@
 // first-minute control hints. DOM is touched on events and on value changes only (never per frame without a change).
 import { F } from '../../ui/hud/common.js';
 import { createSubtitleQueue } from './math.js';
+import { HUD_HINTS } from '../input/map.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export const HINTS = [
-  { keys: ['Space'], text: 'Guns (hold)', cmd: 'gun' },
-  { keys: ['Enter', 'X'], text: 'Missile', cmd: 'missile' },
-  { keys: ['V'], text: 'Flares', cmd: 'flare' },
-  { keys: ['Tab'], text: 'Next target', cmd: 'targetNext' },
-  { keys: ['Y'], text: 'Target nearest the nose', cmd: 'targetNearest' },
-  { keys: ['Z'], text: 'Switch missile', cmd: 'weaponNext' },
-  { keys: ['O'], text: 'Target view (padlock)', cmd: 'padlock' },
-];
+export const HINTS = HUD_HINTS;      // the key list lives with the key map (src/combat/input/map.js)
 const HINT_LIFE = 20;          // s of (unblocked) mission time the hint card stays
+const OPEN_LIFE = 8;           // s an unfolded objectives chip stays open (touch layout)
 
 export function createPanels(root, opts) {
   const doc = document;
@@ -31,6 +25,11 @@ export function createPanels(root, opts) {
   const objF = el('div', 'cbt-hud-obj-f', obj, '<span class="cbt-hud-cap">Score</span>');
   const scoreEl = el('b', '', objF, '0');
   const prevState = new Map(); const flashes = [];
+  // tap the chip to unfold the full list; it folds again on a second tap or after OPEN_LIFE s
+  let openT = 0;
+  const setOpen = (on) => { obj.classList.toggle('cbt-hud-open', on); obj.setAttribute('aria-expanded', String(on)); openT = on ? OPEN_LIFE : 0; };
+  obj.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+  obj.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!obj.classList.contains('cbt-hud-open')); });
   let timerKey = '', objKey = '';
 
   function renderObjectives(list) {
@@ -40,8 +39,15 @@ export function createPanels(root, opts) {
     if (key === objKey) return;
     objKey = key;
     objList.textContent = '';
-    for (const o of list) {
-      const li = el('li', o.optional ? 'cbt-hud-opt' : '', objList);
+    // the chip (touch layout) shows one line: the first open required objective, else the first open one, else the last
+    let cur = list.findIndex((o) => (o.state || 'active') === 'active' && !o.optional);
+    if (cur < 0) cur = list.findIndex((o) => (o.state || 'active') === 'active');
+    if (cur < 0) cur = list.length - 1;
+    const more = list.length - 1;
+    if (more > 0) obj.dataset.more = '+' + more; else delete obj.dataset.more;
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      const li = el('li', (o.optional ? 'cbt-hud-opt' : '') + (i === cur ? ' cbt-hud-cur' : ''), objList);
       li.dataset.state = o.state || 'active';
       li.innerHTML = `<span>${esc(o.text)}${o.optional ? ' <span class="cbt-hud-cap" style="letter-spacing:.1em">optional</span>' : ''}</span>${o.progress != null && o.progress !== '' ? `<em>${esc(o.progress)}</em>` : '<span></span>'}`;
       const id = o.id ?? o.text, was = prevState.get(id);
@@ -149,11 +155,12 @@ export function createPanels(root, opts) {
     for (const k of kills) k.k.remove(); kills.length = 0;
     for (const p of popList) p.p.remove(); popList.length = 0;
     subQ.clear(); for (let i = 0; i < 2; i++) { subEls[i].hidden = true; subAlpha[i] = -1; }
-    banner.hidden = true; flashes.length = 0;
+    banner.hidden = true; flashes.length = 0; setOpen(false);
   }
 
   /** Per-frame bookkeeping (real dt; `live` = simulation running, not paused). */
   function tick(rdt, live) {
+    if (openT > 0 && (openT -= rdt) <= 0) setOpen(false);
     for (let i = flashes.length - 1; i >= 0; i--) { const f = flashes[i]; if ((f.t -= rdt) <= 0) { f.li.classList.remove('cbt-hud-new'); flashes.splice(i, 1); } }
     for (let i = kills.length - 1; i >= 0; i--) {
       const o = kills[i]; o.t -= rdt;

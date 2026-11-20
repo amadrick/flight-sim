@@ -1,7 +1,7 @@
 // Combat HUD stylesheet (injected once by createCombatHud). Panels use the simulator's .glass material; line work over the
 // world is drawn on the overlay canvas. Class names are prefixed cbt-hud-.
 export const CSS = `
-.cbt-hud-cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none!important;z-index:3;display:block}
+.cbt-hud-cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none!important;z-index:5;display:block}
 .cbt-hud-cv.cbt-hud-shadow{filter:drop-shadow(0 0 1px rgba(0,0,0,.95)) drop-shadow(0 1px 1.5px rgba(0,0,0,.5))}
 .cbt-hud-root{position:absolute;inset:0;pointer-events:none!important;z-index:4;overflow:hidden;
   --cbt-gl:max(16px,env(safe-area-inset-left,0px));--cbt-gr:max(16px,env(safe-area-inset-right,0px));--cbt-gt:max(16px,env(safe-area-inset-top,0px));
@@ -14,12 +14,12 @@ export const CSS = `
 .cbt-hud-left{position:absolute;left:var(--cbt-gl);top:var(--cbt-gt);width:min(310px,calc(100vw - var(--cbt-side) - 64px));display:flex;flex-direction:column;gap:8px;align-items:stretch;
   transition:transform .5s var(--spring,cubic-bezier(.34,1.32,.5,1))}
 .cbt-hud-obj{--r:20px;position:relative;box-sizing:border-box;padding:11px 14px 12px}
-.cbt-hud-obj-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
-.cbt-hud-timer{font:600 15px/1 var(--font-mono,'B612 Mono',ui-monospace,monospace);color:var(--fg,#f2f6fa);letter-spacing:.02em}
+.cbt-hud-obj-h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 10px;margin-bottom:8px}
+.cbt-hud-timer{font:600 15px/1.15 var(--font-mono,'B612 Mono',ui-monospace,monospace);color:var(--fg,#f2f6fa);letter-spacing:.02em;white-space:nowrap;margin-left:auto}
 .cbt-hud-timer.cbt-hud-low{color:var(--accent,#ffb000)}
 .cbt-hud-timer small{font:600 10.5px/1 var(--font-display,'Arial Narrow',Arial,sans-serif);letter-spacing:.14em;color:var(--fg-dim,#a9b8c7);margin-right:6px;text-transform:uppercase}
 .cbt-hud-obj ul{list-style:none;margin:0;padding:0;display:grid;gap:5px}
-.cbt-hud-obj li{display:grid;grid-template-columns:14px 1fr auto;gap:8px;align-items:start;font-size:13.5px;line-height:1.3;color:var(--fg,#f2f6fa);border-radius:6px;transition:background-color .6s,color .4s}
+.cbt-hud-obj li{display:grid;grid-template-columns:14px 1fr;gap:8px;align-items:start;font-size:13.5px;line-height:1.3;color:var(--fg,#f2f6fa);border-radius:6px;transition:background-color .6s,color .4s}
 .cbt-hud-obj li::before{content:"";width:9px;height:9px;margin-top:4px;border:1.5px solid var(--hud,#5dff9b);border-radius:2px;box-sizing:border-box}
 .cbt-hud-obj li[data-state=done]{color:var(--fg-dim,#a9b8c7)}
 .cbt-hud-obj li[data-state=done]::before{background:var(--hud,#5dff9b);border-color:var(--hud,#5dff9b);border-radius:50%}
@@ -27,7 +27,7 @@ export const CSS = `
 .cbt-hud-obj li[data-state=failed]::before{border-color:var(--warn,#ff5a3c);background:linear-gradient(45deg,transparent 42%,var(--warn,#ff5a3c) 42% 58%,transparent 58%)}
 .cbt-hud-obj li.cbt-hud-opt{color:var(--fg-dim,#a9b8c7)}
 .cbt-hud-obj li.cbt-hud-opt::before{border-style:dashed}
-.cbt-hud-obj li em{font:500 12px/1.4 var(--font-mono,monospace);font-style:normal;color:var(--hud,#5dff9b);white-space:nowrap}
+.cbt-hud-obj li em{font:500 12px/1.4 var(--font-mono,monospace);font-style:normal;color:var(--hud,#5dff9b);white-space:nowrap;margin-left:8px}
 .cbt-hud-obj li.cbt-hud-new{background:rgba(93,255,155,.16)}
 .cbt-hud-obj li.cbt-hud-new[data-state=failed]{background:rgba(255,90,60,.2)}
 .cbt-hud-obj-f{display:flex;justify-content:space-between;margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.1)}
@@ -95,7 +95,7 @@ export const CSS = `
 /* narrow + touch (classes set by seats.js) */
 .cbt-hud-narrow .cbt-hud-left{width:min(310px,calc(100vw - var(--cbt-side) - 72px))}
 .cbt-hud-narrow .cbt-hud-obj{padding:8px 11px 9px;--r:16px}
-.cbt-hud-narrow .cbt-hud-obj li{font-size:12px;gap:6px;grid-template-columns:11px 1fr auto}
+.cbt-hud-narrow .cbt-hud-obj li{font-size:12px;gap:6px;grid-template-columns:11px 1fr}
 .cbt-hud-narrow .cbt-hud-obj li::before{width:8px;height:8px;margin-top:3px}
 .cbt-hud-narrow .cbt-hud-obj-f{display:none}
 .cbt-hud-narrow .cbt-hud-cap{font-size:10.5px}
@@ -113,6 +113,45 @@ export const CSS = `
 .cbt-hud-compact .cbt-hud-obj-h{margin-bottom:4px}
 .cbt-hud-compact .cbt-hud-sub{font-size:12px;padding:4px 10px}
 .cbt-hud-compact .cbt-hud-radar{--r:16px}
+
+/* touch layout running a mission: seats come from the regions the touch layout publishes on <html>
+   (--inp-<name>-x/-y/-w/-h, viewport px; classes inp-mission / inp-radar / inp-subs). Fixed positioning, own region each. */
+html.inp-mission .cbt-hud-root.cbt-hud-touch .cbt-hud-left{position:fixed;left:var(--inp-cbt-x);top:var(--inp-cbt-y);width:var(--inp-cbt-w);max-height:var(--inp-cbt-h);
+  overflow:hidden;transform:none;align-items:flex-start;gap:5px}
+html.inp-mission .cbt-hud-touch .cbt-hud-lrow{max-width:100%}
+html.inp-mission .cbt-hud-touch .cbt-hud-stat{width:min(100%,232px)}
+html.inp-mission .cbt-hud-touch .cbt-hud-feed{max-width:100%}
+/* objectives chip: current objective · progress · timer on one line; tap to see the whole list (and tap again to fold) */
+html.inp-mission .cbt-hud-touch .cbt-hud-obj{--r:13px;display:flex;align-items:center;gap:8px;max-width:100%;padding:5px 11px 6px;pointer-events:auto;cursor:pointer;touch-action:manipulation;flex:0 1 auto}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj-h{order:2;margin:0;flex:none}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj-h .cbt-hud-cap{display:none}
+html.inp-mission .cbt-hud-touch .cbt-hud-timer{font-size:13px}
+html.inp-mission .cbt-hud-touch .cbt-hud-timer small{font-size:9.5px;margin-right:4px;letter-spacing:.1em}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj ul{order:1;flex:0 1 auto;min-width:0}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj li{display:none}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj li.cbt-hud-cur{display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:12.5px;line-height:1.25}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj li.cbt-hud-cur::before{flex:none;margin-top:0}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj li.cbt-hud-cur>span:first-child{overflow:hidden;text-overflow:ellipsis;min-width:0}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj li em{margin-left:0;font-size:11.5px}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj[data-more]::after{content:attr(data-more);order:3;flex:none;font:600 10.5px/1 var(--font-mono,monospace);color:var(--fg-dim,#a9b8c7)}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj-f{display:none}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open{display:block;padding:7px 11px 8px}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open::after{content:none}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open .cbt-hud-obj-h{margin-bottom:5px}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open .cbt-hud-obj-h .cbt-hud-cap{display:inline}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open li{display:grid;font-size:12px;white-space:normal;grid-template-columns:11px 1fr;gap:6px}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open li::before{width:8px;height:8px;margin-top:3px}
+html.inp-mission .cbt-hud-touch .cbt-hud-obj.cbt-hud-open .cbt-hud-obj-f{display:flex;margin-top:5px;padding-top:5px}
+html.inp-mission.inp-radar .cbt-hud-root.cbt-hud-touch .cbt-hud-radar{position:fixed;left:var(--inp-radar-x);top:var(--inp-radar-y);width:var(--inp-radar-w);height:var(--inp-radar-h);margin:0;flex:none}
+html.inp-mission.inp-subs .cbt-hud-root.cbt-hud-touch .cbt-hud-subs{position:fixed;left:var(--inp-subs-x);top:var(--inp-subs-y);width:var(--inp-subs-w);height:var(--inp-subs-h);bottom:auto;transform:none;
+  overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}
+html.inp-mission.inp-subs .cbt-hud-touch .cbt-hud-subs .cbt-hud-sub{text-align:center;-webkit-line-clamp:2;font-size:12.5px;padding:4px 10px 5px}
+html.inp-mission .cbt-hud-root.cbt-hud-touch .cbt-hud-pops{position:fixed;left:calc(var(--inp-clear-x) + var(--inp-clear-w) / 2);top:calc(var(--inp-clear-y) + 8px)}
+html.inp-mission .cbt-hud-root.cbt-hud-touch .cbt-hud-banner{position:fixed;left:calc(var(--inp-clear-x) + var(--inp-clear-w) / 2);top:calc(var(--inp-clear-y) + var(--inp-clear-h) / 2);
+  width:min(520px,var(--inp-clear-w));padding:12px 14px 11px}
+html.inp-mission .cbt-hud-touch .cbt-hud-banner h2{font-size:clamp(18px,3.4vw,30px)}
+html.inp-mission .cbt-hud-root.cbt-hud-touch .cbt-hud-hints{display:none}
+
 @media (prefers-reduced-motion:reduce){
   .cbt-hud-left,.cbt-hud-obj li,.cbt-hud-kill,.cbt-hud-pop,.cbt-hud-banner,.cbt-hud-hint,.cbt-hud-hints{transition:none!important}
   .cbt-hud-banner.cbt-hud-in{transform:translate(-50%,-50%)}

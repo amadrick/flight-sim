@@ -48,12 +48,52 @@
   score pops, mission-end banner (stays until the debrief screen opens), first-minute key hints (keyboard only;
   each fades when used).
 
+## Flight assist
+While `combat.assist.info.active`: the commanded nose (`assist.command`) is drawn as a steering reticle — open circle +
+centre dot, HUD green, projected at the gun cross's distance so the two register in every camera; on the screen edge
+with an arrow when off screen. The gun cross is the actual nose; a thin lead line joins them beyond ~3°. `gunAssist`
+turns the reticle white with four ticks and `AIM`. `info.limiting` → `MAX TURN` / `G LIMIT` / `TOO SLOW` (`OVERSPEED`
+when the speed limit is an overspeed) under the reticle, debounced 0.3 s; `pullUp` / 'ground' → a flashing `PULL UP`
+box with an up arrow in the SHOOT-cue slot (SHOOT suppressed), on at once, held 0.3 s. `autoThrottle` → `A/THR` chip
+in the stores panel. With mouse aim (`assist.aim.active`) the input module's DOM ring at the pointer is the reticle;
+the HUD then draws only the nose cross and the lead line. The overlay canvas sits above the glass panels (z 5) so
+no steering cue can hide under them.
+
+Energy cue: a short vertical tape just left of the gun cross. The centre tick is the fight speed
+(`info.fightSpeed`, the corner speed the auto-throttle holds; without it, the corner speed from `ai/fly.js profileOf`).
+The green band runs from 12 m/s below it to 22 m/s above it, and the caret marks the IAS (up = faster, outlined when
+pinned at an end). The caret is green inside the band, white when fast and amber when slow; `info.slow` (or IAS below
+0.8 × fight speed) adds an amber `SLOW` under the tape. It is hidden while PULL UP shows.
+
 ## Combat cameras
-Reads `combat.camera.mode`. In `missile` / `kill` / `victory` (not seen from the nose) the boresight-referenced layer is
+Reads `combat.camera.mode` (`fight`, the default mission chase view, is treated as plain chase; a peek reports `padlock`). In `missile` / `kill` / `victory` (not seen from the nose) the boresight-referenced layer is
 hidden (gun cross, funnel, pipper, seeker / lock rings, launch-zone scale, SHOOT cue, damage arcs) and so are the
 "turn this way" edge cues; world-projected markers, the target box and the warning box stay, plus a camera label at the
 top (`MISSILE CAM` with the missile's time to go, `KILL CAM`, `VICTORY`). In `padlock` everything stays and a nose /
 lift-vector cue is added (wings + lift line where the nose points, or a `NOSE` arrow on the screen edge).
+
+## Touch layout (regions from `src/input`)
+While the touch layout runs a mission (`html.inp-mission`, and `ctx.input.touch.layout.mission`), every panel sits in
+the region that layout publishes as `--inp-<name>-{x,y,w,h}` on `<html>`. The CSS for this is in `style.js`, scoped
+`html.inp-mission .cbt-hud-root.cbt-hud-touch`, and every seat is `position: fixed`:
+- `.cbt-hud-left` (objectives chip, hull line, kill feed) goes in `cbt`, clipped to it (`max-height`, `overflow:hidden`).
+- `.cbt-hud-radar` goes in `radar` when `html.inp-radar` is set; otherwise it stays in the left stack.
+- `.cbt-hud-subs` goes in `subs` when `html.inp-subs` is set, bottom-aligned with at most two lines; otherwise it stays
+  in the left stack.
+- `.cbt-hud-pops` sit at the top centre of `clear` and `.cbt-hud-banner` (mission end) at its centre.
+- `.cbt-hud-hints` are hidden.
+- Objectives become a one-line chip: the current objective (`li.cbt-hud-cur`), its progress, the timer and `+N` more.
+  Tapping it toggles `.cbt-hud-open` (the full list); the list folds again after 8 s.
+- Stores become a single `HULL` bar with the warning chips (`A/THR`, `FIRE`, `BINGO`, `NO MSL`…), because the dock
+  shows rounds, missiles and flares.
+- The canvas reads the same rectangles (re-read on `touch:layout`). Edge cues ride an ellipse between the strip and
+  the bottom of `clear`, and between the screen edge and the control clusters (dock, scope, fire, extras).
+- Warnings (`MISSILE` box, `ENEMY LOCK · callsign`, `BANDIT SIX`) and the camera label go in the top band between
+  the strip and the top-right buttons. When that band is too narrow, they go at the bottom of `cbt`.
+- The launch-zone scale becomes the horizontal bar under the target box, without a lock word: the ring colour and
+  SHOOT say it. The SHOOT / PULL UP slot stays above the `subs` region.
+- In `clear` the HUD draws only world-projected markers, the reticle and gun cross, the energy cue, the target box,
+  SHOOT / PULL UP and short pops.
 
 ## Layout
 All panel anchors live in `seats.js` (`SEATS` table + `seatMode` + `isCompact` + `applySeats`): *wide* (desktop),
@@ -61,8 +101,8 @@ All panel anchors live in `seats.js` (`SEATS` table + `seatMode` + `isCompact` +
 to the touch controls, so everything stacks on the upper left — [objectives | radar], a one-line stores strip, kill
 feed, subtitles). *compact* (height ≤ 440 px, e.g. phone landscape) shrinks the scope and collapses the stores panel
 to one line. In the cockpit the launch-zone scale becomes a short horizontal bar under the target box (the fighter
-HUD's altitude tape owns the right of centre). Edge cues ride an ellipse that stays above the data strip and, on touch,
-inside the right-edge buttons. Key hints (incl. `O` padlock) last 20 s of unblocked time or until each key is used;
+HUD's altitude tape owns the right of centre). Edge cues ride an ellipse that stays above the data strip
+(`ctx.hud.stripRect`). Key hints (incl. `O` padlock) last 20 s of unblocked time or until each key is used;
 never on touch.
 
 Hidden when no mission is active, while `ctx.menu.isOpen`, `combat.ui.isOpen`, `ctx.params.hud === false`, in the
