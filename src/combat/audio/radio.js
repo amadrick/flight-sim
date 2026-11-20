@@ -23,6 +23,7 @@ export function createRadio(ac, dest, opts = {}) {
   const speechOf = opts.speech === undefined ? getSpeech : () => opts.speech;
   let voiceOn = opts.voice !== false, volume = 1, cur = null, nextOk = 0, voices = null, voicesAt = -99;
   const rnd = opts.rng || Math.random;
+  const stats = { speechFallbacks: 0 };
 
   // static bed: band-limited hiss with slow crackle, opened while a line is on air
   const sN = noise(ac, 'white'), sB = BQ(ac, 'bandpass', 1800, 0.6), sH = BQ(ac, 'highpass', 400, 0.7), sL = BQ(ac, 'lowpass', 3400, 0.7), sG = G(ac, 0);
@@ -88,7 +89,7 @@ export function createRadio(ac, dest, opts = {}) {
       try {
         const u = new SpeechSynthesisUtterance(item.text); const v = pickVoice(ss, R); if (v) u.voice = v;
         u.pitch = R.pitch; u.rate = R.rate; u.volume = Math.max(0, Math.min(1, volume));
-        const me = cur; u.onend = u.onerror = () => { me.done = true; };
+        const me = cur; u.onend = u.onerror = () => { me.done = true; }; u.onstart = () => { me.started = true; };
         ss.speak(u); cur.speech = true; cur.end = t + 2.5 + est * 1.6;      // onend normally fires first; this is a safety net
         return;
       } catch { /* fall through to the murmur */ }
@@ -101,7 +102,7 @@ export function createRadio(ac, dest, opts = {}) {
     squelchOut(t, cur.R); cur = null; nextOk = t + 0.35;
   }
   return {
-    queue, pool,
+    queue, pool, stats,
     get speaking() { return !!cur; },
     get current() { return cur?.item || null; },
     /** queue a 'radio' event: { text, from, priority, role } */
@@ -116,6 +117,13 @@ export function createRadio(ac, dest, opts = {}) {
     update(now, hold) {
       if (hold) { if (cur) finish(now); return; }
       if (cur) {
+        // mobile browsers may accept speak() and never start (no voices yet, no user activation): after 1.5 s without
+        // onstart, cancel it and fall back to the procedural murmur under the squelch, for the line's estimated length
+        if (cur.speech && !cur.started && !cur.done && now - cur.t > 1.5) {
+          try { speechOf()?.cancel?.(); } catch {}
+          const est = speechSeconds(cur.item.text, cur.R.rate);
+          cur.speech = false; cur.end = now + est; murmur(now + 0.02, est, cur.R); stats.speechFallbacks++;
+        }
         const over = cur.speech ? (cur.done || now > cur.end) : now > cur.end;
         if (over) finish(now);
       }

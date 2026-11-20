@@ -5,7 +5,7 @@
 // Signals (optional, from index.js): { push } true while the player holds a lock or just scored a kill.
 //
 // The fight is a song: intro riff -> verse -> pre-chorus -> chorus -> (intro riff as interlude) -> verse -> pre ->
-// chorus 2 -> solo -> chorus 2 -> interlude -> verse ... The song position survives every mood flicker:
+// chorus -> solo -> chorus -> interlude -> verse ... The song position survives every mood flicker:
 //   * a lock or a kill (push) or the hero mood in a verse jumps to the pre-chorus at the next 4-bar phrase;
 //   * hero at the end of a chorus goes to the solo (once per chorus);
 //   * danger cuts in on the next bar; when it clears, the interrupted section resumes from its start;
@@ -22,7 +22,7 @@ import { chord, midi, pc, voiceLead, atOrAbove, allowedPcs, diatonicThird } from
 const VEL = { X: 1, x: 0.75, o: 0.45, g: 0.22, H: 0.95, M: 0.95, L: 0.95, h: 0.6, m: 0.6, l: 0.6 };
 const TOM = { H: 0, h: 0, M: 1, m: 1, L: 2, l: 2 };
 export const MOOD_GROUP = { calm: 'calm', tension: 'tension', fight: 'band', hero: 'band', danger: 'danger', victory: 'win', defeat: 'lose' };
-export const FORM = ['intro', 'verse', 'pre', 'chorus', 'intro', 'verse', 'pre', 'chorus2', 'solo', 'chorus2'];
+export const FORM = ['intro', 'verse', 'pre', 'chorus', 'intro', 'verse', 'pre', 'chorus', 'solo', 'chorus'];
 const LOOP_TO = 4, FRESH_BARS = 64;
 const LOUD = new Set(['band', 'danger']);
 
@@ -178,7 +178,7 @@ export function createArranger(cue) {
     if (cur.name === 'verse' && hot && (cur.bar + 1) % 4 === 0 && !last) return at(findForm('pre', cur.form));
     if (!last) return cont(cur);
     if (cur.name === 'verse' || (cur.name === 'intro' && cur.form >= LOOP_TO && hot)) return at(findForm('pre', cur.form));
-    if ((cur.name === 'chorus' || cur.name === 'chorus2') && mood === 'hero' && st.soloAfter !== cur.form) return { name: 'solo', bar: 0, form: 8, soloFrom: cur.form };
+    if (cur.name === 'chorus' && mood === 'hero' && st.soloAfter !== cur.form) return { name: 'solo', bar: 0, form: 8, soloFrom: cur.form };
     return at(nextForm(cur.form));
   }
 
@@ -224,7 +224,7 @@ export function createArranger(cue) {
       else if (st.ended && MOOD_GROUP[mood] !== st.ended) st.ended = null;
       if (d) {
         const g = S[d.name].group;
-        if (g === 'band') { st.form = d.form ?? st.form; st.sinceBand = 0; if (d.soloFrom !== undefined) st.soloAfter = d.soloFrom; if (d.name === 'chorus2' && cur?.name === 'solo') st.soloAfter = d.form; }
+        if (g === 'band') { st.form = d.form ?? st.form; st.sinceBand = 0; if (d.soloFrom !== undefined) st.soloAfter = d.soloFrom; if (d.name === 'chorus' && cur?.name === 'solo') st.soloAfter = d.form; }
         else st.sinceBand++;
         if (g === 'danger' && cur && S[cur.name].group === 'band') st.saved = { name: cur.name, form: cur.form };
         if (g !== 'danger' && g !== 'band') st.saved = null;

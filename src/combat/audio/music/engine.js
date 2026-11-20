@@ -1,13 +1,16 @@
 // Adaptive music engine (live side). Sections are pre-rendered into stems (render.js); this schedules them bar by bar
 // on the AudioContext clock: one band + one drum AudioBufferSourceNode per section entry, drum fills and the merge riser
 // as one-shots, crossfades on every cut. Per frame it does a few comparisons; nodes exist only for what is sounding.
+// A section whose stem is not rendered yet is played by the live fallback band (live.js) and handed over to the stem
+// at the next section boundary, so the music is never silent and starts on the next bar line on any device.
 //
 // createMusic(ac, dest, opts) -> { update(now, mood, sig), setCue(id), stop(fade), setVolume(v), setEnabled(on),
 //   setDuck(k), ready(), dispose(), info, stepDur, playing }
 // Works with a live AudioContext and with an OfflineAudioContext (the harness calls update() at suspend points).
 import { CUES, FILL_FROM } from './cues.js';
 import { createArranger } from './arranger.js';
-import { createStems, ORDER } from './render.js';
+import { getStems, ORDER } from './render.js';
+import { createLiveBand } from './live.js';
 import { G } from './synth.js';
 
 export const MUSIC_LEVEL = 0.2;         // music bus gain into the master (before the user's music volume)
@@ -16,7 +19,8 @@ const FADE_IN = 0.006;                  // ramp when a section starts mid-buffer
 
 export function createMusic(ac, dest, opts = {}) {
   let cue = CUES[opts.cue] || CUES.sweep, arr = createArranger(cue);
-  let stems = opts.stems || createStems(cue, { sr: opts.sr, log: opts.log ? (s) => info.log?.push({ msg: s }) : null });
+  let stems = opts.stems || getStems(cue.id, { profile: opts.profile });
+  let liveBand = null, liveIdle = 0;
   let barDur = 240 / cue.bpm, sd = barDur / 16;
   const LOOK = opts.lookahead ?? 0.3;
   const out = G(ac, 0), trim = G(ac, MUSIC_LEVEL); trim.connect(out); out.connect(dest);
@@ -24,7 +28,7 @@ export function createMusic(ac, dest, opts = {}) {
   let memoBar = -1, memoMood = null, memoPush = false, memoFill = null, memoEnter = false;
   let nextT = 0, curT = 0, cur = null, voice = null, fillDone = false, riserDone = false, silentBars = 0, started = false;
   const live = new Set();
-  const info = { cue: cue.id, section: null, bar: -1, mood: 'off', bars: 0, skipped: 0, playing: false, waiting: null, fills: 0, risers: 0, cuts: 0,
+  const info = { cue: cue.id, section: null, bar: -1, mood: 'off', bars: 0, skipped: 0, playing: false, waiting: null, fills: 0, risers: 0, cuts: 0, live: false, liveBars: 0, firstSoundAt: null,
     voices: 0, nodes: 0, cpu: { calls: 0, ms: 0, maxMs: 0 }, stems: stems.stats, log: opts.log ? [] : null };
   const clock = () => (globalThis.performance ? performance.now() : 0);
 
@@ -59,32 +63,39 @@ export function createMusic(ac, dest, opts = {}) {
   }
 
   // ---- bar scheduling --------------------------------------------------------------------------------------------
-  function fallbackFor(name) {
-    for (const n of [name, 'chorus', 'verse', 'intro', 'tension', 'calm']) if (stems.get(n) && cue.sections[n].group === cue.sections[name].group) return n;
-    return null;
+  function liveBar(nb, t, v) {
+    if (!liveBand) liveBand = createLiveBand(ac, trim);
+    liveBand.playBar(nb, t, sd, 0, 8);                          // the second half is scheduled mid-bar (fills)
+    v.second = false; info.liveBars++; liveIdle = 0;
   }
   function barStart(t) {
     const nb = arr.next(mood, sig);
     fillDone = riserDone = false;
     if (!nb) {
-      if (voice) { if (!(cur && cur.last && voice.for === cur.section)) cut(voice, t, 0.25); voice = null; }
-      cur = null; info.section = null; info.bar = -1;
+      if (voice) { if (voice.live) liveBand?.release(t); else if (!(cur && cur.last && voice.for === cur.section)) cut(voice, t, 0.25); voice = null; }
+      cur = null; info.section = null; info.bar = -1; info.live = false;
       if (++silentBars > 1) { info.playing = false; started = false; }
       return;
     }
     silentBars = 0;
     const contin = voice && cur && voice.for === nb.section && nb.index === cur.index + 1 && voice.bar + 1 < voice.bars;
-    if (contin) voice.bar++;
+    if (contin) { voice.bar++; if (voice.live) liveBar(nb, t, voice); }
     else {
-      const old = voice, ended = old && cur && cur.last && old.for === cur.section && old.bar + 1 >= old.bars;
-      const name = fallbackFor(nb.section);
-      if (name !== nb.section) stems.want(nb.section);
-      voice = name ? startSection(name, nb.index, t, nb.section) : null;
-      if (old && !ended) cut(old, t);                              // a section that finished rings out on its own tail
-      info.waiting = name === nb.section ? null : nb.section;
+      const old = voice, ended = old && !old.live && cur && cur.last && old.for === cur.section && old.bar + 1 >= old.bars;
+      if (stems.get(nb.section)) voice = startSection(nb.section, nb.index, t, nb.section);
+      else {                                                      // not rendered yet: play it live, hand over later
+        stems.want(nb.section);
+        voice = { live: true, for: nb.section, bar: nb.index, bars: cue.sections[nb.section].bars };
+        liveBar(nb, t, voice);
+      }
+      if (old) { if (old.live) { if (!voice.live) liveBand?.release(t); } else if (!ended) cut(old, t); }   // a finished section rings out
+      info.waiting = voice.live ? nb.section : null;
     }
-    cur = nb; curT = t; info.bars++; info.section = nb.section; info.bar = nb.index;
-    if (info.log) info.log.push({ t: +t.toFixed(3), section: nb.section, bar: nb.index, mood, playing: voice?.name || null });
+    if (!voice.live && liveBand && ++liveIdle > 4) { liveBand.dispose(t); liveBand = null; }
+    info.liveNodes = liveBand ? liveBand.nodes : 0;
+    if (info.firstSoundAt === null) info.firstSoundAt = t;
+    cur = nb; curT = t; info.bars++; info.section = nb.section; info.bar = nb.index; info.live = !!voice.live;
+    if (info.log) info.log.push({ t: +t.toFixed(3), section: nb.section, bar: nb.index, mood, playing: voice.live ? 'live' : voice.name });
   }
   function scheduleFill(name, tf) {
     const buf = stems.fill(name); if (!buf) return;
@@ -108,7 +119,7 @@ export function createMusic(ac, dest, opts = {}) {
       if (mood === 'off' || !enabled) return;
       if (pendingCue) { const c = pendingCue; pendingCue = null; api.setCue(c.id); }
       const first = firstFor(mood); if (!first) return;          // e.g. the victory tag already played
-      if (!stems.get(first)) { stems.want(first); info.waiting = first; return; }
+      if (!stems.get(first)) stems.want(first);                  // the live band covers it meanwhile
       level(now, 0.05); info.playing = true; started = true; nextT = now + 0.05; cur = null; voice = null; silentBars = 0;
     }
     if (now > nextT + barDur) { info.skipped += Math.floor((now - nextT) / barDur); nextT = now + 0.05; }   // stalled > 1 bar: re-sync
@@ -120,6 +131,12 @@ export function createMusic(ac, dest, opts = {}) {
     if (memoBar !== curT || memoMood !== mood || memoPush !== push) {
       memoBar = curT; memoMood = mood; memoPush = push;
       memoFill = arr.fillFor(mood, sig); memoEnter = arr.entering(mood, sig);
+    }
+    if (voice?.live && voice.second === false && now >= curT + 8 * sd - LOOK) {
+      voice.second = true;
+      const f = memoFill && FILL_FROM[memoFill] >= 8 ? memoFill : null;
+      liveBand?.playBar(cur, curT, sd, 8, 16, f ? arr.fills[f] : null, f ? FILL_FROM[f] : 16);
+      if (f) { fillDone = true; info.fills++; }
     }
     if (!fillDone && memoFill && now >= curT + 8 * sd - LOOK) {
       const t8 = curT + FILL_FROM[memoFill] * sd, t12 = curT + 12 * sd;
@@ -142,9 +159,8 @@ export function createMusic(ac, dest, opts = {}) {
     setCue(id) {
       const c = CUES[id]; if (!c || c === cue) return;
       if (info.playing) { pendingCue = c; return; }
-      stems.dispose();
       cue = c; arr = createArranger(cue); barDur = 240 / cue.bpm; sd = barDur / 16; info.cue = cue.id;
-      stems = createStems(cue, { sr: opts.sr }); info.stems = stems.stats;
+      stems = getStems(cue.id, { profile: opts.profile }); info.stems = stems.stats;   // cached per cue for the session
       stems.prepare(ORDER);
     },
     /** start rendering the current cue's stems (call at mission load) */
@@ -163,12 +179,14 @@ export function createMusic(ac, dest, opts = {}) {
       const t = ac.currentTime;
       out.gain.cancelScheduledValues(t); out.gain.setTargetAtTime(0, t, fade / 3);
       for (const v of live) for (const n of v.nodes) if (n.stop) { try { n.stop(t + fade * 2); } catch {} }
-      arr.reset(); voice = null; cur = null; info.playing = false; started = false; info.section = null;
+      liveBand?.release(t);
+      arr.reset(); voice = null; cur = null; info.playing = false; started = false; info.section = null; info.live = false;
     },
     dispose() {
       for (const v of [...live]) { for (const n of v.nodes) { try { n.stop?.(); } catch {} } untrack(v); }
+      liveBand?.dispose(); liveBand = null;
       try { out.disconnect(); } catch {}
-      stems.dispose(); info.playing = false;
+      info.playing = false;                                       // the stems stay cached for the next mission
     },
   };
   void started;

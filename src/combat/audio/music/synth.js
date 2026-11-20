@@ -90,7 +90,7 @@ export function makeChorus(ac, { rate = 0.8, depth = 0.0025, base = 0.012, mix =
 }
 
 // ---- drums --------------------------------------------------------------------------------------------------
-export function makeDrums(ac, bus, room, gateIn, white) {
+export function makeDrums(ac, bus, room, gateIn, white, { hats = 1 } = {}) {
   // kick: pitched sine thump + beater click, slightly saturated
   const kO = OSC(ac, 'sine', 50), kG = G(ac, 0), kSh = shaper(ac, driveCurve(1.6, 0), 'none'), kOut = G(ac, 0.78);
   chain(kO, kG, kSh, kOut, bus); kO.start();
@@ -105,9 +105,9 @@ export function makeDrums(ac, bus, room, gateIn, white) {
   const sB2 = OSC(ac, 'sine', 330), sB2G = G(ac, 0); chain(sB2, sB2G, sOut); sB2.start();
   sOut.connect(bus); const sRoom = G(ac, 0.55); sOut.connect(sRoom); sRoom.connect(room); const sGate = G(ac, 0.9); sOut.connect(sGate); sGate.connect(gateIn.in);
   // hats (closed/open share one voice so a closed hat chokes the open one), ride
-  const hF = BQ(ac, 'highpass', 7200, 0.7), hF2 = BQ(ac, 'peaking', 10500, 1.2, 5), hG = G(ac, 0), hOut = G(ac, 0.95);
+  const hF = BQ(ac, 'highpass', 7200, 0.7), hF2 = BQ(ac, 'peaking', 10500, 1.2, 5), hG = G(ac, 0), hOut = G(ac, 1.15 * hats);
   chain(white, hF, hF2, hG, hOut, bus);
-  const rF = BQ(ac, 'bandpass', 5200, 1.6), rF2 = BQ(ac, 'highpass', 3000, 0.7), rG = G(ac, 0), rOut = G(ac, 0.4);
+  const rF = BQ(ac, 'bandpass', 5200, 1.6), rF2 = BQ(ac, 'highpass', 3000, 0.7), rG = G(ac, 0), rOut = G(ac, 0.5 * hats);
   chain(white, rF, rF2, rG, rOut, bus);
   const rP = OSC(ac, 'sine', 3150), rPG = G(ac, 0); chain(rP, rPG, rOut); rP.start();
   // toms
@@ -163,9 +163,9 @@ export function makeGatedVerb(ac, out) {
  * low-passes at 4.8 kHz (24 dB/oct). Left and right are detuned differently, the right plays 9 ms late, panned hard.
  * Extras: slow vibrato on held chords, slides into a chord (e.sl semitones below), pick scrapes (e.i === 'scrape').
  */
-export function makeRhythmGuitar(ac, out, white, { drive = 14, os = '2x' } = {}) {
+export function makeRhythmGuitar(ac, out, white, { drive = 14, os = '2x', mono = false } = {}) {
   const curve = driveCurve(drive, 0.15);
-  const sides = [-1, 1].map((pan, side) => {
+  const sides = (mono ? [0] : [-1, 1]).map((pan, side) => {
     const lfo = OSC(ac, 'sine', side ? 4.3 : 4.7), vib = G(ac, 0); lfo.connect(vib); lfo.start();
     const strings = [0, 1, 2].map((k) => {
       const a = OSC(ac, 'sawtooth', 73, side ? 7 : -5), b = OSC(ac, 'sawtooth', 73, side ? -9 : 6), g = G(ac, 0.5);
@@ -211,11 +211,12 @@ export function makeRhythmGuitar(ac, out, white, { drive = 14, os = '2x' } = {})
         }
         S.vib.gain.setValueAtTime(0, t);
         if (!mute && dur > 0.9) tgt(S.vib.gain, 9, t + 0.45, 0.35);            // held chord: slow, shallow vibrato
-        S.palm.frequency.setValueAtTime(mute ? 900 : 5200, t);
-        if (mute) S.palm.frequency.setTargetAtTime(520, t + 0.01, 0.06);
+        // palm mutes: the low-pass closes fast but not all the way (it keeps a 1-3 kHz edge for small speakers)
+        S.palm.frequency.setValueAtTime(mute ? 1700 : 5200, t);
+        if (mute) S.palm.frequency.setTargetAtTime(760, t + 0.012, 0.05);
         tgt(S.pre.gain, e.v * (mute ? 0.9 : 1), t, 0.0012);
         tgt(S.pre.gain, e.v * (mute ? 0.3 : 0.45), t + 0.004, mute ? 0.07 : 1.2);
-        hit(S.pkG.gain, t, mute ? 0.15 : 0.25, 0.0008, 0.012);
+        hit(S.pkG.gain, t, mute ? 0.4 : 0.3, 0.0008, mute ? 0.018 : 0.012);
         tgt(S.gate.gain, mute ? 0.85 : 1, t, 0.002);
         tgt(S.gate.gain, 0, t + dur - 0.01, mute ? 0.012 : 0.05);
       }
@@ -312,6 +313,9 @@ export function makeBass(ac, out, white) {
   const lp = BQ(ac, 'lowpass', 600, 1.1), env = G(ac, 0), sh = shaper(ac, driveCurve(2.2, 0.05), 'none'), lvl = G(ac, 0.17);
   chain(mix, lp, env); subG.connect(env); chain(env, sh, BQ(ac, 'highpass', 35, 0.7), lvl, out);
   const pk = BQ(ac, 'bandpass', 1800, 1), pkG = G(ac, 0); chain(white, pk, pkG, env);
+  // overdriven mid layer (700 Hz-1.5 kHz) so the bass line reads on a phone speaker
+  const mhp = BQ(ac, 'highpass', 300, 0.7), msh = shaper(ac, driveCurve(7, 0.1), 'none'), mbp = BQ(ac, 'bandpass', 1000, 0.8), mG = G(ac, 0.5);
+  chain(env, mhp, msh, mbp, mG, lvl);
   return {
     trigger(e, t, sd) {
       const f = mtof(e.n), dur = Math.max(0.04, e.d * sd);
