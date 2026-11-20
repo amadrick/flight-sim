@@ -127,6 +127,8 @@ export async function createHud(ctx) {
     get stripRect() { return stripOn ? ext.rect : null; },
     /** The keyboard controls card is up. */
     get hintVisible() { return !!notices.hintVisible; },
+    /** Put the keyboard controls card away now (it is also never auto-shown while ctx.combat.active; F1 still opens it). */
+    dismissHint() { notices.dismissHint(); },
     toast(text, opts) { notices.toast(text, opts); },
     update(dt) {
       const realDt = num(ctx.time?.realDt, 1 / 60);

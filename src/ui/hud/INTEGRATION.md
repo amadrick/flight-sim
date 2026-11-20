@@ -80,3 +80,5 @@ rebuilt only on resize / font load; numbers come from memoised string caches (no
 - Touch missions: when the touch layout is in mission mode (`layout.mission`) the strip is drawn in `layout.hud` (a
   strip-sized box, top-left) even when it is short, and toasts / the warning chip start at `layout.toast` (under the combat
   panel region), so they never land on combat objectives, stores or the fire cluster.
+- `ctx.hud.dismissHint()` fades the keyboard controls card out now. The card is not auto-shown while `ctx.combat?.active`,
+  and an auto-shown card goes away as soon as a mission becomes active (F1 / `cmd help` still opens it on demand).

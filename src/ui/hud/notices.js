@@ -130,7 +130,9 @@ export function createNotices(ctx) {
       if (!ctx.params.test) { try { localStorage.setItem('skyward.hud.hint', String(n + 1)); } catch {} }
     }
   }
-  function showHint(life) { if (ctx.input?.touchEnabled) return; hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
+  // the auto card stays away in combat missions (it would cover the radio line and the objectives); F1 still brings it
+  const inCombat = () => !!ctx.combat?.active;
+  function showHint(life) { if (ctx.input?.touchEnabled || (life === HINT_AUTO && inCombat())) return; hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
   function hideHint() { hintT = -1; hint.classList.add('off'); hint.hidden = true; }
   /** F1 / help button: bring the card back, or put it away. */
   function toggleHint() {
@@ -204,6 +206,8 @@ export function createNotices(ctx) {
     onSession,
     toggleHint,
     get hintVisible() { return hintT >= 0 && hintT < hintLife; },
+    /** Fade the controls card out now (no-op when it is not up). */
+    dismissHint() { if (hintT >= 0 && hintT < hintLife) hintT = hintLife; },
     /** realDt: wall-clock seconds; show: overall visibility; p: ctx.player */
     update(realDt, show, p) {
       now += realDt;
@@ -221,6 +225,7 @@ export function createNotices(ctx) {
         if (reason !== lastReason) { lastReason = reason; crashReason.textContent = reason; }
       } else lastReason = null;
       if (p && !crashed) watch(p);
+      if (hintT >= 0 && hintLife === HINT_AUTO && hintT < hintLife && inCombat()) hintT = hintLife;   // a mission began
       if (hintT >= 0) {
         // the card's clock only runs while flying (not paused), so it is still there after a pause at the start
         if (!ctx.time?.paused) hintT += realDt;

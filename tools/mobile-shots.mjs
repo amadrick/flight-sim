@@ -264,7 +264,7 @@ async function touchTest() {
     const gun = M.fire.gun;
     await down(1, M.home.x, M.home.y); await move(1, M.home.x + M.stickR * 0.7, M.home.y);
     await down(2, ...ctr(gun)); await step(2);
-    const g1 = await page.evaluate(() => ({ acts: (window.__acts || []).slice(), trig: !!window.__sim.ctx.combat?.input?.trigger, roll: window.__sim.ctx.controls.roll }));
+    const g1 = await page.evaluate(() => ({ acts: (window.__acts || []).slice(), trig: !!window.__sim.ctx.combat?.input?.trigger, roll: window.__sim.ctx.input.touch.raw.x }));   // raw: the combat assist rewrites ctx.controls in missions
     check('GUN held while the stick is held (two right-side fingers)', g1.roll > 0.3 && (own ? g1.acts.includes('gun:true') : (g1.trig || g1.acts.includes('gun:true'))), g1);
     await upAll(); await step(1);
     for (const id of ['msl', 'tgt', 'flr']) { await down(3, ...ctr(M.fire[id])); await upAll(); await step(1); }
