@@ -345,6 +345,22 @@ Forests (requested by the tree agent): with `VEG_CANOPY` the surface's own paint
 canopy draws its crown relief); floor shade under 3-D trees 0.5 -> 0.7 (trees draw contact shadows); a stand mosaic
 (410 m / 110 m noise: older taller stands darker, young ones lighter, yellower) and a shaded stand edge from afar.
 
+Low-eye grain (`surface.glsl.js terrSward`, round 5b): beyond (and under) the 3-D blades and crop plants the ground
+draws the blades / stalks as a grain in camera-centred (azimuth, log range) cells - an upright blade of height H at
+range r hides the ground from r to r hc / (hc - H), so in log range every blade is one cell high; 2 staggered layers x
+2 rows composited far to near, filtered against the pixel, normalised to mean 1 (the far colour does not change).
+Applied to airfield turf (H = sward height), natural grass (0.3 m) and standing crops (H = crop height as the grass map
+gives it, `gCropH`; ears on ripe cereal and hay). It fades where a blade is under ~2 px high and with range (a cell many
+plants wide), only below 60 m above the ground. Into a low sun the crop grain darkens (shaded stalk sides, as the
+3-D plants show). Because the grain stands as high as the plants, the crop plants now keep ~full height to the ring
+edge (no dome, no rim). The grain is fixed to the camera's frame: it does not swim when the view turns, only with
+travel (pixel-scale, under the world-anchored clumps). Uniform `uTerrNear` (x = radians per pixel, set by index.js).
+Cost: ~4 integer hashes, 1 atan, 1 log, 2 pow per turf / grass / crop fragment near the ground; nothing from altitude.
+Also: crop gap fraction follows the view, (gap from above)^(1 / cos view zenith) - no soil between the rows seen across
+a field; rows, drill passes and tramlines are filtered against the footprint across them (sharp converging lines
+looking along them instead of a blur); bales scattered irregularly (no stipple lattice from altitude); field-margin
+tufts (veg/grass.js) shaded in their own depth.
+
 Switches: `cropbrdf=0` (classic Lambert crops), `cropPlants=0` (no 3-D crop), `blades=0`, `turf=0`, `turfbrdf=0`,
-`ground=classic`. Debug (tools only): `blDbg=1|2|3` (blades: normal up / albedo / lighting panels), `cropDbg=1|2` (crop
+`sward=0` (no low-eye grain), `ground=classic`. Debug (tools only): `blDbg=1|2|3` (blades: normal up / albedo / lighting panels), `cropDbg=1|2` (crop
 everywhere / show the grass map), `grDbg=1..4` (grass map forced outputs).
