@@ -275,9 +275,9 @@ export function createTouchControls(ctx, h) {
     if (sub !== undefined && sub !== b.subText) { b.subText = sub; b.sub.textContent = sub; }
   }
   function update(dt) {
+    if (coachT > 0) { coachT -= dt; if (coachT <= 0) el.classList.remove('coach'); }   // runs while hidden too
     if (!shown) return;
     relayout();
-    if (coachT > 0) { coachT -= dt; if (coachT <= 0) el.classList.remove('coach'); }
     const t = c.throttle, ab = h.hasAB();
     if (t !== lastThr || ab !== lastAB) {
       lastThr = t;

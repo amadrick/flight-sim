@@ -360,7 +360,7 @@ export async function createInput(ctx) {
     input.zoomDelta = open ? 0 : -mouse.zoomPend; mouse.zoomPend = 0;
     c.zoom = clamp(approach(c.zoom + input.zoomDelta * 0.25, 0, 3 * dt), -1, 1);
 
-    if (touchVisible) touchUI.update(dt);
+    if (touchUI) touchUI.update(dt);
   }
 
   function dispose() {
