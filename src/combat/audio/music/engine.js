@@ -6,7 +6,7 @@ import { createArranger } from './arranger.js';
 import { createClock } from './clock.js';
 import { G, BQ, noise, makeReverb, makePingPong, makeGatedVerb, makeDrums, makeRhythmGuitar, makeLeadGuitar, makeCleanGuitar, makeBass, makeSynthBass, makePad, makeArp, makeRiser } from './synth.js';
 
-export const MUSIC_LEVEL = 0.28;        // music bus gain into the master (before the user's music volume)
+export const MUSIC_LEVEL = 0.17;        // music bus gain into the master (before the user's music volume)
 
 export function createMusic(ac, dest, opts = {}) {
   let cue = CUES[opts.cue] || CUES.sweep;

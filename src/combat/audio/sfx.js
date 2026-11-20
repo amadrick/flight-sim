@@ -44,9 +44,9 @@ export function gunVoice(ac, pool, dest, t, o = {}) {
   const pulse = ac.createOscillator(); pulse.setPeriodicWave(pulseWave(ac, heavy));
   const f0 = rof * (o.spin0 ?? 0.45); pulse.frequency.setValueAtTime(f0, t); pulse.frequency.setTargetAtTime(rof, t, o.spinTc ?? 0.1);
   // punch: the firing-rate fundamental and its first partials (the "brrrt" body, below ~250 Hz)
-  const punchF = BQ(ac, 'lowpass', heavy ? 210 : 260, 1.2), punch = G(ac, heavy ? 1.3 : 0.9);
+  const punchF = BQ(ac, 'lowpass', heavy ? 210 : 260, 1.2), punch = G(ac, heavy ? 1.0 : 1.1);
   // body: low-mids
-  const bodyF = BQ(ac, 'bandpass', heavy ? 520 : 750, 0.7), body = G(ac, 0.5);
+  const bodyF = BQ(ac, 'bandpass', heavy ? 520 : 750, 0.7), body = G(ac, 0.75);
   // bite: noise gated by every round (ring-modulated by the pulse train), high-passed: the crack of each shot
   const nz = nsrc(ac, 'white', t), biteHP = BQ(ac, 'highpass', heavy ? 1500 : 2000, 0.7), biteP = BQ(ac, 'peaking', heavy ? 2800 : 3800, 1, 6), am = G(ac, 0), bite = G(ac, far ? 0.25 : heavy ? 0.9 : 1.1);
   nz.connect(biteHP); biteHP.connect(biteP); biteP.connect(am); pulse.connect(am.gain); am.connect(bite);
@@ -54,13 +54,13 @@ export function gunVoice(ac, pool, dest, t, o = {}) {
   const wh = OSC(ac, 'triangle', rof * 6.8), whF = BQ(ac, 'bandpass', rof * 6.8, 4), whG = G(ac, 0);
   wh.frequency.setValueAtTime(f0 * 6.8, t); wh.frequency.setTargetAtTime(rof * 6.8, t, o.spinTc ?? 0.1);
   wh.connect(whF); whF.connect(whG);
-  const sum = G(ac, 1), sh = ac.createWaveShaper(); sh.curve = driveCurve(heavy ? 2.6 : 1.8, 0.05);
+  const sum = G(ac, 1), sh = ac.createWaveShaper(); sh.curve = driveCurve(heavy ? 4.5 : 3.6, 0.05);
   const out = G(ac, 0), lp = BQ(ac, 'lowpass', far ? Math.min(o.cutoff || 3000, 6000) : 14000, 0.5), hp = BQ(ac, 'highpass', 30, 0.7);
   pulse.connect(punchF); punchF.connect(punch); punch.connect(sum);
   pulse.connect(bodyF); bodyF.connect(body); body.connect(sum);
   bite.connect(sum); whG.connect(sum);
   sum.connect(sh); sh.connect(lp); lp.connect(hp); hp.connect(out); out.connect(dest);
-  out.gain.setValueAtTime(0.0001, t); out.gain.linearRampToValueAtTime(0.42 * lvl, t + 0.015);
+  out.gain.setValueAtTime(0.0001, t); out.gain.linearRampToValueAtTime(1.5 * lvl, t + 0.015);
   if (!far) { whG.gain.setValueAtTime(0, t); whG.gain.linearRampToValueAtTime(0.05, t + 0.05); whG.gain.setTargetAtTime(0.02, t + 0.1, 0.2); }
   pulse.start(t); wh.start(t);
   let stopped = false;
