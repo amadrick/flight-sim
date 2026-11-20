@@ -21,6 +21,7 @@ import {
   shadowBakeFragment, weatherBakeFragment, CIRRUS_BAKE_FRAG,
 } from './shaders.js';
 import { createCloudMultiScatter } from '../neural/cloud-ms.js';
+import { CLOUD_MS_MODEL_R7 } from '../neural/cloud-ms-weights-r7.js';
 
 const FALLBACK_ATMOSPHERE_GLSL = /* glsl */`
 vec3 atmSunIlluminance(vec3 p) { return uSunColor; }
@@ -126,7 +127,9 @@ export async function createClouds(ctx) {
   if (raw.clMs !== '0' && raw.scatter !== 'classic') {
     try {
       const reff = Math.min(16, Math.max(6, 12 * Math.cbrt(150 / P.dropletN)));
-      msModel = createCloudMultiScatter({ reff });
+      // round seven (?clMs7=0: the round-five weights): refitted with the path-traced light of exported GAME fields
+      // (tools/neural/clouds gen.py --round 3), whose taps are the shader's own cheap density
+      msModel = createCloudMultiScatter({ reff, model: dbg('clMs7', 1) > 0 ? CLOUD_MS_MODEL_R7 : null });
     } catch (e) { console.warn('[clouds] learned multiple scattering unavailable', e); msModel = null; }
   }
   U.uClMs = v4(dbg('clMsN', 2), dbg('clMsDetail', 0.5), 0, 0);

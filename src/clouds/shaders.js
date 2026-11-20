@@ -650,6 +650,7 @@ ${msGLSL ? `
 // density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
 #define CL_MS5 1
 ${/float\s+cloudMsForwardPeak\s*\(\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float/.test(msGLSL) ? '#define CL_MS_AUREOLE 1' : ''}
+vec3 clDbgTap = vec3(0.0);
 vec4 clMsWx = vec4(0.0); float clMsLod = 1.0; vec3 clMsP0 = vec3(0.0); float clMsOff = 0.0, clMsOffR = 600.0;
 // (round six b: the taps see the cheap surface moved by the sample's own bubble displacement, as the light march does)
 float clMsSigma(vec3 p) { vec4 info; clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
@@ -1143,6 +1144,7 @@ void main() {
             vec3 tU = cloudMsTapSegments(pa, vec3(0.0, 1.0, 0.0)), tD = cloudMsTapSegments(pa, vec3(0.0, -1.0, 0.0));
             vec3 tF = cloudMsTapSegments(pa, rd);
             msLast = cloudMsLight(tauSun, -log(max(T, 1e-30)), uClLightDir.y, cosT, tU, tD, tF);
+            clDbgTap = vec3(dot(tU, vec3(1.0)), dot(tD, vec3(1.0)), dot(tF, vec3(1.0)));
           }
           #ifdef CL_MS_AUREOLE
           float msFwd = cloudMsForwardPeak(tauSun, msPhase.g, cosT);   // (v2: with the aureole near the sun)
@@ -1169,6 +1171,7 @@ void main() {
           vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
           #endif
           #ifdef CL_MS5
+          if (uClDet3.x > 10.5) S = clDbgTap; else                                                        // round seven debug: summed taps up, down, fwd
           if (uClDet3.x > 9.5) S = vec3(min(tauSun, 60.0), min(-log(max(T, 1e-30)), 60.0), 0.0); else    // round seven debug: tauSun, tauCam
           if (uClDet3.x > 7.5) S = E * msLast.x * jK * occM.x + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;    // round seven debug: all multiple scattering
           else if (uClDet3.x > 6.5) S = E * (msPhase * exp(-tauSun) + msFwd) * occM.x; else                    // round seven debug: single scattering

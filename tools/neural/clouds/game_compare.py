@@ -66,7 +66,13 @@ def main():
         if '--ss' in sys.argv: return report(gL, gA, z['ss'], z['opac'], prefix, W, H, lum)       # single scattering only
         if '--tau' in sys.argv:        # opacity-weighted optical depth toward the sun (game: clDbg=10, red channel)
             gL = np.stack([gL[..., 0]] * 3, -1); return report(gL, gA, z['tau'], z['opac'], prefix, W, H, lambda c: c[..., 0])
+        if '--ms' in sys.argv and 'ms_sun' in z:
+            return report(gL, gA, z['ms_sun'] + z['ms_sky'] * sky + z['ms_gnd'] * gnd, z['opac'], prefix, W, H, lum)
         if '--ms' in sys.argv: return report(gL, gA, z['ref'] - z['ss'], z['opac'], prefix, W, H, lum)
+        if 'ms_sun' in z:      # re-light the cached reference with this run's sky / ground radiance
+            ref = z['ss'] + z['ms_sun'] + z['ms_sky'] * sky + z['ms_gnd'] * gnd
+            if '--sunonly' in sys.argv: ref = z['ss'] + z['ms_sun']
+            return report(gL, gA, ref, z['opac'], prefix, W, H, lum)
         return report(gL, gA, z['ref'], z['opac'], prefix, W, H, lum)
     origin = (f['x0'] - cam[0], f['base'], f['z0'] - cam[2])
     sc = pt.Scene(sig, dx, origin, name='game')
@@ -120,11 +126,13 @@ def main():
     pP, pD, pix = np.array(pP), np.array(pD), np.array(pix)
     res = pt.estimate(sc, ph, pP, pD, nA=48, nB=16, seed0=17)
     Sms = res[:, 0:3] + res[:, 3:6] * sky + res[:, 6:9] * gnd
-    L_ms = np.stack([np.bincount(pix, Sms[:, c], N) / spp for c in range(3)], 1) * opac[:, None]
+    acc = lambda v: (np.stack([np.bincount(pix, v[:, c], N) / spp for c in range(3)], 1) * opac[:, None]).reshape(H, W, 3)
+    L_ms = acc(Sms).reshape(-1, 3)
+    parts = dict(ms_sun=acc(res[:, 0:3]), ms_sky=acc(res[:, 3:6]), ms_gnd=acc(res[:, 6:9]))
     ref = (L_ss + L_ms).reshape(H, W, 3)
     opac = opac.reshape(H, W)
     L_tau = np.bincount(ri, w * np.minimum(ts_, 60.0), N).reshape(H, W)
-    np.savez_compressed(prefix + '_ref.npz', ref=ref, opac=opac, ss=L_ss.reshape(H, W, 3), tau=np.stack([L_tau] * 3, -1))
+    np.savez_compressed(prefix + '_ref.npz', ref=ref, opac=opac, ss=L_ss.reshape(H, W, 3), tau=np.stack([L_tau] * 3, -1), **parts)
     return report(gL, gA, ref, opac, prefix, W, H, lum)
 
 
