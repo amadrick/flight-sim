@@ -1,0 +1,911 @@
+// One AI pilot: perception → decisions (orders, target, BFM manoeuvre) → steering request → safety guard → controls.
+// Flies the real 6-DOF flight model through entity.controls exactly like a human, and uses combat.weapons the same way.
+// No allocations in update(): every vector / record is created once per pilot (or module-wide scratch).
+import * as THREE from 'three';
+import { clamp, lerp, G0, headingVec, DEG } from '../util.js';
+import { createFlightController, profileOf, turnRadius } from './fly.js';
+import {
+  classify, pursuitPoint, noseAimDir, losFeedForward, resolveOffset, formationSlot, closestApproach, interceptPoint, energyHeight,
+} from './geom.js';
+import { predictRecovery, terrainAhead } from './safety.js';
+import { makeSkill, PERSONALITIES } from './skill.js';
+import { CALL_GAP } from './radio.js';
+
+const UP = new THREE.Vector3(0, 1, 0);
+// module-wide scratch (pilots update one at a time; nothing here survives a call)
+const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), D = new THREE.Vector3(), E = new THREE.Vector3();
+const CA = { t: 0, miss: 0 }, REC = { clear: 0, at: 0, ground: 0 }, RS = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, roll: 0, psi: 0 };
+const RP = { nz: 4, rollRate: 3, climb: 0.3, turn: 0, horizon: 12, dt: 0.4, delay: 0.1 };
+const DISTS = [400, 1000, 2000, 3500, 5500], FRAC = [0.15, 0.4, 0.8, 1.4, 2.2];
+const SOL = { point: new THREE.Vector3(), tof: 0, range: 0, inRange: false };
+const FIGHT_MODES = new Set(['pursuit', 'lead', 'pure', 'lag', 'guns', 'yoyo-high', 'yoyo-low', 'lag-roll', 'scissors', 'break', 'jink', 'extend',
+  'merge', 'vertical', 'split-s', 'defend-missile', 'crank', 'reattack', 'bugout']);
+export const isFightMode = (m) => FIGHT_MODES.has(m);
+
+/**
+ * createPilot(combat, team, entity, { skill, order, personality }) → pilot. `team` is the shared AI team service
+ * (target spreading, call bookkeeping) from index.js.
+ */
+export function createPilot(combat, team, e, o = {}) {
+  const rng = combat.rng;
+  const skill = clamp(o.skill ?? e.skill ?? 0.5, 0, 1);
+  const personality = PERSONALITIES.includes(o.personality) ? o.personality
+    : PERSONALITIES.includes(o.order?.personality) ? o.order.personality
+      : PERSONALITIES[Math.floor(rng() * PERSONALITIES.length) % PERSONALITIES.length];
+  const sk = makeSkill(skill, personality, rng);
+  const prof = profileOf(e.def, e.sim);
+  const fc = createFlightController(e, prof);
+  const gFight = Math.min(prof.gMax * sk.gUse, prof.fbw ? prof.fcsNzMax : prof.gMax * 0.9);
+
+  // ---- persistent per-pilot state
+  const geo = { range: 0, closure: 0, ata: 0, aa: 0, threatAta: 0, hca: 0, dAlt: 0, situation: 'neutral' };
+  const ageo = { range: 0, closure: 0, ata: 0, aa: 0, threatAta: 0, hca: 0, dAlt: 0, situation: 'neutral' };
+  const tmpGeo = { range: 0, closure: 0, ata: 0, aa: 0, threatAta: 0, hca: 0, dAlt: 0, situation: 'neutral' };
+  const want = { dir: new THREE.Vector3(1, 0, 0), g: 3, gain: 1.4, ff: new THREE.Vector3(), useFF: false, spd: 200, ab: true, brake: true,
+    direct: false, nz: 1, bank: 0, fire: false, minLever: 0 };
+  const off = { x: 0, y: 0, z: 0 };
+  const slot = new THREE.Vector3(), lastKnown = new THREE.Vector3(), home = new THREE.Vector3().copy(e.state.position), orbitC = new THREE.Vector3();
+  const manDir = new THREE.Vector3(), aim = new THREE.Vector3(), ffv = new THREE.Vector3(), escDir = new THREE.Vector3();
+  const mslots = [];                                   // missile threat memory: { m, onset, seen }
+  for (let i = 0; i < 6; i++) mslots.push({ m: null, onset: 0, seen: false });
+  const enemies = [], friends = [];
+  const lastCall = Object.create(null);
+  let order = o.order || { type: 'engage' };
+  let thinkT = rng() * 0.3, senseT = rng() * 0.2, safeT = rng() * 0.1, floorT = rng() * 0.5;
+  let activity = 'cruise', man = '', manT = 0, manSide = 1, manChoice = '', lockMan = 0;
+  let attacker = null, attackerOnset = -1, gunOnset = -1, missile = null, missileTgo = 99, missileOnset = 0;
+  let targetSince = 0, lastTarget = null, lastTally = null, fighting = false, wasFighting = false;
+  let aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
+  let flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
+  let extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1;
+
+  const pilot = {
+    entity: e, skill, personality, mode: 'cruise', sub: '', profile: prof, tuning: sk,
+    /** debugging / tools: current steering request and safety state */
+    debug: { want, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; } },
+    setOrder(ord) {
+      order = ord || { type: 'engage' };
+      if (order.type === 'orbit' && !order.center) orbitC.copy(e.state.position);
+      if (order.type === 'patrol') order.index = order.index || 0;
+      thinkT = 0;
+    },
+    get order() { return order; },
+    update,
+    /** notification from the team service (index.js) */
+    onKill(victim) { if (victim.kind === 'aircraft') call('splash', victim, true); },
+    onDamage(amount, source) {
+      if (!e.alive) return;
+      call('hit', source || null);
+      const f = hpFrac();
+      if (f < 0.3 && !maydaySent) { maydaySent = true; call('mayday', source || null, true); }
+    },
+  };
+  pilot.setOrder(order);
+
+  function hpFrac() { return e.maxHp ? clamp((e.hp ?? e.maxHp) / e.maxHp, 0, 1) : 1; }
+  function call(name, target = null, force = false) {
+    const t = combat.clock, gap = CALL_GAP[name] ?? 10;
+    if (!force && lastCall[name] != null && t - lastCall[name] < gap) return;
+    if (!force && lastCall._any != null && t - lastCall._any < 1.2) return;
+    lastCall[name] = t; lastCall._any = t;
+    combat.events.emit('ai:call', { entity: e, call: name, target: target || null });
+  }
+  function gauss() { let u = rng(); if (u < 1e-9) u = 1e-9; return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
+  const ground = (x, z) => combat.ctx.world.groundHeightAt(x, z);
+  function aglAt() { return e.state.position.y - ground(e.state.position.x, e.state.position.z); }
+
+  // =====================================================================================================  update
+  function update(dt) {
+    if (!e.alive || !e.state || e.state.crashed || !(dt > 0)) return;
+    const s = e.state;
+    if ((senseT -= dt) <= 0) { senseT = 0.2; sense(); }
+    if ((thinkT -= dt) <= 0) { thinkT = sk.think * (0.8 + 0.4 * rng()); think(); }
+    manT -= dt; lockMan -= dt; mistakeT -= dt; lostSightT -= dt;
+    // ---- default request
+    want.direct = false; want.useFF = false; want.fire = false; want.ab = true; want.brake = true; want.minLever = 0;
+    want.g = 3; want.gain = 1.3;
+    act(dt);
+    guard(dt);
+    // ---- fly
+    if (want.direct) fc.direct(want.nz, want.bank, want.g);
+    else fc.steer(want.dir, want.g, want.gain, want.useFF ? want.ff : null);
+    fc.speed(want.spd, want.ab, want.brake, want.minLever);
+    fc.apply(dt);
+    // ---- weapons
+    const W = combat.weapons;
+    if (W && e.loadout) {
+      if (firing !== want.fire) { firing = want.fire; if (firing) call('guns', e.target); }
+      W.setTrigger(e, want.fire);
+    }
+    if (s.ias < 1) return;
+  }
+
+  // =====================================================================================================  sense
+  // threats: missiles guiding on us, aircraft in the rear quarter pointing at us
+  function sense() {
+    const W = combat.weapons, s = e.state, t = combat.clock;
+    // ---- missiles
+    for (const sl of mslots) if (sl.m && (!sl.m.alive || sl.m.target !== e)) { sl.m = null; sl.seen = false; }
+    const list = W?.missiles || [];
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m.alive || m.target !== e) continue;
+      let sl = null;
+      for (const q of mslots) if (q.m === m) { sl = q; break; }
+      if (sl) continue;
+      for (const q of mslots) if (!q.m) { sl = q; break; }
+      if (!sl) break;
+      sl.m = m; sl.onset = t;
+      // radar shots ring the RWR; IR shots are passive: seen with a probability (missile warning / eyes)
+      const seeker = m.spec?.seeker || m.type || 'ir';
+      sl.seen = seeker === 'radar' ? rng() < 0.6 + 0.4 * skill : rng() < sk.seeIr;
+      sl.seenAt = t + (sl.seen ? 0 : 1e9);
+    }
+    // late detection of an unseen IR shot when it gets close (the smoke trail)
+    missile = null; missileTgo = 99;
+    for (const q of mslots) {
+      if (!q.m) continue;
+      const m = q.m;
+      A.copy(m.state.position).sub(s.position);
+      const r = A.length();
+      if (!q.seen && r < 1800 + 2500 * skill && rng() < 0.3 + 0.5 * skill) { q.seen = true; q.onset = t; }
+      if (!q.seen || t - q.onset < sk.reaction * 0.8) continue;
+      B.copy(m.state.velocity).sub(s.velocity);
+      const closing = -B.dot(A) / Math.max(r, 1);
+      const tgo = closing > 30 ? r / closing : 40;
+      if (tgo < missileTgo) { missileTgo = tgo; missile = m; missileOnset = q.onset; }
+    }
+    // ---- attackers: enemies behind us with their nose on us
+    const prev = attacker;
+    attacker = null;
+    let best = 0;
+    combat.world.enemiesOf(e, enemies);
+    for (let i = 0; i < enemies.length; i++) {
+      const x = enemies[i];
+      if (!x.state) continue;
+      classify(e, x, tmpGeo);
+      if (tmpGeo.range > 6000) continue;
+      if (tmpGeo.threatAta > 50 * DEG) continue;
+      // in front of us we see them anyway; in the rear quarter it depends on the lookout (check six)
+      const behind = tmpGeo.ata > 100 * DEG;
+      const score = (1 - tmpGeo.range / 6000) * (1 - tmpGeo.threatAta / (50 * DEG)) * (behind ? 1.4 : 0.7) + (x.target === e ? 0.4 : 0);
+      if (score > best) { best = score; attacker = x; }
+    }
+    if (attacker && attacker !== prev) {
+      // spotting delay: rear-quarter attackers are noticed later by poor pilots
+      classify(e, attacker, ageo);
+      const behind = ageo.ata > 100 * DEG;
+      attackerOnset = t + (behind && rng() > sk.checkSix ? 1.5 + 2 * (1 - skill) : 0);
+      if (behind && ageo.range < 3000) call('on-my-six', attacker);
+    }
+    if (attacker) {
+      classify(e, attacker, ageo);
+      const gunsThreat = ageo.range < 1700 && ageo.threatAta < 12 * DEG;
+      if (gunsThreat) { if (gunOnset < 0) gunOnset = t; } else gunOnset = -1;
+    } else gunOnset = -1;
+  }
+
+  // =====================================================================================================  think
+  function think() {
+    const t = combat.clock;
+    const W = combat.weapons;
+    const hp = hpFrac();
+    const dmg = e.sim?.damage;
+    bugout = order.type !== 'flee' && order.type !== 'rtb' && (hp < sk.bugout || (dmg && (dmg.thrust < 0.55 || dmg.ctrl < 0.55)));
+    // ---- what are we doing overall
+    const ot = order.type;
+    let wantFight = false, autoTarget = true;
+    if (order.passive) activity = 'passive';
+    else if (ot === 'flee' || ot === 'rtb') activity = 'flee';
+    else {
+      if (ot === 'engage') { wantFight = true; activity = 'fight'; }
+      else if (ot === 'intercept') {
+        const tg = order.target;
+        if (tg && tg.alive) {
+          const r = tg.state.position.distanceTo(e.state.position);
+          if (r < (order.engageRange ?? 15000) || fighting) { wantFight = true; activity = 'fight'; } else activity = 'intercept';
+        } else { wantFight = true; activity = 'fight'; }
+      } else if (ot === 'escort') {
+        const L = order.leader;
+        if (!L || !L.alive) { wantFight = true; activity = 'fight'; }
+        else {
+          // the wingman joins the fight when the leader is in one, or an enemy comes close to the pair
+          const lp = L.pilot;
+          const leaderFighting = (lp && isFightMode(lp.mode)) || !!(L.target && L.target.alive && L.target.kind === 'aircraft');
+          const near = combat.world.nearestEnemy(L, order.engageRange ?? 14000);
+          const threatened = !!near && (near.target === L || near.target === e || near.state.position.distanceTo(L.state.position) < 9000);
+          if (!order.weaponsHold && (leaderFighting || threatened || (fighting && near))) { wantFight = true; activity = 'fight'; }
+          else activity = 'formation';
+        }
+      } else {
+        // patrol / orbit / cruise: weapons free inside the engagement radius unless told to hold
+        const near = order.weaponsHold ? null : combat.world.nearestEnemy(e, order.engageRange ?? (ot === 'cruise' ? 12000 : 20000));
+        if (near) { wantFight = true; activity = 'fight'; } else activity = ot === 'patrol' || ot === 'orbit' ? ot : 'cruise';
+      }
+    }
+    if (bugout && activity === 'fight') activity = 'bugout';
+    // ---- target
+    if (wantFight) {
+      const forced = (ot === 'engage' || ot === 'intercept') && order.target && order.target.alive ? order.target : null;
+      e.target = forced || selectTarget();
+      if (!e.target) { wantFight = false; activity = ot === 'escort' && order.leader?.alive ? 'formation' : 'cruise'; }
+    } else if (activity !== 'passive' && activity !== 'flee' && activity !== 'bugout') e.target = null;
+    void autoTarget;
+    fighting = activity === 'fight';
+    const T = e.target && e.target.alive ? e.target : null;
+    if (T !== lastTarget) {
+      targetSince = t; lastTarget = T;
+      if (T && fighting) {
+        if (lastTally !== T) { call('tally', T); lastTally = T; }
+        if (ot === 'escort' && order.leader?.alive && (T.target === order.leader || order.leader.target === T)) call('press', T);
+        else call('engaging', T);
+      }
+    }
+    if (wasFighting && !fighting && activity === 'formation') call('rejoin', order.leader);
+    wasFighting = fighting;
+    // ---- weapon selection + missile shots
+    if (W && e.loadout && T && fighting) {
+      classify(e, T, geo);
+      chooseWeapon(geo.range);
+      if (!missile || skill > 0.8) tryMissile(T);
+      const L = e.loadout.missiles;
+      if (L && (L.ir || 0) + (L.radar || 0) === 0 && lastShot > 0 && !winchesterSent) { winchesterSent = true; call('winchester'); }
+    }
+    // ---- manoeuvre decision
+    decide(T);
+  }
+
+  function selectTarget() {
+    combat.world.enemiesOf(e, enemies);
+    const L = order.type === 'escort' ? order.leader : null;
+    let best = null, bs = Infinity;
+    const cur = e.target;
+    for (let i = 0; i < enemies.length; i++) {
+      const x = enemies[i];
+      if (!x.state || x.kind !== 'aircraft') continue;
+      classify(e, x, tmpGeo);
+      if (tmpGeo.range > (order.detectRange ?? 80000)) continue;
+      let sc = tmpGeo.range / 1000 + (tmpGeo.ata / Math.PI) * 4;
+      if (x.target === e) sc -= 3 + (tmpGeo.range < 4000 ? 4 : 0);      // whoever is attacking me
+      if (L && L.alive && x.target === L) sc -= 6;                       // whoever is attacking my leader
+      if (L && L.alive && L.target === x) sc -= 1;                       // support the leader's attack a little
+      if (x.pilot?.order?.passive) sc -= 2;                             // mission targets are what we came for
+      sc += 3.5 * team.countTargeting(x, e);                             // spread over the enemies
+      if (x === cur) sc -= 2.5;                                          // hysteresis
+      if (sc < bs) { bs = sc; best = x; }
+    }
+    return best;
+  }
+
+  function chooseWeapon(range) {
+    const W = combat.weapons, L = e.loadout?.missiles;
+    if (!L || !W.cycleWeapon) return;
+    const ir = L.ir || 0, rd = L.radar || 0;
+    let want = e.loadout.selected;
+    if (rd > 0 && (range > 9000 || ir === 0)) want = 'radar';
+    else if (ir > 0) want = 'ir';
+    if (want !== e.loadout.selected && combat.clock - lastCycle > 3) { lastCycle = combat.clock; W.cycleWeapon(e); }
+  }
+
+  function tryMissile(T) {
+    const W = combat.weapons, t = combat.clock;
+    const L = e.lock;
+    if (!L || L.state !== 'locked' || (L.target && L.target !== T)) return;
+    const type = e.loadout.selected, spec = W.specs?.missiles?.[type];
+    if (!spec || !(e.loadout.missiles[type] > 0)) return;
+    if (t - lastShot < sk.shotGap) return;
+    const r = geo.range;
+    const rMin = Math.max((spec.rMin || 400) * 1.5, 700);
+    let rMax = (spec.rMax || 8000) * sk.shotRange;
+    if ((spec.seeker || type) === 'ir') {
+      if (geo.aa > 140 * DEG) return;                       // no head-on IR shots
+      if (geo.aa > 90 * DEG) rMax = Math.min(rMax, (spec.rMax || 8000) * 0.4);
+      if (geo.ata > (spec.fov || 30) * DEG * 0.8) return;
+    } else if (geo.closure < -150 && r > rMax * 0.6) return;   // running target: wait
+    if (r < rMin || r > rMax) return;
+    // one missile at a time at the same target (aces fire a second after a while)
+    let inFlight = 0;
+    for (const m of W.missiles) if (m.owner === e && m.target === T) inFlight++;
+    if (inFlight > (skill > 0.75 && t - lastShot > 10 ? 1 : 0)) return;
+    // do not shoot when a friendly is close to the target (IR seekers switch, radar fuzes)
+    combat.world.friendsOf(e, friends);
+    for (let i = 0; i < friends.length; i++) if (friends[i].state.position.distanceToSquared(T.state.position) < 700 * 700) return;
+    // personality: cautious pilots love missiles, turn fighters save them for good shots
+    if (rng() > sk.missilePref + (r < rMax * 0.6 ? 0.3 : 0)) { lastShot = t - sk.shotGap * 0.5; return; }
+    const m = W.launchMissile(e, type);
+    if (m) {
+      lastShot = t;
+      call((spec.seeker || type) === 'radar' ? 'fox3' : 'fox2', T, true);
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------- BFM decision
+  function decide(T) {
+    const t = combat.clock, s = e.state;
+    if (activity !== 'fight' && activity !== 'bugout' && activity !== 'passive' && activity !== 'flee') {
+      // non-fighting: still defend against missiles and guns
+      if (missile && t - missileOnset > sk.reaction) { setMode('defend-missile'); return; }
+      if (attacker && gunOnset >= 0 && t - gunOnset > sk.reaction && t > attackerOnset) { setMode('break'); return; }
+      setMode(activity);
+      return;
+    }
+    if (activity === 'passive') { setMode('passive'); return; }
+    // 1. missiles
+    if (missile && t - missileOnset > sk.reaction) { if (pilot.mode !== 'defend-missile') call('missile-inbound', missile.owner || null); setMode('defend-missile'); return; }
+    // 2. guns threat
+    if (attacker && gunOnset >= 0 && t - gunOnset > sk.reaction && t > attackerOnset && mistake !== 'fixate') {
+      if (pilot.mode !== 'jink' && pilot.mode !== 'break') call('defending', attacker);
+      setMode(rng() < sk.jink || pilot.mode === 'jink' ? 'jink' : 'break');
+      return;
+    }
+    if (activity === 'flee' || activity === 'bugout') {
+      if (attacker && t > attackerOnset && ageo.range < 3500 && ageo.ata > 100 * DEG) { setMode('break'); return; }
+      setMode(activity === 'flee' ? 'flee' : 'bugout'); return;
+    }
+    if (!T) { setMode('cruise'); return; }
+    classify(e, T, geo);
+    const V = s.ias, corner = prof.corner, agl = aglAt();
+    // locked manoeuvres finish unless something above interrupts
+    if (lockMan > 0 && (pilot.mode === 'split-s' || pilot.mode === 'vertical' || pilot.mode === 'merge' || pilot.mode === 'yoyo-high' ||
+      pilot.mode === 'yoyo-low' || pilot.mode === 'lag-roll' || pilot.mode === 'extend')) return;
+    // 3. defensive: somebody in our rear quarter pointing at us
+    if (attacker && t > attackerOnset && ageo.range < 4500 && ageo.ata > 95 * DEG && ageo.threatAta < 40 * DEG && mistake !== 'fixate') {
+      if (pilot.mode !== 'break' && pilot.mode !== 'split-s') call('defending', attacker);
+      const room = agl - sk.deck - (V * V) / (G0 * Math.max(gFight - 1, 1)) * 2.2;
+      if (room > 500 && V < corner + 40 && V > prof.stall * 1.6 && s.pitch > -0.3 && rng() < sk.verticalPref * 0.5 && pilot.mode !== 'break') {
+        setMode('split-s', 6); manDir.set(e.forward.x, 0, e.forward.z).normalize(); return;
+      }
+      setMode('break');
+      return;
+    }
+    // 4. out of energy and not winning: extend, then come back
+    const slow = V < corner * 0.6 - sk.slack * 0.3;
+    if (slow && geo.situation !== 'offensive' && geo.range > 900 && rng() < sk.extendPref + 0.3) { setMode('extend', 14); return; }
+    // energy fighters disengage from a slow turning fight to come back with speed
+    if (personality === 'energy' && geo.situation === 'neutral' && V < corner - 10 && geo.range > 1200 && geo.range < 4000 && rng() < 0.15) { setMode('extend', 12); return; }
+    // 5. head-on: merge handling
+    if (geo.situation === 'head-on' && geo.range < 7000 && geo.range > 500) {
+      if (pilot.mode !== 'merge') {
+        // pass to the side the bandit already is on; one-circle (turn away, nose-to-nose) if we out-rate it slow,
+        // two-circle (turn toward, nose-to-tail) if we have the energy / sustained turn
+        A.copy(T.state.position).sub(s.position);
+        manSide = A.dot(e.right) >= 0 ? 1 : -1;
+        const myE = energyHeight(s.position.y, s.tas), hisE = energyHeight(T.state.position.y, T.state.tas);
+        manChoice = personality === 'turn' || (myE < hisE - 300 && personality !== 'energy') ? 'one-circle' : 'two-circle';
+        setMode('merge', 12);
+      }
+      return;
+    }
+    // vertical re-attack: fast energy fighter with altitude to spare and the bandit low or far
+    if (V > corner + 50 && geo.range > 2500 && geo.range < 7000 && geo.situation !== 'defensive' && rng() < sk.verticalPref * 0.25 && s.position.y < 12000) {
+      setMode('vertical', 5); return;
+    }
+    // 6. offensive / neutral pursuit
+    if (mistake === 'lost' && lostSightT > 0) { setMode('pursuit', 0, 'lost'); return; }
+    if (geo.range < sk.gunMax * 1.15 && geo.ata < 22 * DEG && geo.aa < 120 * DEG) { setMode('guns'); return; }
+    const myR = turnRadius(Math.max(s.tas, 60), gFight);
+    // overshoot coming: too fast, too close, too much angle
+    if (geo.range < Math.max(1100, myR * 1.4) && geo.closure > 45 && (geo.hca > 45 * DEG || geo.ata > 30 * DEG) && geo.aa < 110 * DEG && mistake !== 'overshoot') {
+      if (rng() < sk.verticalPref && agl > sk.deck + 600) setMode('yoyo-high', 3 + rng());
+      else setMode('lag-roll', 2.5 + rng());
+      return;
+    }
+    // bandit out-turning us and pulling away: low yo-yo to cut across the circle with gravity's help
+    if (geo.range > 900 && geo.range < 3000 && geo.closure < -10 && geo.ata > 35 * DEG && V < corner + 20 && agl > sk.deck + 1500 && geo.situation !== 'defensive') {
+      setMode('yoyo-low', 3 + rng()); return;
+    }
+    // slow, close, neutral, crossing: scissors
+    if (geo.situation === 'neutral' && geo.range < 900 && geo.hca > 100 * DEG && V < corner * 0.85) { setMode('scissors'); return; }
+    // pursuit geometry by range / aspect
+    if (geo.range > 4000) setMode('pursuit', 0, geo.aa > 50 * DEG ? 'lead' : 'pure');
+    else if (geo.range < 900 && geo.closure > 25) setMode('pursuit', 0, 'lag');
+    else setMode('pursuit', 0, geo.ata > 12 * DEG ? 'lead' : 'pure');
+    // occasional human mistakes
+    if (mistakeT <= 0 && rng() < sk.mistake) {
+      const r = rng();
+      mistake = r < 0.4 ? 'lost' : r < 0.7 ? 'overshoot' : r < 0.85 ? 'slow' : 'fixate';
+      mistakeT = 2 + 3 * rng();
+      if (mistake === 'lost') { lostSightT = mistakeT; lastKnown.copy(T.state.position); }
+    } else if (mistakeT <= 0) mistake = '';
+  }
+
+  function setMode(m, lock = 0, sub = '') {
+    if (pilot.mode !== m) { pilot.mode = m; manT = lock; if (lock) lockMan = lock; onEnter(m); }
+    pilot.sub = sub;
+  }
+  function onEnter(m) {
+    if (m === 'jink') jinkT = 0;
+    if (m === 'extend') extendT = 0;
+    if (m === 'vertical') manDir.set(e.forward.x, 0, e.forward.z).normalize();
+    if (m === 'defend-missile') defendSide = 0;
+  }
+
+  // =====================================================================================================  act
+  function act(dt) {
+    const s = e.state, T = e.target && e.target.alive ? e.target : null;
+    const corner = prof.corner;
+    want.spd = corner + 30;
+    switch (pilot.mode) {
+      case 'pursuit': case 'guns': case 'yoyo-high': case 'yoyo-low': case 'lag-roll': case 'scissors': case 'merge': case 'vertical':
+        if (!T) { cruise(); break; }
+        bfm(dt, T); break;
+      case 'break': doBreak(); break;
+      case 'jink': doJink(dt); break;
+      case 'split-s': doSplitS(); break;
+      case 'extend': doExtend(T); break;
+      case 'defend-missile': if (missile && missile.alive) defendMissile(dt); else { pilot.mode = 'cruise'; cruise(); } break;
+      case 'bugout': doFlee(true); break;
+      case 'flee': doFlee(false); break;
+      case 'passive': doPassive(dt); break;
+      case 'formation': doFormation(); break;
+      case 'orbit': doOrbit(); break;
+      case 'patrol': doPatrol(); break;
+      case 'intercept': doIntercept(); break;
+      default: cruise();
+    }
+    // flares against a close IR missile even outside the defensive manoeuvre (and by passive aircraft)
+    if (missile && (flareT -= dt) <= 0 && missileTgo < 6 && missileTgo > 0.3) {
+      const seeker = missile.spec?.seeker || missile.type;
+      if (seeker !== 'radar' || skill < 0.35) { combat.weapons?.dropFlares?.(e); flareT = sk.flareGap * (0.7 + 0.6 * rng()); }
+    }
+  }
+
+  // ---- shared speed rule while fighting: close the range, keep corner speed, avoid overshoots
+  function fightSpeed(T) {
+    const corner = prof.corner + sk.speedBias;
+    let v;
+    if (geo.range > 4000) v = Math.max(corner + 70, (T.state.ias || 0) + 50);
+    else if (geo.range > 700) v = clamp((T.state.ias || 0) + (geo.range - 650) * 0.05 - geo.closure * 0.15, corner * 0.8, corner + 110);
+    else v = (T.state.ias || 0) - 10 - Math.max(geo.closure, 0) * 0.3;
+    if (mistake === 'slow') v -= 40;
+    return clamp(v, prof.stall * 1.5, Math.min(prof.vmo * 0.9, corner + 160));
+  }
+
+  function bfm(dt, T) {
+    const s = e.state;
+    classify(e, T, geo);
+    const gHard = gFight * (pilot.mode === 'guns' ? 1 : lerp(0.8, 1, sk.precision));
+    want.g = gHard; want.gain = lerp(1.2, 2.0, sk.precision);
+    want.spd = fightSpeed(T);
+    want.ab = want.spd > s.ias + 12;
+    switch (pilot.mode) {
+      case 'guns': guns(dt, T); return;
+      case 'pursuit': {
+        if (pilot.sub === 'lost') { aimAt(lastKnown); want.g = gHard * 0.7; return; }
+        pursuitPoint(e, T, pilot.sub || 'pure', aim, 1);
+        aimAt(aim);
+        if (pilot.sub === 'lead' || pilot.sub === 'pure') { losFeedForward(e, T, want.ff); want.ff.multiplyScalar(pilot.sub === 'lead' ? 0.6 : 0.3); want.useFF = true; }
+        // radar crank: own radar missile in flight and the target still far: hold it near the edge of the radar cone
+        if (geo.range > 7000 && ownMissileInFlight(T, 'radar')) crank(T);
+        return;
+      }
+      case 'yoyo-high': {
+        // out of the plane, above the bandit's turn: trade speed for altitude, then back down behind it
+        pursuitPoint(e, T, 'lag', aim, 1);
+        aim.addScaledVector(UP, clamp(geo.range * 0.6, 300, 900) * clamp(manT / 2, 0, 1));
+        aimAt(aim); want.spd = T.state.ias - 20; want.ab = false;
+        if (manT <= 0) pilot.mode = 'pursuit';
+        return;
+      }
+      case 'lag-roll': {
+        // lag displacement roll: go to the outside / above of the bandit's turn, then fall in behind
+        pursuitPoint(e, T, 'lag', aim, 1.4);
+        A.copy(T.up).multiplyScalar(-1).addScaledVector(UP, 1.2).normalize();
+        aim.addScaledVector(A, clamp(geo.range * 0.4, 150, 500));
+        aimAt(aim); want.spd = T.state.ias - 30; want.ab = false; want.brake = true;
+        if (manT <= 0) pilot.mode = 'pursuit';
+        return;
+      }
+      case 'yoyo-low': {
+        // drop the nose inside the bandit's turn to gain speed and cut across, then pull back up into lead
+        pursuitPoint(e, T, 'lead', aim, 1.2);
+        aim.addScaledVector(UP, -clamp(geo.range * 0.35, 250, 700) * clamp(manT / 2, 0, 1));
+        aimAt(aim); want.spd = prof.corner + 60; want.ab = true;
+        if (manT <= 0) pilot.mode = 'pursuit';
+        return;
+      }
+      case 'scissors': {
+        // slow and close: reverse toward the bandit every time it crosses, bleed speed to make it overshoot
+        pursuitPoint(e, T, 'pure', aim, 1);
+        aim.addScaledVector(UP, 80);
+        aimAt(aim); want.spd = Math.max(prof.stall * 1.45, prof.corner * 0.55); want.ab = s.ias < prof.stall * 1.6; want.brake = true;
+        return;
+      }
+      case 'merge': { merge(T); return; }
+      case 'vertical': {
+        // zoom, then pull over the top toward the bandit (Immelmann-style re-attack); stop if slow
+        if (s.pitch < 1.0 && manT > 2.5) { A.copy(manDir).multiplyScalar(0.5).add(UP).normalize(); want.dir.copy(A); want.g = gHard; want.gain = 2; }
+        else { pursuitPoint(e, T, 'lead', aim, 1); aimAt(aim); }
+        want.spd = prof.corner + 80; want.ab = true;
+        if (manT <= 0 || s.ias < prof.corner * 0.65) pilot.mode = 'pursuit';
+        return;
+      }
+      default: pursuitPoint(e, T, 'pure', aim, 1); aimAt(aim);
+    }
+  }
+
+  function aimAt(p) { want.dir.copy(p).sub(e.state.position); const l = want.dir.length(); if (l > 1e-3) want.dir.multiplyScalar(1 / l); else want.dir.copy(e.forward); }
+
+  function ownMissileInFlight(T, type) {
+    const W = combat.weapons;
+    for (const m of W.missiles) if (m.owner === e && m.target === T && (m.spec?.seeker || m.type) === type) return true;
+    return false;
+  }
+
+  function crank(T) {
+    // fly ~40° off the target in the horizontal plane (side we are already turning to)
+    A.copy(T.state.position).sub(e.state.position); A.y *= 0.3; A.normalize();
+    const side = A.dot(e.right) > 0 ? -1 : 1;
+    B.crossVectors(UP, A).multiplyScalar(side);          // horizontal perpendicular
+    want.dir.copy(A).multiplyScalar(0.77).addScaledVector(B, 0.64).normalize();
+    want.useFF = false; pilot.sub = 'crank';
+  }
+
+  // ---- gunnery: track the lead-computed aim point with human error, fire short bursts when the solution is good
+  function guns(dt, T) {
+    const W = combat.weapons, s = e.state;
+    W.gunSolution(e, T, SOL);
+    const r = SOL.range;
+    // tracking error: correlated wander that grows when the target moves fast across the sight
+    losFeedForward(e, T, ffv);
+    const losRate = ffv.length() / Math.max(s.tas, 50);           // rad/s
+    const sig = sk.aimSigma * (1 + 6 * losRate) * (mistake === 'lost' ? 3 : 1);
+    const a = Math.exp(-dt / sk.aimTau), b = sig * Math.sqrt(1 - a * a);
+    aimX = aimX * a + b * gauss(); aimY = aimY * a + b * gauss();
+    aim.copy(SOL.point).addScaledVector(e.right, aimX * r).addScaledVector(e.up, aimY * r);
+    noseAimDir(e, aim, want.dir);
+    want.ff.copy(ffv); want.useFF = true;
+    want.gain = lerp(2.2, 3.4, sk.precision);
+    // closure control in the gun envelope
+    want.spd = clamp(T.state.ias + (r - 450) * 0.08 - geo.closure * 0.4, prof.stall * 1.4, prof.corner + 120);
+    want.ab = want.spd > s.ias + 20; want.brake = true;
+    if (r < 180 && geo.closure > 0) { pursuitPoint(e, T, 'lag', aim, 1); aimAt(aim); want.useFF = false; }
+    // fire control
+    A.copy(SOL.point).sub(s.position).normalize();
+    const err = Math.acos(clamp(A.dot(e.forward), -1, 1));
+    const tol = sk.fireTol + (T.radius || 5) / Math.max(r, 50) * 0.8;
+    const good = err < tol && r < sk.gunMax && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
+    settleT = good ? settleT + dt : 0;
+    gapT -= dt;
+    if (burstT > 0) {
+      burstT -= dt; want.fire = good || err < tol * 2.5;
+      if (burstT <= 0) gapT = lerp(sk.burstGap[0], sk.burstGap[1], rng());
+    } else if (good && settleT > sk.settle && gapT <= 0) {
+      burstT = lerp(sk.burst[0], sk.burst[1], rng()); want.fire = true;
+    }
+  }
+
+  function friendlyInLine(T, r) {
+    combat.world.friendsOf(e, friends);
+    const p = e.state.position;
+    for (let i = 0; i < friends.length; i++) {
+      const f = friends[i];
+      B.copy(f.state.position).sub(p);
+      const d = B.length();
+      if (d > r + 400 || d < 1) continue;
+      if (B.dot(e.forward) / d > Math.cos(Math.max(0.06, 60 / d))) return true;
+    }
+    return false;
+  }
+
+  function merge(T) {
+    const s = e.state;
+    const myR = turnRadius(Math.max(s.tas, 60), gFight);
+    const passing = geo.range < myR * 1.3 || geo.ata > 50 * DEG;
+    if (!passing) {
+      // offset the pass by ~350 m to the bandit's side (no head-on guns, no collisions), lead-turn as it closes
+      A.copy(T.state.position).addScaledVector(e.right, manSide * 350);
+      aimAt(A);
+      want.spd = prof.corner + sk.speedBias + 30; want.g = 4; pilot.sub = 'pass';
+    } else {
+      // after the pass: two-circle = turn toward the bandit's side, one-circle = away from it
+      const dirSide = manChoice === 'two-circle' ? manSide : -manSide;
+      B.set(e.forward.x, 0, e.forward.z).normalize();
+      C.crossVectors(B, UP).multiplyScalar(dirSide);             // horizontal right (dirSide=+1) / left
+      want.dir.copy(B).multiplyScalar(-0.35).add(C).addScaledVector(UP, personality === 'energy' ? 0.45 : 0.1).normalize();
+      want.g = gFight; want.spd = prof.corner; pilot.sub = manChoice;
+      if (geo.ata < 60 * DEG && geo.range > 600 || manT < 6) { pilot.mode = 'pursuit'; lockMan = 0; }
+    }
+  }
+
+  // ---- defensive manoeuvres
+  function doBreak() {
+    const s = e.state, X = attacker && attacker.alive ? attacker : e.target;
+    want.g = gFight; want.gain = 2.4; want.spd = prof.corner; want.ab = true; want.brake = false;
+    if (!X) { cruise(); return; }
+    // put the lift vector on the attacker and pull: turn into him
+    A.copy(X.state.position).sub(s.position);
+    const r = A.length(); A.multiplyScalar(1 / Math.max(r, 1));
+    if (A.dot(e.forward) < -0.95) {
+      // dead astern: break in the direction we are already banked
+      B.set(e.forward.x, 0, e.forward.z).normalize();
+      C.crossVectors(B, UP).multiplyScalar(s.roll >= 0 ? 1 : -1);
+      A.copy(C).addScaledVector(B, -0.3).addScaledVector(UP, -0.1).normalize();
+    }
+    want.dir.copy(A);
+    if (classify(e, X, ageo).threatAta > 70 * DEG && pilot.mode === 'break' && ageo.range > 600) thinkT = Math.min(thinkT, 0.05);
+  }
+
+  function doJink(dt) {
+    const s = e.state;
+    want.direct = true; want.spd = prof.corner + 10; want.ab = true; want.brake = false;
+    if ((jinkT -= dt) <= 0) {
+      jinkT = lerp(sk.jinkGap[0], sk.jinkGap[1], rng());
+      // a new, unpredictable plane: roll 60–150° either way from where we are and pull hard (sometimes unload)
+      const d = (60 + 90 * rng()) * DEG * (rng() < 0.5 ? -1 : 1);
+      jinkBank = s.roll + d; jinkNz = rng() < 0.15 ? 0.5 : gFight * (0.75 + 0.25 * rng());
+    }
+    // keep the jink sane near the ground: never roll the lift vector below the horizon there
+    const agl = aglAt();
+    let bank = jinkBank;
+    if (agl < sk.deck + 1500) bank = clamp(((bank + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI, -1.3, 1.3);
+    want.nz = jinkNz; want.bank = bank; want.g = gFight;
+  }
+
+  function doSplitS() {
+    const s = e.state;
+    // roll inverted and pull through the vertical, exit the other way
+    A.copy(manDir).multiplyScalar(-0.7).addScaledVector(UP, -0.7).normalize();
+    want.dir.copy(A); want.g = gFight; want.gain = 2.2; want.spd = prof.corner; want.ab = false; want.brake = true;
+    if (e.forward.dot(manDir) < -0.5 && s.pitch > -0.5) { pilot.mode = 'break'; lockMan = 0; }
+    if (manT <= 0) { pilot.mode = 'break'; lockMan = 0; }
+  }
+
+  function doExtend(T) {
+    const s = e.state;
+    // unload, run away from the nearest threat, afterburner; a shallow dive buys speed when there is room
+    const X = attacker && attacker.alive ? attacker : T;
+    if (X) { A.copy(s.position).sub(X.state.position); A.y = 0; A.normalize(); } else A.set(e.forward.x, 0, e.forward.z).normalize();
+    const agl = aglAt();
+    A.y = agl > sk.deck + 2000 ? -0.12 : agl < sk.deck + 600 ? 0.12 : 0;
+    want.dir.copy(A).normalize(); want.g = 3; want.gain = 1.2;
+    want.spd = prof.vmo; want.ab = true; want.brake = false;
+    const r = X ? X.state.position.distanceTo(s.position) : 1e9;
+    if ((s.ias > prof.corner + 40 && r > 3500) || manT <= 0) { pilot.mode = 'pursuit'; lockMan = 0; pilot.sub = 'reattack'; }
+  }
+
+  function defendMissile(dt) {
+    const s = e.state, m = missile;
+    const seeker = m.spec?.seeker || m.type || 'ir';
+    A.copy(m.state.position).sub(s.position);
+    const r = A.length(); A.multiplyScalar(1 / Math.max(r, 1));      // LOS to the missile
+    want.g = gFight; want.gain = 2.2; want.brake = false;
+    const q = sk.defendQuality;
+    if (missileTgo < sk.breakTgo * lerp(0.7, 1.15, rng()) ) {
+      // last-ditch break: max G perpendicular to the missile's velocity, the way needing the least roll
+      B.copy(m.state.velocity).normalize();
+      C.copy(e.up).addScaledVector(B, -e.up.dot(B));
+      if (C.lengthSq() < 1e-4) C.crossVectors(B, UP);
+      C.normalize();
+      want.dir.copy(s.velocity).normalize().addScaledVector(C, 3).normalize();
+      want.g = prof.fbw ? prof.fcsNzMax : prof.gMax * 0.9; want.gain = 4;
+      want.spd = prof.corner; want.ab = seeker === 'radar';
+      pilot.sub = 'break';
+      return;
+    }
+    // horizontal LOS and its perpendiculars
+    B.copy(A); B.y = 0; if (B.lengthSq() < 1e-6) B.set(e.forward.x, 0, e.forward.z); B.normalize();
+    if (!defendSide) { C.crossVectors(B, UP); defendSide = C.dot(e.forward) >= 0 ? 1 : -1; }
+    C.crossVectors(B, UP).multiplyScalar(defendSide);          // beam direction (missile at 3 or 9 o'clock)
+    const agl = aglAt();
+    if (seeker === 'radar' && missileTgo > 10 && r > 7000) {
+      // drag: turn the tail to it and run (kinematic defeat), descend to thicker air
+      want.dir.copy(B).multiplyScalar(-1); want.dir.y = agl > sk.deck + 1500 ? -0.15 : 0;
+      want.dir.normalize(); want.spd = prof.vmo; want.ab = true; pilot.sub = 'drag';
+    } else {
+      // beam / notch: missile on the wing line, slight descent; IR: out of afterburner, flares
+      want.dir.copy(C).addScaledVector(B, -0.25 * q); want.dir.y = agl > sk.deck + 1200 ? -0.18 * q : 0.05;
+      want.dir.normalize();
+      want.spd = prof.corner + 40;
+      want.ab = seeker === 'radar';
+      if (seeker !== 'radar') { want.minLever = 0; want.spd = Math.min(want.spd, s.ias); }
+      pilot.sub = seeker === 'radar' ? 'notch' : 'beam';
+    }
+    if (seeker !== 'radar') want.ab = false;
+  }
+
+  function doFlee(damaged) {
+    const s = e.state;
+    // run on the ordered heading (or home / away from the nearest enemy) at full speed; defend if attacked (decide())
+    if (order.heading != null && !damaged) headingVec(order.heading, A);
+    else {
+      const X = combat.world.nearestEnemy(e, 30000);
+      if (X) { A.copy(s.position).sub(X.state.position); A.y = 0; A.normalize(); }
+      else if (order.home || order.base) { A.copy(order.home || order.base).sub(s.position); A.y = 0; A.normalize(); }
+      else A.copy(home).sub(s.position).setY(0).normalize();
+      if (A.lengthSq() < 0.5) A.set(e.forward.x, 0, e.forward.z).normalize();
+    }
+    holdAlt(A, order.alt ?? Math.max(s.position.y, ground(s.position.x, s.position.z) + 1200));
+    want.g = 3; want.spd = damaged ? prof.corner + 40 : Math.min(prof.vmo * 0.9, prof.corner + 150); want.ab = !damaged || hpFrac() > 0.2;
+    if (damaged && !maydaySent && hpFrac() < 0.3) { maydaySent = true; call('mayday', null, true); }
+  }
+
+  function doPassive(dt) {
+    const s = e.state;
+    // fly the route; when threatened, gentle jinks and flares (transport / bomber targets)
+    if (order.waypoints?.length) routeStep(); else if (order.type === 'orbit') doOrbit(); else cruise();
+    const threatened = !!missile || (attacker && ageo.range < 2500);
+    if (threatened) {
+      if ((jinkT -= dt) <= 0) { jinkT = 2 + 2 * rng(); jinkBank = (rng() < 0.5 ? -1 : 1) * (20 + 25 * rng()) * DEG; }
+      want.direct = true; want.bank = jinkBank; want.nz = prof.heavy ? 1.3 : 2; want.g = prof.heavy ? 1.6 : 3;
+      pilot.sub = 'evade';
+      if ((flareT -= dt) <= 0) { combat.weapons?.dropFlares?.(e); flareT = 1.2 + rng(); }
+    } else pilot.sub = '';
+  }
+
+  // ---- orders
+  function holdAlt(hdir, alt) {
+    const s = e.state;
+    const err = alt - s.position.y;
+    const gmax = prof.heavy ? 0.12 : 0.3;
+    const gam = clamp(err * 0.004, -gmax, gmax);
+    want.dir.set(hdir.x, 0, hdir.z).normalize().multiplyScalar(Math.cos(gam)); want.dir.y = Math.sin(gam);
+    want.g = prof.heavy ? 1.5 : 3; want.gain = 0.9;
+  }
+  function cruise() {
+    const s = e.state;
+    const hdg = order.type === 'cruise' && order.heading != null ? order.heading : null;
+    if (hdg != null) headingVec(hdg, A); else A.set(e.forward.x, 0, e.forward.z).normalize();
+    holdAlt(A, order.alt ?? Math.max(s.position.y, ground(s.position.x, s.position.z) + 1000));
+    want.spd = order.speed ?? (prof.heavy ? Math.min(prof.vmo * 0.8, (e.def?.specs?.cruiseSpeed || 200) * 0.75) : prof.corner + 20);
+    want.ab = false;
+    if (pilot.mode === 'cruise') pilot.sub = '';
+  }
+  function routeStep() {
+    const s = e.state, wps = order.waypoints;
+    const i = (order.index || 0) % wps.length, wp = wps[i];
+    A.copy(wp).sub(s.position); A.y = 0;
+    const d = A.length();
+    if (d < (order.radius ?? 1500)) { order.index = order.loop === false ? Math.min(i + 1, wps.length - 1) : (i + 1) % wps.length; }
+    if (d > 1) A.multiplyScalar(1 / d);
+    holdAlt(A, order.alt ?? (wp.y > 50 ? wp.y : s.position.y));
+    want.spd = order.speed ?? (prof.heavy ? Math.min(prof.vmo * 0.8, (e.def?.specs?.cruiseSpeed || 200) * 0.75) : prof.corner + 10);
+    want.ab = false;
+  }
+  function doPatrol() { if (order.waypoints?.length) routeStep(); else doOrbit(); }
+  function doOrbit() {
+    const s = e.state;
+    const c = order.center || orbitC, R = order.radius ?? 6000;
+    A.copy(s.position).sub(c); A.y = 0;
+    const d = Math.max(A.length(), 1); A.multiplyScalar(1 / d);
+    const cw = order.clockwise !== false ? 1 : -1;
+    B.set(-A.z * cw, 0, A.x * cw);                          // tangent
+    B.addScaledVector(A, -clamp((d - R) / R, -1, 1) * 1.2).normalize();
+    holdAlt(B, order.alt ?? (c.y > 50 ? c.y : s.position.y));
+    want.spd = order.speed ?? (prof.heavy ? Math.min(prof.vmo * 0.75, (e.def?.specs?.cruiseSpeed || 200) * 0.7) : prof.corner);
+    want.ab = false;
+  }
+  function doIntercept() {
+    const s = e.state, T = order.target;
+    if (!T || !T.alive) { cruise(); return; }
+    interceptPoint(s.position, Math.max(s.tas, 200), T.state.position, T.state.velocity, A);
+    A.sub(s.position);
+    holdAlt(A, Math.max(T.state.position.y, ground(s.position.x, s.position.z) + 600));
+    want.spd = Math.min(prof.vmo * 0.92, prof.corner + 160); want.ab = true;
+  }
+  function doFormation() {
+    const s = e.state, L = order.leader;
+    if (!L || !L.alive) { cruise(); return; }
+    resolveOffset(order.offset, off);
+    formationSlot(L, off, slot);
+    A.copy(slot).sub(s.position);                           // position error
+    const dist = A.length();
+    const lv = L.state.velocity;
+    if (dist > 4000) {
+      // far: intercept the slot fast
+      interceptPoint(s.position, Math.max(s.tas + 60, 220), slot, lv, B);
+      aimAt(B); want.g = 4; want.spd = Math.min(prof.vmo * 0.9, (L.state.ias || 200) + 120); want.ab = true;
+      pilot.sub = 'rejoin';
+      return;
+    }
+    // station keeping: desired velocity = leader's velocity + a correction toward the slot (gentle, saturating)
+    const k = dist > 600 ? 0.12 : 0.22;
+    B.copy(A).multiplyScalar(k);
+    const cmax = dist > 600 ? 80 : 35;
+    if (B.length() > cmax) B.setLength(cmax);
+    B.add(lv);
+    const vs = B.length();
+    want.dir.copy(B).multiplyScalar(1 / Math.max(vs, 1));
+    want.g = prof.heavy ? 1.6 : 4; want.gain = dist < 300 ? 1.6 : 1.1;
+    const ratio = s.tas > 1 ? s.ias / s.tas : 1;
+    want.spd = vs * ratio;
+    want.ab = want.spd > s.ias + 25; want.brake = want.spd < s.ias - 25;
+    pilot.sub = dist < 150 ? 'on-station' : 'join';
+  }
+
+  // =====================================================================================================  guard
+  // Survival layer: collision avoidance, terrain floor, hard terrain recovery, stall, overspeed. Always wins.
+  function guard(dt) {
+    const s = e.state, p = s.position;
+    const V = Math.max(s.tas, 30);
+    // ---- mid-air collision avoidance
+    const air = combat.world.aircraft;
+    for (let i = 0; i < air.length; i++) {
+      const x = air[i];
+      if (x === e || !x.state) continue;
+      const d2 = x.state.position.distanceToSquared(p);
+      if (d2 > 600 * 600) continue;
+      closestApproach(p, s.velocity, x.state.position, x.state.velocity, CA);
+      const sep = (e.radius || 5) + (x.radius || 5) + (x.team === e.team ? 45 : 35);
+      if (CA.t < 2.5 && CA.miss < sep) {
+        // turn away from the other aircraft's position at closest approach, preferring up
+        A.copy(x.state.position).addScaledVector(x.state.velocity, CA.t).sub(B.copy(p).addScaledVector(s.velocity, CA.t));
+        A.multiplyScalar(-1);
+        if (A.lengthSq() < 1) A.copy(e.up);
+        A.normalize().addScaledVector(UP, 0.4).normalize();
+        want.direct = false; want.dir.copy(s.velocity).normalize().addScaledVector(A, 1.5).normalize();
+        want.g = Math.max(want.g, Math.min(5, gFight)); want.gain = 3; want.useFF = false; want.fire = false;
+        break;
+      }
+    }
+    // ---- soft floor: terrain ahead + hard deck
+    if ((floorT -= dt) <= 0) {
+      floorT = 0.5;
+      const hd = s.velocity.x * s.velocity.x + s.velocity.z * s.velocity.z > 100 ? Math.atan2(s.velocity.x, -s.velocity.z) : s.heading;
+      for (let i = 0; i < DISTS.length; i++) DISTS[i] = FRAC[i] * V * 5;
+      floorAlt = terrainAhead(ground, p.x, p.z, hd, DISTS, 0.35) + (prof.heavy ? 500 : sk.deck);
+    }
+    const below = floorAlt - (p.y + Math.min(s.velocity.y, 0) * 3);
+    if (below > 0) {
+      if (want.direct) { want.direct = false; want.dir.copy(e.forward); }
+      const lift = clamp(below / 400, 0, 1);
+      if (want.dir.y < lift * 0.5) { want.dir.y = lerp(want.dir.y, 0.5, lift); want.dir.normalize(); }
+      want.g = Math.max(want.g, 3);
+    }
+    // ---- hard terrain recovery (predictive)
+    safeT -= dt;
+    if (safeT <= 0 || recovering) {
+      safeT = 0.1;
+      RS.x = p.x; RS.y = p.y - 3; RS.z = p.z; RS.vx = s.velocity.x; RS.vy = s.velocity.y; RS.vz = s.velocity.z; RS.roll = s.roll; RS.psi = s.heading;
+      const nzAvail = Math.min(prof.fbw ? prof.fcsNzMax * 0.95 : prof.gMax * 0.85, Math.max(1.3, (s.ias / Math.max(prof.stall, 40)) ** 2 * 0.9));
+      RP.nz = nzAvail; RP.rollRate = Math.min(prof.rollRate, 3) * 0.8; RP.climb = prof.heavy ? 0.15 : 0.35; RP.turn = 0;
+      RP.horizon = clamp(V / 25, 8, 16); RP.dt = 0.4; RP.delay = 0.15;
+      predictRecovery(ground, RS, RP, REC);
+      const margin = 60 + V * 0.35;
+      if (REC.clear < margin) {
+        if (!recovering) { recovering = true; recT = 0; escTurn = 0; }
+        // can a turning escape do better? (mountain ahead)
+        if (REC.clear < margin * 0.6) {
+          let bestC = REC.clear, bestT = 0;
+          for (let k = -1; k <= 1; k += 2) {
+            RP.turn = k * 0.22;
+            predictRecovery(ground, RS, RP, REC);
+            if (REC.clear > bestC + 30) { bestC = REC.clear; bestT = RP.turn; }
+          }
+          escTurn = bestT;
+        }
+      } else if (recovering && REC.clear > margin * 1.6 && s.velocity.y > -5) recovering = false;
+    }
+    if (recovering) {
+      recT += dt;
+      const hd = Math.hypot(s.velocity.x, s.velocity.z) > 10 ? Math.atan2(s.velocity.x, -s.velocity.z) : s.heading;
+      const h = hd + escTurn * 2;
+      const climb = prof.heavy ? 0.2 : 0.5;
+      want.direct = false; want.useFF = false;
+      want.dir.set(Math.sin(h) * Math.cos(climb), Math.sin(climb), -Math.cos(h) * Math.cos(climb));
+      want.g = prof.fbw ? prof.fcsNzMax : prof.gMax * 0.85; want.gain = 4;
+      want.spd = prof.vmo; want.ab = true; want.brake = false; want.fire = false;
+      pilot.sub = 'terrain';
+    }
+    // ---- stall / departure
+    if ((s.stalled || s.ias < prof.stall * 1.08) && !recovering) {
+      want.direct = false; want.useFF = false;
+      B.set(e.forward.x, 0, e.forward.z);
+      if (B.lengthSq() < 1e-4) B.set(s.velocity.x, 0, s.velocity.z);
+      B.normalize(); B.y = s.pitch > 0.6 ? -0.4 : -0.1; B.normalize();
+      want.dir.copy(B); want.g = 1.5; want.gain = 0.8;
+      want.spd = prof.corner; want.ab = true; want.brake = false;
+      if (pilot.mode !== 'stall') pilot.sub = 'stall';
+    }
+    // ---- overspeed / ceiling
+    const mmoMargin = prof.mmo - 0.06;
+    if (s.ias > prof.vmo * 0.93 || s.mach > mmoMargin) {
+      want.spd = Math.min(want.spd, prof.vmo * 0.85); want.brake = true; want.ab = false;
+      if (want.direct) { want.direct = false; want.dir.copy(e.forward); }
+      if (want.dir.y < 0.05 && !recovering) { want.dir.y = 0.08; want.dir.normalize(); }
+    }
+    if (p.y > (prof.heavy ? 12500 : 15000) && want.dir.y > -0.05) { want.dir.y = -0.08; want.dir.normalize(); }
+  }
+
+  return pilot;
+}
