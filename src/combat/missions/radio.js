@@ -34,6 +34,8 @@ export function createRadio(combat) {
       for (const s of slots) { s.used = false; s.entity = null; }
       recent.clear(); gap = 0.5; urgentGap = 0; lastText = ''; radio.count = 0;
     },
+    /** Drop queued lines below `minPriority` (e.g. chatter that would be stale after the mission is decided). */
+    flush(minPriority = 3) { for (const q of slots) if (q.used && q.priority < minPriority) { q.used = false; q.entity = null; } },
     /** One variant of a bank key or of an array of strings, never the same one twice in a row. */
     pick(k) {
       const arr = typeof k === 'string' ? LINES[k] : k;

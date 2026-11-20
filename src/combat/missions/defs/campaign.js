@@ -98,7 +98,7 @@ export const CAMPAIGN = [
       const pine = s.places.pinecrest, saddle = s.places.saddle;
       const bundle = s.group('bundle', {
         team: 'blue', type: 'c17', count: 1, callsign: 'Bundle 1', single: true, at: { rel: 0, dist: 2500 }, heading: { rel: 0 }, passive: true,
-        hp: s.n(520, 340, 260), role: 'protect', mark: 'BUNDLE 1', markKind: 'protect',
+        hp: s.n(640, 440, 320), role: 'protect', mark: 'BUNDLE 1', markKind: 'protect',
         order: (i, p) => s.orders.patrol(s.route([saddle, pine, { x: pine.x - 6000, z: pine.z - 20000 }], { agl: 850 }), { passive: true, loop: false }),
       });
       const B = () => bundle.leader;
@@ -108,7 +108,7 @@ export const CAMPAIGN = [
         order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, 35);
       const saddleZone = s.zone(saddle, 9000);
       const w2 = s.wave('slag', { type: 'mixed', count: s.n(1, 2, 2), callsign: 'Slag', at: fromB(285, 20000), call: true,
-        order: () => s.orders.engage(B()) }, { or: [() => B() && saddleZone.contains(B()), { after: 150 }] });
+        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage(s.player)) }, { or: [() => B() && saddleZone.contains(B()), { after: 150 }] });
       const w3 = s.wave('gravel', { type: ['f15', 'f14'], count: s.n(0, 1, 2), callsign: 'Gravel', at: fromB(350, 24000, 2000), call: true,
         order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, { or: [{ dead: w2 }, { after: 230 }] });
       s.protect('bundle', 'Keep Bundle 1 alive', bundle, { points: 300 });
@@ -179,11 +179,11 @@ export const CAMPAIGN = [
       const base = s.places.redrock;
       const kiln = s.group('kiln', {
         type: 'b2', count: s.n(2, 3, 3), callsign: 'Kiln', at: { from: base, brg: 30, dist: 82000, alt: 7800 }, heading: base, formation: 'line', spacing: 1600,
-        passive: true, loadout: UNARMED, hp: s.n(110, 170, 210), points: 160, mark: 'BOMBER', role: 'bomber', speed: 220,
+        passive: true, loadout: UNARMED, hp: s.n(100, 150, 200), points: 160, mark: 'BOMBER', role: 'bomber', speed: 220,
         order: () => s.orders.patrol([V(base.x, 7000, base.z), V(base.x - 30000, 7000, base.z + 30000)], { passive: true }),
       });
       const flint = s.group('flint', {
-        type: ['f16', 'f15', 'fa18'], count: s.n(2, 3, 4), callsign: 'Flint', at: { from: base, brg: 31, dist: 78000, alt: 8500 }, heading: base, spacing: 600,
+        type: ['f16', 'f15', 'fa18'], count: s.n(1, 2, 3), callsign: 'Flint', at: { from: base, brg: 31, dist: 78000, alt: 8500 }, heading: base, spacing: 600,
         engageWithin: 16000, order: (i) => s.orders.escort(kiln.members[i % kiln.members.length], { x: (i % 2 ? -1 : 1) * 500, y: 600, z: 400 }),
       });
       s.wingmen(s.n(2, 1, 1));
@@ -276,16 +276,16 @@ export const CAMPAIGN = [
     start: { at: 'carrier', brg: 235, dist: 14000, alt: 4000, hdg: 235, spd: 230 },
     script(s) {
       const boat = s.places.carrier;
-      const maxHits = s.n(3, 2, 2);
+      const maxHits = s.n(4, 3, 2);
       let hits = 0, launches = 0;
       s.wingmen(2);
       const strike = (brg, extra = {}) => () => s.at({ from: boat, brg: brg + s.between(-12, 12), dist: 62000, agl: 900 });
       const toBoat = () => s.orders.patrol([V(boat.x, 900, boat.z)], { passive: true });
       const sw = (name, brg, n, idx) => ({ type: ['fa18', 'f16'], count: n, callsign: name, startIndex: idx, at: strike(brg), heading: boat, passive: true, points: 120, role: 'striker', mark: 'STRIKER', order: toBoat, speed: 240, call: true });
       const esc = (name, brg, n, lead) => ({ type: ['f15', 'f14'], count: n, callsign: name, at: () => s.at({ from: s.byName(lead).leader || boat, brg: 180, dist: 2500, alt: 3500 }), heading: boat, engageWithin: 20000, order: () => s.orders.escort(s.byName(lead).leader, { x: 400, y: 1500, z: 800 }) });
-      const w1 = s.group('cinder', sw('Cinder', 230, s.n(2, 3, 3), 1));
+      const w1 = s.group('cinder', sw('Cinder', 230, s.n(2, 2, 3), 1));
       const w2 = s.wave('slag', sw('Slag', 260, 2, 1), { or: [{ dead: w1 }, { after: 200 }] }, (g) => s.steer(g.leader, 'WAVE 2'));
-      const w3 = s.wave('kiln', sw('Kiln', 200, s.n(2, 3, 4), 1), { or: [{ dead: w2 }, { after: 330 }] }, (g) => s.steer(g.leader, 'WAVE 3'));
+      const w3 = s.wave('kiln', sw('Kiln', 200, s.n(2, 3, 3), 1), { or: [{ dead: w2 }, { after: 330 }] }, (g) => s.steer(g.leader, 'WAVE 3'));
       // escorts launch with their strikers
       const e2 = s.declare('slag-escort', esc('Flint', 260, s.n(1, 2, 2), 'slag'));
       const e3 = s.declare('kiln-escort', esc('Gravel', 200, s.n(1, 2, 3), 'kiln'));
@@ -302,7 +302,7 @@ export const CAMPAIGN = [
       ]);
       s.every(0.5, () => {
         for (const g of [w1, w2, w3]) for (const e of g.members) {
-          if (!e.alive || e.tags.spent || flat(e.state.position, boat) > 15000) continue;
+          if (!e.alive || e.tags.spent || flat(e.state.position, boat) > 12000) continue;
           e.tags.spent = true; launches++; s.unmark(e);
           clean.fail();
           if (e.pilot) e.pilot.setOrder(s.orders.flee(bearing(boat, e.state.position), 1200));
@@ -345,9 +345,9 @@ export const CAMPAIGN = [
         order: () => s.orders.patrol([V(haven.x, 7000, haven.z)], { passive: true }) });
       const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 2, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 91000, alt: 9000 }, heading: haven,
         engageWithin: 15000, order: (i) => s.orders.escort(ember.members[i % 2], { x: 600, y: 800, z: 500 }) });
-      const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 2, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: 52000, agl: 350 }, heading: haven,
+      const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 2, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: 52000, agl: 650 }, heading: haven,
         passive: true, loadout: { gun: 0, ir: 0, radar: 0 }, points: 150, mark: 'LOW RAIDER', role: 'raider', speed: 190, spacing: 800,
-        order: () => s.orders.patrol([V(haven.x, 300, haven.z)], { passive: true }) }, s.n(110, 85, 75), (g) => {
+        order: () => s.orders.patrol([V(haven.x, 600, haven.z)], { passive: true }) }, s.n(110, 85, 75), (g) => {
         s.chat([
           [0, 'awacs', 'Cathedral: pop-up contacts! Low, on the coast, bearing one zero five from Haven, coming in under everything. That\'s the real raid!', { priority: 2 }],
           [5, 'awacs', 'Halyard 2, break off and take the low group. Halyard 1, finish the bombers if you can, then help.'],

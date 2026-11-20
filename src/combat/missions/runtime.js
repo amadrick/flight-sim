@@ -14,6 +14,10 @@ export const SKILLS = {
   target: { rookie: 0.1, veteran: 0.25, ace: 0.4 },
 };
 /** The Cendrine Directorate flies a mixed bag. */
+/** Default missiles on Directorate fighters by difficulty. */
+export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0 }, veteran: { ir: 2, radar: 0 }, ace: { ir: 2, radar: 2 } };
+/** Hit-point multiplier for the player's wingmen by difficulty. */
+export const WING_TOUGHNESS = { rookie: 1.6, veteran: 1.25, ace: 1 };
 export const ADVERSARY_MIX = ['f16', 'f15', 'fa18', 'f14', 'f16', 'f35'];
 
 export function createRuntime(combat, director, mission, options = {}) {
@@ -318,6 +322,7 @@ export function createRuntime(combat, director, mission, options = {}) {
     for (const ob of objectives) if (ob.standing && ob.state === 'active' && outcome === 'success') setState(ob, 'done');
     for (const c of countdowns) c.live = false;
     director.timer = null;
+    radio.flush(1);
     const len = chat ? s.chat(chat, { final: true, priority: 1 }) : 0;
     endAt = combat.clock + Math.max(beat, len + 1.5);
     dirty = true;
@@ -362,6 +367,16 @@ export function createRuntime(combat, director, mission, options = {}) {
     return p;
   }
 
+  /** Target sorting: spread a group's opening targets over the blue side (player first) instead of all on one jet. */
+  const blues = [];
+  function sortTarget(i) {
+    world.enemiesOf('red', blues, 'aircraft');
+    if (blues.length < 2) return null;
+    blues.sort((a, b) => (b.isPlayer ? 1 : 0) - (a.isPlayer ? 1 : 0) || a.id - b.id);
+    return blues[(i + sortSeq++) % blues.length];
+  }
+  let sortSeq = 0;
+
   function spawnGroup(g) {
     g.spawned = true;
     const sp = g.spec, team = g.team, pl = world.player;
@@ -394,12 +409,14 @@ export function createRuntime(combat, director, mission, options = {}) {
       if (pos.y < floor) pos.y = floor;
       const typ = sp.mixed === false ? types[0] : types[(typeOff + i) % types.length];
       const cs = Array.isArray(sp.callsign) ? sp.callsign[i] : sp.callsign ? (g.size === 1 && sp.single ? sp.callsign : `${sp.callsign} ${(sp.startIndex ?? 1) + i}`) : `${team === 'red' ? 'Bandit' : 'Friendly'} ${i + 1}`;
-      const loadout = sp.loadout || sp.hp != null || sp.invulnerable ? { ...(sp.loadout || {}) } : undefined;
+      // the Directorate's missile racks scale with difficulty (fighters only; explicit loadouts win)
+      const base = team !== 'blue' && !sp.loadout ? ENEMY_LOADOUT[combat.difficulty] || ENEMY_LOADOUT.veteran : null;
+      const loadout = base || sp.loadout || sp.hp != null || sp.invulnerable ? { ...(base || {}), ...(sp.loadout || {}) } : undefined;
       if (loadout && sp.hp != null) loadout.hp = sp.hp;
       if (loadout && sp.invulnerable) loadout.invulnerable = true;
       const skill = typeof sp.skill === 'number' ? sp.skill : s.skill(sp.skill || (team === 'red' ? 'enemy' : 'wing'));
       let order = typeof sp.order === 'function' ? sp.order(i, pos, g) : sp.order;
-      if (order === 'engage' || (!order && team === 'red' && !sp.passive)) order = s.orders.engage();
+      if (order === 'engage' || (!order && team === 'red' && !sp.passive)) order = s.orders.engage(sp.sort === false ? null : sortTarget(i));
       if (sp.formation === 'wing' && !order && pl) order = s.orders.escort(pl, { x: (i % 2 ? -1 : 1) * 90, y: 0, z: 60 });
       if (order && sp.passive) order.passive = true;
       if (!order && sp.passive) order = s.orders.cruise(hdg, pos.y, { passive: true });
@@ -409,6 +426,8 @@ export function createRuntime(combat, director, mission, options = {}) {
       const e = world.spawnAircraft(def);
       if (!e) continue;
       if (sp.invulnerable) e.invulnerable = true;
+      const tough = sp.toughness ?? (sp.role === 'wing' ? WING_TOUGHNESS[combat.difficulty] ?? 1 : 1);
+      if (tough !== 1 && e.maxHp > 0) { e.maxHp *= tough; e.hp = e.maxHp; }
       if (sp.thrust != null && e.sim?.damage) e.sim.damage.thrust = sp.thrust;    // detuned engines (drones, slow movers)
       if (sp.passive && e.pilot) e.pilot.passive = true;
       e.tags.spawnT = combat.clock;
@@ -437,7 +456,7 @@ export function createRuntime(combat, director, mission, options = {}) {
         for (const e of g.members) {
           if (!e.alive || !e.pilot || e.pilot.order?.type === 'engage') continue;
           const t = world.nearestEnemy(e, sp.engageWithin);
-          if (t) { e.pilot.setOrder(s.orders.engage()); g.engaged = true; }
+          if (t) { e.pilot.setOrder(s.orders.engage(sortTarget(g.members.indexOf(e)) || t)); g.engaged = true; }
         }
       }
     }

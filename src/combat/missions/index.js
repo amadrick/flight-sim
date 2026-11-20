@@ -13,6 +13,9 @@ import { getAirport, runwayEnd } from '../../data/airports.js';
 
 export { MISSIONS };
 
+/** Multiplier on the player's hit points by difficulty (rookie must be winnable by a new player). */
+export const PLAYER_TOUGHNESS = { rookie: 1.6, veteran: 1.25, ace: 1 };
+
 export function createDirector(combat) {
   const ev = combat.events, world = combat.world;
   const radioQ = createRadio(combat), scoring = createScoring(combat);
@@ -70,6 +73,9 @@ export function createDirector(combat) {
       director.redKills = 0;
       const p = world.player;
       if (p) p.stats = director.stats;
+      // difficulty toughness: scales whatever hit points the weapons module gave the player (relative, so it fits any damage model)
+      const tough = m.toughness?.[combat.difficulty] ?? PLAYER_TOUGHNESS[combat.difficulty] ?? 1;
+      if (p && p.maxHp > 0 && tough !== 1 && p.maxHp < 1e4) { p.maxHp *= tough; p.hp = p.maxHp; }
       Object.assign(warned, { guns: false, missiles: false, winch: false, bingo: false, burning: false, hitT: -99, hadMissiles: missilesOf(p) > 0 });
       radioQ.reset(m.cast, director.anchor.callsign);
       rt = createRuntime(combat, director, m, o);

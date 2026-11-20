@@ -98,13 +98,13 @@ export const INSTANT = [
         const g = p.loadout.gun;
         if (typeof g === 'number') p.loadout.gun = Math.min(510, g + 250); else if (g) g.rounds = Math.min(g.max ?? 510, (g.rounds || 0) + 250);
         if (typeof p.loadout.flares === 'number') p.loadout.flares = Math.min(30, p.loadout.flares + 10);
-        if (p.hp != null && p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
+        if (p.hp != null && p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.5);
       };
       const next = () => {
         if (s.ended) return;
         wave++;
-        const n = Math.min(6, 1 + Math.floor(wave / 2) + s.n(0, 0, 1));
-        const skill = Math.min(0.97, s.skill('enemy', -0.15) + 0.055 * wave);
+        const n = Math.min(6, 1 + Math.floor((wave - 1) / 2) + s.n(0, 0, 1));
+        const skill = Math.min(0.97, s.skill('enemy', -0.2) + 0.05 * wave);
         const g = s.group(`wave${wave}`, { type: wave < 3 ? 'f16' : 'mixed', count: n, callsign: names[(wave - 1) % names.length], skill, spacing: 700,
           at: { rel: s.between(-45, 45), dist: s.between(17000, 24000) }, call: '@awacs.wave' });
         ob.set(`wave ${wave}`);
