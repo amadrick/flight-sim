@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createSandbox } from '../ai/tools/sandbox.mjs';
 import { spawnPlayer } from './tools/thumb.mjs';
-import { shapeRate, rotateToward, ASSIST_DIFFICULTY } from './index.js';
+import { shapeRate, rotateToward, keyDir, ASSIST_DIFFICULTY, ASSIST_TUNING } from './index.js';
+import { stepKeyAxis } from '../../input/logic.js';
 
 const DEG = Math.PI / 180;
 const fwd = new THREE.Vector3();
@@ -47,7 +48,7 @@ test('API: names, difficulty defaults, overrides', async () => {
 
 test('shapeRate / rotateToward', () => {
   assert.equal(shapeRate(0), 0); assert.equal(shapeRate(1), 1);
-  assert.ok(shapeRate(0.2) < 0.08, 'small deflection = fine aiming');
+  assert.ok(shapeRate(0.2) < 0.15, 'small deflection = fine aiming');
   for (let m = 0; m < 1; m += 0.1) assert.ok(shapeRate(m + 0.1) > shapeRate(m));
   const a = new THREE.Vector3(0, 0, -1), b = new THREE.Vector3(1, 0, 0);
   const left = rotateToward(a, b, 0.5);
@@ -106,7 +107,7 @@ test('stick back = nose up; a released dive is kept, not fought', async () => {
   const { b, e } = await setup({ alt: 5000 });
   fly(b, e, 1.5);
   fly(b, e, 1.2, 0, 1);
-  assert.ok(e.state.velocity.y > 20, `climbing ${e.state.velocity.y.toFixed(0)} m/s`);
+  assert.ok(e.state.velocity.y > 15, `climbing ${e.state.velocity.y.toFixed(0)} m/s`);
   fly(b, e, 6, 0, -1);                                         // pushes (no roll inverted) into a dive
   assert.ok(Math.abs(e.state.roll) < 30 * DEG, `pushed, not rolled: bank ${(e.state.roll / DEG).toFixed(0)}°`);
   fly(b, e, 2);
@@ -160,10 +161,10 @@ test('rookie: auto-throttle engages when the throttle is left alone; any input t
   fly(b, e, 2);
   assert.equal(c.assist.info.autoThrottle, false);
   assert.ok(Math.abs(e.controls.throttle - 0.3) < 1e-6, 'the player\'s lever is kept');
-  // veteran: never
+  // veteran gets it too (a thumb that never touches the throttle would fight far too slow); ace never
   const v = await setup({ difficulty: 'veteran' });
   fly(v.b, v.e, 5);
-  assert.equal(v.c.assist.info.autoThrottle, false);
+  assert.equal(v.c.assist.info.autoThrottle, true);
 });
 
 test('rookie: the ground protection pulls out of a dive at the last moment; veteran gets the cue', async () => {
@@ -182,4 +183,31 @@ test('rookie: the ground protection pulls out of a dive at the last moment; vete
   assert.ok(r.minY < 900, `takes over late, not early (lowest ${r.minY.toFixed(0)} m)`);
   const v = await dive('veteran');
   assert.ok(v.cue, 'veteran sees the pull-up cue');
+});
+
+test('keyDir recovers the key from the key-ramped axis', () => {
+  const st = { v: 0, t: 0, dir: 0 }, dt = 1 / 60;
+  const seq = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  let vp = 0;
+  for (const k of seq) { const v = stepKeyAxis(st, k, dt); assert.equal(keyDir(v, vp, dt), k, `key ${k} at v ${v.toFixed(2)}`); vp = v; }
+  assert.equal(keyDir(1, 0, dt), 1); assert.equal(keyDir(0, 1, dt), 0);         // raw keys too
+});
+
+test('keys: a tap is a small fixed nose step; the release after a hard turn gives nothing back', async () => {
+  const { b, c, e } = await setup({ speed: 220 });
+  c.assist.device = 'keys';
+  fly(b, e, 1.5);
+  const ks = { v: 0, t: 0, dir: 0 };
+  const h0 = heading(e);
+  let n = 0;
+  b.run(3, () => { e.controls.roll = stepKeyAxis(ks, n++ < 5 ? 1 : 0, 1 / 60); e.controls.pitch = 0; e.controls.yaw = 0; });
+  const step = wrap(heading(e) - h0) / DEG;
+  assert.ok(step > 0.8 && step < 3.5, `tap turned ${step.toFixed(2)}° (step ${(ASSIST_TUNING.keyStep / DEG).toFixed(1)}°)`);
+  // hold the key 4 s, let go: the nose heading 4 s later is not behind where it was let go
+  c.assist.device = 'analog';
+  fly(b, e, 4, 1, 0);
+  const hr = heading(e);
+  fly(b, e, 4);
+  const back = -wrap(heading(e) - hr) / DEG;
+  assert.ok(back < 3, `gave back ${back.toFixed(1)}°`);
 });

@@ -18,7 +18,7 @@ const DEG = Math.PI / 180;
 export const SPECS = { gun: GUNS.m61, guns: GUNS, missiles: MISSILES, flare: FLARE, radar: RADAR };
 
 const ACC_TAU = 0.3;
-const BULLET_POOL = 768, NEAR_MISS = 14, NEAR_THROTTLE = 0.35, GROUND_THROTTLE = 0.07;
+const BULLET_POOL = 2048, NEAR_MISS = 14, NEAR_THROTTLE = 0.35, GROUND_THROTTLE = 0.07;
 const FWD = new THREE.Vector3(0, 0, -1);
 /** Gameplay tuning for the late hard-turn evasion roll (see evadeRoll). */
 export const EVADE = { g: 6, window: 2.5, base: { ir: 0.3, radar: 0.4 }, slowBonus: 0.45, fast: 750, slow: 400 };
@@ -537,17 +537,17 @@ export function createWeapons(combat) {
   }
 
   // ---- flares ---------------------------------------------------------------------------------------------------------
-  /** Release a flare salvo (a pair). Limited count, short cooldown. Returns true if any flare left. */
-  function dropFlares(e) {
+  /** Release a flare salvo (a pair; AI and scripts). Limited count, short cooldown. Returns true if any flare left. */
+  function dropFlares(e, count = FLARE.salvo) {
     const lo = e?.loadout; if (!lo || !e.alive || !(lo.flares > 0)) return false;
     const w = e.wpn;
     if (w.flareT >= 0 && combat.clock - w.flareT < FLARE.cooldown) return false;
     w.flareT = combat.clock;
-    const n = Math.min(FLARE.salvo, lo.flares);
+    const n = Math.min(Math.max(1, count | 0), lo.flares);
     const g = e.def?.geometry, zAft = g ? (g.tailZ ?? 5) * 0.6 : 3;
     for (let k = 0; k < n; k++) {
       lo.flares--;
-      const side = k % 2 ? 1 : -1;
+      const side = n === 1 ? ((w.rail++ % 2) ? 1 : -1) : k % 2 ? 1 : -1;
       const f = world.create({ kind: 'flare', team: e.team, owner: e, radius: 1, age: 0, life: FLARE.life * (0.9 + 0.2 * rng()),
         eff: 0.75 + 0.5 * rng(), heat: 0, intensity: 0 });
       v1.set(side * 0.8, -1.0, zAft).applyQuaternion(e.state.quaternion);
@@ -667,7 +667,7 @@ export function createWeapons(combat) {
   ev.on('cmd', ({ name } = {}) => {
     const p = world.player; if (!p || !p.alive || !p.loadout) return;
     if (name === 'missile') launchMissile(p);
-    else if (name === 'flare') dropFlares(p);
+    else if (name === 'flare') dropFlares(p, 1);     // input runs a programme (3 releases per press): one flare each
     else if (name === 'weaponNext') cycleWeapon(p);
   });
   ev.on('mission:abort', () => { const p = world.player; if (p) dm.reset(p); });
@@ -676,6 +676,18 @@ export function createWeapons(combat) {
     specs: SPECS, bullets, missiles, flares,
     equip, setTrigger, launchMissile, dropFlares, cycleWeapon, applyDamage, gunSolution, gunTrajectory, threatsTo,
     lockState(e) { return e.lock; },
+    /** flare(entity, { count }) — release `count` flares (default: a pair). Same rules as dropFlares. */
+    flare(e, o = {}) { return dropFlares(e, o.count ?? FLARE.salvo); },
+    /**
+     * Gun muzzle of `e` in world space: fills outPos (and outDir, the firing direction = nose) and returns outPos,
+     * or null when the entity has no gun.
+     */
+    muzzleOf(e, outPos = new THREE.Vector3(), outDir = null) {
+      const w = e?.wpn; if (!w || !w.gun || !e.state) return null;
+      outPos.set(w.port[0], w.port[1], w.port[2]).applyQuaternion(e.state.quaternion).add(e.state.position);
+      if (outDir) outDir.copy(e.forward);
+      return outPos;
+    },
     rearm,
     /** Could `e`'s `type` seeker (or radar) lock `target` right now (geometry, signature, notch — no lock time)? */
     canLock(e, target, type = e.loadout?.selected || 'ir') { return !!(target && target.alive && target.state && canSee(e, target, type)); },

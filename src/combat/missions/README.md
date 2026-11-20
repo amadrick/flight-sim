@@ -100,6 +100,10 @@ mission({
   - The shortcuts are `s.destroy(id, text, groups, { count })`, `s.protect(id, text, groupOrList, { min, optional })`,
     `s.reach(id, text, zone)` and `s.hold(id, text, seconds)`.
   - When every primary objective is done, the mission is won (`s.autoWin = false` turns that off). A failed primary objective loses it.
+- **Mission clock**: `s.bingo(sec, { label, fraction, decide(lost, total), win, lose, winChat, loseChat })` shows a
+  "Bingo fuel" countdown. When it runs out, every red aircraft still flying is ordered to flee, and the mission is won if
+  `decide` says so. The default is that at least `fraction` (0.6) of the red aircraft that showed up are down. Every
+  open-ended fight uses it, so no mission runs undecided.
 - **Fail conditions**: `s.countdown(sec, label, onExpire, { warn, dynamic })`, `s.boundary(center, r, { grace })` (after a
   warning, a countdown before "Left the area") and `s.failIf(cond, reason)`. When the player is shot down the mission is lost,
   unless `s.onPlayerDown(killer, weapon)` decides otherwise.
@@ -108,6 +112,9 @@ mission({
   bearing/range call), `s.cast(map)` and `s.wingman()`.
 - **Score and ending**: `s.score(points, label, reason)`, `s.medal(id, title, text)`, `s.win(reason, chat?)` and
   `s.lose(reason, chat?)`. `s.winChat` and `s.loseChat` set the default closing lines. The ending happens once, after the final radio beat.
+
+Survival waves grow by one bandit every third wave. A wave that is not cleared in time (120 s on veteran, plus 60 s for
+the first two waves) is joined by the next one.
 
 Endless survival is the one mission that does not declare everything up front: its waves are generated as it goes.
 
@@ -145,9 +152,10 @@ friendlyFire, objectives, objectivesFailed, time, score, rating, breakdown: [{ l
 
 | Role | Rookie | Veteran | Ace |
 |---|---|---|---|
-| Enemy | 0.18 | 0.5 | 0.8 |
-| Elite | 0.32 | 0.66 | 0.95 |
-| Wingman | 0.8 | 0.62 | 0.48 |
+| Enemy | 0.18 | 0.5 | 0.72 |
+| Elite | 0.32 | 0.66 | 0.88 |
+| Wingman | 0.8 | 0.62 | 0.55 |
 
-Enemy missile racks are rookie `{ ir 1 }`, veteran `{ ir 2 }` and ace `{ ir 2, radar 2 }`. Group sizes come from `s.n()`.
+Enemy racks are rookie `{ ir 1, flares 4 }`, veteran `{ ir 2, flares 10 }` and ace `{ ir 2, radar 1, flares 16 }`. A red
+group with an explicit `loadout` and no `flares` still gets the difficulty's flare count. Group sizes come from `s.n()`.
 Damage scaling is the weapons module's job (`DAMAGE_TAKEN`), so missions do not scale hit points (`toughness` is optional, per mission).

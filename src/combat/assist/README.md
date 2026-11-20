@@ -8,12 +8,20 @@ player's physics, only while a human flies. It reads `ctx.controls.pitch / roll`
 
 - **Nose command `N`** (`assist.command`, world unit vector). The stick turns it at a nose rate in the stick frame:
   right moves the nose right, back moves it up, a diagonal does both.
-  - The rate is `shapeRate(m) × the available turn rate`, where `shapeRate(m) = m·(0.25 + 0.75·m²)`. Small deflections
-    give fine aim (0.2 stick ≈ 2 °/s at 350 kt).
+  - The rate is `shapeRate(m) × the available turn rate`, where `shapeRate(m) = m·(0.7 + 0.3·m²)`, applied on top of
+    the input layer's own dead zone and expo (pad 0.1 / 0.4, touch 0.07 / 0.4).
   - Full stick asks a little more than the G limit, so the turn is flown at the AoA / G limit.
   - The stick magnitude can rise at most 4 per second. A tap or a flick gives a small correction, and holding builds up
     to the full-rate turn.
-  - `N` may lead the nose by up to 0.32 rad at full stick.
+  - `N` may lead the nose by up to 0.32 rad at full stick. Easing the stick shrinks that allowance only slowly
+    (0.1 rad/s), so the reticle is never yanked back toward the nose.
+- **Keys** (`assist.device` `'keys'`, or `'auto'` while the simulator's input mode is keyboard / mouse without the yoke).
+  The key behind each axis is recovered from the key-ramped value (`keyDir`). Then:
+  - a tap moves `N` one fixed step (1.7°);
+  - a hold longer than 0.15 s adds a rate that ramps to the full turn over 0.4 s;
+  - the opposite key within 0.4 s of letting go is a stop: the motion still to come and `N`'s lead on that axis are
+    dropped, and that press makes no step;
+  - on release `N` stays where the key left it (after a long hard hold the roll-out below applies).
 - **Path `P`** (`assist.path`) is the flight path that puts the nose on `N`.
   - `P` is `N` less 0.8 × the smoothed AoA, taken along the smoothed commanded lift direction, plus a slow integral of
     the remaining nose error.
@@ -21,13 +29,17 @@ player's physics, only while a human flies. It reads `ctx.controls.pitch / roll`
     each other.
 - **Steering.** The lift vector is rolled toward `P` (`ai/fly.js` `steer`), with gravity compensation and the commanded
   rate as feed-forward.
+  - The feed-forward is smoothed (2 s while the stick is held, 1 s once released): a held turn's rate is learned, a
+    shaky or jabbing thumb does not shake the lift vector. The reticle itself follows the stick at once.
   - The gain is gentle for small errors (1.2/s) and firm for large ones (2.5/s).
   - When a correction needs less than ½ g of lift, or negative lift, the aircraft eases off or pushes with its wings
     where they are. A forward stick never rolls the aircraft inverted.
 - **Release.**
-  - After a hard turn held for more than 0.7 s, the aircraft rolls out on the flight path. During the roll-out, `P`
-    keeps half of the turn's extra AoA ahead and is never left behind the path, so the aircraft does not reverse. The
-    path then holds.
+  - After a hard turn held for more than 0.7 s, the aircraft rolls out so that the nose stops where it was let go:
+    `N` freezes at the nose, 45 % of the turn's extra lift is dropped at once and the rest is shed over
+    `τ = 0.7 × V × (AoA per g) / g`, the time in which the path catches up with the nose as the AoA dies away. The
+    shedding pauses while the nose falls back, and the hold point follows the nose while it still swings on, so the
+    nose ends up at, or a little beyond, where it was let go, never behind.
   - After a tap, `N` simply stays where it is.
   - A dive or climb the player set up is kept. Near level flight the gravity-compensated lift brings the wings level.
 - **Stick frame** (`assist.frame`):
@@ -69,7 +81,8 @@ mode, setMode('assist' | 'off' | null)      null = the difficulty default (assis
 aimAssist, setAimAssist(0..1 | null)        null = the difficulty default (0.8 / 0.4 / 0)
 aim { x, y, active }                        pointer aim, -1..1 from the screen centre, +y up
 frame 'horizon' | 'view'
-info { mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint }
+device 'auto' | 'analog' | 'keys'
+info { mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint, keys }
 command, path, frameRight, frameUp          world vectors for HUD cues (draw `command` as the "nose goes here" reticle)
 reset(), update(dt)
 ```
@@ -78,17 +91,46 @@ reset(), update(dt)
 
 ```
 node --test src/combat/assist
-node src/combat/assist/tools/thumb.mjs steps [--types f16,f15,fa18,f14,a10] [--speeds 250,350,450] [--sticks analog,digital]
-node src/combat/assist/tools/thumb.mjs track [--patterns turn,weave] [--aims 0,0.4,0.8] [--modes assist,direct]
-node src/combat/assist/tools/thumb.mjs duel  [--types …] [--ai rookie,veteran] [--runs 8]
+node src/combat/assist/tools/thumb.mjs steps [--types f16,f15,fa18,f14,a10] [--speeds 250,350,450] [--sticks analog,digital] [--hold 4]
+node src/combat/assist/tools/thumb.mjs track [--patterns turn,weave] [--aims 0,0.4,0.8] [--modes assist,direct] [--sticks analog,touch,digital] [--seeds 3]
+node src/combat/assist/tools/thumb.mjs duel  [--types …] [--ai rookie,veteran] [--sticks analog,touch,digital] [--runs 8] [--throttle 0.9]
 ```
+
+`steps --hold 4` holds full stick for 4 s instead of to an angle and reports the give-back: how far the nose heading
+comes back in the 4 s after release (negative = it ends beyond where it was let go).
 
 The **virtual thumb** only sees the screen.
 - It sees the target, or the lead point inside 1.6 km, relative to the point it steers:
   - with the assist, the reticle of `N`;
   - with direct controls, the gun cross.
-- What it sees is 150–250 ms late and noisy.
-- Analog sticks are proportional plus a leaky integral. Digital input is arrow keys through the real key ramp
-  (`src/input/logic.js`), held when far off and tapped near the aim.
-- On direct controls it rolls the target above the canopy and pulls.
+- What it sees is late and noisy: 150–250 ms for a pad thumb, 100–150 ms for touch.
+- With the assist it wants a reticle rate (proportional plus a leaky integral) and pushes as far as the stick's curve
+  needs for it (a practised player knows the curve). Its gain follows McRuer's crossover model: full rate at
+  `2.6 × delay × full rate` off, the gain a human settles on to keep the loop steady for their reaction time. On
+  direct controls it rolls the target above the canopy and pulls, full stick at 5° off.
+- `analog`: a pad stick through the simulator's shaping (dead zone 0.1, expo 0.4).
+- `touch`: a phone's virtual stick. It is 8-bit and shaky (σ 0.03), pinned at the rim above 0.6, has no fine control
+  below 0.15, and the thumb lifts off now and then (output 0 at once, also after 0.4 s with nothing to do). It lands
+  again with an offset of 0.04–0.14 and a gain error of ±25 % until the next lift. The simulator's touch shaping follows
+  (dead zone 0.07, expo 0.4).
+- `digital`: arrow keys through the real key ramp (`src/input/logic.js`). With the assist it holds a key while more
+  than 6° off and lets go early by what the reticle will still move in its reaction time. Near the aim it taps (a few
+  per second at most).
 - It fires when it sees the gun cross on the lead point, and it pulls out of dives it sees heading into the ground.
+
+## Using it outside a mission (free flight)
+
+`createAssist(combat)` reads only these from `combat`, so a free-flight caller can pass a small adapter object:
+
+| field | used for |
+|---|---|
+| `world.player` | the flown entity: `state` (position, velocity, quaternion, aoa, gLoad, ias, tas, roll, heading, onGround, crashed, overspeed, `surfaces.gear`, `ap.engaged`), `controls` (written), `def` and `sim` (for `ai/fly.js profileOf`), `pilot` (null = a human flies), `alive`, `up` / `right`, optional `target` / `loadout` |
+| `difficulty` | the defaults (`'rookie' \| 'veteran' \| 'ace'`); or call `setMode` / `setAimAssist` explicitly |
+| `ctx.world.groundHeightAt(x, z)` | the ground protection (0 without it) |
+| `ctx.camera`, `camera.mode` | pointer aim and the `'view'` frame (optional) |
+| `ctx.input.mode`, `ctx.input.mouseYoke` | key detection with `device: 'auto'` (optional) |
+| `result` | truthy = the mission has ended, the assist stays out (leave undefined) |
+| `weapons.gunSolution` | gun help (optional) |
+
+Call `update(dt)` after the input layer has written `ctx.controls` and before the physics step, only while a human
+flies, and `reset()` when the flight starts.
