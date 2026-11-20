@@ -28,6 +28,15 @@ can be compared side by side; all round-four and round-five switches still work.
 * Fix 2 (`clBubMu`, default 1): lobe orientation from the change of the visible surface function (envelope + cascade)
   over a short step toward the sun, instead of the gradient of the sphere field alone (which lit each whole sphere,
   also where the envelope cuts it: a disc with a dark rim).
+* Learned MS (cloud-ms.js JS reference): J_ms is ~0.10 sr^-1 for tauSun 0.1 and for tauSun 16 with the same taps; it
+  follows the taps (0.10 dense around, 0.03-0.06 thin around), not the depth toward the sun. A sunlit bulge and the
+  shaded flank next to it get the same multiply scattered sunlight: flat grey near faces (critique 2), and bubble
+  shell outside the envelope (thin taps) darker than the body (the veil). Fix 3 (`clSunK`, default 1): J_ms x
+  (1.6 e^(-tauSun/8) + 0.15) (diffusion falloff with depth toward the sun; research doc 5.6 contrast).
+* Shape fix (`clBubS` = slope gain G, default 1.6; 0 = round-six sqrt caps): linear bubble profile, octave 0 signed,
+  finer octaves outward only, slope G x amplitude: the surface is the union of the bubbles (round domes meeting in V
+  creases). The sqrt cap stood every bubble on a vertical cliff ring where it left the envelope (a disc outline), with
+  flat envelope between bubbles. Bounds (CL_BUB_HI, sphere-trace slope, cheap-density gate) scale with G.
 
 ## 0. Round six: cauliflower, field variety, cost
 

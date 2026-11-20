@@ -318,6 +318,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   clAnvilW = anvil; clAnvilTop = uClLayer.x + lid * uClLayer.w; clAnvilSig = info.w * uClNoise.w;
   return ex - 3.0 * clSat((hN - lid) * 14.0);                    // lid at the tropopause / inversion
 }
+#define CL_BUB_G (uClBub4.y > 0.0 ? uClBub4.y : 1.0)   // round six b: slope gain of the linear bubble profile
 #define CL_BUB_C 0.15                // bubble SDF value on the envelope: the cascade carves inward more than it pushes out
 // Round six: the first (largest) octave of the bubble cascade alone, for the cheap density: the light march, the learned-MS
 // taps and the shadow map then see the big lobes, so each turret shades the next (dark creases at lobe scale, and no
@@ -326,14 +327,14 @@ float clBubble0(vec3 pa, float lod) {
   float lam = clamp(clThermal * uClBub.z, 22.0, 650.0) * 1e-3;
   vec3 q = pa * 1e-3 / (5.0 * lam); q.y -= uClNoiseOfs.w;
   clNF += 1.0;
-  return uClBub.x * lam * ((textureLod(tClBubble, q, clamp(lod, 0.0, 4.0)).r * 2.0 - 1.0) - CL_BUB_C);
+  return CL_BUB_G * uClBub.x * lam * ((textureLod(tClBubble, q, clamp(lod, 0.0, 4.0)).r * 2.0 - 1.0) - CL_BUB_C);
 }
 // Cheap density (no detail), used by the light march and the shadow map.
 float clLightOffR = 300.0, clLightOffIn = 0.0;  // reach of clLightOff (m); its value for the next clTauLight call (km)
 float clLightOff = 0.0;     // round six b: local displacement of the full surface against the cheap one (km), added by the light march
 float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float ex = clShape(pa, wx, lod, info) + clLightOff;
-  if (uClBub3.w > 0.0 && uClBub.x > 0.0 && clBubK > 0.0 && !clNoBub0 && ex > -0.8 * uClBub.x * clamp(clThermal * uClBub.z, 22.0, 650.0) * 1e-3 * clGradK)
+  if (uClBub3.w > 0.0 && uClBub.x > 0.0 && clBubK > 0.0 && !clNoBub0 && ex > -0.8 * CL_BUB_G * uClBub.x * clamp(clThermal * uClBub.z, 22.0, 650.0) * 1e-3 * clGradK)
     ex += clBubK * clGradK * clBubble0(pa, lod) * mix(0.35, 1.0, clSat(info.x * 12.0));
   return clSat(ex / 0.06);
 }
@@ -351,7 +352,7 @@ float clDensityBase(vec3 pa, vec4 wx, float lod, out vec4 info) {
 #define CL_EROSION_BIAS 0.3
 #define CL_EROSION_MAXK 1.25        // largest size / decay factor of the erosion (keeps the march's hit test conservative)
 #define CL_EROSION_LO (CL_EROSION_BIAS + 0.225 * uClDet2.x * (1.0 + uClDet2.x))   // most negative erosion value with the cascade, in units of uClNoise.z * size factor
-#define CL_BUB_HI ((0.95 - CL_BUB_C) * uClBub.x * clamp(clThermal * uClBub.z, 22.0, 650.0) * 1e-3 / (1.0 - uClBub.y))   // most positive bubble displacement (km)
+#define CL_BUB_HI ((0.95 - CL_BUB_C) * CL_BUB_G * uClBub.x * clamp(clThermal * uClBub.z, 22.0, 650.0) * 1e-3 / (1.0 - uClBub.y))   // most positive bubble displacement (km)
 float clCap(float w) { return sqrt(clSat(2.0 * w - w * w)); }     // inverted Worley cone -> spherical cap (round lobes, sharp creases)
 // Round six: cauliflower as a CASCADE OF BUBBLES. Each octave k adds the signed distance field of a union of spheres
 // (tClBubble, cell size lam_k = lam_0 r^k, lam_0 ~ 0.35 x the cell radius, r ~ 0.42: the 0.35-0.5 radius ratio of the
@@ -385,7 +386,11 @@ float clBubbles(vec3 pa, float fp, out float cav) {
     // the positive part has a spherical-cap profile, sqrt(x): a bump rises vertically from the surface it sits on and is
     // domed on top (a linear profile, slope = amplitude ~0.7, gave gentle mounds: marshmallow instead of cauliflower)
     float x = S - (k == 0 ? CL_BUB_C : 0.3);
-    D += A * (x > 0.0 ? sqrt(x * (0.95 - (k == 0 ? CL_BUB_C : 0.3))) : (k == 0 ? x : 0.0));
+    // round six b (clBubS = gain G > 0): LINEAR profile with slope G x amplitude: the surface is the union of the bubbles
+    // themselves (round domes meeting in V creases, steeper than the envelope so no flat envelope shows between them).
+    // The sqrt cap of round six rose vertically from the envelope: every bubble stood on a cliff ring (a disc outline)
+    if (uClBub4.y > 0.0) D += A * uClBub4.y * (k == 0 ? x : max(x, 0.0));
+    else D += A * (x > 0.0 ? sqrt(x * (0.95 - (k == 0 ? CL_BUB_C : 0.3))) : (k == 0 ? x : 0.0));
     float cw = k == 0 ? 0.6 : k == 1 ? 0.3 : 0.1;
     cS += cw * wk * (1.0 - clSat((S + 0.5) / 1.4)); cW += cw * wk;
     par *= smoothstep(-0.45, 0.55, S);                               // sub-turrets ride on the domes
@@ -968,7 +973,7 @@ void main() {
           // round six b: local displacement of the visible surface against the cheap density the light march sees
           if (uClBub4.w > 0.0 && bubS > 0.0 && uClBub.x > 0.0) {
             float lam0 = clamp(thermS * uClBub.z, 22.0, 650.0);
-            float exCh = exS_ + (uClBub3.w > 0.0 ? bubS * uClBub.x * lam0 * 1e-3 * (bubS0 - CL_BUB_C) * mix(0.35, 1.0, clSat(info.x * 12.0)) : 0.0);
+            float exCh = exS_ + (uClBub3.w > 0.0 ? bubS * CL_BUB_G * uClBub.x * lam0 * 1e-3 * (bubS0 - CL_BUB_C) * mix(0.35, 1.0, clSat(info.x * 12.0)) : 0.0);
             clLightOffIn = uClBub4.w * (surfS - exCh); clLightOffR = uClBub5.y * lam0;
           }
           #ifdef CL_MS5
@@ -1043,7 +1048,13 @@ void main() {
           #endif
           float msK = uClBub.x > 0.0 ? mix(uClMs.y, uClBub3.y, bubS) : uClMs.y;     // (round six: full lobe lighting on bubbly turrets)
           vec3 occM = vec3(mix(1.0, occ.x * lam, msK), mix(1.0, occ.y, msK), 0.0);
-          vec3 S = E * (msPhase * exp(-tauSun) +  msFwd + msLast.x) * occM.x
+          // round six b: the network's J_ms barely depends on tauSun (0.10 sr^-1 at tauSun 0.1 and at 16 with the same taps,
+          // cloud-ms.js reference): its shading comes from the taps, so a sunlit bulge and the shaded flank beside it get the
+          // same multiply scattered sunlight and near faces read as flat grey. Diffusion makes the sun's higher orders fall
+          // off with the depth toward the sun (lit tops 5-10 x the shaded parts, research doc 5.6): J_ms x (1.6 e^(-tauSun/8)
+          // + 0.15), mean ~1 over the lit skin. clSunK = 0: round six.
+          float jK = mix(1.0, 1.6 * exp(-tauSun * 0.125) + 0.15, uClBub5.z);
+          vec3 S = E * (msPhase * exp(-tauSun) +  msFwd + msLast.x * jK) * occM.x
                  + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;
           #elif defined(CL_AMBIENT_VIS)
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
@@ -1053,6 +1064,9 @@ void main() {
           float visUp = 0.35 * exp(-0.6 * tauUp) + 0.65 / (1.0 + 0.2 * tauUp);
           float visDn = 0.35 * exp(-0.6 * tauDn) + 0.65 / (1.0 + 0.2 * tauDn);
           vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
+          #endif
+          #ifdef CL_MS5
+          if (uClDet3.x > 5.5) S = vec3(msLast.x * 2.0, msLast.y, exp(-tauSun)) * 0.6; else      // round six b debug: J_ms, V_sky, direct sun
           #endif
           if (uClDet3.x > 4.5) S = vec3(bubS, gradS / 8.0, decS);   // round six debug: bubble weight, |gradient| estimate, decay
           else if (uClDet3.x > 0.5) S = uClDet3.x < 1.5 ? vec3(0.02 + 0.5 * exp(-tauSun)) : uClDet3.x < 2.5 ? vec3(cav) : uClDet3.x < 3.5 ? vec3(surfK, d, 0.2) * 0.6 : vec3(lam * 0.5);
@@ -1070,7 +1084,7 @@ void main() {
           // round six: in the shell where the bubble cascade could reach (up to a few hundred metres outside the envelope)
           // the miss tells how far away the surface still is (clSurf = excess - erosion, km; the cascade's slope is at
           // most ~1 + amplitude per octave): sphere-trace instead of crawling through it with fine steps
-          if (uClBub4.x > 0.0 && ex > 0.0 && uClBub.x > 0.0 && clBubK > 0.5 && clSurf < 0.0 && cap > 1e8) t += max(-clSurf * 1000.0 / (1.0 + 2.0 * uClBub.x) - ds, 0.0);
+          if (uClBub4.x > 0.0 && ex > 0.0 && uClBub.x > 0.0 && clBubK > 0.5 && clSurf < 0.0 && cap > 1e8) t += max(-clSurf * 1000.0 / (1.0 + 2.0 * uClBub.x * CL_BUB_G) - ds, 0.0);
           if (++zeros > 5) { fine = false; cap = 1e9; }
         }
         t += ds;
