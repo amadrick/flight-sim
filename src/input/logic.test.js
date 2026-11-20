@@ -76,3 +76,42 @@ test('no duplicate code per plain/shift variant', () => {
   const seen = new Set();
   for (const r of KEY_TABLE) for (const c of r.codes) { const k = c + (r.shift ? '+S' : ''); assert.ok(!seen.has(k), k); seen.add(k); }
 });
+
+import { touchRaw, touchShape, autoCoordYaw, throttleDetent, TOUCH_STICK } from './logic.js';
+import { createPrefs, sanitizePrefs, PREF_DEFAULTS, PREFS_KEY } from './prefs.js';
+
+test('touch stick: raw deflection scales with sensitivity and stays in the unit circle', () => {
+  const o = { x: 0, y: 0 };
+  touchRaw(30, 0, 60, 1, o); assert.equal(o.x, 0.5);
+  touchRaw(30, 0, 60, 2, o); assert.equal(o.x, 1);
+  touchRaw(100, 100, 60, 1, o); assert.ok(Math.abs(Math.hypot(o.x, o.y) - 1) < 1e-9);
+});
+test('touch stick: dead zone, expo, full throw', () => {
+  const s = { x: 0, y: 0 };
+  touchShape({ x: TOUCH_STICK.dead * 0.9, y: 0 }, s); assert.equal(s.x, 0);
+  touchShape({ x: 0.5, y: 0 }, s); assert.ok(s.x > 0.25 && s.x < 0.5, 'expo softens the centre: ' + s.x);
+  touchShape({ x: 1, y: 0 }, s); assert.ok(Math.abs(s.x - 1) < 1e-9);
+  assert.ok(Math.abs(autoCoordYaw(1) - TOUCH_STICK.coord) < 1e-9);
+  assert.equal(autoCoordYaw(0), 0);
+});
+test('throttle detents: idle, MIL, afterburner, full', () => {
+  assert.deepEqual(throttleDetent(0.2, 0.01, true), { v: 0, hit: 'idle' });
+  assert.equal(throttleDetent(0.8, AB_DETENT + 0.01, true).v, AB_DETENT);
+  assert.equal(throttleDetent(0.8, AB_DETENT + 0.01, true).hit, 'mil');
+  assert.equal(throttleDetent(AB_DETENT, 0.97, true).hit, 'ab');
+  assert.equal(throttleDetent(0.97, 0.995, false).hit, 'full');
+  assert.equal(throttleDetent(0.5, 0.52, true).hit, null);
+});
+test('touch prefs: defaults, sanitising, persistence', () => {
+  const mem = new Map(); const st = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+  const p = createPrefs(st);
+  assert.deepEqual(p.get(), PREF_DEFAULTS);
+  let seen = null; p.on((v) => { seen = v; });
+  p.set({ sensitivity: 5, lefty: true, drawer: 'nope' });
+  assert.equal(p.get().sensitivity, 2); assert.equal(p.get().lefty, true); assert.equal(p.get().drawer, 'auto');
+  assert.equal(seen.lefty, true);
+  assert.equal(JSON.parse(mem.get(PREFS_KEY)).lefty, true);
+  assert.equal(createPrefs(st).get().lefty, true);
+  assert.deepEqual(sanitizePrefs('x'), PREF_DEFAULTS);
+  assert.equal(createPrefs(null).set({ haptics: false }).haptics, false);   // no storage: still works
+});

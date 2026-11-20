@@ -37,6 +37,9 @@ const CSS = `
 .hud-plate[hidden]{display:none}
 @media (max-width:520px),(pointer:coarse){.hud-toast{font-size:12px;height:34px}.hud-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.hud-toast,.hud-hint{transition:none}}
+@media (horizontal-viewport-segments:2){.hud-root .hud-paused,.hud-root .hud-crash{left:calc(env(viewport-segment-left 1 0) + env(viewport-segment-width 1 0) / 2)}
+  .hud-root .hud-crash{width:min(500px,calc(env(viewport-segment-width 1 0) - 32px))}.hud-root .hud-hint{width:min(300px,calc(env(viewport-segment-width 0 0) - 32px))}}
+@media (vertical-viewport-segments:2){.hud-root .hud-paused,.hud-root .hud-crash{top:calc(env(viewport-segment-height 0 0) / 2)}}
 `;
 
 const HINT = [
@@ -127,7 +130,9 @@ export function createNotices(ctx) {
       if (!ctx.params.test) { try { localStorage.setItem('skyward.hud.hint', String(n + 1)); } catch {} }
     }
   }
-  function showHint(life) { hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
+  // the auto card stays away in combat missions (it would cover the radio line and the objectives); F1 still brings it
+  const inCombat = () => !!ctx.combat?.active;
+  function showHint(life) { if (ctx.input?.touchEnabled || (life === HINT_AUTO && inCombat())) return; hintT = 0; hintLife = life; hint.hidden = false; hint.classList.remove('off'); }
   function hideHint() { hintT = -1; hint.classList.add('off'); hint.hidden = true; }
   /** F1 / help button: bring the card back, or put it away. */
   function toggleHint() {
@@ -182,12 +187,27 @@ export function createNotices(ctx) {
   ctx.events.on('crash', (e) => { lastCrashReason = e?.reason || ''; });
   let lastCrashReason = '';
 
-  let lastReason = null;
+  let lastReason = null, toastTop = null;
   return {
     toast,
+    /** Touch layout: start the toast stack below the HUD region (px from the top), or null for the default spot. */
+    setToastTop(px, x, w) {
+      const k = px == null ? null : Math.round(px) + ',' + Math.round(x ?? -1) + ',' + Math.round(w ?? -1);
+      if (k === toastTop) return;
+      toastTop = k;
+      toasts.style.top = px == null ? '' : Math.round(px) + 'px';
+      // touch layout: centre the stack over the HUD region (keeps it on one screen of a dual-screen device)
+      const box = px != null && x != null && w != null;
+      toasts.style.left = box ? Math.round(x) + 'px' : '';
+      toasts.style.right = box ? 'auto' : '';
+      toasts.style.width = box ? Math.round(w) + 'px' : '';
+      toasts.style.padding = box ? '0' : '';
+    },
     onSession,
     toggleHint,
     get hintVisible() { return hintT >= 0 && hintT < hintLife; },
+    /** Fade the controls card out now (no-op when it is not up). */
+    dismissHint() { if (hintT >= 0 && hintT < hintLife) hintT = hintLife; },
     /** realDt: wall-clock seconds; show: overall visibility; p: ctx.player */
     update(realDt, show, p) {
       now += realDt;
@@ -199,12 +219,13 @@ export function createNotices(ctx) {
       }
       paused.hidden = !(ctx.time?.paused && p);
       const crashed = !!p?.state.crashed;
-      crash.hidden = !crashed;
+      crash.hidden = !crashed || !!ctx.menu?.crashDialogOpen;   // the menu's dialog replaces the card after 2 s
       if (crashed) {
         const reason = p.state.crashReason || lastCrashReason || 'Aircraft destroyed';
         if (reason !== lastReason) { lastReason = reason; crashReason.textContent = reason; }
       } else lastReason = null;
       if (p && !crashed) watch(p);
+      if (hintT >= 0 && hintLife === HINT_AUTO && hintT < hintLife && inCombat()) hintT = hintLife;   // a mission began
       if (hintT >= 0) {
         // the card's clock only runs while flying (not paused), so it is still there after a pause at the start
         if (!ctx.time?.paused) hintT += realDt;

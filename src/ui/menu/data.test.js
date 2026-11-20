@@ -53,3 +53,14 @@ test('glass: rim light direction and scene tint', () => {
   assert.equal(rimAngle(0, -1), 0);
   assert.equal(sceneOf(0), 'day'); assert.equal(sceneOf(0.4), 'dusk'); assert.equal(sceneOf(0.9), 'night');
 });
+
+import { defaultQualityFor, TOUCH_HELP } from './data.js';
+test('phones start at low quality, tablets at medium, desktops keep theirs', () => {
+  assert.equal(defaultQualityFor(true, 390, 844, 'high'), 'low');
+  assert.equal(defaultQualityFor(true, 844, 390, 'medium'), 'low');
+  assert.equal(defaultQualityFor(true, 768, 1024, 'high'), 'medium');
+  assert.equal(defaultQualityFor(true, 768, 1024, 'low'), 'low');
+  assert.equal(defaultQualityFor(false, 390, 844, 'high'), 'high');
+  assert.equal(defaultQualityFor(true, 1440, 2560, 'high'), 'high');
+  assert.ok(TOUCH_HELP.length >= 6);
+});

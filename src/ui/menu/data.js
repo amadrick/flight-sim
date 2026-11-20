@@ -174,3 +174,28 @@ export function clearanceLine(airport, rwyName, start, def) {
   if (start === 'approach') return `${airport.id} · Final RWY ${rwyName} · ${(9000 / NM).toFixed(1)} NM · ${Math.round(toKt((def?.specs?.approachSpeed ?? 70) * 1.08))} kt`;
   return `${airport.id} · RWY ${rwyName} · Line up and wait`;
 }
+
+/** Controls screen on touch screens: what each on-screen control does (input/touch.js draws them). */
+export const TOUCH_HELP = [
+  ['Pitch and roll', 'Right thumb: drag anywhere on the right half'],
+  ['Throttle', 'Left thumb: slide the THR lever (it snaps at MIL)'],
+  ['Rudder', 'Slide the rudder bar; it springs back to centre'],
+  ['Gear, flaps, speedbrake', 'Buttons beside the throttle'],
+  ['Wheel brakes', 'Hold Brake'],
+  ['Autopilot', 'AP holds altitude and heading'],
+  ['Camera', 'Cam, top right'],
+  ['Pause and menu', 'Menu, top right'],
+  ['Weapons (missions)', 'GUN (hold), MSL, FLR and TGT at the right edge, beside the stick area'],
+];
+
+/**
+ * Default graphics tier for a first run. Phones (touch, short screen side under 600 px) start at 'low', tablets at
+ * 'medium'; everything else keeps `current`. A saved choice or ?quality= always wins (the caller checks that).
+ */
+export function defaultQualityFor(touch, screenW, screenH, current) {
+  const s = Math.min(screenW || 0, screenH || 0);
+  if (!touch || !s) return current;
+  if (s < 600) return 'low';
+  if (s < 1100 && (current === 'high' || current === 'ultra')) return 'medium';
+  return current;
+}

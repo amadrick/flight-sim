@@ -34,7 +34,8 @@ export function createAirlinerDeck(tok) {
   const font = (w, px) => `${w} ${Math.round(px)}px ${mono}`;
   let fonts = {};
 
-  function layout(W, H) {
+  function layout(W, H, box) {
+    if (box) return boxLayout(W, H, box);
     const pad = 16;
     let deckH = H * 0.4;
     if (deckH - 18 < 230) deckH = Math.min(H * 0.45, 248);       // small windows: a little more height for legibility
@@ -70,8 +71,44 @@ export function createAirlinerDeck(tok) {
     return L;
   }
 
+  // touch screens: the deck lives in the HUD region of the touch layout (top of the screen, clear of the controls):
+  // PFD + compact engine/config strip, beside it when the region is wide, above it when it is tall
+  function boxLayout(W, H, box) {
+    const gap = 8, m = 6;
+    const wide = box.w > box.h * 1.3;
+    let S;
+    if (wide) S = Math.min(box.h - m * 2, (box.w - m * 2 - gap) / 1.62, 420);
+    else S = Math.min(box.w - m * 2, (box.h - m * 2 - gap) / 1.16, 420);
+    S = Math.max(60, Math.floor(S));
+    const L = { mode: 'compact', S, eW: 0, gap, W, H, box };
+    const x = box.x + m, y = box.y + m;
+    if (wide) {
+      L.pfd = { x, y, w: S, h: S };
+      L.strip = { x: x + S + gap, y, w: Math.floor(S * 0.62), h: S, vertical: true };
+      L.panel = { x: box.x, y: box.y, w: S + gap + L.strip.w + m * 2, h: S + m * 2 };
+    } else {
+      const sh = Math.round(S * 0.16);
+      L.strip = { x, y, w: S, h: sh, vertical: false };
+      L.pfd = { x, y: y + sh + gap, w: S, h: S };
+      L.panel = { x: box.x, y: box.y, w: S + m * 2, h: S + sh + gap + m * 2 };
+    }
+    L.panelTop = box.y;
+    return L;
+  }
+
   function buildLayer(W, H, dpr) {
     layer = layer || makeLayer(1, 1);
+    if (Lyt.box) {
+      const P = Lyt.panel;
+      layer.width = Math.ceil(W * dpr); layer.height = Math.ceil((P.h + 4) * dpr);
+      Lyt.layerTop = P.y - 2;
+      const g = layer.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, 0, -Lyt.layerTop * dpr);
+      g.fillStyle = 'rgba(10,13,17,0.86)'; g.beginPath(); rrect(g, P.x, P.y, P.w, P.h, 12); g.fill();
+      g.strokeStyle = 'rgba(160,175,190,0.16)'; g.lineWidth = 1; g.stroke();
+      for (const k of ['pfd', 'strip']) { const d = Lyt[k]; g.fillStyle = '#030405'; g.beginPath(); rrect(g, d.x, d.y, d.w, d.h, 4); g.fill(); }
+      return;
+    }
     const top = Math.max(0, Lyt.panelTop - 30);
     layer.width = Math.ceil(W * dpr); layer.height = Math.ceil((H - top) * dpr);
     Lyt.layerTop = top;
@@ -98,8 +135,9 @@ export function createAirlinerDeck(tok) {
 
   function draw(g, E) {
     const { W, H, dpr, s } = E;
-    const k = (W * 8192 + H) * 8 + Math.round(dpr * 2);
-    if (k !== key || !layer) { key = k; Lyt = layout(W, H); buildLayer(W, H, dpr); }
+    const bx = E.box;
+    const k = (W * 8192 + H) * 8 + Math.round(dpr * 2) + (bx ? ((bx.x * 4099 + bx.y) * 4099 + bx.w) * 4099 + bx.h : 0) * 16;
+    if (k !== key || !layer) { key = k; Lyt = layout(W, H, bx); buildLayer(W, H, dpr); }
     g.drawImage(layer, 0, Lyt.layerTop, layer.width / dpr, layer.height / dpr);
     // speed trend (filtered dIAS/dt over sim time)
     const dt = num(E.ctx.time?.dt, 0);
@@ -785,5 +823,9 @@ export function createAirlinerDeck(tok) {
     g.restore();
   }
 
-  return { draw, invalidate() { key = -1; } };
+  return {
+    draw, invalidate() { key = -1; },
+    /** Bottom edge (CSS px) of what the deck covers when it is docked in a box, else null. */
+    get boxBottom() { return Lyt && Lyt.box ? Lyt.panel.y + Lyt.panel.h : null; },
+  };
 }

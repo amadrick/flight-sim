@@ -39,10 +39,15 @@ export const CSS = /* css */`
 
 /* ---------- top bar: three floating capsules ---------------------------------------------------- */
 .menu-top {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; pointer-events: none;
+  display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items: center; gap: 10px; min-width: 0; pointer-events: none;
   padding: var(--gt) var(--gr) 0 var(--gl);
 }
 .menu-top > * { pointer-events: auto; }
+/* the side capsules keep their content width; when the bar is short of room the tabs give way (and scroll) instead of
+   overlapping them (other modules add tabs: combat's Missions) */
+.menu-tabs { min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.menu-tabs::-webkit-scrollbar { display: none; }
+.menu-tabs > .menu-tab { flex: none; white-space: nowrap; }
 .menu-cap { --r: var(--r-pill); height: 44px; display: flex; align-items: center; box-sizing: border-box; }
 .menu-brand { gap: 10px; padding: 0 18px 0 14px; justify-self: start; grid-column: 1; }
 .menu-brand-mark { width: 22px; height: 22px; flex: none; color: var(--accent, #ffb000); }
@@ -327,8 +332,8 @@ export const CSS = /* css */`
 .menu-corner { position: absolute; z-index: 15; top: var(--gt); right: var(--gr); display: flex; gap: 8px; pointer-events: auto; margin-top: 4px; transition: opacity 0.6s; }
 .menu-corner.dim { opacity: 0.55; }
 .menu-corner.dim:hover, .menu-corner:focus-within { opacity: 1; }
-.menu-corner.touch { right: calc(var(--gr) + 136px); top: max(10px, env(safe-area-inset-top, 0px)); margin-top: 0; }
-.menu-corner.touch #menu-fab, .menu-corner.touch #menu-help { display: none; }
+/* touch screens: the touch layout (input/touch.js) owns the top-right corner (Camera + Menu); fullscreen is in Settings */
+.menu-corner.touch { display: none !important; }
 .menu-cbtn { --r: var(--r-pill); height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; box-sizing: border-box; color: var(--fg);
   font-size: 13px; font-weight: 600; letter-spacing: 0.04em; transition: transform 0.25s var(--spring); }
 .menu-cbtn:active { transform: scale(0.94); }
@@ -352,16 +357,6 @@ export const CSS = /* css */`
 .menu-act.glass-tint, .menu-btn.glass-tint, .menu-fly.glass-tint { background: var(--tint-bg); color: var(--accent-ink); box-shadow: var(--tint-shadow); }
 .menu-act.glass-tint:hover, .menu-btn.glass-tint:hover { background: var(--tint-bg); filter: brightness(1.06); }
 
-/* touch flight controls (input module) restyled as clear glass */
-.inp-pnl, .inp-btn, .inp-base { background: rgb(var(--glass-rgb) / var(--glass-a-clear)) !important; -webkit-backdrop-filter: blur(12px) saturate(1.6); backdrop-filter: blur(12px) saturate(1.6);
-  border: 0 !important; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22), inset 0 1px 0 rgb(255 255 255 / 0.3), 0 6px 18px rgb(0 0 0 / 0.2) !important; }
-.inp-pnl, .inp-btn { border-radius: 18px !important; }
-.inp-btn.on, .inp-btn.down { background: rgb(255 176 0 / 0.55) !important; color: var(--accent-ink) !important; }
-.inp-knob, .inp-rud-knob { background: radial-gradient(circle at 50% 35%, #fff, #dfe6ee) !important; border: 0 !important; box-shadow: 0 3px 10px rgb(0 0 0 / 0.35) !important; }
-.inp-thr-knob { box-shadow: 0 1px 6px rgb(0 0 0 / 0.4) !important; }
-.inp-hint { border: 1.5px dashed rgb(255 255 255 / 0.3) !important; }
-:root.ui-lite .inp-pnl, :root.ui-lite .inp-btn, :root.ui-lite .inp-base { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgb(var(--glass-rgb) / 0.7) !important; }
-
 /* ---------- motion: panels grow out of the control that opened them -------------------------------- */
 @keyframes menu-rise { from { opacity: 0; transform: translate(-50%, 14px) scale(0.96); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-8px) scale(0.965); } to { opacity: 1; transform: none; } }
@@ -383,6 +378,7 @@ export const CSS = /* css */`
   .menu-main { grid-template-columns: minmax(256px, 290px) minmax(0, 1fr) minmax(290px, 330px); column-gap: 14px; }
   .menu-status-item.menu-status-opt { display: none; }
   .menu-tab { padding: 0 14px; }
+  .menu-tab svg { display: none; }
 }
 @media (max-width: 1000px) {
   .menu-status-k { display: none; }
@@ -394,12 +390,12 @@ export const CSS = /* css */`
   .menu-status { padding-left: 14px; }
   .menu-tab { padding: 0 12px; }
 }
-@media (max-width: 1020px) {
+@media (max-width: 1100px) {
   .menu-spec-key, .menu-spec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-spec-key > .menu-kv:nth-child(3)::before { display: none; }
   .menu-hero-tag { display: none; }
 }
-@media (max-width: 900px) and (min-width: 721px) {
+@media (max-width: 900px) and (min-width: 560px) and (min-aspect-ratio: 1001/1000) {
   .menu-main { grid-template-columns: minmax(232px, 262px) minmax(0, 1fr) minmax(262px, 292px); column-gap: 12px; }
   .menu-hero { display: none; }
   .menu-filter .menu-segbtn small { display: none; }
@@ -420,22 +416,24 @@ export const CSS = /* css */`
   .menu-pause-title { font-size: 26px; }
   .menu-pause-title::before { height: 19px; }
 }
-@media (max-height: 640px) and (min-width: 721px) {
+@media (max-height: 640px) and (min-width: 560px) and (min-aspect-ratio: 1001/1000) {
   .menu-main .menu-panel-ac, .menu-main .menu-panel-plan { align-self: stretch; }
 }
-@media (max-height: 460px) and (min-width: 721px) {
+@media (max-height: 460px) and (min-width: 560px) and (min-aspect-ratio: 1001/1000) {
   .menu-clear { display: none; }
   .menu-livsec { display: none; }
   .menu-tab svg { display: none; }
 }
 
-/* sheet layout: phones and portrait tablets — panels collapse into one bottom sheet */
-@media (max-width: 720px), (max-aspect-ratio: 1/1) and (max-width: 1100px) {
+/* sheet layout: portrait phones and tablets — panels collapse into one bottom sheet. Landscape phones keep the
+   side-by-side panels (aircraft left, flight setup right, both scrolling inside), which uses a short screen far better. */
+@media (max-aspect-ratio: 1/1) and (max-width: 1100px), (max-width: 559px) {
   .menu-top { gap: 8px; grid-template-columns: auto minmax(0, 1fr); }
   .menu-status { display: none; }
   .menu-brand { padding: 0 12px; }
   .menu-tabs { justify-self: end; }
   .menu-tab { padding: 0 13px; font-size: 13.5px; }
+  .menu-top .menu-tab svg { display: none; }
   .menu-view { padding: 0; }
   .menu-main { display: block; }
   .menu-main .menu-panel-ac, .menu-main .menu-panel-plan { align-self: stretch; min-width: 0; }
@@ -456,7 +454,7 @@ export const CSS = /* css */`
   .menu-phead { padding: 6px 2px 8px; }
   .menu-filter { margin: 0 0 10px; }
   /* aircraft: horizontal carousel of cards */
-  .menu-aclist { overflow-x: auto !important; overflow-y: hidden !important; margin: 0 calc(-1 * var(--gr)) 0 calc(-1 * var(--gl)); padding: 0 var(--gr) 0 var(--gl); scroll-snap-type: x proximity; scrollbar-width: none; touch-action: pan-x pan-y; -webkit-mask-image: none; mask-image: none; border-radius: 0; }
+  .menu-aclist { overflow-x: auto !important; overflow-y: hidden !important; margin: 0 calc(-1 * var(--gr)) 0 calc(-1 * var(--gl)); padding: 0 var(--gr) 0 var(--gl); scroll-snap-type: x proximity; scroll-padding: 0 var(--gr) 0 var(--gl); scrollbar-width: none; touch-action: pan-x pan-y; -webkit-mask-image: none; mask-image: none; border-radius: 0; }
   .menu-aclist::-webkit-scrollbar { display: none; }
   .menu-aclist > .menu-list { flex-direction: row; padding: 2px 2px 4px; width: max-content; gap: 6px; }
   .menu-aclist .menu-row { grid-template-columns: 1fr; grid-template-rows: auto auto; width: 128px; height: 98px; align-content: start; row-gap: 6px; padding: 10px 11px; scroll-snap-align: start; background: var(--fill); box-shadow: inset 0 0 0 1px var(--hair); }
@@ -464,11 +462,11 @@ export const CSS = /* css */`
   .menu-aclist .menu-row-tag { position: absolute; right: 10px; top: 12px; }
   .menu-aclist .menu-row-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 13.5px; line-height: 1.2; }
   .menu-aclist .menu-row-sub { display: none; }
-  .menu-aclist .menu-grouplabel { writing-mode: vertical-rl; transform: rotate(180deg); padding: 6px 2px; justify-content: center; }
+  .menu-aclist .menu-grouplabel { writing-mode: vertical-rl; transform: rotate(180deg); padding: 6px 2px; justify-content: center; scroll-snap-align: start; }
   .menu-aclist .menu-grouplabel .menu-count { display: none; }
   .menu-livsec { padding: 10px 2px 4px; }
   /* hero becomes the selected aircraft's card inside the sheet */
-  .menu-main .menu-hero { width: auto; align-items: stretch; text-align: left; padding: 10px 2px 2px; }
+  .menu-main .menu-hero { display: flex; width: auto; align-items: stretch; text-align: left; padding: 10px 2px 2px; }
   .menu-hero-kicker { display: none; }
   .menu-hero-name, .menu-hero-name.long { font-size: 26px; margin: 0 0 2px; text-shadow: none; }
   .menu-hero-tag { display: block; font-size: 13px; margin: 0 0 10px; text-shadow: none; color: var(--fg-dim); }
@@ -485,15 +483,70 @@ export const CSS = /* css */`
   .menu-anim .menu-sheet, .menu-anim .menu-dock > .menu-panel { animation: menu-in-u 0.46s var(--spring) both; }
   .menu-anim .menu-main .menu-panel-ac, .menu-anim .menu-main .menu-panel-plan, .menu-anim .menu-main .menu-flybar, .menu-anim .menu-hero { animation: none; }
 }
-@media (max-width: 720px) and (max-height: 500px) {
+@media (max-aspect-ratio: 1/1) and (max-width: 1100px) and (max-height: 720px) {
+  .menu-root .menu-sheet { max-height: 64%; }
+}
+@media (max-aspect-ratio: 1/1) and (max-height: 500px) {
   .menu-sheet, .menu-dock > .menu-panel { max-height: 72%; }
+}
+@media (max-width: 700px) and (max-aspect-ratio: 1/1) {
+  .menu-brand-name { display: none; }
+  .menu-brand { padding: 0 11px; }
 }
 @media (max-width: 420px) {
   .menu-brand-name { display: none; }
   .menu-tab { padding: 0 11px; }
+  /* the top bar holds four tabs (Missions is added by the combat module): squeeze them, never overlap the brand */
+  .menu-tabs .menu-tab { padding: 0 8px; font-size: 13px; letter-spacing: 0; }
   .menu-tab svg { display: none; }
   .menu-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-opts { grid-template-columns: 1fr; }
+}
+@media (max-width: 359px) {
+  .menu-top { grid-template-columns: minmax(0, 1fr); }
+  .menu-brand { display: none; }
+  .menu-tabs { justify-self: stretch; justify-content: space-between; grid-column: 1; }
+}
+/* touch screens: every control is at least 44 px tall (Apple HIG / WCAG 2.5.5); switches keep their look with a
+   transparent border that widens the hit area */
+@media (pointer: coarse) {
+  .menu-cap { height: 48px; }
+  .menu-tab { height: 44px; }
+  .menu-tabs { padding: 2px; }
+  .menu-seg > .menu-segbtn { min-height: 44px; }
+  .menu-chip, .menu-todchips .menu-chip { min-height: 44px; }
+  .menu-rwy { height: 44px; min-width: 60px; }
+  .menu-back, .menu-more, .menu-iconbtn { width: 44px; height: 44px; }
+  .menu-switch { box-sizing: content-box; border: 6px solid transparent; background-clip: padding-box; }
+  .menu-cbtn { height: 44px; min-width: 44px; }
+  .menu-cbtn.menu-cbtn-icon { width: 44px; }
+  .menu-range { height: 44px; }
+  .menu-range::-webkit-slider-thumb { width: 30px; height: 30px; margin-top: -11px; }
+  .menu-keyrow { min-height: 44px; }
+  .menu-device-touch { display: block; }
+}
+/* dual-screen devices spanned across a hinge (viewport segments): nothing sits on or across the hinge.
+   Side by side: aircraft on the left screen, flight setup + Fly on the right, tabs on the right screen, docked panels
+   kept to one screen. Stacked: the sheet and docked panels stay on the bottom screen. Unsupported browsers ignore this. */
+@media (horizontal-viewport-segments: 2) {
+  .menu-root { --hinge-l: env(viewport-segment-right 0 0, 50vw); --hinge-r: env(viewport-segment-left 1 0, 50vw); --seg1-w: env(viewport-segment-width 1 0, 50vw); }
+  .menu-top { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .menu-tabs { grid-column: 3; justify-self: end; }
+  .menu-status { display: none; }
+  .menu-main { display: grid !important; grid-template-columns: calc(var(--hinge-l) - var(--gl) - 16px) calc(var(--hinge-r) - var(--hinge-l) + 32px) minmax(0, 1fr) !important; column-gap: 0 !important; }
+  .menu-main .menu-sheet { display: contents !important; }
+  .menu-main .menu-panel-ac { grid-column: 1 !important; grid-row: 1 / 3 !important; }
+  .menu-main .menu-panel-plan { grid-column: 3 !important; grid-row: 1 !important; }
+  .menu-main .menu-flybar { grid-column: 3 !important; grid-row: 2 !important; }
+  .menu-main .menu-hero, .menu-grab { display: none !important; }
+  .menu-dock > .menu-panel { max-width: calc(var(--seg1-w) - var(--gr) - 16px); }
+  .menu-dock-c, .menu-dock-wide { justify-content: flex-end; }
+  .menu-dock-l > .menu-panel { max-width: calc(var(--hinge-l) - var(--gl) - 16px); }
+  .menu-crash.menu-crash { left: calc(var(--hinge-r) + var(--seg1-w) / 2); width: min(440px, calc(var(--seg1-w) - 32px)); }
+}
+@media (vertical-viewport-segments: 2) {
+  .menu-root .menu-sheet, .menu-root .menu-dock > .menu-panel { max-height: calc(env(viewport-segment-height 0 1, 50vh) - 8px) !important; }
+  .menu-crash.menu-crash { bottom: auto; top: calc(env(viewport-segment-top 0 1, 50vh) + 24px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .menu-root *, .menu-crash, .menu-corner, .menu-corner * { animation: none !important; transition: none !important; }
