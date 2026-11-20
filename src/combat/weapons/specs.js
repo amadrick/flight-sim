@@ -20,7 +20,7 @@ export const GUNS = {
  * (burnt linearly over the whole motor time), diameter m, cd0 (drag coefficient on the body cross-section, coasting;
  * the motor plume fills the base while burning: × 0.75), cnMax (max normal-force coefficient on the cross-section →
  * aerodynamic g limit), maxG structural, navGain (proportional navigation N), tau s (autopilot lag), gimbal deg (seeker
- * look-angle limit vs the missile axis), fov deg (lock cone off the launcher's nose), lockTime s, gate deg (seeker
+ * look-angle limit vs the missile axis), trackRate deg/s (seeker slew limit: a faster line-of-sight rate breaks the track), fov deg (lock cone off the launcher's nose), lockTime s, gate deg (seeker
  * tracking gate), quality 0..1 (counter-countermeasures), fuze m (proximity radius), blast m (damage radius),
  * damage hp at zero distance, armDist m / armTime s, life s (self-destruct), detectRange m (IR: vs a rear-aspect
  * MIL-power fighter; radar: seeker range once active), activeRange m (radar: goes autonomous at this range-to-go).
@@ -28,22 +28,22 @@ export const GUNS = {
  */
 export const MISSILES = {
   ir: { id: 'ir', type: 'ir', seeker: 'ir', name: 'Short-range IR missile', short: 'SRM', designation: 'AIM-9M',
-    mass: 86, propellant: 27, diameter: 0.127, cd0: 0.62, cnMax: 16, maxG: 40, navGain: 4, tau: 0.16,
-    motor: { boost: [15500, 2.4], sustain: [0, 0] },
-    gimbal: 60, fov: 30, lockTime: 0.9, gate: 3.2, quality: 0.62, detectRange: 10500,
-    fuze: 8, blast: 13, damage: 240, armDist: 300, armTime: 0.45, life: 24,
+    mass: 86, propellant: 27, diameter: 0.127, cd0: 0.95, cnMax: 13, maxG: 32, navGain: 4, tau: 0.35,
+    motor: { boost: [17500, 2.5], sustain: [0, 0] },
+    gimbal: 60, trackRate: 30, fov: 30, lockTime: 0.9, gate: 3.2, quality: 0.62, detectRange: 10500,
+    fuze: 7, blast: 11, damage: 240, armDist: 300, armTime: 0.45, life: 20,
     rMin: 400, rMax: 9000, speed: 820 },
   radar: { id: 'radar', type: 'radar', seeker: 'radar', name: 'Medium-range radar missile', short: 'MRM', designation: 'AIM-120C',
     mass: 152, propellant: 50, diameter: 0.178, cd0: 0.5, cnMax: 14, maxG: 35, navGain: 4, tau: 0.2,
     motor: { boost: [21000, 3.2], sustain: [4800, 5.0] },
-    gimbal: 55, fov: 60, lockTime: 1.8, gate: 6, quality: 0.7, detectRange: 16000, activeRange: 11000,
+    gimbal: 55, trackRate: 24, fov: 60, lockTime: 1.8, gate: 6, quality: 0.7, detectRange: 16000, activeRange: 11000,
     fuze: 11, blast: 17, damage: 300, armDist: 900, armTime: 1.1, life: 70,
     rMin: 1200, rMax: 32000, speed: 1250 },
 };
 
 /** Flares: count per salvo, cooldown s between salvos, life s, peak (relative IR intensity: a fighter at MIL power seen
  *  from astern ≈ 1.1), rise s to peak, fade s at the end, drag k (1/m, quadratic), ejection speed m/s. */
-export const FLARE = { salvo: 2, cooldown: 0.4, life: 4.2, peak: 7, rise: 0.25, fade: 1.6, drag: 0.009, eject: 28 };
+export const FLARE = { salvo: 2, cooldown: 0.4, life: 4.2, peak: 1.6, rise: 0.25, fade: 1.6, drag: 0.009, eject: 28 };
 
 /** Launcher radar: lock cone half-angle deg, search range m vs a fighter of rcs 1, lock time scale. */
 export const RADAR = { cone: 60, range: 75000 };

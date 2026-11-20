@@ -19,6 +19,8 @@ export const SPECS = { gun: GUNS.m61, guns: GUNS, missiles: MISSILES, flare: FLA
 
 const BULLET_POOL = 768, NEAR_MISS = 14, NEAR_THROTTLE = 0.35, GROUND_THROTTLE = 0.07;
 const FWD = new THREE.Vector3(0, 0, -1);
+/** Gameplay tuning for the late hard-turn evasion roll (see evadeRoll). */
+export const EVADE = { g: 6, window: 2.5, base: { ir: 0.3, radar: 0.4 }, slowBonus: 0.45, fast: 750, slow: 400 };
 
 export function createWeapons(combat) {
   const world = combat.world, ev = combat.events, ctx = combat.ctx;
@@ -293,7 +295,7 @@ export function createWeapons(combat) {
     m.launchPos = k.pos.clone();
     m.trk = new THREE.Vector3().copy(t.state.position).sub(k.pos).normalize();
     m.lk = { pos: t.state.position.clone(), vel: t.state.velocity.clone() };
-    m.trackQ = 1; m.lostT = 0; m.openT = 0; m.seen = new Set(); m.prevPos = k.pos.clone(); m.travel = 0;
+    m.trackQ = 1; m.rejected = 0; m.lostT = 0; m.openT = 0; m.seen = new Set(); m.prevPos = k.pos.clone(); m.travel = 0;
     missiles.push(m); world.add(m);
     if (e.stats) e.stats.missiles = (e.stats.missiles || 0) + 1;
     ev.emit('missile:launch', { shooter: e, missile: m, target: t, type, seeker: S.seeker });
@@ -305,6 +307,32 @@ export function createWeapons(combat) {
     if (m.lost) return;
     m.lost = true; m.guiding = false; m.missReason = m.missReason || reason;
     m.lostT = 0;
+  }
+
+  /** Seeker head slew limit: a line-of-sight rate above spec.trackRate (outside the last ~0.3 s) breaks the track. */
+  function overRate(m, t, rT, dt) {
+    v2.copy(t.state.velocity).sub(m.state.velocity);
+    const vc = -v2.dot(v1);
+    v2.addScaledVector(v1, -v2.dot(v1));
+    const rate = v2.length() / rT;
+    m.losRate = rate;
+    if (vc > 0 && rT / vc < 0.3) return false;
+    m.rateT = rate > m.spec.trackRate * DEG ? (m.rateT || 0) + dt : 0;
+    return m.rateT > 0.12;
+  }
+
+  /**
+   * Gameplay rule (not physics): a hard turn late in the missile's flight gives the target one roll to shake it.
+   * Taken once per missile, the first time the target pulls past EVADE.g with the missile inside EVADE.window s.
+   * The chance grows as the missile slows down. Tune it in EVADE.
+   */
+  function evadeRoll(m, t, rT) {
+    if (m.evaded || !(t.state.gLoad > EVADE.g)) return false;
+    const spd = m.state.velocity.length() || 1;
+    if (rT / spd > EVADE.window) return false;
+    m.evaded = true;
+    const slow = Math.max(0, Math.min(1, (EVADE.fast - spd) / (EVADE.fast - EVADE.slow)));
+    return rng() < EVADE.base[m.seeker] + EVADE.slowBonus * slow;
   }
 
   /** IR seeker: track the target, judge flares that enter the gate, sun capture. Sets aim/aimV; false if not tracking. */
@@ -329,6 +357,7 @@ export function createWeapons(combat) {
     if (t.kind !== 'aircraft') { aim.copy(t.state.position); aimV.copy(t.state.velocity || v4.set(0, 0, 0)); return true; }
     v1.copy(t.state.position).sub(mp); const rT = v1.length() || 1; v1.divideScalar(rT);
     if (v1.dot(mv) / spd < Math.cos(S.gimbal * DEG)) { loseTrack(m, 'lost'); return false; }
+    if (overRate(m, t, rT, dt) || evadeRoll(m, t, rT)) { loseTrack(m, 'lost'); return false; }
     const sigT = irSignature(t, mp);
     if (rT > S.detectRange * Math.sqrt(sigT / 1.1) * 1.35) { loseTrack(m, 'lost'); return false; }
     if (sunBlind(v1)) { m.decoyed = true; loseTrack(m, 'decoyed'); ev.emit('missile:decoyed', { missile: m, flare: null, sun: true, target: t }); return false; }
@@ -344,11 +373,14 @@ export function createWeapons(combat) {
       if (c < cosGate) { if (f.age > 0.3) m.seen.add(f.id); continue; }       // outside the gate: never competes
       if (c > cosHalf && f.age < 1.2) continue;                                  // not resolved yet
       m.seen.add(f.id);
-      const rej = S.quality * (0.45 + 0.55 * Math.min(1, f.age / 1.0));
+      // counter-countermeasures: spectral (quality) + kinematic (the older the flare, the more it has slowed and dropped)
+      const rej = Math.min(0.95, S.quality * (0.3 + Math.min(1, f.age / 1.2)));
       const wF = f.intensity * (1 - rej) / (rF * rF * 1e-6 + 0.01);
       const rho = wF / (wF + wT);
-      const p = rho * rho / (rho * rho + (1 - rho) * (1 - rho));
-      if (rng() < p) {
+      // each flare already rejected makes the seeker's logic warier: timing beats spamming
+      const p = rho * rho / (rho * rho + (1 - rho) * (1 - rho)) * Math.pow(0.7, m.rejected);
+      if (rng() >= p) { m.rejected++; continue; }
+      {
         m.target = f; m.decoyed = true; m.missReason = 'decoyed';
         ev.emit('missile:decoyed', { missile: m, flare: f, target: t });
         aim.copy(f.state.position); aimV.copy(f.state.velocity); return true;
@@ -384,6 +416,7 @@ export function createWeapons(combat) {
     }
     v1.copy(t.state.position).sub(mp); const rT = v1.length() || 1; v1.divideScalar(rT);
     if (v1.dot(mv) / spd < Math.cos(S.gimbal * DEG)) { loseTrack(m, 'lost'); return false; }
+    if (overRate(m, t, rT, dt) || evadeRoll(m, t, rT)) { loseTrack(m, 'lost'); return false; }
     const nf = notchFactor(mp, t.state, aglOf(t));
     m.trackQ = Math.min(1, m.trackQ + dt * (0.5 - nf * 3.2 * (1 - 0.5 * S.quality)));
     if (m.trackQ <= 0) { loseTrack(m, 'lost'); ev.emit('missile:notched', { missile: m, target: t }); return false; }
@@ -574,6 +607,8 @@ export function createWeapons(combat) {
     specs: SPECS, bullets, missiles, flares,
     equip, setTrigger, launchMissile, dropFlares, cycleWeapon, applyDamage, gunSolution, gunTrajectory, threatsTo,
     lockState(e) { return e.lock; },
+    /** Could `e`'s `type` seeker (or radar) lock `target` right now (geometry, signature, notch — no lock time)? */
+    canLock(e, target, type = e.loadout?.selected || 'ir') { return !!(target && target.alive && target.state && canSee(e, target, type)); },
     /** Launch-zone numbers for an arbitrary shooter/target pair without touching entity.lock (AI planning). */
     launchZone(shooter, target, type = 'ir', out = {}) {
       const s = shooter.state, ts = target.state;

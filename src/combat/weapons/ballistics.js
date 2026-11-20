@@ -23,12 +23,13 @@ export function gunK(spec, rho = 1.225) {
   return rho * spec.cd * A / (2 * spec.mass);
 }
 
-/** Advance one round (position/velocity Vector3s) by dt with drag constant k. Semi-implicit Euler. */
+/** Advance one round (position/velocity Vector3s) by dt with drag constant k (implicit drag, trapezoid position). */
 export function stepRound(pos, vel, k, dt) {
   const sp = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
   const f = 1 / (1 + k * sp * dt);              // implicit drag factor (stable at any dt)
+  const ox = vel.x, oy = vel.y, oz = vel.z, h = 0.5 * dt;
   vel.x *= f; vel.y = vel.y * f - G * dt; vel.z *= f;
-  pos.x += vel.x * dt; pos.y += vel.y * dt; pos.z += vel.z * dt;
+  pos.x += (ox + vel.x) * h; pos.y += (oy + vel.y) * h; pos.z += (oz + vel.z) * h;   // trapezoid: 2nd order
 }
 
 /**
@@ -116,6 +117,20 @@ export function solveGun(sState, tState, spec, portBody, out) {
     const bl = Math.max(_B.length(), 1);
     _err.addScaledVector(_f, -ePar);
     _f.addScaledVector(_err, 1 / bl).normalize();
+  }
+  // one numeric correction pass: fly the round with the integrator and remove the residual miss (closed form is ~0.1 %)
+  {
+    _B.copy(_M); _v0.copy(_f).multiplyScalar(spec.muzzleVelocity).add(vs);
+    const n = Math.max(4, Math.ceil(t * 120)), h = t / n;
+    for (let i = 0; i < n; i++) stepRound(_B, _v0, gunK(spec, rhoAt(_B.y)), h);
+    _rt.copy(tp).addScaledVector(tv, t).addScaledVector(_ta, 0.5 * t * t);
+    _err.copy(_rt).sub(_B);
+    const ePar = _err.dot(_f);
+    _err.addScaledVector(_f, -ePar);
+    const dist = Math.max(_B.distanceTo(_M), 1);
+    _f.addScaledVector(_err, 1 / dist).normalize();
+    const vAlong = _v0.dot(_f) - tv.dot(_f);
+    if (vAlong > 50) t += ePar / vAlong;
   }
   out.point ||= new THREE.Vector3(); out.dir ||= new THREE.Vector3();
   out.dir.copy(_f);
