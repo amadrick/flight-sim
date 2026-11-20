@@ -4,23 +4,31 @@
 //   applyDamage, lockState, gunSolution, gunTrajectory, threatsTo, update, reset
 // Pure logic (no DOM / WebGL); runs in node benches. Zero allocations per bullet per frame.
 import * as THREE from 'three';
-import { GUNS, MISSILES, FLARE, RADAR, baseLoadout, gunPort, rcsOf } from './specs.js';
+import { GUNS, MISSILES, FLARE, RADAR, PLAYER_WARNING, baseLoadout, gunPort, rcsOf } from './specs.js';
 import { G, gunK, stepRound, rhoAt, solveGun, gunTrajectory as trajectory } from './ballistics.js';
 import { buildShape, hitShape, segOriginDist2, segPoint } from './hitshape.js';
 import { createKin, stepKin, pnCommand, pnInfo, buildTable, launchZone, irSignature, flareIntensity, notchFactor, burnTime } from './missile.js';
 import { createDamageModel, createDamageState } from './damage.js';
 
-export { GUNS, MISSILES, FLARE, LOADOUTS, DAMAGE_TAKEN } from './specs.js';
+export { GUNS, MISSILES, FLARE, LOADOUTS, DAMAGE_TAKEN, PLAYER_WARNING } from './specs.js';
 export { gunK, solveGun, rhoAt } from './ballistics.js';
 
 const DEG = Math.PI / 180;
 /** Weapon data (COMBAT.md §6): specs.gun is the default gun (20 mm); per-aircraft guns are in specs.guns and loadout.gun.spec. */
 export const SPECS = { gun: GUNS.m61, guns: GUNS, missiles: MISSILES, flare: FLARE, radar: RADAR };
 
+const ACC_TAU = 0.3;
 const BULLET_POOL = 768, NEAR_MISS = 14, NEAR_THROTTLE = 0.35, GROUND_THROTTLE = 0.07;
 const FWD = new THREE.Vector3(0, 0, -1);
 /** Gameplay tuning for the late hard-turn evasion roll (see evadeRoll). */
 export const EVADE = { g: 6, window: 2.5, base: { ir: 0.3, radar: 0.4 }, slowBonus: 0.45, fast: 750, slow: 400 };
+
+function threatSlot(out, pool, i) {
+  let o = pool[i];
+  if (!o) o = pool[i] = { type: '', seeker: '', source: null, missile: null, range: 0 };
+  out[i] = o;
+  return o;
+}
 
 export function createWeapons(combat) {
   const world = combat.world, ev = combat.events, ctx = combat.ctx;
@@ -67,7 +75,7 @@ export function createWeapons(combat) {
       selected: ir > 0 ? 'ir' : radar > 0 ? 'radar' : 'ir',
     };
     e.lock = { target: null, state: 'none', progress: 0, seeker: e.loadout.selected, inRange: false, range: 0, rMin: 0, rMax: 0, rNe: 0, tti: 0,
-      closure: 0, aspect: 0, offBoresight: 0 };
+      closure: 0, aspect: 0, offBoresight: 0, heldT: 0 };
     e.trigger = false;
     const nEng = e.state?.engines?.length || e.def?.geometry?.engines?.length || 0;
     e.damage = createDamageState(nEng);
@@ -77,7 +85,9 @@ export function createWeapons(combat) {
     w.port = gunPort(e.def); w.gun = gspec;
     w.flareT = -1; w.launchT = -1; w.rail = 0; w.nearT = -1; w.groundT = -1; w.spawnT = combat.clock || 0;
     w.qi = new THREE.Quaternion(); w.pp = new THREE.Vector3();
+    if (w.accS) w.accInit = false;
     w.ledger.length = 0;
+    w.hpSeen = e.hp;
     dm.reset(e);
     if (e.sim?.damage) { e.sim.damage.engineOut = e.sim.damage.engineOut || []; for (let i = 0; i < nEng; i++) e.sim.damage.engineOut[i] = false; }
     return e.loadout;
@@ -97,6 +107,17 @@ export function createWeapons(combat) {
 
   // ---- gun ------------------------------------------------------------------------------------------------------------
   function gauss() { let u = rng(); if (u < 1e-9) u = 1e-9; return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
+
+  /** Mission scripts may write counts / hp directly: keep maxima and derived state consistent. */
+  function sanitize(e) {
+    const lo = e.loadout, g = lo.gun, M = lo.missiles, MM = lo.missilesMax;
+    if (!(g.rounds >= 0)) g.rounds = 0; if (g.rounds > g.max) g.max = g.rounds;
+    if (!(M.ir >= 0)) M.ir = 0; if (M.ir > (MM.ir || 0)) MM.ir = M.ir;
+    if (!(M.radar >= 0)) M.radar = 0; if (M.radar > (MM.radar || 0)) MM.radar = M.radar;
+    if (!(lo.flares >= 0)) lo.flares = 0; if (lo.flares > (lo.flaresMax || 0)) lo.flaresMax = lo.flares;
+    const w = e.wpn;
+    if (w && w.hpSeen !== e.hp) { dm.refresh(e); w.hpSeen = e.hp; }
+  }
 
   function fireGun(e, dt) {
     const g = e.loadout.gun, S = g.spec;
@@ -139,6 +160,7 @@ export function createWeapons(combat) {
       if (q) w.qi.copy(q).invert(); else w.qi.identity();
       const vel = t.state.velocity;
       w.pp.copy(t.state.position); if (vel) w.pp.addScaledVector(vel, -dt);
+      if (t.kind === 'aircraft') smoothAccel(t, dt);
       targets.push(t);
     }
   }
@@ -225,7 +247,9 @@ export function createWeapons(combat) {
 
   function setLockState(e, L, state) {
     if (L.state === state) return;
+    if (state === 'acquiring' && L.state === 'none' && L.seeker === 'radar' && L.target) ev.emit('rwr:spike', { source: e, target: L.target });
     L.state = state;
+    if (state !== 'locked') L.heldT = 0;
     ev.emit('lock:' + state, { shooter: e, target: L.target, seeker: L.seeker });
     if (state === 'locked' && L.seeker === 'radar') ev.emit('rwr:lock', { source: e, target: L.target });
   }
@@ -236,6 +260,10 @@ export function createWeapons(combat) {
     if (t && (!t.alive || t.kind === 'missile' || t.kind === 'flare' || t.team === e.team)) t = null;
     if (L.target !== t) { L.progress = 0; if (L.state !== 'none') setLockState(e, L, 'none'); L.target = t; }
     L.seeker = sel;
+    if (!(lo.missiles[sel] > 0)) {
+      const other = sel === 'ir' ? 'radar' : 'ir';
+      if (lo.missiles[other] > 0) { cycleWeapon(e); return; }
+    }
     if (!t || !(lo.missiles[sel] > 0) || !e.alive) {
       L.progress = 0; L.inRange = false; L.rMin = L.rMax = L.rNe = L.tti = 0; L.range = t ? t.state.position.distanceTo(e.state.position) : 0;
       setLockState(e, L, 'none'); return;
@@ -254,10 +282,12 @@ export function createWeapons(combat) {
     L.rMin = S.armDist + Math.max(0, closure) * S.armTime + 150;
     L.inRange = range >= L.rMin && range <= L.rMax;
     L.progress = Math.max(0, Math.min(1, L.progress + (ok ? dt / S.lockTime : -dt * 1.5)));
+    // the selected rail ran dry (or was emptied by a script) while the other type has rounds: switch
     let st = 'none';
     if (L.progress >= 1) st = 'locked';
     else if (L.progress > 0) st = !ok && L.state === 'locked' && L.progress >= 0.7 ? 'locked' : 'acquiring';   // brief drop-outs keep the lock
     setLockState(e, L, st);
+    if (L.state === 'locked') L.heldT = (L.heldT || 0) + dt;
   }
 
   // ---- missiles -------------------------------------------------------------------------------------------------------
@@ -274,6 +304,11 @@ export function createWeapons(combat) {
     if (combat.clock - w.launchT < 0.6 && w.launchT >= 0) return null;
     const locked = t && t.alive && ((L.state === 'locked' && L.seeker === type) || (L.seeker !== type && canSee(e, t, type)));
     if (!locked) { ev.emit('weapon:nolock', { entity: e }); return null; }
+    // fairness: a hostile shooter must have held its lock on the human player long enough for the warning to register
+    if (t.isPlayer && !t.pilot && t.team !== e.team) {
+      const pw = PLAYER_WARNING[combat.difficulty] || PLAYER_WARNING.veteran;
+      if ((L.heldT || 0) < (S.seeker === 'radar' ? pw.radarHold : pw.irHold)) return null;
+    }
     lo.missiles[type]--;
     w.launchT = combat.clock;
     const m = world.create({ kind: 'missile', team: e.team, owner: e, target: t, spec: S, type, seeker: S.seeker, radius: 1, age: 0, name: S.name,
@@ -564,7 +599,17 @@ export function createWeapons(combat) {
   /** Lead-computed gun solution: { point (world aim point with lead, drop, drag), dir, tof, range, inRange }. */
   function gunSolution(shooter, target, out = {}) {
     const S = shooter.loadout?.gun?.spec || GUNS.m61;
-    return solveGun(shooter.state, target.state, S, shooter.wpn?.port || null, out);
+    const acc = target.wpn?.accS || null;            // smoothed (τ ACC_TAU) — no jumps at every jink
+    return solveGun(shooter.state, target.state, S, shooter.wpn?.port || null, out, acc);
+  }
+  /** Per-target smoothed acceleration for gunSolution; resets on spawn and on teleports. */
+  function smoothAccel(t, dt) {
+    const w = t.wpn, s = t.state;
+    if (!w.accS) { w.accS = new THREE.Vector3(); w.accP = new THREE.Vector3().copy(s.position); w.accInit = false; }
+    const jump = w.accP.distanceToSquared(s.position), lim = Math.max(200, (s.velocity ? s.velocity.length() : 0) * dt * 5);
+    if (!w.accInit || jump > lim * lim) { w.accS.set(0, 0, 0); if (s.acceleration) w.accS.copy(s.acceleration); w.accInit = true; }
+    else if (s.acceleration) w.accS.lerp(s.acceleration, 1 - Math.exp(-dt / ACC_TAU));
+    w.accP.copy(s.position);
   }
   /** Round fired now, after tof: offset from the shooter's straight-line path, in its current body axes. */
   function gunTrajectory(shooter, tof, out = new THREE.Vector3()) {
@@ -575,21 +620,43 @@ export function createWeapons(combat) {
   function threatsTo(e, out = []) {
     let n = 0;
     const p = e.state.position;
+    // objects live in a hidden pool on the array, so `out.length = 0` by the caller (or the truncation below) never drops them
+    const pool = out.pool || (out.pool = []);
     for (let i = 0; i < missiles.length; i++) {
       const m = missiles[i];
       if (m.target !== e || m.lost) continue;
-      const o = out[n] || (out[n] = {}); n++;
+      const o = threatSlot(out, pool, n); n++;
       o.type = 'missile'; o.seeker = m.seeker; o.source = m.owner; o.missile = m; o.range = m.state.position.distanceTo(p);
     }
     const A = world.aircraft;
     for (let i = 0; i < A.length; i++) {
       const a = A[i];
       if (a === e || !a.lock || a.lock.state !== 'locked' || a.lock.target !== e) continue;
-      const o = out[n] || (out[n] = {}); n++;
+      const o = threatSlot(out, pool, n); n++;
       o.type = 'lock'; o.seeker = a.lock.seeker; o.source = a; o.missile = null; o.range = a.state.position.distanceTo(p);
     }
-    out.length = n;
+    out.length = n; out.count = n;
     return out;
+  }
+
+  /**
+   * Rearm (and optionally repair) an entity — for mission scripts. o: { heal 0..1 (fraction of maxHp restored and of
+   * component damage repaired; 1 = good as new, engines that were shot out are restored, fire out), gun, ir, radar,
+   * flares (absolute counts; default: back to the loadout maxima), invulnerable (bool, optional) }. Returns the loadout.
+   */
+  function rearm(e, o = {}) {
+    if (!e || !e.loadout) return null;
+    const lo = e.loadout;
+    lo.gun.rounds = o.gun ?? Math.max(lo.gun.rounds, lo.gun.max);
+    lo.missiles.ir = o.ir ?? Math.max(lo.missiles.ir, lo.missilesMax.ir || 0);
+    lo.missiles.radar = o.radar ?? Math.max(lo.missiles.radar, lo.missilesMax.radar || 0);
+    lo.flares = o.flares ?? Math.max(lo.flares, lo.flaresMax || 0);
+    if (o.invulnerable != null) e.invulnerable = !!o.invulnerable;
+    if (e.alive && o.heal > 0) dm.repair(e, Math.min(1, o.heal));
+    sanitize(e);
+    if (!(lo.missiles[lo.selected] > 0) && lo.missiles[lo.selected === 'ir' ? 'radar' : 'ir'] > 0) cycleWeapon(e);
+    ev.emit('rearm', { entity: e, loadout: lo });
+    return lo;
   }
 
   /** Public applyDamage(target, amount, { source, weapon, position, part? }) → hp removed. */
@@ -607,6 +674,7 @@ export function createWeapons(combat) {
     specs: SPECS, bullets, missiles, flares,
     equip, setTrigger, launchMissile, dropFlares, cycleWeapon, applyDamage, gunSolution, gunTrajectory, threatsTo,
     lockState(e) { return e.lock; },
+    rearm,
     /** Could `e`'s `type` seeker (or radar) lock `target` right now (geometry, signature, notch — no lock time)? */
     canLock(e, target, type = e.loadout?.selected || 'ir') { return !!(target && target.alive && target.state && canSee(e, target, type)); },
     /** Launch-zone numbers for an arbitrary shooter/target pair without touching entity.lock (AI planning). */
@@ -625,12 +693,13 @@ export function createWeapons(combat) {
       if (p && p.alive && combat.input && !p.pilot) setTrigger(p, combat.input.trigger);
       refreshTargets(dt);
       const A = world.aircraft;
-      for (let i = 0; i < A.length; i++) { const e = A[i]; if (e.loadout) { fireGun(e, dt); updateLock(e, dt); } }
+      for (let i = 0; i < A.length; i++) { const e = A[i]; if (e.loadout) { sanitize(e); fireGun(e, dt); updateLock(e, dt); } }
       stepBullets(dt);
       stepMissiles(dt);
       stepFlares(dt);
       collisions(dt);
       dm.update(dt, A);
+      for (let i = 0; i < A.length; i++) if (A[i].wpn) A[i].wpn.hpSeen = A[i].hp;
     },
     reset() {
       bullets.n = 0; missiles.length = 0; flares.length = 0;
