@@ -243,16 +243,18 @@ player's except for the rookie auto-throttle. It never reads devices, so it work
   corrections, a held stick gives the maximum turn at the AoA/G limit. Small corrections use a small bank; a forward stick
   pushes and never rolls inverted.
 - The aircraft flies the path that puts the nose on N (`assist.path`) with the `ai/fly.js` lift-vector controller.
-- Release: after a hard turn held > 0.7 s it rolls out on the flight path, then holds the path; after a tap N stays.
+- Release: after a held hard turn the nose stops where it was let go (or a little beyond, never behind); after a tap N stays.
   A dive / climb is kept; near level the wings come back level.
+- Keys (`device` 'auto' | 'analog' | 'keys'): tap = a 1.7° nose step, hold = a rate ramping to the full turn over 0.4 s, the
+  opposite key within 0.4 s = stop. 'auto' picks keys when the simulator's input mode is keyboard, or mouse without the yoke.
 - Gun help (`aimAssist` 0..1; defaults rookie 0.8, veteran 0.4, ace 0): only with a target, inside 1.4 km and gun range, with
   the solution within 0.1 rad of the nose; N is drawn to it × closeness × (1 − stick opposition). `info.gunAssist` while acting.
 - Pointer aim: `aim.active` → N = the camera ray through `aim.{x,y}` (offset from the screen centre, -1..1, +x right, +y up).
 - Protections: AoA/G limit (rookie 0.92 α / 0.95 G, veteran 1/1, ace off); low-speed nose cap (rookie, veteran); ground
   pull-up cue `info.pullUp` (all); last-moment ground takeover (rookie). `info.limiting` 'ground' | 'speed' | 'aoa' | 'g' | ''.
-- Rookie auto-throttle: engages after 3 s of an untouched throttle; any throttle input turns it off for 10 s (`info.autoThrottle`).
+- Auto-throttle (rookie and veteran): engages after 3 s of an untouched throttle; any throttle input turns it off for 10 s (`info.autoThrottle`).
 - Stays out: on the ground, gear down below 200 ft AGL, autopilot engaged, player dead, mission ended, paused, mode 'off'.
 
 API: `mode`, `setMode('assist' | 'off' | null = difficulty default)`, `aim {x,y,active}`, `aimAssist`, `setAimAssist(v | null)`,
-`frame`, `info {mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint}`, `command`, `path`, `frameRight`, `frameUp`,
+`frame`, `device`, `info {mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint, keys}`, `command`, `path`, `frameRight`, `frameUp`,
 `reset()` (core calls it on mission start / restart), `update(dt)`. The HUD draws `command` as the "nose goes here" reticle.

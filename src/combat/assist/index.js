@@ -32,7 +32,7 @@ import { KEY_AXIS } from '../../input/logic.js';
 /** Per-difficulty defaults. alpha: × the fight AoA (ace: up to the FCS / stall AoA). */
 export const ASSIST_DIFFICULTY = {
   rookie: { mode: 'assist', aim: 0.8, alpha: 0.92, g: 0.95, speed: true, ground: true, autoThrottle: true },
-  veteran: { mode: 'assist', aim: 0.4, alpha: 1, g: 1, speed: true, ground: false, autoThrottle: false },
+  veteran: { mode: 'assist', aim: 0.4, alpha: 1, g: 1, speed: true, ground: false, autoThrottle: true },   // a thumb that never touches the throttle fights 140 kt slower than the bandit
   ace: { mode: 'off', aim: 0, alpha: 0, g: 1, speed: false, ground: false, autoThrottle: false },
 };
 
