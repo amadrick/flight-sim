@@ -468,11 +468,13 @@ export function makeFringeMaterial(ctx, shared) {
         {
           vec4 n1 = texture(tNoise, vFField / 5.3 + 0.17), n2 = texture(tNoise, vFField / 41.0 + 0.63);
           float edge = vFade + (n1.g - 0.5) * 0.55 + (n2.b - 0.5) * 0.35;
-          float a = 1.0 - smoothstep(0.05, 0.85, edge);
+          // (the terrain draws the worn verge, mowing and thinning turf from the airfield distance map: this band only
+          // adds the grit and dust thrown off the pavement within the first metre or two)
+          float a = 1.0 - smoothstep(0.02, 0.45, edge);
           // trampled soil right at the edge, sun-bleached dead grass further out
           vec3 soil = vec3(0.12, 0.1, 0.075) * (0.8 + 0.4 * n1.r), dry = vec3(0.2, 0.18, 0.11) * (0.85 + 0.3 * n2.g);
           diffuseColor.rgb = mix(soil, dry, smoothstep(0.1, 0.6, vFade + 0.3 * n1.b)) * mix(1.0, 0.6, uWet);
-          diffuseColor.a = a * 0.85;
+          diffuseColor.a = a * 0.5;
         }`);
   };
   mat.customProgramCacheKey = () => 'scn-fringe';

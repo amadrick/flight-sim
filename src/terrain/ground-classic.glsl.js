@@ -7,7 +7,9 @@
 // playa 0.55, fresh snow 0.88). No fog, no tone mapping here (the pipeline does aerial perspective).
 // Part 1 — VS-safe helpers shared by the surface shader and the 3D tree placement (trees.js): no derivatives,
 // explicit-LOD lookups only. terrCover() decides where forest / farmland / airfield turf is.
+import { AIRFIELD_GLSL } from './airfield.js';
 export const CLASSIC_COVER_GLSL = /* glsl */`
+${AIRFIELD_GLSL}
 uniform mediump sampler2DArray tTerrD;
 uniform sampler2D tTerrNoise;
 uniform vec2 uTerrTile[7];       // uv offsets of the noise scales (floating-origin compensation)

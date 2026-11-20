@@ -119,7 +119,9 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         vec3 tp = vec3(rxz.x, vegGround(rxz) + zm + 0.004, rxz.y);
         float dc = distance(rxz, uTerrCam.xz);
         tp.y -= uTerrCurv * curvatureDrop(dc);
-        vTW = vec3(w.x - lean.x, tp.y, w.y - lean.y);
+        // (render-space coordinates for the blade texture: the origin moves in 1024 m steps = whole tiles, and world
+        // coordinates far from 0 would lose the millimetres in float32)
+        vTW = vec3(rxz.x - lean.x, tp.y, rxz.y - lean.y);
         vTV = cameraPosition - tp;
         vTP = vec4(am.x, T.longG, T.since, dc);
         vTP2 = vec4(n2.r, n3.g, T.dir * T.lay);
@@ -135,8 +137,8 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         // keep in step with the ground shader's turf: worn verge, short / long zones, colours relative to TURF_REF
         float dP = vTP.x, longG = vTP.y, since = vTP.z, dc = vTP.w;
         float layer = floor(vTZ * ${BL.toFixed(1)});
-        vec2 buv = vec2(0.8 * vTW.x - 0.6 * vTW.z, 0.6 * vTW.x + 0.8 * vTW.z) * ${(1 / BLADE_TILE).toFixed(4)};
-        vec2 bl = texture(tTurfBlade, vec3(buv, layer)).rg;
+        vec2 bl = texture(tTurfBlade, vec3(vTW.xz * ${(1 / BLADE_TILE).toFixed(4)}, layer)).rg;
+        bl.r *= 0.7 + 0.6 * vTP2.y;                       // clumpier and thinner patches (breaks the 0.32 m repeat)
         // thin, worn turf along the pavement, none on it
         float edge = tss(0.05, 2.4 + 0.8 * (vTP2.y - 0.5), dP);
         float fadeD = 1.0 - tss(uTurfGrid.w * 0.45, uTurfGrid.w * 0.85, dc);

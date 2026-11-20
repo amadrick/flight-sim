@@ -31,6 +31,7 @@ uniform vec4 uTerrRw[8];         // runways: xy = centre (render-space xz), zw =
 uniform float uTerrRwL[8];       // runway half lengths (0 = unused slot)
 uniform vec3 uSunDir;
 uniform float uTerrShadowOn;
+${AIRFIELD_GLSL}
 
 vec2 terrHash2(vec2 p) {
   uvec2 q = uvec2(ivec2(p));
@@ -140,17 +141,22 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   C.mac = terrMacro(rxz + uOrigin.xz, distance(rxz, uTerrCam.xz));
   float macro2 = n0.g * 0.6 + C.mac.y * 0.4;
   // airfields: keep fields and woods clear of the runways (the scenery module builds on this ground)
-  float rwd = 1.0e6;
+  float rwd = 1.0e6, rwApp = 1.0e6;
   for (int i = 0; i < 8; i++) {
     if (uTerrRwL[i] > 0.0) {
       vec2 q = rxz - uTerrRw[i].xy;
       float al = dot(q, uTerrRw[i].zw);
       vec2 perp = q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 250.0, uTerrRwL[i] + 250.0);
       rwd = min(rwd, length(perp));
+      rwApp = min(rwApp, length(q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 1100.0, uTerrRwL[i] + 1100.0)));
     }
   }
   float padR = mix(760.0, 230.0, C.tropic);           // small islands: only the strip itself is kept clear
   C.pad = 1.0 - ss(padR, padR * 1.32, rwd + mix(260.0, 70.0, C.tropic) * (n1.r - 0.5) + mix(120.0, 60.0, C.tropic) * (n2.r - 0.5));
+  // around the mapped airport the airside ends at the perimeter fence (airfield.js): fields, hedges and woods come up
+  // to it; the approach corridors (1.1 km beyond the runway ends, 150 m either side) stay open
+  float aside = airSide(rxz);
+  if (aside >= 0.0) C.pad = max(aside, (1.0 - ss(150.0, 230.0, rwApp + 60.0 * (n2.r - 0.5))) * (1.0 - C.tropic));
   // climatic tree line (trees near it are stunted); where trees actually stand is the network's business
   C.treeline = 2180.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (C.mac.x - 0.5) + 90.0 * (n2.g - 0.5);
   float open = (1.0 - C.pad) * (1.0 - water) * ss(1.2, 3.2, h);
@@ -250,7 +256,6 @@ const float TERR_ANISO = 3.0;
 const float TERR_ANISO = 1.5;
 #endif
 uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
-${AIRFIELD_GLSL}
 // airfield turf (set by terrSurface, read by the turf reflectance): cover, lay direction (world xz), lay 0..1, sward height (m)
 float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
 // diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)

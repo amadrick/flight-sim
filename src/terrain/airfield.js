@@ -1,7 +1,9 @@
 // Airfield map: a signed-distance field of the pavement of the airport nearest the camera, baked on the GPU into an
 // RG16F texture the ground shaders read with one bilinear fetch.
 //     r = signed distance to the nearest pavement of any kind (runway, taxiway, apron, shoulder, blast pad, fillet,
-//         road, car park), metres, negative inside;   g = signed distance to runway pavement (runway + blast pads).
+//         road, car park), metres, negative inside;   g = signed distance to runway pavement (runway + blast pads);
+//     b = signed distance to the airside perimeter fence (the layout's fence rectangle; without one, the 230 m
+//         iso-line of r), negative inside: grass inside, farmland and woods outside.
 // Distances to straight edges are linear across an edge, so bilinear filtering reproduces them exactly between the
 // corners: the grass can wear, thin out and stop at the pavement edge to a few centimetres at a 2 m texel.
 // Users: the terrain surface (worn edges, mowing strips, short / long grass zones), the near-field turf (it never
@@ -23,6 +25,15 @@ vec2 airMap(vec2 rxz) {
   vec2 uv = (rxz - uAirMap.xy) * uAirMap.zw;
   if (uAirInfo.z < 0.5 || any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec2(1.0e4);
   return textureLod(tAirMap, uv, 0.0).rg;
+}
+// Airside (inside the perimeter fence) 0..1 around the mapped airport; -1 when the point is not near it (then the
+// caller keeps its own runway-distance rule). VS-safe.
+float airSide(vec2 rxz) {
+  vec2 uv = (rxz - uAirMap.xy) * uAirMap.zw;
+  if (uAirInfo.z < 0.5 || any(lessThan(uv, vec2(-0.7))) || any(greaterThan(uv, vec2(1.7)))) return -1.0;
+  bool inMap = all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)));
+  float dF = inMap ? textureLod(tAirMap, uv, 0.0).b : 1.0e4;
+  return 1.0 - clamp((dF - 4.0) / 22.0, 0.0, 1.0);
 }
 // Mowing plan of the airfield turf (shared by the ground shader and the near-field turf so they agree): w = world xz,
 // dP = distance to pavement, nA / nB = two independent noise values ~ U(0,1) varying over hundreds of metres, nC over
@@ -58,6 +69,8 @@ uniform sampler2D tPrim;
 uniform int uCount;
 uniform vec4 uDom;        // xy = airport-local min corner, zw = extent
 uniform vec2 uSize;
+uniform vec4 uFence;      // perimeter box: xy = centre (airport-local), zw = unit length axis
+uniform vec3 uFenceS;     // xy = half length / width (z = 1 when there is one)
 float sdBox(vec2 q, vec2 b) { vec2 e = abs(q) - b; return length(max(e, 0.0)) + min(max(e.x, e.y), 0.0); }
 float sdTri(vec2 p, vec2 a, vec2 b, vec2 c) {
   vec2 e0 = b - a, e1 = c - b, e2 = a - c, v0 = p - a, v1 = p - b, v2 = p - c;
@@ -81,7 +94,9 @@ void main() {
     dA = min(dA, d);
     if (b.z > 0.5 && b.z < 1.5) dR = min(dR, d);
   }
-  outColor = vec4(clamp(dA, -500.0, 4000.0), clamp(dR, -500.0, 4000.0), 0.0, 1.0);
+  float dF = dA - 230.0;
+  if (uFenceS.z > 0.5) { vec2 q = p - uFence.xy; dF = sdBox(vec2(dot(q, uFence.zw), dot(q, vec2(-uFence.w, uFence.z))), uFenceS.xy); }
+  outColor = vec4(clamp(dA, -500.0, 4000.0), clamp(dR, -500.0, 4000.0), clamp(dF, -4000.0, 4000.0), 1.0);
 }`;
 
 /** Primitives (airport-local) of a layout: [{ t: 0 rect | 1 runway rect | 2 triangle, ... }]. */
@@ -96,6 +111,19 @@ export function airfieldPrimitives(L) {
   for (const Q of L.parkingLots || []) rect(Q.x, Q.z, Q.hdg, Q.len, Q.wid, 0);
   for (const t of L.fillets || []) P.push({ t: 2, a: t[0], b: t[1], c: t[2] });
   return P.slice(0, MAXP);
+}
+
+/** The layout's perimeter fence as a box (airport-local), or null. The layout frame: origin at the mean of the runway
+ *  centres, length axis along the primary runway (scenery/layout.js buildLayout / perimeter). */
+export function fenceBox(ap) {
+  const P = ap.layout?.perimeter, d = ap.data;
+  if (!P || !d?.runways?.length) return null;
+  let ox = 0, oz = 0;
+  for (const r of d.runways) { ox += r.center.x - d.position.x; oz += r.center.z - d.position.z; }
+  ox /= d.runways.length; oz /= d.runways.length;
+  const h = d.runways[0].heading * DEG, dx = Math.sin(h), dz = -Math.cos(h), rx = Math.cos(h), rz = Math.sin(h);
+  const cc = (P.cMin + P.cMax) / 2;
+  return { x: ox + rx * cc, z: oz + rz * cc, dx, dz, hl: P.aMax, hw: (P.cMax - P.cMin) / 2 };
 }
 
 /** CPU twin of the baked field (airport-local x, z): [dAny, dRunway]. For tests and placement on the CPU. */
@@ -138,7 +166,8 @@ export function createAirfieldMap(ctx, { texel = 2, margin = 320, maxSize = 2048
   const primTex = new THREE.DataTexture(primData, MAXP * 2, 1, THREE.RGBAFormat, THREE.FloatType);
   const mat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
-    uniforms: { tPrim: { value: primTex }, uCount: { value: 0 }, uDom: { value: new THREE.Vector4() }, uSize: { value: new THREE.Vector2() } },
+    uniforms: { tPrim: { value: primTex }, uCount: { value: 0 }, uDom: { value: new THREE.Vector4() }, uSize: { value: new THREE.Vector2() },
+      uFence: { value: new THREE.Vector4() }, uFenceS: { value: new THREE.Vector3() } },
     vertexShader: FULLSCREEN_VERT, fragmentShader: GEN_FRAG,
   });
   const tri = fullscreenTriangle();
@@ -176,6 +205,9 @@ export function createAirfieldMap(ctx, { texel = 2, margin = 320, maxSize = 2048
     mat.uniforms.uCount.value = prims.length;
     mat.uniforms.uDom.value.set(x0, z0, W * t, H * t);
     mat.uniforms.uSize.value.set(W, H);
+    const fb = fenceBox(ap);
+    if (fb) { mat.uniforms.uFence.value.set(fb.x, fb.z, fb.dx, fb.dz); mat.uniforms.uFenceS.value.set(fb.hl, fb.hw, 1); }
+    else mat.uniforms.uFenceS.value.set(0, 0, 0);
     const prev = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
     renderer.autoClear = false;
     renderer.setRenderTarget(rt); renderer.render(scene, cam);

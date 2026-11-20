@@ -26,7 +26,7 @@ tile, lean, H, mus, phs, muv, phv = [D[:, i] for i in range(7)]
 S = np.maximum(D[:, 7:10], 1e-4); K = np.maximum(D[:, 10:13], 1e-4)
 tiles = np.unique(tile)
 rng = np.random.default_rng(5)
-test_tiles = rng.choice(tiles, max(1, len(tiles) // 8), replace=False)
+test_tiles = rng.choice(tiles, max(1, len(tiles) // 7), replace=False)
 te = np.isin(tile, test_tiles); tr = ~te
 print(f'{len(D)} samples, {len(tiles)} tiles, {te.sum()} test samples in {len(test_tiles)} held-out tiles')
 
@@ -38,7 +38,7 @@ def feats_sky(lean, H, muv, phv):
 Xs = feats_sun(lean, H, mus, phs, muv, phv); Xk = feats_sky(lean, H, muv, phv)
 Ys = np.log(S); Yk = np.log(K)
 
-def train(X, Y, sizes, iters=12000, lr0=3e-3, seed=0):
+def train(X, Y, sizes, iters=8000, lr0=3e-3, seed=0):
     torch.manual_seed(seed)
     layers = []
     for i in range(len(sizes) - 1):
@@ -46,11 +46,12 @@ def train(X, Y, sizes, iters=12000, lr0=3e-3, seed=0):
         if i < len(sizes) - 2: layers.append(torch.nn.Tanh())
     net = torch.nn.Sequential(*layers).double()
     Xt = torch.tensor(X[tr]); Yt = torch.tensor(Y[tr])
+    # (float64 throughout: the exported float32 weights are then checked against a float64 reference)
     opt = torch.optim.Adam(net.parameters(), lr=lr0)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, iters)
     g = torch.Generator().manual_seed(seed)
     for it in range(iters):
-        idx = torch.randint(0, len(Xt), (4096,), generator=g)
+        idx = torch.randint(0, len(Xt), (2048,), generator=g)
         loss = torch.mean((net(Xt[idx]) - Yt[idx]) ** 2)
         opt.zero_grad(); loss.backward(); opt.step(); sched.step()
     return net
@@ -60,7 +61,7 @@ def pred(net, X):
 
 t0 = time.time()
 sun = train(Xs, Ys, [9, 32, 32, 3])
-sky = train(Xk, Yk, [4, 16, 16, 3], iters=6000)
+sky = train(Xk, Yk, [4, 16, 16, 3], iters=4000)
 print(f'trained in {time.time() - t0:.0f}s')
 
 # ---- baselines ---------------------------------------------------------------------------------------------------
