@@ -98,7 +98,7 @@ export const CAMPAIGN = [
       const pine = s.places.pinecrest, saddle = s.places.saddle;
       const bundle = s.group('bundle', {
         team: 'blue', type: 'c17', count: 1, callsign: 'Bundle 1', single: true, at: { rel: 0, dist: 2500 }, heading: { rel: 0 }, passive: true,
-        hp: s.n(700, 520, 380), role: 'protect', mark: 'BUNDLE 1', markKind: 'protect',
+        hp: s.n(900, 640, 460), role: 'protect', mark: 'BUNDLE 1', markKind: 'protect',
         order: (i, p) => s.orders.patrol(s.route([saddle, pine, { x: pine.x - 6000, z: pine.z - 20000 }], { alt: p.y, clear: 600 }), { passive: true, loop: false }),
       });
       const B = () => bundle.leader;
@@ -110,12 +110,12 @@ export const CAMPAIGN = [
         w.pilot.setOrder(s.orders.engage(a));
         s.say(w, ['Halyard 2, I\'ve got the one going for Bundle.', 'Halyard 2, taking the bandit on the transport.'], { priority: 1 });
       });
-      const w1 = s.wave('flint', { type: ['f16', 'fa18'], count: 2, callsign: 'Flint', at: fromB(40, 22000), heading: 'player', call: true,
+      const w1 = s.wave('flint', { type: ['f16', 'fa18'], count: 2, callsign: 'Flint', at: fromB(40, 22000), loadout: { ir: s.n(0, 1, 2), radar: 0 }, heading: 'player', call: true,
         order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, 35, cover);
       const saddleZone = s.zone(saddle, 5000);
-      const w2 = s.wave('slag', { type: 'mixed', count: s.n(1, 2, 2), callsign: 'Slag', at: fromB(285, 20000), call: true,
+      const w2 = s.wave('slag', { type: 'mixed', count: s.n(1, 2, 2), callsign: 'Slag', at: fromB(285, 20000), loadout: { ir: s.n(0, 1, 2), radar: 0 }, call: true,
         order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage(s.player)) }, { or: [() => B() && saddleZone.contains(B()) && s.t > 100, { after: 170 }] }, cover);
-      const w3 = s.wave('gravel', { type: ['f15', 'f14'], count: s.n(0, 1, 2), callsign: 'Gravel', at: fromB(350, 24000, 2000), call: true,
+      const w3 = s.wave('gravel', { type: ['f15', 'f14'], count: s.n(0, 1, 2), callsign: 'Gravel', at: fromB(350, 24000, 2000), loadout: { ir: s.n(0, 1, 2), radar: 0 }, call: true,
         order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, { or: [{ dead: w2 }, { after: 230 }] }, cover);
       s.protect('bundle', 'Keep Bundle 1 alive', bundle, { points: 300 });
       const deliver = s.objective('deliver', 'Escort Bundle 1 to Pinecrest');
@@ -128,6 +128,16 @@ export const CAMPAIGN = [
         [6, 'awacs', 'Cathedral copies. Halyard, expect visitors over the ridgelines. They want the big jet, not you.'],
       ]);
       s.when(() => B() && flat(B().state.position, pine) < 6000, () => { deliver.done(); });
+      // the loadmaster has extinguishers and opinions: fires on Bundle 1 usually go out
+      s.on('fire:start', ({ target }) => {
+        if (target !== B()) return;
+        s.say('bundle', ['Bundle 1, fire in number three! Fighting it!', 'Bundle 1: fire light! Extinguishers going!'], { priority: 2 });
+        s.after(s.n(2, 4, 6), () => {
+          const e = B(); if (!e || !e.damage || !(s.n(1, 1, 0.5) > s.rng())) return;
+          e.damage.fire = 0;
+          s.say('bundle', ['Bundle 1, fire\'s out. Mostly smoke now. We\'re still flying.', 'Fire\'s out on Bundle 1. Loadmaster says thanks for asking.'], { priority: 1 });
+        });
+      });
       let hitT = -99;
       s.on('damage', ({ target }) => {
         if (target !== B() || s.t - hitT < 10) return; hitT = s.t;
@@ -276,7 +286,7 @@ export const CAMPAIGN = [
       'You launch from Meridian with two wingmen. Strikers that get within launch range will fire and run. A carrier can take a hit or two. It cannot take many.',
       'Meet each wave far out. The sun will be in your eyes for the first one, and gone for the last.',
     ],
-    location: 'KHVN', locationName: 'USS Meridian, off the coast', map: briefMap(-6000, 64000, 46000, [3530, 53030, 235], [[-32500, 84850], [-32000, 85500]], [[15000, 45000]]), tod: 18.9, weather: 'scattered', aircraft: 'fa18', threat: 4, minutes: 8,
+    home: 'carrier', location: 'KHVN', locationName: 'USS Meridian, off the coast', map: briefMap(-6000, 64000, 46000, [3530, 53030, 235], [[-32500, 84850], [-32000, 85500]], [[15000, 45000]]), tod: 18.9, weather: 'scattered', aircraft: 'fa18', threat: 4, minutes: 8,
     objectivesPreview: ['Protect USS Meridian', 'Break all three strike waves', 'Optional: shoot down every striker before it fires'],
     start: { at: 'carrier', brg: 235, dist: 14000, alt: 4000, hdg: 235, spd: 230 },
     script(s) {

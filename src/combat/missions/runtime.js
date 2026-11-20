@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { headingVec, bearing, NM } from '../util.js';
 import { PLACES, offset, safeAlt, groundMax, routeMax, groundAt } from './geo.js';
 
+const MARK_COLOR = { target: '#ff5a4e', protect: '#5ad1ff', nav: '#ffd166', zone: '#ffb347', friendly: '#7cff8a' };
+
 /** Skill by role and difficulty (0..1, passed to world.spawnAircraft). */
 export const SKILLS = {
   enemy: { rookie: 0.18, veteran: 0.5, ace: 0.8 },
@@ -235,8 +237,8 @@ export function createRuntime(combat, director, mission, options = {}) {
     /** Highlight a point or an entity. kind: 'target' | 'protect' | 'nav' | 'zone' | 'friendly'. */
     mark(target, label = '', kind = 'target', o = {}) {
       const e = target.state ? target : null;
-      const m = markerPool.pop() || { id: 0, label: '', kind: '', position: new THREE.Vector3(), entity: null, radius: 0 };
-      m.id = ++director.markerSeq; m.label = label; m.kind = kind; m.entity = e; m.radius = o.radius || 0;
+      const m = markerPool.pop() || { id: 0, label: '', kind: '', color: '', position: new THREE.Vector3(), entity: null, radius: 0 };
+      m.id = ++director.markerSeq; m.label = label; m.kind = kind; m.entity = e; m.radius = o.radius || 0; m.color = o.color || MARK_COLOR[kind] || '#ffffff';
       if (e) m.position.copy(e.state.position); else m.position.set(target.x, target.y ?? 0, target.z);
       director.markers.push(m);
       return m;

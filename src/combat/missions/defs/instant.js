@@ -105,7 +105,9 @@ export const INSTANT = [
         wave++;
         const n = Math.min(6, 1 + Math.floor((wave - 1) / 2) + s.n(0, 0, 1));
         const skill = Math.min(0.97, s.skill('enemy', -0.2) + 0.05 * wave);
-        const g = s.group(`wave${wave}`, { type: wave < 3 ? 'f16' : 'mixed', count: n, callsign: names[(wave - 1) % names.length], skill, spacing: 700,
+        // the first waves warm you up: guns only, then one heater each, then full racks
+        const loadout = wave <= 2 ? { ir: 0, radar: 0 } : wave <= 4 ? { ir: 1, radar: 0 } : undefined;
+        const g = s.group(`wave${wave}`, { type: wave < 3 ? 'f16' : 'mixed', count: n, callsign: names[(wave - 1) % names.length], skill, spacing: 700, loadout,
           at: { rel: s.between(-45, 45), dist: s.between(17000, 24000) }, call: '@awacs.wave' });
         ob.set(`wave ${wave}`);
         s.when(() => g.alive === 0, () => cleared());
@@ -125,6 +127,12 @@ export const INSTANT = [
         else s.lose(done === 1 ? 'Shot down after 1 wave' : `Shot down after ${done} waves`, [[0.5, 'awacs', '{cs} is down. Rescue is inbound. Shake it off and go again.']]);
       };
       s.say('awacs', 'Cathedral: endless waves tonight, {cs}. Stay alive as long as you can.', { priority: 1 });
+      // tanker time: after nine minutes the night is over either way
+      s.countdown(540, 'Fuel', () => {
+        const done = wave - 1;
+        if (done >= 3) s.win(`Survived ${done} waves`, [[0.5, 'awacs', 'That\'s fuel, {cs}. ' + done + ' waves. Come home and tell everyone.']]);
+        else s.lose('Out of fuel', [[0.5, 'awacs', '{cs}, you\'re out of gas and out of time. Come home.']]);
+      }, { warn: false });
       s.after(1, next);
     },
   }),

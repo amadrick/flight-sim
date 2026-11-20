@@ -13,6 +13,10 @@ import { getAirport, runwayEnd } from '../../data/airports.js';
 
 export { MISSIONS };
 
+const HOME_LABEL = { haven: 'HAVEN', redrock: 'REDROCK', pinecrest: 'PINECREST', coral: 'CORAL KEY', baywater: 'BAYWATER', carrier: 'MERIDIAN' };
+/** Marker colours by kind (CSS colours the HUD may use). */
+export const MARKER_COLORS = { target: '#ff5a4e', protect: '#5ad1ff', nav: '#ffd166', zone: '#ffb347', friendly: '#7cff8a' };
+
 
 export function createDirector(combat) {
   const ev = combat.events, world = combat.world;
@@ -28,6 +32,7 @@ export function createDirector(combat) {
     timer: null,         // { label, seconds } | null                      — countdown for the HUD
     markers: [],         // [{ id, label, kind: 'target'|'protect'|'nav'|'zone'|'friendly', position: Vector3, entity?, radius }]
     markerSeq: 0,
+    home: null,          // { position: { x, z }, label } — the friendly base for the radar scope
     anchor: null,        // where the player started { x, y, z, hdg, aircraft, callsign, flight }
     runtime: null,       // the running script runtime (runtime.js) | null
     radioQ, scoring,
@@ -76,6 +81,7 @@ export function createDirector(combat) {
       if (p && p.maxHp > 0 && tough !== 1 && p.maxHp < 1e4) { p.maxHp *= tough; p.hp = p.maxHp; }
       Object.assign(warned, { guns: false, missiles: false, winch: false, bingo: false, burning: false, hitT: -99, hadMissiles: missilesOf(p) > 0 });
       radioQ.reset(m.cast, director.anchor.callsign);
+      director.home = homeFor(m, director.anchor);
       rt = createRuntime(combat, director, m, o);
       director.runtime = rt;
       m.script(rt.s);
@@ -93,7 +99,7 @@ export function createDirector(combat) {
     stop() {
       rt?.stop(); rt = null; director.runtime = null;
       director.objectives.length = 0; director.timer = null; director.waypoint = null; director.markers.length = 0;
-      director.anchor = null;
+      director.anchor = null; director.home = null;
     },
 
     /** Radio line (HUD subtitle + audio voice). from: cast key ('awacs'…), entity, or a name. opts: { priority, delay, voice, team, now } */
@@ -231,6 +237,17 @@ export function createDirector(combat) {
     else if (n > 1) radioQ.say('awacs', '@awacs.splash', { priority: 0, delay: 2.5 });
   }
 
+  function homeFor(m, a) {
+    const key = m.home || null;
+    const pick = (k) => { const pl = PLACES[k]; return pl ? { position: { x: pl.x, z: pl.z }, label: HOME_LABEL[k] || k } : null; };
+    if (key && PLACES[key]) return pick(key);
+    let best = null, bd = Infinity;
+    for (const k of ['haven', 'redrock', 'pinecrest', 'coral', 'baywater', 'carrier']) {
+      const pl = PLACES[k], d = Math.hypot(pl.x - a.x, pl.z - a.z);
+      if (d < bd) { bd = d; best = k; }
+    }
+    return pick(best);
+  }
   function missilesOf(p) { const m = p?.loadout?.missiles; return m ? (m.ir || 0) + (m.radar || 0) : 0; }
   function roundsOf(p) { const g = p?.loadout?.gun; return typeof g === 'number' ? g : g?.rounds ?? 0; }
   function checkPlayer() {

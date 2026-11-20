@@ -30,6 +30,9 @@ COMBAT.md §8 is kept: `missions[]`, `getMission(id)`, `prepare(mission, options
   (`'awacs'`, `'tower'`, `'boat'`, `'instructor'`, `'ace'`, `'furnace'`, `'bundle'`, `'range'`, `'redrock'`), an entity,
   `'lead'` (the player) or any name. `text` may be an array of variants or `'@bank.key'`. Lines are queued; set `now: true`
   to emit at once.
+- `director.home = { position: { x, z }, label }`: the friendly base for the radar scope. It is `mission.home` (a place key)
+  or the nearest airport or carrier to the start.
+- Every marker also carries `color` (a CSS colour by kind, overridable through `s.mark(…, { color })`); see `MARKER_COLORS` in `index.js`.
 - `director.anchor`: the player's start `{ x, y, z, hdg, aircraft, callsign, flight }`.
 - `director.runtime`: the running script (see below). `director.scoring`, `director.radioQ`.
 - `director.finish(outcome, reason)`: closes the books and calls `combat.end` once. The runtime calls it after the final radio beat.
@@ -59,7 +62,7 @@ mission({
   start: { at: placeName | {x,z}, brg, dist, alt | agl, hdg, spd, mode: 'air'|'runway', airport } | (options) => start,
   loadout: { ir: 0, radar: 0, … } | (options) => loadout,       // weapons equip overrides for the player
   callsign: 'Halyard 1', cast: { key: { name, voice, team } },
-  winReason, quietKills, noTimeBonus, noDamageBonus, par, toughness: { rookie, veteran, ace },
+  winReason, quietKills, noTimeBonus, noDamageBonus, par, toughness: { rookie, veteran, ace }, home: 'carrier' (place key),
   custom: true,                                                   // instant-custom only: the UI shows the custom form
   script(s) { … },
 })
