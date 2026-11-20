@@ -18,6 +18,8 @@ export const PARTS = {
 };
 const LEAK_RATE = 14;            // kg/s at leak = 1
 const ASSIST_SHARE = 0.1, ASSIST_WINDOW = 90;
+/** Seconds without a new hit after which lastHitBy / lastHitWeapon are cleared (kept while the aircraft burns). */
+export const CREDIT_WINDOW = 30;
 
 export function createDamageState(nEngines) {
   const engines = [], engineOut = [];
@@ -184,6 +186,11 @@ export function createDamageModel(combat) {
     for (let i = aircraft.length - 1; i >= 0; i--) {
       const t = aircraft[i], d = t.damage;
       if (!d || !d.parts || !t.alive) continue;
+      // kill credit for a later crash: expires CREDIT_WINDOW s after the last hit, unless the aircraft is still burning
+      if (t.lastHitBy) {
+        if (d.fire > 0) t.lastHitT = combat.clock;
+        else if (combat.clock - (t.lastHitT ?? combat.clock) > CREDIT_WINDOW) { t.lastHitBy = null; t.lastHitWeapon = null; }
+      }
       let changed = false;
       if (d.fire > 0) {
         changed = true;

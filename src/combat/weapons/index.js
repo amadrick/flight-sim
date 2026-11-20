@@ -202,8 +202,10 @@ export function createWeapons(combat) {
               const pos = b.prev.clone().lerp(b.position, hit.t);
               const sh = b.owner;
               if (sh?.stats) sh.stats.hits = (sh.stats.hits || 0) + 1;
-              ev.emit('bullet:hit', { shooter: sh, target: t, position: pos, part: hit.part, bodyPosition: hit.point.clone(), gun: b.gun });
-              dm.apply(t, b.damage * (0.75 + 0.5 * rng()), { source: sh, weapon: 'gun', position: pos, part: hit.part, index: hit.index });
+              const amount = b.damage * (0.75 + 0.5 * rng());
+              const removed = dm.apply(t, amount, { source: sh, weapon: 'gun', position: pos, part: hit.part, index: hit.index });
+              ev.emit('bullet:hit', { shooter: sh, target: t, position: pos, part: hit.part, bodyPosition: hit.point.clone(), gun: b.gun,
+                damage: removed, hp: t.hp, killed: !t.alive });
               dead = true; break;
             }
           }

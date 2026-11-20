@@ -14,7 +14,7 @@ import { createPanels } from './panels.js';
 import { createRadar } from './radar.js';
 import { createStatus } from './status.js';
 import { createOverlay } from './overlay.js';
-import { SEATS, seatMode, applySeats } from './seats.js';
+import { SEATS, seatMode, isCompact, applySeats } from './seats.js';
 
 const HIST = 64, HIST_DT = 0.04;           // gun-line history: 64 samples at 25 Hz ≈ 2.5 s
 
@@ -64,6 +64,7 @@ export async function createCombatHud(combat) {
     near: { t: 0 }, msg: { t: 0, text: '', col: tok.fg },
     dmg: Array.from({ length: 4 }, () => ({ a: 0, t: 0, life: 0.9 })), dmgI: 0, vig: 0,
     splash: Array.from({ length: 4 }, () => ({ entity: null, t: 0, life: 1.8, x: NaN, y: NaN })), splashI: 0,
+    camMode: null, cine: false, touch: false, camLabelY: 0, leftRight: 0, ayExt: 100, ayInt: 100, tgtOn: false, seat: 'wide', seatCompact: false,
     lockSnap: 0, cue: '', cueCol: tok.hud, cueGun: false, boreX: NaN, boreY: NaN, tgtX: 0, tgtY: 0, tgtS: 0, alwaysCross: true,
     missileSide(p, pos) { return toBody(p.state, pos, _v).x >= 0 ? 1 : -1; },
   };
@@ -76,14 +77,16 @@ export async function createCombatHud(combat) {
   ctx.events.on('cmd', (c) => { if (c?.name === 'hudToggle') userVisible = !userVisible; });
 
   // ---- layout ---------------------------------------------------------------------------------------------
-  let layoutKey = '', vignette = null, sideW = 212, seat = '', subsLeft = false;
+  let lastStat = -1;
+  let layoutKey = '', vignette = null, radarW = 212, statW = 212, seat = '', seatCompact = false, subsLeft = false, touch = false;
   function layout(W, Hh, dpr) {
-    const k = W + 'x' + Hh + '@' + dpr;
+    const k = W + 'x' + Hh + '@' + dpr + (touch ? 't' : '');
     if (k === layoutKey) return;
     layoutKey = k;
     H.compact = W < 640 || Hh < 520;
-    const mode = seatMode(W, Hh, coarse);
-    if (mode !== seat) { seat = mode; subsLeft = applySeats(panels, root, mode); }
+    const mode = seatMode(W, Hh, touch), cmp = isCompact(W, Hh);
+    if (mode !== seat || cmp !== seatCompact) { seat = mode; seatCompact = cmp; subsLeft = applySeats(panels, root, mode, cmp).subsLeft; lastStat = -1; }
+    H.seat = mode; H.seatCompact = cmp;
     const m = Math.min(W, Hh);
     H.fs = Math.round(clamp(m * 0.016, 11, 15));
     H.fsWarn = Math.round(clamp(m * 0.042, 20, 40));
@@ -93,7 +96,10 @@ export async function createCombatHud(combat) {
     H.cw = H.fs * 0.6; H.cwXS = (H.fs - 1) * 0.6; H.cwB = (H.fs + 1) * 0.6;
     H.warnW = H.fsWarn * 5.4;
     const margin = H.compact ? 40 : 56;
-    H.ax = W / 2 - margin; H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
+    // touch: the right edge belongs to the touch buttons, keep edge cues inside them
+    H.ax = W / 2 - margin - (touch ? Math.min(170, W * 0.2) : 0); H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
+    H.ayExt = Math.max(60, Math.min(H.ay, stripTop(W, Hh) - 36 - Hh / 2));   // outside views: stay above the data strip
+    H.ayInt = H.ay;
     H.lzOff = Math.min(W * 0.2, 250); H.lzH = clamp(Hh * 0.2, 90, 170);
     H.warnY = Math.round(Hh * (H.compact ? 0.33 : 0.26));
     H.cueOff = Math.round(clamp(Hh * 0.17, 64, 140));
@@ -106,7 +112,9 @@ export async function createCombatHud(combat) {
     grad.addColorStop(0, 'rgba(160,0,0,0)'); grad.addColorStop(0.6, 'rgba(170,10,0,0.35)'); grad.addColorStop(1, 'rgba(120,0,0,0.85)');
     vg.fillStyle = grad; vg.fillRect(0, 0, vw, vh);
     vignette = vc;
-    sideW = panels.radarBox.clientWidth || (H.compact ? 132 : 212);
+    radarW = panels.radarBox.clientWidth || (H.compact ? 132 : 212);
+    statW = panels.statBox.clientWidth || radarW;
+    H.leftRight = seat === 'touch' ? panels.left.offsetLeft + panels.left.offsetWidth : 0;
     cv.classList.toggle('cbt-hud-shadow', ctx.quality?.level !== 'low');
   }
   ctx.events.on('quality:change', () => { layoutKey = ''; });
@@ -126,7 +134,7 @@ export async function createCombatHud(combat) {
   ev.on('mission:start', () => {
     resetState(); panels.reset();
     panels.renderObjectives(combat.director?.objectives);
-    panels.startHints(!coarse && ctx.params?.raw?.hint !== '0');
+    panels.startHints(ctx.params?.raw?.hint !== '0');
     if (combat.weapons?.gunTrajectory) H.trajFn = (p, t, out) => combat.weapons.gunTrajectory(p, t, out) || out;
   });
   ev.on('mission:abort', () => { resetState(); panels.reset(); });
@@ -244,10 +252,17 @@ export async function createCombatHud(combat) {
     if (!simHint) simHint = doc.querySelector('.hud-hint');
     const up = !!simHint && !simHint.hidden && !simHint.classList.contains('off');
     const want = up ? simHint.offsetHeight + 10 : 0;
-    if (want !== hintShift) { hintShift = want; panels.left.style.transform = want ? `translateY(${want}px)` : ''; panels.setHintsBlocked(up); }
+    if (want !== hintShift) {
+      hintShift = want;
+      // step below the card; when that would run into the bottom of the screen, wait (hidden) until the card goes
+      const room = want && want + panels.left.offsetHeight + 16 > stripTop(H.W, H.H) - 8;
+      panels.left.style.transform = want && !room ? `translateY(${want}px)` : '';
+      panels.left.style.visibility = room ? 'hidden' : '';
+      panels.setHintsBlocked(up);
+    }
   }
 
-  let shown = false, lastStat = -1, frame = 0;
+  let shown = false, frame = 0;
   function hide() {
     if (!shown) return;
     shown = false; root.hidden = true;
@@ -272,8 +287,12 @@ export async function createCombatHud(combat) {
       const pw = Math.round(W * dpr), ph = Math.round(Hh * dpr);
       if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
       H.W = W; H.H = Hh; H.dpr = dpr; H.player = p; H.reduced = reducedMotion;
+      touch = coarse || !!ctx.input?.touchEnabled;
       layout(W, Hh, dpr);
+      H.camMode = combat.camera?.mode || null; H.touch = touch;
+      H.camLabelY = 30;   // top centre: clear of the cue, subtitles and strip; the sim's toasts there are transient
       H.interior = ctx.cameraRig?.isInterior ?? mode === 'cockpit';
+      H.ay = H.interior ? H.ayInt : H.ayExt;
       const live = !ctx.time?.paused;
 
       // timers (real time)
@@ -307,11 +326,11 @@ export async function createCombatHud(combat) {
         D.waypoint = combat.director?.waypoint?.position || null;
         D.home = combat.director?.home?.position || ctx.player?.airport?.position || null;
         D.threats = H.threats; D.t = H.t; D.reduced = reducedMotion;
-        radar.draw(D, sideW, dpr);
+        radar.draw(D, radarW, dpr);
       }
       // ---- stores panel ----
       if (p.loadout) {
-        const sh = status.draw(p, sideW, dpr);
+        const sh = status.draw(p, statW, dpr, seatCompact || seat === 'touch');
         if (sh !== lastStat) { lastStat = sh; panels.statBox.style.height = sh + 'px'; }
       }
       // ---- DOM panels ----
