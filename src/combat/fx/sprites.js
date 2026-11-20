@@ -26,7 +26,7 @@ export function createSprites(ctx, sharedU, header, capacity = 2048) {
   g.setIndex([0, 1, 2, 0, 2, 3]);
   for (let k = 0; k < 4; k++) g.setAttribute('s' + k, new THREE.InterleavedBufferAttribute(buf, 4, k * 4));
   g.instanceCount = 0;
-  const uniforms = { ...sharedU, uSoftLimit: { value: 40 } };
+  const uniforms = { ...sharedU, uSoftLimit: { value: 60 } };
   const material = new THREE.ShaderMaterial({ ...premulMaterialOpts(), uniforms, vertexShader: header + VERT, fragmentShader: '#define FX_FRAG\n' + header + FRAG });
   const mesh = new THREE.Mesh(g, material);
   mesh.frustumCulled = false; mesh.layers.set(LAYERS.POST); mesh.renderOrder = 20; mesh.name = 'cfx-sprites'; mesh.visible = false;
@@ -65,6 +65,7 @@ export function createSprites(ctx, sharedU, header, capacity = 2048) {
 }
 
 const VERT = /* glsl */`
+uniform float uSoftLimit;
 in vec4 s0; in vec4 s1; in vec4 s2; in vec4 s3;
 out vec2 vC;            // quad corner (-1..1) in sprite space
 out float vS;           // along-axis coordinate (streak / flame)
@@ -135,6 +136,9 @@ void main() {
     vC = kind == 3.0 ? rc : c;
     vP = vec4(s3.y, r, 0.0, s2.w);
   }
+  // exposure-aware soft limit of the sprite's PEAK display value, applied uniformly so the core/halo profile survives
+  // (a per-pixel limit flattens big halos into discs at night, when the exposure is high)
+  if (kind != 4.0) col /= 1.0 + max(dot(col, vec3(0.2126, 0.7152, 0.0722)), 0.0) * uFxExposure / uSoftLimit;
   vCol = vec4(col, kind);
   vAP = fxAP(p);
   vDist = length(vc.xyz);
@@ -214,9 +218,5 @@ void main() {
     outColor = fxFinishAP(vLit * a, a, e, vAP);
     return;
   }
-  // exposure-aware soft limit on display brightness (blooms without clipping to flat white blobs)
-  float lum = max(dot(e, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
-  float d = lum * uFxExposure;
-  e /= 1.0 + d / uSoftLimit;        // display value saturates smoothly at uSoftLimit
   outColor = fxFinishAP(vec3(0.0), 0.0, e, vAP);
 }`;

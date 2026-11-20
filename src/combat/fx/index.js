@@ -335,7 +335,7 @@ export async function createCombatFx(combat) {
       const fl = 0.75 + 0.25 * Math.sin(ctx.time.now * 47 + r.seed * 30) * Math.sin(ctx.time.now * 29 + r.seed * 11) + 0.1 * rnd();
       const I = 900 * burn * fl;
       sprites.add(SPR.GLOW, rp.x, rp.y, rp.z, 0.45, I, I * 0.95, I * 0.86, 0, 0, 0, 0, 2.0, 1.5);
-      sprites.add(SPR.GLOW, rp.x, rp.y, rp.z, 3.5, I * 0.02, I * 0.018, I * 0.014, 0, 0, 0, 0, 3.0, 1.0);
+      sprites.add(SPR.GLOW, rp.x, rp.y, rp.z, 4.0, I * 0.01, I * 0.009, I * 0.007, 0, 0, 0, 0, 3.0, 1.0);
       ribbons.emit(r.rb, f.state.position, 1.1 * (1 - 0.4 * t), 0.35, burn, 0, STYLE.FLARE, 0);
       considerLight(f.state.position.x, f.state.position.y, f.state.position.z, 150 * burn, 1, 0.95, 0.85);
     }
