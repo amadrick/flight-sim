@@ -182,7 +182,12 @@ void main() {
     float body = exp(-r * r * 2.0) * ends * (1.0 - 0.5 * sc);
     float core = exp(-r * r * 9.0) * exp(-sc * 4.0) * ends;
     float dia = vLit.x * pow(max(cos(sa * 6.2832 * 3.0), 0.0), 8.0) * exp(-sc * 2.2) * exp(-r * r * 7.0) * step(0.0, sa);
-    vec3 hot = vec3(1.0, 0.93, 0.82), mid = vec3(1.0, 0.58, 0.22), cool = vec3(0.85, 0.22, 0.06);
+    bool fireMode = vLit.x < 0.0;                   // burning fuel: no white-hot core, ragged orange tongue
+    vec3 hot = fireMode ? vec3(1.0, 0.7, 0.35) : vec3(1.0, 0.93, 0.82), mid = vec3(1.0, 0.5, 0.16), cool = vec3(0.8, 0.18, 0.04);
+    if (fireMode) {
+      float n = sin(sa * 23.0 - uTime * 31.0 + vP.z * 50.0) * sin(sa * 11.0 + x * 3.0 - uTime * 17.0);
+      body *= 0.65 + 0.45 * n; core *= 0.3; dia = 0.0;
+    }
     vec3 cc = mix(mix(hot, mid, smoothstep(0.0, 0.3, sc)), cool, smoothstep(0.3, 0.9, sc));
     float axial = 1.0 / max(fore, 0.25);             // looking down the axis integrates more flame
     float endOn = 1.0 - smoothstep(0.12, 0.4, fore);

@@ -151,16 +151,17 @@ export function airFireball(ps, smoke, pos, vel, scale, q, withVolume) {
   flash(ps, pos, _z.copy(vel).multiplyScalar(0.3), 30 * scale, 500, 1, 0.85, 0.6, 0.3);
   flash(ps, pos, _z, 70 * scale, 120, 1, 0.7, 0.4, 0.5);
   const p = ps.p;
-  const nf = Math.round((withVolume ? 22 : 46) * qq);
+  const nf = Math.round((withVolume ? 40 : 56) * qq);
   for (let i = 0; i < nf; i++) {
     randDir(_w, 0.15);
-    p.kind = KIND.FIRE; p.life = 1.8 + rnd() * 2.2; p.size0 = (2.5 + rnd() * 2.5) * scale; p.size1 = (9 + rnd() * 9) * scale;
+    // long-lived particles cool slowly (FIRE heat = exp(-3.6 t/life)): a ~1.5 s bright burn, then rolling soot
+    p.kind = KIND.FIRE; p.life = 2.6 + rnd() * 2.6; p.size0 = (2.0 + rnd() * 2.0) * scale; p.size1 = (8 + rnd() * 7) * scale;
     p.drag = 1.6; p.buoy = 4 + rnd() * 3; p.delay = i > nf * 0.7 ? 0.1 + rnd() * 0.3 : rnd() * 0.05;
-    p.r = 0.13; p.g = 0.12; p.b = 0.11; p.opacity = 0.95; p.emissive = 28 + rnd() * 30; p.aux = 0;
+    p.r = 0.13; p.g = 0.12; p.b = 0.11; p.opacity = 0.95; p.emissive = 45 + rnd() * 45; p.aux = 0;
     _v.copy(_w).multiplyScalar((8 + rnd() * 20) * scale).addScaledVector(vel, 0.45 + rnd() * 0.2);
     ps.spawn(_p.copy(pos).addScaledVector(_w, rnd() * 4 * scale), _v);
   }
-  sparkBurst(ps, pos, vel, Math.round(120 * qq), 70, 1, 2.2, 0.12);
+  sparkBurst(ps, pos, vel, Math.round(50 * qq), 70, 1, 1.4, 0.1);
   const s = smoke.p;
   for (let i = 0, n = Math.round(22 * qq); i < n; i++) {
     randDir(_w, 0.2);

@@ -148,7 +148,7 @@ export async function createCombatFx(combat) {
         bodyPoint(s, en.nozzle, v); ctx.world.toRender(v, rp2);
         if (ab > 0.02) {
           const L = en.r * (5 + 9 * ab);
-          const I = 22 + 38 * ab;
+          const I = 12 + 24 * ab;
           sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, en.r * 0.82, I, I * 0.78, I * 0.62, -fwd.x * L, -fwd.y * L, -fwd.z * L, r.seed + i, 0.9, 0.5 + 0.5 * ab);
           // the hot nozzle / plume glow that gives the bandit away at range (energy-conserving minimum size)
           const G = 10 + 30 * ab * (0.9 + 0.1 * rnd());
@@ -218,8 +218,8 @@ export async function createCombatFx(combat) {
         back.copy(s.velocity); const sp = back.length();
         if (sp > 1) back.multiplyScalar(-1 / sp); else back.set(0, 1, 0);
         const L = (2.5 + 7 * fireK) * r.scale * (isWreck ? 1.3 : 1) * clamp(sp / 150, 0.4, 1.3);
-        const I = (4 + 7 * fireK) * (0.85 + 0.3 * rnd());
-        sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, (0.45 + 0.55 * fireK) * r.scale * big, I, I * 0.6, I * 0.3, back.x * L, back.y * L, back.z * L, r.seed * 7 + frame * 0.01, 1.0, 0);
+        const I = (3 + 5 * fireK) * (0.85 + 0.3 * rnd());
+        sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, (0.45 + 0.55 * fireK) * r.scale * big, I, I * 0.6, I * 0.3, back.x * L, back.y * L, back.z * L, r.seed * 7 + frame * 0.01, 1.0, -1);
         sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, (1.5 + 1.5 * fireK) * r.scale, I * 0.05, I * 0.025, I * 0.01, 0, 0, 0, 0, 1.2, 0.8);
         if (dt > 0) R.fireLicks(ps, v, s.velocity, back, (14 + 22 * fireK) * big, dt, q, r.fireAcc, (0.6 + 0.6 * fireK) * r.scale * big);
         if (dt > 0 && (isWreck || !alive)) { v2.copy(s.position); R.fireLicks(ps, v2, s.velocity, back, 18, dt, q, r.fireAcc2, 1.1 * r.scale); }
@@ -388,14 +388,14 @@ export async function createCombatFx(combat) {
     const gone = !!(info?.disintegrated || victim.hidden);
     const k = gone ? 1.35 : missile ? 1.0 : 0.6;
     const pos = v.copy(s.position);
-    const vol = !!fireballs;
+    const vol = !!fireballs && raw.cfxairfb === '1';
     R.airFireball(ps, smoke, pos, s.velocity, r.scale * k, q, vol);
-    if (fireballs) {
+    if (fireballs && raw.cfxairfb === "1") {   // neural fireball reads as a sooty pool fire mid-air: particles carry air kills
       warmFireballs();
       if (fireballs) {
         windDir(pos, wind);
         const ws = wind.length();
-        const D = (gone ? 42 : missile ? 30 : 18) * Math.cbrt(r.scale);
+        const D = (gone ? 26 : 17) * Math.cbrt(r.scale);
         const dir = ws > 2 ? v2.copy(wind).multiplyScalar(1 / ws) : v2.set(s.velocity.x, 0, s.velocity.z).normalize();
         fireballs.spawn({ worldPos: pos.clone(), D, tStar: Math.sqrt(D / 9.81), windDir: dir, fw: clamp(ws / Math.sqrt(9.81 * D), 0, 1.2), ui: 0.3, mirror: true,
           drift: v3.copy(s.velocity).multiplyScalar(0.1).add(wind), life: 45 });
@@ -533,7 +533,7 @@ export async function createCombatFx(combat) {
     if (fireballs) {
       fireballs.update(dt);
       const l = fireballs.light(lightOut);
-      if (l) { v.copy(l.pos).add(ctx.world.origin); considerLight(v.x, v.y, v.z, l.intensity, l.color.r, l.color.g, l.color.b); }
+      if (l) { v.copy(l.pos).add(ctx.world.origin); considerLight(v.x, v.y, v.z, l.intensity * 0.35, l.color.r, l.color.g, l.color.b); }
     }
     for (const f of flashes) {
       if (f.t > f.life) continue;
