@@ -96,7 +96,8 @@ export async function createCombatHud(combat) {
     H.cw = H.fs * 0.6; H.cwXS = (H.fs - 1) * 0.6; H.cwB = (H.fs + 1) * 0.6;
     H.warnW = H.fsWarn * 5.4;
     const margin = H.compact ? 40 : 56;
-    H.ax = W / 2 - margin; H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
+    // touch: the right edge belongs to the touch buttons, keep edge cues inside them
+    H.ax = W / 2 - margin - (touch ? Math.min(170, W * 0.2) : 0); H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
     H.lzOff = Math.min(W * 0.2, 250); H.lzH = clamp(Hh * 0.2, 90, 170);
     H.warnY = Math.round(Hh * (H.compact ? 0.33 : 0.26));
     H.cueOff = Math.round(clamp(Hh * 0.17, 64, 140));
