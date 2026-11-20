@@ -66,7 +66,8 @@ export async function createClouds(ctx) {
 
   // ------------------------------------------------------------------------------------------------ textures
   const noise2 = createNoise2D(ctx.params?.seed ?? 1337);
-  const noise3 = createNoise3D(renderer);
+  // round six b: lumpy bubble volume (clBubV=0: round six spheres)
+  const noise3 = createNoise3D(renderer, { bubbleV: dbg('clBubV', 1) });
   // round six (clField=0: round five): broken power law of sizes, clustered placement, gentler border taper
   const field6 = dbg('clField', 1) > 0;
   const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(raw.clBorder ?? 1) !== '0',

@@ -363,13 +363,32 @@ void main() {
 const BUBBLE_FRAG = /* glsl */`
 ${NOISE_LIB}
 in vec2 vUv; out vec4 o; uniform float uZ;
+uniform float uBubV;   // round six b: 1 = lumpy bubbles (warped, primary + satellite sphere per cell), 0 = round six spheres
 float bubbles(vec3 p, int n, int seed) {
+  if (uBubV > 0.5) {
+    // (round six b: domain-warped by two tiling octaves of gradient noise, ~0.25 cell: the bubbles are lumpy blobs, not
+    //  spheres, and a turret no longer prints a perfect circle where the cloud surface cuts it)
+    vec3 w = vec3(gnoise(p, n, seed + 10), gnoise(p, n, seed + 11), gnoise(p, n, seed + 12))
+           + 0.5 * vec3(gnoise(p, 2 * n, seed + 13), gnoise(p, 2 * n, seed + 14), gnoise(p, 2 * n, seed + 15));
+    p += w * (0.2 / float(n));
+  }
   p *= float(n); ivec3 ip = ivec3(floor(p)); vec3 f = fract(p); float s = -9.0;
   for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     ivec3 o = ivec3(x, y, z); vec3 h = hash33(wrapi(ip + o, n), seed);
     vec3 r = vec3(o) + 0.1 + 0.8 * h - f;
-    float rad = 0.5 + 0.45 * fract(h.x * 7.13 + h.y * 3.71 + h.z * 1.37);
-    s = max(s, rad - length(r));
+    float u = fract(h.x * 7.13 + h.y * 3.71 + h.z * 1.37);
+    if (uBubV > 0.5) {
+      // wide size range (0.32-0.95 cell, more small than large) and a smaller satellite bubble on the upper side of each
+      // (lumps nested on lumps inside one octave); centres stay within their cell so the 3x3x3 search sees every sphere
+      float rad = 0.32 + 0.63 * u * u;
+      s = max(s, rad - length(r));
+      vec3 h2 = hash33(wrapi(ip + o, n), seed + 77);
+      vec3 c2 = clamp(0.1 + 0.8 * h + rad * 0.75 * normalize(vec3(h2.x - 0.5, 0.25 + 0.5 * h2.y, h2.z - 0.5)), 0.1, 0.9);
+      s = max(s, rad * mix(0.35, 0.6, h2.y) - length(vec3(o) + c2 - f));
+    } else {
+      float rad = 0.5 + 0.45 * u;
+      s = max(s, rad - length(r));
+    }
   }
   return clamp(0.5 + 0.5 * s, 0.0, 1.0);
 }
@@ -422,7 +441,7 @@ function slicePass(frag, uniforms = {}) {
  * Build the 3D noise volumes. Returns { base, detail, bubble, lowRes: { data: Uint8Array (N^3 RGBA), n } }.
  * `lowRes` is a CPU copy of the base volume's mip 2 (32^3) for CPU density queries.
  */
-export function createNoise3D(renderer) {
+export function createNoise3D(renderer, { bubbleV = 1 } = {}) {
   const prevTarget = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
   renderer.autoClear = false;
 
@@ -433,7 +452,7 @@ export function createNoise3D(renderer) {
   renderSlices(renderer, baseRT, basePass);
   const detailPass = slicePass(DETAIL_FRAG);
   renderSlices(renderer, detailRT, detailPass);
-  const bubblePass = slicePass(BUBBLE_FRAG);
+  const bubblePass = slicePass(BUBBLE_FRAG, { uBubV: { value: bubbleV } });
   renderSlices(renderer, bubbleRT, bubblePass);
 
   // CPU copy (32^3) via an 8x4 atlas of 32x32 tiles.

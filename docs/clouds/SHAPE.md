@@ -4,6 +4,16 @@ Owner: cloud-shape engineer (`src/clouds/**`). Numbers come from docs/clouds/RES
 the light transport contract is docs/clouds/NEURAL.md. Every new piece has a URL switch (last column) so old and new
 can be compared side by side; all round-four and round-five switches still work.
 
+## 0b. Round six b: running log (newest last)
+
+* Kept the predecessor's uncommitted Cb tweak (turret cells 500-900 m, cascade x0.7): commit 7e7a713.
+* **Cover** (ground-shadow cover = share of shadow-map texels with tau > 0.5, harness looking straight down from 9 km,
+  `fair`): round five 18 %, round six 14 %; full sim `aircraft=f16&start=air` (fair, the default) 12 %, spawn shifted
+  636 m. So the fair preset was NOT too cloudy: shots/r6-after-chase.png was taken with `weather=scattered&tod=13`
+  (scratchpad final.sh), which is 3-4 oktas by design. The chase proof below uses the lead's command (fair).
+* Bubble volume v2 (`clBubV`, boot-time, 1 = default): domain-warped (2 octaves of tiling gradient noise, ~0.2 cell),
+  radii 0.32-0.95 cell with more small ones, plus a satellite sphere (0.35-0.6 x) on the upper side of every bubble.
+
 ## 0. Round six: cauliflower, field variety, cost
 
 The complaint was "smooth rounded cotton puffs". What made them so (each one checked with the vertical density
