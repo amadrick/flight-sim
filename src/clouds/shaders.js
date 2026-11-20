@@ -304,8 +304,10 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   clThermal = isCell ? rad * grow : 1000.0;
   // bubble cascade: growing / mature cumulus fully, dissolving ones fade to the wispy round-five erosion; cumulonimbus
   // towers (layer path of convective weather) get it too, with tower-size turrets
-  clBubK = isCell ? 1.0 - decay : uClShape2.z * smoothstep(0.25, 0.6, dev) * (1.0 - uClShape.w);
-  if (!isCell && clBubK > 0.0) { clRadius = mix(1000.0, 1800.0, dev); clThermal = clRadius; }
+  // (Cb towers: turret cells of ~200-400 m and a softer cascade; with tower-size bubbles the self-shadowing printed
+  //  500 m dark ovals on the towers, camouflage rather than cauliflower)
+  clBubK = isCell ? 1.0 - decay : 0.7 * uClShape2.z * smoothstep(0.25, 0.6, dev) * (1.0 - uClShape.w);
+  if (!isCell && clBubK > 0.0) { clRadius = mix(1000.0, 1800.0, dev); clThermal = mix(500.0, 900.0, dev); }
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
   // toward the rim through its density (info.w), not through a soft threshold (which would reveal texel facets)
   ex = mix(ex, s - (1.0 - 0.95 * am), anvil);
