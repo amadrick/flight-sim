@@ -91,7 +91,7 @@ const SWEEP = {
 };
 SWEEP.sections = {
   calm:    { bars: 8, chords: ['iadd9', 'iadd9', 'VImaj7', 'VImaj7', 'iv', 'iv', 'Vsus4', 'V'], drums: 'calm', clean: 'clean8', pad: 0.55, sbass: 'pulse8', sbassLevel: 0.35, group: 'calm' },
-  tension: { bars: 4, chords: ['i5', 'i5', 'VI5', 'VII5'], drums: 'tension', drums2: 'tension2', gtr: 'mute8', gtrLevel: 0.55, bass: 'root8', pad: 0.5, arp: 'pulse16', arpLevel: 0.6, riser: true, group: 'tension' },
+  tension: { bars: 4, chords: ['i5', 'i5', 'VI5', 'VII5'], drums: 'tension', drums2: 'tension2', gtr: 'mute8', gtrLevel: 0.45, bass: 'root8', bassLevel: 0.55, pad: 0.5, arp: 'pulse16', arpLevel: 0.6, riser: true, group: 'tension' },
   riff:    { bars: 8, chords: ['i5', 'i5', 'i5', 'i5', 'i5', 'i5', 'VI5', 'VII5'], riffPlan: 'ABABABCD', drums: 'riff', bass: 'riff', crash: [0], group: 'fight' },
   riff2:   { bars: 8, chords: ['i5', 'i5', 'i5', 'i5', 'i5', 'i5', 'VI5', 'VII5'], riffPlan: 'ABABABCD', drums: 'riff2', bass: 'riff', arp: 'pulse16', arpLevel: 0.5, lead: 'counter', leadLevel: 0.7, crash: [0], group: 'fight' },
   bridge:  { bars: 4, chords: ['VI5', 'VII5', 'iv5', 'V5'], drums: 'bridge', gtr: 'ring2', bass: 'root8', pad: 0.7, arp: 'up16', arpLevel: 0.7, riser: true, crash: [0], group: 'fight' },
@@ -134,7 +134,7 @@ const NIGHT = {
 };
 NIGHT.sections = {
   calm:    { bars: 8, chords: ['im7', 'im7', 'VImaj7', 'VImaj7', 'iv', 'iv', 'Vsus4', 'V'], drums: 'calm', clean: 'clean8', pad: 0.6, sbass: 'pulse16', sbassLevel: 0.3, group: 'calm' },
-  tension: { bars: 4, chords: ['i5', 'i5', 'VI5', 'VII5'], drums: 'tension', drums2: 'tension2', gtr: 'mute16', gtrLevel: 0.5, bass: 'root8', pad: 0.55, arp: 'pulse16', arpLevel: 0.7, riser: true, group: 'tension' },
+  tension: { bars: 4, chords: ['i5', 'i5', 'VI5', 'VII5'], drums: 'tension', drums2: 'tension2', gtr: 'mute16', gtrLevel: 0.42, bass: 'root8', bassLevel: 0.55, pad: 0.55, arp: 'pulse16', arpLevel: 0.7, riser: true, group: 'tension' },
   riff:    { bars: 8, chords: ['i5', 'i5', 'i5', 'i5', 'i5', 'i5', 'VI5', 'VII5'], riffPlan: 'ABABABCD', drums: 'riff', bass: 'riff', sbass: 'pulse16', sbassLevel: 0.25, crash: [0], group: 'fight' },
   riff2:   { bars: 8, chords: ['i5', 'i5', 'i5', 'i5', 'i5', 'i5', 'VI5', 'VII5'], riffPlan: 'ABABABCD', drums: 'riff2', bass: 'riff', arp: 'pulse16', arpLevel: 0.6, lead: 'counter', leadLevel: 0.7, crash: [0], group: 'fight' },
   bridge:  { bars: 4, chords: ['VI5', 'VII5', 'iv5', 'V5'], drums: 'bridge', gtr: 'ring2', bass: 'root8', pad: 0.75, arp: 'up16', arpLevel: 0.75, riser: true, crash: [0], group: 'fight' },

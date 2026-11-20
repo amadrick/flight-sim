@@ -83,7 +83,7 @@ export function genSection(cue, name) {
         steps[k].push({ i: inst, n, d: c === '-' || c === 'R' && len > 1 ? len : Math.max(1, len - 0.2), v: lvl * (k % 4 === 0 ? 1 : 0.82) });
       }
     };
-    if (sec.bass && sec.bass !== 'riff') bassPat(sec.bass, 'bass', -12, 1);
+    if (sec.bass && sec.bass !== 'riff') bassPat(sec.bass, 'bass', -12, sec.bassLevel ?? 1);
     if (sec.sbass) bassPat(sec.sbass, 'sbass', 0, sec.sbassLevel ?? 0.4);
     // ---- pads (voice-led) ----
     const voicings = chs.map(({ ch }) => {

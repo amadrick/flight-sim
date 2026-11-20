@@ -33,7 +33,8 @@ export function noise(ac, kind = 'white') {
     let s = 0x2545F491, b0 = 0, b1 = 0, b2 = 0;
     for (let i = 0; i < n; i++) {
       s ^= s << 13; s ^= s >>> 17; s ^= s << 5; const w = ((s >>> 0) / 4294967296) * 2 - 1;
-      if (kind === 'pink') { b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0527; d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2; }
+      if (kind === 'brown') { b0 = (b0 + 0.02 * w) / 1.02; d[i] = b0 * 3.5; }
+      else if (kind === 'pink') { b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0527; d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2; }
       else d[i] = w * 0.5;
     }
     c[kind] = buf;
@@ -287,7 +288,7 @@ export function makeCleanGuitar(ac, out) {
 /** Picked bass guitar: saw + square through a tracking low-pass with a pick click, slightly driven. */
 export function makeBass(ac, out, white) {
   const a = OSC(ac, 'sawtooth', 55), b = OSC(ac, 'square', 55, 4), mix = G(ac, 0.5); a.connect(mix); b.connect(mix); a.start(); b.start();
-  const sub = OSC(ac, 'sine', 55), subG = G(ac, 0.35); sub.connect(subG); sub.start();
+  const sub = OSC(ac, 'sine', 55), subG = G(ac, 0.22); sub.connect(subG); sub.start();
   const lp = BQ(ac, 'lowpass', 600, 1.1), env = G(ac, 0), sh = shaper(ac, driveCurve(2.2, 0.05)), lvl = G(ac, 0.22);
   chain(mix, lp, env); subG.connect(env); chain(env, sh, BQ(ac, 'highpass', 35, 0.7), lvl, out);
   const pk = BQ(ac, 'bandpass', 1800, 1), pkG = G(ac, 0); chain(white, pk, pkG, env);
