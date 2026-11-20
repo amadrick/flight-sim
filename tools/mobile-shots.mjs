@@ -82,7 +82,7 @@ const AUDIT = () => {
     if (matchMedia('(pointer: coarse)').matches && min < 43.5 && el.type !== 'range' && !el.closest('.menu-aptwrap:not(.open)')) out.push('small target ' + (min | 0) + 'px: ' + name(el));
   }
   // flight-time regions must not overlap one another
-  const regs = [...document.querySelectorAll('.inp-region, .inp-pnl, .inp-btn, .menu-corner > button, .hud-plate, .hud-toast.on, .hud-hint')].filter(vis);
+  const regs = [...document.querySelectorAll('.inp-region:not(.inp-zone), .inp-pnl, .inp-btn, .menu-corner > button, .hud-plate, .hud-toast.on, .hud-hint')].filter(vis);
   for (let i = 0; i < regs.length; i++) for (let j = i + 1; j < regs.length; j++) {
     const a = regs[i].getBoundingClientRect(), b = regs[j].getBoundingClientRect();
     if (regs[i].contains(regs[j]) || regs[j].contains(regs[i])) continue;
@@ -100,7 +100,88 @@ async function shoot(page, file, label) {
   for (const s of issues) problems.push(label + ': ' + s);
 }
 
+// ---- --touch-test: multi-touch through CDP (real touch → pointer events), checks ctx.controls --------------------
+async function touchTest() {
+  const desc = devices['iPhone 14 landscape'];
+  const bctx = await browser.newContext({ ...desc, deviceScaleFactor: 1, reducedMotion: 'reduce', defaultBrowserType: undefined, screen: undefined });
+  const page = await bctx.newPage();
+  const errors = [];
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', e => errors.push('PAGEERROR ' + (e.stack || e.message)));
+  await page.goto(pathToFileURL(html).href + `?test=1&autostart=1&aircraft=${aircraft}&start=air&cam=chase&quality=low&hint=0`, { waitUntil: 'commit', timeout: 600000 });
+  await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+  const cdp = await bctx.newCDPSession(page);
+  const step = (n = 2) => page.evaluate((n) => window.__sim.step(n, 1 / 30), n);
+  const C = () => page.evaluate(() => { const c = window.__sim.ctx.controls; return { roll: c.roll, pitch: c.pitch, yaw: c.yaw, throttle: c.throttle, brakes: c.brakes }; });
+  const pts = new Map();
+  const send = async (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [...pts.values()].map(p => ({ x: p.x, y: p.y, id: p.id, radiusX: 8, radiusY: 8, force: 1 })) });
+  const down = async (id, x, y) => { pts.set(id, { id, x, y }); await send('touchStart'); };
+  const move = async (id, x, y, n = 4) => { const p = pts.get(id); const x0 = p.x, y0 = p.y; for (let i = 1; i <= n; i++) { p.x = x0 + (x - x0) * i / n; p.y = y0 + (y - y0) * i / n; await send('touchMove'); } };
+  // CDP's touch emulation pairs points by list position, so single-finger releases are unreliable: lift all fingers
+  const upAll = async () => { pts.clear(); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+  const results = [];
+  const check = (name, ok, info) => { results.push([name, ok]); console.log((ok ? 'PASS ' : 'FAIL ') + name + (info ? '  ' + JSON.stringify(info) : '')); if (!ok) failed = true; };
+  await step(2);
+  const L = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+  check('touch UI shown with a layout', !!L, L && { W: L.W, H: L.H });
+  if (L) {
+    const cmds = [];
+    await page.exposeFunction('__cmdSeen', (n) => cmds.push(n));
+    await page.evaluate(() => window.__sim.ctx.events.on('cmd', (e) => window.__cmdSeen(e.name)));
+    const c0 = await C();
+    const hx = L.home.x, hy = L.home.y, tx = L.thr.x + L.thr.w / 2, ty = L.thr.y + L.thr.h / 2;
+    await down(1, hx, hy); await down(2, tx, ty);
+    await move(1, hx + L.stickR * 0.8, hy - L.stickR * 0.6); await move(2, tx, ty - 50);
+    await step(2);
+    const c1 = await C();
+    check('stick right → roll right', c1.roll > 0.3, c1);
+    check('stick forward → nose down (pitch < 0)', c1.pitch < -0.2, c1);
+    check('throttle slid up while the stick is held', c1.throttle > c0.throttle + 0.15, { before: c0.throttle, after: c1.throttle });
+    // third finger: hold Brake while stick + throttle are held
+    const br = L.btn.brake;
+    await down(3, br.x + br.w / 2, br.y + br.h / 2); await step(3);
+    const c2 = await C();
+    check('brake button held with two other fingers down', c2.brakes > 0.2 && Math.abs(c2.roll) > 0.3 && c2.throttle > c0.throttle + 0.15, c2);
+    await upAll(); await step(2);
+    const c4 = await C();
+    check('release: stick centres, brakes off, throttle stays', Math.abs(c4.roll) < 0.05 && Math.abs(c4.pitch) < 0.05 && c4.brakes < 0.9 && Math.abs(c4.throttle - c1.throttle) < 0.02, c4);
+    const gr = L.btn.gear; await down(3, gr.x + gr.w / 2, gr.y + gr.h / 2); await upAll(); await step(1);
+    check('gear button emits gearToggle', cmds.includes('gearToggle'), cmds);
+    const rd = L.rud; await down(3, rd.x + rd.w / 2, rd.y + rd.h / 2); await move(3, rd.x + rd.w / 2 + rd.w * 0.3, rd.y + rd.h / 2); await step(1);
+    const c3 = await C();
+    check('rudder slider right → yaw right', c3.yaw > 0.3, c3);
+    await upAll(); await step(1);
+    const c5 = await C();
+    check('rudder springs back to centre', Math.abs(c5.yaw) < 0.05, c5);
+    const cm = L.cam; await down(4, cm.x + cm.w / 2, cm.y + cm.h / 2); await upAll(); await step(1);
+    check('camera button emits cameraNext', cmds.includes('cameraNext'), cmds);
+    // extra-button slot API
+    const ex = await page.evaluate(() => {
+      const t = window.__sim.ctx.input.touch; window.__fire = 0; window.__fireUp = 0;
+      const hFire = t.addButton({ id: 'fire', label: 'Fire', onDown: () => window.__fire++, onUp: () => window.__fireUp++ });
+      t.addButton({ id: 'target', label: 'Tgt', onDown: () => {} });
+      hFire.setActive(true);
+      return { ok: !!hFire, layout: t.layout };
+    });
+    check('addButton returns a handle and reserves rail slots', ex.ok && ex.layout.extra.length === 2, ex.layout && ex.layout.extra);
+    const f = ex.layout.extra[0];
+    await down(5, f.x + f.w / 2, f.y + f.h / 2); await step(1); await upAll(); await step(1);
+    const fired = await page.evaluate(() => [window.__fire, window.__fireUp]);
+    check('extra button onDown / onUp fire', fired[0] === 1 && fired[1] === 1, fired);
+    const ov = await page.evaluate(AUDIT);
+    check('no overlaps or small targets with two extra buttons', ov.length === 0, ov);
+    const sc = await page.evaluate(() => ({ sx: scrollX, sy: scrollY, vv: window.visualViewport ? visualViewport.scale : 1 }));
+    check('page did not scroll or zoom', sc.sx === 0 && sc.sy === 0 && sc.vv === 1, sc);
+    await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test.png`) });
+    await page.evaluate(() => window.__sim.ctx.input.touch.removeButton('fire'));
+  }
+  if (errors.length) { failed = true; console.log('CONSOLE ERRORS:', errors.slice(0, 10).join('\n  ')); }
+  console.log(`touch test: ${results.filter(r => r[1]).length}/${results.length} passed`);
+  await bctx.close();
+}
+
 try {
+  if (has('touch-test')) { await touchTest(); devList.length = 0; }
   for (const dn of devList) {
     const [desc, pv, lv] = D[dn] || [];
     if (!desc) { console.log('unknown device', dn); continue; }

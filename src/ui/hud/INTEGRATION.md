@@ -19,10 +19,21 @@ between `#view` and the HUD canvas, so the backdrop blur never touches the numbe
 scrim. `?glass=off` keeps the old opaque canvas panel. Toasts, the paused tag, the crash card and the controls card are
 glass too. The fighter HUD stays green collimated symbology, and the airliner deck stays an instrument panel.
 
+## Touch screens
+When `ctx.input.touch.layout` is set (touch controls on screen), the HUD draws only inside the regions the touch layout
+reserves, so it never sits under a thumb or a button:
+- external views: the flight-data strip docks at the top-left of `layout.hud` and drops the cells the controls already
+  show (throttle, gear / flaps / brakes / AP); the warning chip goes under the strip;
+- airliner cockpit: PFD + compact engine/config strip inside `layout.hud` (side by side when wide, stacked when tall);
+- fighter cockpit: the conformal HUD's tapes and blocks are limited to `layout.clear`; if that leaves less than
+  220 × 180 px (portrait phones) the boxed strip is drawn instead;
+- toasts start below whatever the HUD drew (`notices.setToastTop`).
+The canvas also re-fits every frame when its CSS size changed (rotation; iOS can fire `resize` late or with old sizes).
+
 ## Controls card
 Shown at the start of the first six flights (count in `localStorage` `skyward.hud.hint`; `hint=1` forces it, `hint=0`
 suppresses it), up for 7 s of unpaused flying, then it fades. `F1`, or `cmd { name: 'help' }` (the menu's corner help
-button), brings it back for 12 s or puts it away. Hidden on touch screens.
+button), brings it back for 12 s or puts it away. Never shown while `ctx.input.touchEnabled` (input shows touch coach marks instead).
 
 ## Public API
 ```js
