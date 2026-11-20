@@ -36,6 +36,10 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
       uTerrCam: uniforms.uTerrCam, uTerrLod: uniforms.uTerrLod, uTerrTile: uniforms.uTerrTile, uTerrRw: uniforms.uTerrRw,
       uTerrRwL: uniforms.uTerrRwL, uOrigin: uniforms.uOrigin, uSunDir: uniforms.uSunDir, uTerrShadowOn: uniforms.uTerrShadowOn,
       tAirMap: uniforms.tAirMap, uAirMap: uniforms.uAirMap, uAirInfo: uniforms.uAirInfo,
+      // the cover reads the settlements (roads, towns): without their integer textures bound, the usampler2D sat on
+      // the same unit as a float texture and every draw of this pass failed (INVALID_OPERATION) - the map stayed
+      // empty, so no grass tufts, meadow blades or crop plants grew anywhere
+      ...(uniforms.tSetGrid ? { tSetGrid: uniforms.tSetGrid, tSetSeg: uniforms.tSetSeg, tSetTown: uniforms.tSetTown, uSetOrg: uniforms.uSetOrg, uSetOn: uniforms.uSetOn } : {}),
       ...GU,
     },
     vertexShader: FULLSCREEN_VERT,
@@ -46,6 +50,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
       ${TILE_CONSTS_GLSL}
       ${COVER_GLSL}
       ${CELL_GLSL}
+      #define GR_DBG ${+(ctx.params?.raw?.grDbg || 0)}
       uniform vec4 uVegGrassWin; uniform vec2 uVegGrassOrg;
       uniform vec4 uVegPave[${MAXR}]; uniform vec2 uVegPaveS[${MAXR}];
       void main() {
@@ -133,6 +138,15 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         // (kind 0 carries the meadow share in 0..0.4: the near-field blades grow from it off the airfield)
         outColor = vec4(hgt * exists, kind < 0.5 ? 0.4 * clamp(dens, 0.0, 1.0) : kind, dry, n2.r * 0.6 + n1.g * 0.4);
         if (cropOut.y > 2.5 && kind < 1.5) outColor = cropOut;
+        #if GR_DBG == 1
+        outColor = vec4(0.9, 3.11, 0.3, 1.0) * step(0.3, C.crop);
+        #elif GR_DBG == 2
+        outColor = vec4(0.9, 3.11, 0.3, 1.0) * step(0.3, C.crop) * step(7.5, C.fld.road);
+        #elif GR_DBG == 3
+        outColor = vec4(0.9, 3.11, 0.3, 1.0);
+        #elif GR_DBG == 4
+        outColor = vec4(0.8, 0.2, 0.0, 0.5);
+        #endif
       }`,
   });
   const tri = fullscreenTriangle();
@@ -237,11 +251,26 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
     mesh, uniforms: GU, Gg,
     /** debug: grass map as base64 RGBA8 (height*255, kind*80, dry*255, 255) */
     read() {
-      const buf = new Uint16Array(Gg * Gg * 4); ctx.renderer.readRenderTargetPixels(rt, 0, 0, Gg, Gg, buf);
+      const r = ctx.renderer, gl = r.getContext();
+      gl.getError();
+      const prevRT = r.getRenderTarget(); r.setRenderTarget(rt); r.setClearColor(0x000000, 0); r.render(mapScene, mapCam); r.setRenderTarget(prevRT);
+      const e0 = gl.getError();
+      const fb = r.properties.get(rt).__webglFramebuffer;
+      const prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      const rtype = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE), rfmt = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT);
+      let buf = new Float32Array(Gg * Gg * 4);
+      if (rtype === gl.HALF_FLOAT && rfmt === gl.RGBA) {
+        const hb = new Uint16Array(Gg * Gg * 4);
+        gl.readPixels(0, 0, Gg, Gg, gl.RGBA, gl.HALF_FLOAT, hb);
+        for (let i = 0; i < hb.length; i++) buf[i] = THREE.DataUtils.fromHalfFloat(hb[i]);
+      } else gl.readPixels(0, 0, Gg, Gg, gl.RGBA, gl.FLOAT, buf);
+      const err = e0 + ':' + gl.getError() + ':' + gl.checkFramebufferStatus(gl.FRAMEBUFFER) + ':' + rtype + ':' + rfmt + ':' + gl.getError();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prev);
       const out = new Uint8Array(Gg * Gg * 4);
-      for (let i = 0; i < Gg * Gg; i++) { out[i * 4] = Math.min(255, THREE.DataUtils.fromHalfFloat(buf[i * 4]) * 255); out[i * 4 + 1] = THREE.DataUtils.fromHalfFloat(buf[i * 4 + 1]) * 80; out[i * 4 + 2] = THREE.DataUtils.fromHalfFloat(buf[i * 4 + 2]) * 255; out[i * 4 + 3] = 255; }
+      for (let i = 0; i < Gg * Gg; i++) { out[i * 4] = Math.min(255, buf[i * 4] * 255); out[i * 4 + 1] = Math.min(255, buf[i * 4 + 1] * 80); out[i * 4 + 2] = Math.min(255, buf[i * 4 + 2] * 255); out[i * 4 + 3] = 255; }
       let str = ''; for (let i = 0; i < out.length; i += 8192) str += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
-      return JSON.stringify({ w: Gg, h: Gg, b64: btoa(str), visible: mesh.visible, rects: near.length });
+      return JSON.stringify({ w: Gg, h: Gg, b64: btoa(str), visible: mesh.visible, rects: near.length, glError: err });
     },
     update(camWX, camWZ, org, agl) {
       const on = agl < 150;

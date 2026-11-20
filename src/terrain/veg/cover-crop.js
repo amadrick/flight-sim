@@ -58,6 +58,7 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         ${vegVertexCommon(L)}
+        #define CR_DBG ${+(ctx.params?.raw?.cropDbg || 0)}
         attribute vec3 aB;
         uniform sampler2D tVegGrass; uniform vec4 uVegGrassWin; uniform vec2 uVegGrassOrg;
         uniform vec4 uCrGrid0, uCrGrid1, uCrRing; uniform float uCrPix;
@@ -90,6 +91,10 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         float isCrop = step(2.5, gm.g) * inMap;
         float cls = floor((gm.g - 3.0) * 10.0 + 0.05);
         float ch = gm.r, cov = gm.a;
+        #if CR_DBG >= 1
+        vec4 gmD = gm;
+        isCrop = inMap; cls = 1.0; ch = 0.9; cov = 1.0; gm.b = 0.3;
+        #endif
         float ang = gm.b * 3.14159265;
         vec2 rowD = vec2(cos(ang), sin(ang)), perp = vec2(-rowD.y, rowD.x);
         // drill rows: snap across the rows; plants per square metre by crop
@@ -107,6 +112,9 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         float phi = 6.2832 * hb.x + 2.1 * bi;
         vec2 dirA = vec2(cos(phi), sin(phi));
         float hh = ch * (0.85 + 0.25 * hb.y) * keep;
+        // toward the outer edge of the ring the plants sink into the ground's painted canopy: a gentle slope instead
+        // of the cliff where the 3-D crop stopped (seen from eye height as a hard line across the field)
+        hh *= mix(1.0, 0.25, smoothstep(uCrRing.y * 0.45, uCrRing.y, dc));
         float bw = 0.004, H0 = 0.0, len = hh, incl0 = 0.05, incl1 = 0.12, prof = 1.0 - 0.3 * t;
         float isEar = 0.0, isLeaf = 0.0, isFlower = 0.0, sen = 0.0;
         vec2 dir = dirA;
@@ -183,7 +191,10 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         float zrel = (tp.y - base.y) / max(ch, 0.05);
         float occ = mix(0.40 + 0.25 * (1.0 - cov), 1.0, smoothstep(0.0, 0.95, zrel));
         vCr = vec4(zrel, occ, (1.0 - sen * 0.7) * (isLeaf > 0.5 ? 1.0 : 0.5), 1.0 - sen * 0.5);
-        vCrC = c; vCrW = tp;`)
+        vCrC = c; vCrW = tp;
+        #if CR_DBG == 2
+        vCrC = vec3(gmD.g / 4.0, gmD.r, gmD.a) * 0.3;
+        #endif`)
       .replace('#include <begin_vertex>', 'vec3 transformed = tp;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -202,7 +213,7 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
           totalEmissiveRadiance += vCrC * vec3(0.9, 1.0, 0.6) * uSunColor * ((0.2 + 0.8 * fwd) * 0.35 * vCr.z * vCr.y * smoothstep(0.0, 0.08, uSunDir.y) / PI);
         }`);
   };
-  mat.customProgramCacheKey = () => `skyward-crops-${G0}-${G1}`;
+  mat.customProgramCacheKey = () => `skyward-crops-${G0}-${G1}-${+(ctx.params?.raw?.cropDbg || 0)}`;
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'veg-crops'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
   mesh.castShadow = false; mesh.receiveShadow = true;
