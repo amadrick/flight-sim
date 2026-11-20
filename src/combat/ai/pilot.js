@@ -18,6 +18,7 @@ const CA = { t: 0, miss: 0 }, REC = { clear: 0, at: 0, ground: 0 }, RS = { x: 0,
 const RP = { nz: 4, rollRate: 3, climb: 0.3, turn: 0, horizon: 12, dt: 0.4, delay: 0.1 };
 const DISTS = [400, 1000, 2000, 3500, 5500], FRAC = [0.15, 0.4, 0.8, 1.4, 2.2];
 const SOL = { point: new THREE.Vector3(), tof: 0, range: 0, inRange: false }, solA = new THREE.Vector3();
+const GUN_ENTER = 0.15, GUN_EXIT = 0.35;          // gun-solution error (rad) to start / give up tracking
 const OFFENSE_MODES = new Set(['pursuit', 'guns', 'yoyo-high', 'yoyo-low', 'lag-roll', 'scissors', 'merge', 'vertical', 'intercept']);
 const FIGHT_MODES = new Set(['pursuit', 'lead', 'pure', 'lag', 'guns', 'yoyo-high', 'yoyo-low', 'lag-roll', 'scissors', 'break', 'jink', 'extend',
   'merge', 'vertical', 'split-s', 'defend-missile', 'crank', 'reattack', 'bugout']);
@@ -418,7 +419,7 @@ export function createPilot(combat, team, e, o = {}) {
       combat.weapons.gunSolution(e, T, SOL);
       A.copy(SOL.point).sub(s.position).normalize();
       const lead = Math.acos(clamp(A.dot(e.forward), -1, 1));
-      if (pilot.mode === 'guns' ? gunErrS < lerp(0.4, 0.28, skill) || lead < 0.2 : lead < lerp(0.12, 0.18, skill)) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
+      if (pilot.mode === 'guns' ? gunErrS < GUN_EXIT || lead < 0.3 : lead < GUN_ENTER) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
       if (geo.aa < 90 * DEG && !(geo.range < 600 && geo.closure > 60)) { setMode('pursuit', 0, 'lead'); return; }
     }
     const myR = turnRadius(Math.max(s.tas, 60), gFight);
