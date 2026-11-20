@@ -17,7 +17,7 @@ export const SKILLS = {
 };
 /** The Cendrine Directorate flies a mixed bag. */
 /** Default missiles on Directorate fighters by difficulty. */
-export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0 }, veteran: { ir: 2, radar: 0 }, ace: { ir: 2, radar: 2 } };
+export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0, flares: 4 }, veteran: { ir: 2, radar: 0, flares: 10 }, ace: { ir: 2, radar: 2, flares: 20 } };
 export const ADVERSARY_MIX = ['f16', 'f15', 'fa18', 'f14', 'f16', 'f35'];
 
 export function createRuntime(combat, director, mission, options = {}) {
@@ -436,7 +436,8 @@ export function createRuntime(combat, director, mission, options = {}) {
       const typ = sp.mixed === false ? types[0] : types[(typeOff + i) % types.length];
       const cs = Array.isArray(sp.callsign) ? sp.callsign[i] : sp.callsign ? (g.size === 1 && sp.single ? sp.callsign : `${sp.callsign} ${(sp.startIndex ?? 1) + i}`) : `${team === 'red' ? 'Bandit' : 'Friendly'} ${i + 1}`;
       // the Directorate's missile racks scale with difficulty (fighters only; explicit loadouts win)
-      const base = team !== 'blue' && !sp.loadout ? ENEMY_LOADOUT[combat.difficulty] || ENEMY_LOADOUT.veteran : null;
+      const rack = ENEMY_LOADOUT[combat.difficulty] || ENEMY_LOADOUT.veteran;
+      const base = team === 'blue' ? null : !sp.loadout ? rack : sp.loadout.flares == null ? { flares: rack.flares } : null;
       const loadout = base || sp.loadout || sp.hp != null || sp.invulnerable ? { ...(base || {}), ...(sp.loadout || {}) } : undefined;
       if (loadout && sp.hp != null) loadout.hp = sp.hp;
       if (loadout && sp.invulnerable) loadout.invulnerable = true;

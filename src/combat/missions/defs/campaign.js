@@ -29,9 +29,9 @@ export const CAMPAIGN = [
       const haven = s.places.haven;
       const unknowns = s.group('unknowns', {
         team: 'neutral', type: 'f15', count: 2, callsign: 'Unknown', at: { from: haven, brg: 25, dist: 46000, alt: 6000 }, heading: haven,
-        passive: true, spacing: 500, order: () => s.orders.patrol(s.route([haven, { x: haven.x - 25000, z: haven.z + 8000 }], { alt: 4500 }), { passive: true }),
+        passive: true, spacing: 500, skill: s.skill('enemy', -0.08), order: () => s.orders.patrol(s.route([haven, { x: haven.x - 25000, z: haven.z + 8000 }], { alt: 4500 }), { passive: true }),
       });
-      const more = s.declare('cinder34', { type: ['f16', 'f15'], count: s.n(1, 2, 2), callsign: 'Cinder', startIndex: 3, at: () => s.at({ from: haven, brg: s.between(0, 40), dist: 38000, alt: 6500 }), call: true });
+      const more = s.declare('cinder34', { type: ['f16', 'f15'], count: s.n(1, 1, 2), callsign: 'Cinder', startIndex: 3, skill: s.skill('enemy', -0.08), at: () => s.at({ from: haven, brg: s.between(0, 40), dist: 38000, alt: 6500 }), call: true });
       const wing = s.declare('wingmen', { team: 'blue', type: s.combat.director.anchor.aircraft, count: 1, callsign: 'Halyard', startIndex: 2, managed: 'wing', role: 'wing',
         at: () => s.at({ from: haven, brg: 70, dist: 7000, alt: 2000 }), heading: 25, order: () => s.orders.escort(s.player, { x: 90, y: 0, z: 60 }) });
       const icpt = s.objective('intercept', 'Intercept the unknown aircraft');
@@ -57,11 +57,23 @@ export const CAMPAIGN = [
         ]);
         s.after(10.5, () => {
           unknowns.team = 'red';
-          unknowns.each((e, i) => { e.team = 'red'; e.callsign = `Cinder ${i + 1}`; if (e.pilot) { e.pilot.passive = false; e.pilot.setOrder(s.orders.engage()); } });
+          // Cinder 1 dives for the airfield (a raider: stop it short of Haven), Cinder 2 turns on you; on rookie and
+          // veteran Cinder 1 only joins the fight once it has been chased off the field
+          unknowns.each((e, i) => {
+            e.team = 'red'; e.callsign = `Cinder ${i + 1}`;
+            if (e.loadout?.missiles) { e.loadout.missiles.ir = s.n(0, 1, 2); e.loadout.missiles.radar = 0; }
+            if (!e.pilot) return;
+            if (i === 0 && s.difficulty !== 'ace') { e.tags.role = 'raider'; e.pilot.setOrder(s.orders.patrol(s.route([haven], { alt: 1800 }), { passive: true, loop: false })); }
+            else { e.pilot.passive = false; e.pilot.setOrder(s.orders.engage()); }
+          });
           unknowns.mark('', 'target');
           s.steer(null);
+          s.say('awacs', 'Cinder 1 is diving for the field! Don\'t let it reach Haven!', { priority: 2, delay: 3 });
+          s.after(s.n(40, 30, 0), () => { const e = unknowns.members[0]; if (e?.alive && e.pilot) { e.pilot.passive = false; e.pilot.setOrder(s.orders.engage()); } });
         });
-        s.after(s.n(55, 30, 25), () => more.spawn());
+        s.after(s.n(70, 45, 30), () => more.spawn());
+        // the Directorate will not loiter forever: at bingo whatever is left runs for the range
+        s.bingo(s.n(330, 300, 280), { decide: () => unknowns.lost >= s.n(1, 1, 2), win: 'Intruders driven off', lose: 'The intruders got away' });
       };
       s.trigger({ or: [() => { for (const e of unknowns.members) if (e.alive && s.player && flat(e.state.position, s.player.state.position) < 7000) return true; return false; }, { after: s.n(170, 140, 120) }] }, turn);
       s.every(1, () => {
@@ -161,11 +173,15 @@ export const CAMPAIGN = [
     start: { at: 'glassFlats', alt: 6000, hdg: 85, spd: 240 },
     script(s) {
       const wing = s.wingmen(3);
+      const [h2, h3, h4] = wing.members;
       const slag = s.group('slag', { type: 'mixed', count: 4, callsign: 'Slag', at: { rel: 0, dist: 34000, alt: 6500 }, formation: 'line', spacing: 1300 });
-      const reinf = s.wave('slag2', { type: ['f15', 'f14', 'f16'], count: s.n(0, 2, 3), callsign: 'Slag', startIndex: 5, at: () => s.at({ rel: s.pick([-35, 35]), dist: 26000, alt: 7000 }), call: '@awacs.wave' }, { or: [{ kills: 3 }, { after: 200 }] });
+      const reinf = s.wave('slag2', { type: ['f15', 'f14', 'f16'], count: s.n(1, 2, 3), callsign: 'Slag', startIndex: 5, skill: s.skill('enemy', s.n(-0.1, 0, 0)), at: () => s.at({ rel: s.pick([-35, 35]), dist: 26000, alt: 7000 }), call: '@awacs.wave' }, { or: [{ kills: 3 }, { after: 200 }] }, () => {
+        s.say('furnace', 'Slag lead to base: we are being swept. Send everyone.', { voice: 'enemy', team: 'red', priority: 1, delay: 3 });
+        s.say(h4 || 'awacs', 'Here comes the rest of their squadron. Pick your shots.', { priority: 1, delay: 8 });
+      });
+      s.bingo(s.n(390, 360, 340), { fraction: s.n(0.5, 0.5, 0.65), win: 'Slag swept from the Flats', lose: 'Slag held the Glass Flats' });
       s.destroy('sweep', 'Destroy the Slag patrol and reinforcements', [slag, reinf]);
       s.protect('home', 'Bring all three wingmen home', wing, { optional: true, points: 250 });
-      const [h2, h3, h4] = wing.members;
       const flags = {};
       s.chat([
         [1, h2, 'Halyard 2, in.'],
@@ -257,8 +273,19 @@ export const CAMPAIGN = [
       const M = () => mule.leader;
       const gravel = s.group('gravel', {
         type: ['f16', 'fa18'], count: s.n(1, 2, 2), callsign: 'Gravel', at: () => s.at({ from: M(), brg: 180, dist: 3000, alt: M().state.position.y + 600 }), heading: 0,
-        engageWithin: 11000, order: (i) => s.orders.escort(M(), { x: (i % 2 ? -1 : 1) * 400, y: 300, z: 500 }),
+        order: (i) => ({ ...s.orders.escort(M(), { x: (i % 2 ? -1 : 1) * 400, y: 300, z: 500 }), weaponsHold: true }),
       });
+      // inside the storm Gravel has not seen you yet: they hold formation until you get close, shoot, or hit something
+      let awake = false;
+      const wake = (why) => {
+        if (awake) return; awake = true;
+        gravel.order(() => s.orders.engage(s.player));
+        s.say(gravel.leader || 'furnace', why === 'shot' ? 'Gravel lead: missile in the cloud! Break, break! Somebody is behind us!' : 'Gravel lead: contact low, six o\'clock! Turning in!', { voice: 'enemy', team: 'red', priority: 1 });
+        s.say('awacs', 'Gravel has seen you, {cs}. Mule is the target. Don\'t get dragged off.', { priority: 1, delay: 3 });
+      };
+      s.on('missile:launch', ({ shooter }) => { if (shooter === s.player) s.after(s.n(4, 2, 1), () => wake('shot')); });
+      s.on('damage', ({ target }) => { if (target === M() || gravel.members.includes(target)) wake('shot'); });
+      s.when(() => { const p = s.player, m = M(); return p && m && flat(p.state.position, m.state.position) < s.n(3000, 4500, 7000); }, () => wake('seen'));
       const kill = s.destroy('mule', 'Shoot down Mule before the Lantern Line', mule);
       s.destroy('escorts', 'Destroy the escorts', gravel, { optional: true });
       const style = s.objective('gun', 'Bring Mule down with the gun', { hidden: true, points: 300 });
@@ -359,10 +386,13 @@ export const CAMPAIGN = [
         passive: true, loadout: UNARMED, hp: s.n(110, 160, 200), points: 160, mark: 'BOMBER', speed: 220, role: 'bomber',
         order: () => s.orders.patrol([V(haven.x, 7000, haven.z)], { passive: true }) });
       const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 1, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 72000, alt: 8000 }, heading: haven,
+        loadout: s.n({ ir: 0, radar: 0 }, undefined, undefined), skill: s.skill('enemy', s.n(-0.08, 0, 0)),
         engageWithin: 15000, order: (i) => s.orders.escort(ember.members[i % 2], { x: 600, y: 800, z: 500 }) });
-      const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 1, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: 52000, agl: 650 }, heading: haven,
+      const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 1, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: s.n(85000, 72000, 60000), agl: 1700 }, heading: haven,
         passive: true, loadout: { gun: 0, ir: 0, radar: 0 }, points: 150, mark: 'LOW RAIDER', role: 'raider', speed: 190, spacing: 800,
-        order: () => s.orders.patrol([V(haven.x, 600, haven.z)], { passive: true }) }, s.n(110, 85, 75), (g) => {
+        order: () => s.orders.patrol([V(haven.x, 1700, haven.z)], { passive: true }) }, { or: [{ dead: ember }, { after: s.n(170, 120, 90) }] }, (g) => {
+        // on rookie the escorts are at the end of their fuel when the real raid shows itself
+        if (s.difficulty === 'rookie' && cinder.alive) s.after(12, () => { cinder.order((e) => s.orders.flee(bearing(haven, e.state.position), 9000)); s.say(cinder.leader || 'furnace', 'Cinder flight, bingo. Heading home. Lamp, you\'re on your own.', { priority: 1, voice: 'enemy', team: 'red' }); });
         s.chat([
           [0, 'awacs', 'Cathedral: pop-up contacts! Low, on the coast, bearing one zero five from Haven, coming in under everything. That\'s the real raid!', { priority: 2 }],
           [5, 'awacs', 'Halyard 2, break off and take the low group. Halyard 1, finish the bombers if you can, then help.'],
@@ -418,6 +448,7 @@ export const CAMPAIGN = [
         s.say(wing.leader || 'awacs', 'Where did they come from? Oh. The clouds. Right.', { priority: 0, delay: 4 });
       });
       s.destroy('all', 'Destroy every Directorate fighter', [flint, slag, pop]);
+      s.bingo(s.n(420, 400, 380), { fraction: s.n(0.6, 0.7, 0.8), win: 'Formation broken', lose: 'The formation held' });
       s.protect('h2', 'Bring your wingmen home', wing, { optional: true });
       let guns = 0;
       const gun = s.objective('guns', 'Three kills with the cannon', { hidden: true, points: 300 });

@@ -33,6 +33,7 @@ export const INSTANT = [
       const b = s.group('bandit', { type: s.n('f16', 'f16', 'f15'), count: 1, callsign: 'Bandit', at: { rel: 0, dist: 9000 }, heading: 'player' });
       s.destroy('splash', 'Shoot down the bandit', b);
       s.picture(b);
+      s.bingo(300, { decide: () => false, lose: 'Fight called: bingo fuel', loseChat: [[0.5, 'awacs', 'Knock it off, {cs}. You\'re both bingo. Call it a draw and come home.']] });
     },
   }),
 
@@ -47,6 +48,7 @@ export const INSTANT = [
       const wing = s.wingmen(1);
       const b = s.group('bandits', { type: ['f15', 'f16'], count: 2, callsign: 'Bandit', at: { rel: 0, dist: 11000, alt: 5200 }, heading: 'player', formation: 'line', spacing: 700 });
       s.destroy('splash', 'Shoot down both bandits', b);
+      s.bingo(360, { decide: (lost, total) => lost >= total - 1 && !!s.player?.alive, win: 'Bandits disengaged', lose: 'Fight called: bingo fuel' });
       s.protect('h2', 'Halyard 2 comes home', wing, { optional: true, points: 150 });
       s.picture(b);
     },
@@ -69,6 +71,7 @@ export const INSTANT = [
           : { at: { rel: 0, dist: c.startRange, alt: c.altitude }, heading: 'player' };
       const b = s.group('bandits', { type: c.enemyType, count: c.enemies, callsign: 'Bandit', formation: c.enemies > 3 ? 'wedge' : 'line', spacing: 700, loadout: lo, ...geo });
       s.destroy('splash', c.enemies > 1 ? 'Shoot down every bandit' : 'Shoot down the bandit', b);
+      s.bingo(240 + 60 * c.enemies, { fraction: c.enemies > 1 ? 0.6 : 1, lose: 'Fight called: bingo fuel' });
       if (c.advantage === 'defensive') s.say('awacs', '{cs}, bandits at your six, {rng} miles! Defend!', { priority: 2, vars: { rng: Math.max(1, Math.round(c.startRange / 1852)) } });
       else if (c.advantage === 'offensive') s.say('awacs', '{cs}, you\'re behind them and they haven\'t seen you. Make it count.', { priority: 1 });
       else s.picture(b);
@@ -77,15 +80,15 @@ export const INSTANT = [
 
   mission({
     id: 'instant-survival', category: 'instant', order: 4,
-    title: 'Last One Flying', tagline: 'Endless waves, rising skill, one jet.',
+    title: 'Last One Flying', tagline: 'Endless waves, rising skill, one jet. Clear them fast or they stack up.',
     brief: [
       'Wave after wave of Directorate fighters, each one bigger and sharper than the last. Between waves you get a breather, a few missiles and a quick patch-up. Nothing else.',
-      'Clear three waves to call it a win. Clear ten and Cathedral will run out of things to say.',
+      'Clear three waves to call it a win. Clear ten and Cathedral will run out of things to say. Dawdle, and the next wave joins the one you are still fighting.',
     ],
     location: 'KHVN', locationName: 'Over the sea south of Haven', map: briefMap(0, 30000, 26000, [0, 40000, 0]), tod: 17.6, weather: 'scattered', threat: 5, minutes: 10,
     objectivesPreview: ['Survive as many waves as you can', 'Three waves cleared counts as a win'],
     start: { at: 'haven', brg: 180, dist: 40000, alt: 5000, hdg: 0, spd: 240 },
-    noTimeBonus: true, quietKills: true, par: 2200,
+    noTimeBonus: true, quietKills: true, par: 2600,
     script(s) {
       const MAX = 10;
       s.autoWin = false;
@@ -110,29 +113,31 @@ export const INSTANT = [
         const g = s.group(`wave${wave}`, { type: wave < 3 ? 'f16' : 'mixed', count: n, callsign: names[(wave - 1) % names.length], skill, spacing: 700, loadout,
           at: { rel: s.between(-45, 45), dist: s.between(17000, 24000) }, call: '@awacs.wave' });
         ob.set(`wave ${wave}`);
-        s.when(() => g.alive === 0, () => cleared());
+        // a wave that is not cleared in time is joined by the next one: stalemates turn into pressure, never into a draw
+        const cur = wave;
+        const late = s.after(s.n(150, 120, 100), () => { if (!s.ended && wave === cur && g.alive > 0) { s.say('awacs', 'Next wave is not waiting for you, {cs}. More inbound!', { priority: 1 }); stacked++; next(); } });
+        s.when(() => g.alive === 0, () => { s.cancel(late); if (wave === cur) cleared(); else if (!s.ended) { clearedCount++; s.score(100 * cur, 'Waves cleared', `Wave ${cur} cleared`); if (clearedCount >= MAX) s.win(`Survived all ${MAX} waves`); } });
       };
+      let stacked = 0, clearedCount = 0;
       const cleared = () => {
         if (s.ended) return;
+        clearedCount++;
         s.score(100 * wave, 'Waves cleared', `Wave ${wave} cleared`);
-        if (wave >= MAX) { s.win(`Survived all ${MAX} waves`, [[1, 'awacs', 'That\'s ten. I\'ve run out of things to say, {cs}. Go home.']]); return; }
+        if (clearedCount >= MAX) { s.win(`Survived all ${MAX} waves`, [[1, 'awacs', 'That\'s ten. I\'ve run out of things to say, {cs}. Go home.']]); return; }
         rearm();
+        ob.set(`${clearedCount} cleared, wave ${wave + 1} next`);
         s.say('awacs', [`Wave ${wave} down. Rearm and patch up. Next group in a moment.`, `That's wave ${wave}. Breathe. They're coming again.`, `Wave ${wave} clear, {cs}. The next ones are angrier.`], { priority: 1 });
         s.after(9, next);
       };
       s.onPlayerDown = () => {
-        const done = wave - 1;
+        const done = clearedCount;
         ob.set(`${done} cleared`);
         if (done >= 3) s.win(`Survived ${done} waves`, [[0.5, 'awacs', `{cs} is down after ${done} waves. That's a fine night's work. Rescue is inbound.`]]);
         else s.lose(done === 1 ? 'Shot down after 1 wave' : `Shot down after ${done} waves`, [[0.5, 'awacs', '{cs} is down. Rescue is inbound. Shake it off and go again.']]);
       };
       s.say('awacs', 'Cathedral: endless waves tonight, {cs}. Stay alive as long as you can.', { priority: 1 });
-      // tanker time: after nine minutes the night is over either way
-      s.countdown(540, 'Fuel', () => {
-        const done = wave - 1;
-        if (done >= 3) s.win(`Survived ${done} waves`, [[0.5, 'awacs', 'That\'s fuel, {cs}. ' + done + ' waves. Come home and tell everyone.']]);
-        else s.lose('Out of fuel', [[0.5, 'awacs', '{cs}, you\'re out of gas and out of time. Come home.']]);
-      }, { warn: false });
+      s.say('awacs', 'Tip: Tab picks a target, Enter fires a missile, Space the gun, V drops flares.', { priority: 0, delay: 6, key: 'hint-keys' });
+      void stacked;
       s.after(1, next);
     },
   }),
