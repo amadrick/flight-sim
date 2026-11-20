@@ -34,6 +34,7 @@ export function fillSteps(name) {
 }
 
 /** chord active at step k of a bar */
+const approach = (a, lo) => (a < lo ? a + 12 : a);
 const chordAt = (chs, k) => { let c = chs[0]; for (const x of chs) if (x.at <= k) c = x; return c; };
 
 /** Generate every bar of a section: [{ section, index, chords: [{ ch, at }], steps: [16][events] }]. */
@@ -78,7 +79,7 @@ export function genSection(cue, name) {
         if (c === '.' || (c === '-' && !change)) continue;
         let len = 1; while (k + len < 16 && pat[k + len] === '-' && !chs.some((x) => x.at === k + len)) len++;
         const r = rootGtr(ch) + octave;
-        const n = c === 'O' ? r + 12 : c === '5' ? r + 7 : c === 'A' ? rootGtr(nextCh) + octave - 1 : r;
+        const n = c === 'O' ? r + 12 : c === '5' ? r + 7 : c === 'A' ? approach(rootGtr(nextCh) + octave - 1, low + octave) : r;
         steps[k].push({ i: inst, n, d: c === '-' || c === 'R' && len > 1 ? len : Math.max(1, len - 0.2), v: lvl * (k % 4 === 0 ? 1 : 0.82) });
       }
     };
