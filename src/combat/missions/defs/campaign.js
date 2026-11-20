@@ -98,19 +98,25 @@ export const CAMPAIGN = [
       const pine = s.places.pinecrest, saddle = s.places.saddle;
       const bundle = s.group('bundle', {
         team: 'blue', type: 'c17', count: 1, callsign: 'Bundle 1', single: true, at: { rel: 0, dist: 2500 }, heading: { rel: 0 }, passive: true,
-        hp: s.n(640, 440, 320), role: 'protect', mark: 'BUNDLE 1', markKind: 'protect',
-        order: (i, p) => s.orders.patrol(s.route([saddle, pine, { x: pine.x - 6000, z: pine.z - 20000 }], { agl: 850 }), { passive: true, loop: false }),
+        hp: s.n(700, 520, 380), role: 'protect', mark: 'BUNDLE 1', markKind: 'protect',
+        order: (i, p) => s.orders.patrol(s.route([saddle, pine, { x: pine.x - 6000, z: pine.z - 20000 }], { alt: p.y, clear: 600 }), { passive: true, loop: false }),
       });
       const B = () => bundle.leader;
       const fromB = (brg, dist, up = 1500) => () => { const b = B() || s.player; return s.at({ from: b, brg, dist, alt: b.state.position.y + up }); };
-      s.wingmen(1);
+      const wing = s.wingmen(1);
+      // Halyard 2 peels off onto whichever attacker goes for the transport
+      const cover = (g) => s.after(3, () => {
+        const w = wing.leader, a = g.leader; if (!w?.pilot || !a) return;
+        w.pilot.setOrder(s.orders.engage(a));
+        s.say(w, ['Halyard 2, I\'ve got the one going for Bundle.', 'Halyard 2, taking the bandit on the transport.'], { priority: 1 });
+      });
       const w1 = s.wave('flint', { type: ['f16', 'fa18'], count: 2, callsign: 'Flint', at: fromB(40, 22000), heading: 'player', call: true,
-        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, 35);
-      const saddleZone = s.zone(saddle, 9000);
+        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, 35, cover);
+      const saddleZone = s.zone(saddle, 5000);
       const w2 = s.wave('slag', { type: 'mixed', count: s.n(1, 2, 2), callsign: 'Slag', at: fromB(285, 20000), call: true,
-        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage(s.player)) }, { or: [() => B() && saddleZone.contains(B()), { after: 150 }] });
+        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage(s.player)) }, { or: [() => B() && saddleZone.contains(B()) && s.t > 100, { after: 170 }] }, cover);
       const w3 = s.wave('gravel', { type: ['f15', 'f14'], count: s.n(0, 1, 2), callsign: 'Gravel', at: fromB(350, 24000, 2000), call: true,
-        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, { or: [{ dead: w2 }, { after: 230 }] });
+        order: (i) => (i === 0 ? s.orders.engage(B()) : s.orders.engage()) }, { or: [{ dead: w2 }, { after: 230 }] }, cover);
       s.protect('bundle', 'Keep Bundle 1 alive', bundle, { points: 300 });
       const deliver = s.objective('deliver', 'Escort Bundle 1 to Pinecrest');
       s.destroy('clear', 'Destroy every attacker', [w1, w2, w3], { optional: true });
@@ -128,7 +134,6 @@ export const CAMPAIGN = [
         const f = target.hp / (target.maxHp || 1);
         s.say('bundle', f < 0.4 ? ['Bundle 1, we\'re hit bad! Number two engine is on fire!', 'Bundle 1: losing hydraulics, we need help now!'] : ['Bundle 1 taking fire!', 'Bundle 1, rounds on the fuselage! Get them off us!'], { priority: 2 });
       });
-      s.on('kill', ({ victim }) => { if (victim === bundle.members[0]) s.say('awacs', 'Bundle 1 is down. Bundle 1 is down.', { priority: 2 }); });
     },
     winReason: 'Bundle 1 delivered to Pinecrest',
   }),
