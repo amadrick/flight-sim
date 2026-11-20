@@ -197,7 +197,8 @@ export async function createCombatFx(combat) {
       if (Array.isArray(eo)) { for (let i = 0; i < eo.length && i < r.engines.length; i++) if (eo[i]) { src = r.engines[i].nozzle; break; } }
       if (src === r.centre && parts && !isWreck) {
         // smoke from the worst-hit part: a wing root, or the engine bay
-        const wl = parts.wingL || 0, wr = parts.wingR || 0, en = Array.isArray(parts.engines) ? Math.max(0, ...parts.engines) : 0;
+        const wl = parts.wingL || 0, wr = parts.wingR || 0;
+        let en = 0; if (Array.isArray(parts.engines)) for (let k = 0; k < parts.engines.length; k++) en = Math.max(en, parts.engines[k] || 0);
         if (Math.max(wl, wr) > en + 0.15 && Math.max(wl, wr) > (parts.fuselage || 0)) {
           const tip = r.tips[wl > wr ? 0 : 1];
           if (tip) { r.wingPt[0] = tip[0] * 0.45; r.wingPt[1] = tip[1]; r.wingPt[2] = tip[2] + 0.5; src = r.wingPt; }
@@ -223,7 +224,7 @@ export async function createCombatFx(combat) {
         sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, (1.5 + 1.5 * fireK) * r.scale, I * 0.05, I * 0.025, I * 0.01, 0, 0, 0, 0, 1.2, 0.8);
         if (dt > 0) R.fireLicks(ps, v, s.velocity, back, (14 + 22 * fireK) * big, dt, q, r.fireAcc, (0.6 + 0.6 * fireK) * r.scale * big);
         if (dt > 0 && (isWreck || !alive)) { v2.copy(s.position); R.fireLicks(ps, v2, s.velocity, back, 18, dt, q, r.fireAcc2, 1.1 * r.scale); }
-        considerLight(v.x, v.y, v.z, 120 * fireK * big, 1, 0.5, 0.2);
+        considerLight(v.x, v.y, v.z, 30 * fireK * big, 1, 0.5, 0.2);
       }
     } else if (r.dmg) { r.dmg.stop(); }
 
@@ -269,6 +270,11 @@ export async function createCombatFx(combat) {
       if (sp && ph < 0.06) { bodyPoint(s, sp, v); ctx.world.toRender(v, rp2); const I = 260 * k; sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, 0.15, I, I, I, 0, 0, 0, 0, 1.4, 1.2); }
     }
   }
+
+  // stale-record sweeps (defined once: no closures per frame)
+  function sweepMissile(r, m) { if (r.seen !== frame) { r.rb.release(ctx.time.now); misRecs.delete(m); } }
+  function sweepFlare(r, f) { if (r.seen !== frame) { r.rb.release(ctx.time.now); flareRecs.delete(f); } }
+  function sweepAc(r, e) { if (r.seen !== frame) { releaseAc(r); acRecs.delete(e); } }
 
   // =============================================================================================== missiles
   function updateMissiles(dt, q) {
@@ -317,7 +323,7 @@ export async function createCombatFx(combat) {
     missileMesh.count = n;
     missileMesh.visible = n > 0;
     if (n) missileMesh.instanceMatrix.needsUpdate = true;
-    for (const [m, r] of misRecs) if (r.seen !== frame) { r.rb.release(ctx.time.now); misRecs.delete(m); }
+    misRecs.forEach(sweepMissile);
   }
 
   // =============================================================================================== flares
@@ -339,7 +345,7 @@ export async function createCombatFx(combat) {
       ribbons.emit(r.rb, f.state.position, 1.1 * (1 - 0.4 * t), 0.35, burn, 0, STYLE.FLARE, 0);
       considerLight(f.state.position.x, f.state.position.y, f.state.position.z, 150 * burn, 1, 0.95, 0.85);
     }
-    for (const [f, r] of flareRecs) if (r.seen !== frame) { r.rb.release(ctx.time.now); flareRecs.delete(f); }
+    flareRecs.forEach(sweepFlare);
   }
 
   // =============================================================================================== tracers
@@ -518,7 +524,7 @@ export async function createCombatFx(combat) {
     for (let i = 0; i < world.wrecks.length; i++) updateAircraft(world.wrecks[i], dt, q, night, true);
     const p = world.player;
     if (p && !p.alive && p.state && !p.state.onGround && world.wrecks.indexOf(p) < 0) updateAircraft(p, dt, q, night, false);
-    for (const [e, r] of acRecs) if (r.seen !== frame) { releaseAc(r); acRecs.delete(e); }
+    acRecs.forEach(sweepAc);
     updateMissiles(dt, q);
     updateFlares(dt, q);
 

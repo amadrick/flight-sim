@@ -161,9 +161,10 @@ void main() {
   if (kind == 0.0) {
     float r2 = dot(vC, vC);
     if (r2 >= 1.0) discard;
+    float edge = (1.0 - r2) * (1.0 - r2);           // no visible rim
     float core = exp(-r2 * 14.0);
-    float halo = exp(-r2 * 3.5) * 0.25 * vP.x;
-    e = vCol.rgb * (core + halo);
+    float halo = exp(-r2 * 4.0) * 0.25 * vP.x;
+    e = vCol.rgb * (core + halo) * edge;
   } else if (kind == 1.0) {
     // tracer: hot white core, warm glow; brightest at the head, fading along the streak, round caps
     float x = vC.x * vP.w, sa = vS;
