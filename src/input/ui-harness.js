@@ -127,7 +127,10 @@ async function boot() {
     if (params.raw.mission !== 'adopt') {
       combat.input = { setTouchButtons: (on) => acts.push('setTouchButtons:' + on), actions: {
         gun: (on) => acts.push('gun:' + on), missile: () => acts.push('missile'), flares: () => acts.push('flares'),
-        targetNext: () => acts.push('targetNext'), targetNearest: () => acts.push('targetNearest'), toggleView: () => acts.push('toggleView'), switchMissile: () => {} } };
+        targetNext: () => acts.push('targetNext'), targetNearest: () => acts.push('targetNearest'), targetTap: () => acts.push('targetTap'),
+        toggleView: () => acts.push('toggleView'), switchMissile: () => {}, boost: (on) => acts.push('boost:' + on) },
+        state: { live: true, gun: false, firing: false, target: { id: 'b1' }, lock: 'locked', missile: 'ir', missiles: { ir: 2, radar: 2 },
+          rounds: 412, flares: 30, flareProgram: false, padlock: false } };
     } else {
       const box = document.createElement('div'); box.className = 'cbt-inp-touch';
       createTouchButtons(box, (id) => acts.push(id), (on) => acts.push('gun:' + on));

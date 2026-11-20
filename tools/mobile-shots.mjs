@@ -39,6 +39,7 @@ const D = {
   duo: [{ ...devices['Pixel 7'] }, { width: 540, height: 720 }, { width: 720, height: 540 }],
   duospan: [{ ...devices['Pixel 7'] }, { width: 720, height: 1114 }, { width: 1114, height: 720 },
     { portrait: { orientation: 'horizontal', offset: 540, maskLength: 34 }, landscape: { orientation: 'vertical', offset: 540, maskLength: 34 } }],
+  phone: [{ ...devices['Pixel 7'] }, { width: 390, height: 844 }, { width: 844, height: 390 }],   // a 6.1" phone's CSS viewport
   large: [{ ...devices['Pixel 7'] }, { width: 430, height: 932 }, { width: 932, height: 430 }],
   fold: [{ ...devices['Pixel 7'] }, { width: 884, height: 1104 }, { width: 1104, height: 884 }],
   tab: [{ ...devices['Pixel 7'] }, { width: 800, height: 1280 }, { width: 1280, height: 800 }],
@@ -269,7 +270,7 @@ async function touchTest() {
     for (const id of ['msl', 'tgt', 'flr']) { await down(3, ...ctr(M.fire[id])); await upAll(); await step(1); }
     await down(3, ...ctr(M.view)); await upAll(); await step(1);
     const g2 = await page.evaluate(() => (window.__acts || []).slice());
-    if (ui) check('MSL / TGT / FLR / VIEW reach combat', own ? ['missile', 'targetNext', 'flares', 'toggleView'].every(a => g2.includes(a)) && g2.includes('gun:false') : true, g2);
+    if (ui) check('MSL / TGT / FLR / VIEW reach combat', own ? ['missile', 'targetTap', 'flares', 'toggleView'].every(a => g2.includes(a)) && g2.includes('gun:false') : true, g2);
     const ovm = await page.evaluate(COLLECT);
     check('mission: no intersections between HUD, combat and touch elements', ovm.out.length === 0, ovm.out);
     await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test-mission.png`) });

@@ -251,7 +251,7 @@ export function createTouchControls(ctx, h) {
       if (pid !== -1) return;
       e.preventDefault(); e.stopPropagation(); h.setMode('touch'); pid = e.pointerId; b.classList.add('down');
       try { b.setPointerCapture(e.pointerId); } catch {}
-      buzz(spec.buzz || 8);
+      if (spec.buzz !== 0) buzz(spec.buzz || 8);
       try { spec.onDown && spec.onDown(); } catch (err) { console.error(err); }
     });
     const up = (e) => { if (e.pointerId === pid) release(); };
@@ -277,9 +277,11 @@ export function createTouchControls(ctx, h) {
   const combat = () => ctx.combat || null;
   const actions = () => combat()?.input?.actions || null;
   const fireSpecs = {
-    gun: { label: 'Gun', aria: 'Fire gun (hold)', buzz: 12, onDown: () => actions()?.gun?.(true), onUp: () => actions()?.gun?.(false) },
-    msl: { label: 'MSL', aria: 'Launch missile', buzz: 16, onDown: () => actions()?.missile?.() },
-    tgt: { label: 'TGT', aria: 'Next target', onDown: () => actions()?.targetNext?.() },
+    // combat buzzes on gun fire, launches and hits itself: no tap buzz here, so the two never double up
+    gun: { label: 'Gun', aria: 'Fire gun (hold)', buzz: 0, onDown: () => actions()?.gun?.(true), onUp: () => actions()?.gun?.(false) },
+    msl: { label: 'MSL', aria: 'Launch missile', buzz: 0, onDown: () => actions()?.missile?.() },
+    // tap = next target, double tap = most dangerous (combat's targetTap); older builds: next
+    tgt: { label: 'TGT', aria: 'Next target, double tap: most dangerous', onDown: () => { const a = actions(); if (a?.targetTap) a.targetTap(); else a?.targetNext?.(); } },
     flr: { label: 'FLR', aria: 'Flares', onDown: () => actions()?.flares?.() },
   };
   for (const id of FIRE_IDS) { const r = makeButton({ id: 'fire.' + id, ...fireSpecs[id] }, 'inp-fire inp-' + id); r.el.hidden = true; }
@@ -484,11 +486,15 @@ export function createTouchControls(ctx, h) {
       setOn('brake', st.brake || !!s.parkingBrake, s.parkingBrake ? 'PARK' : '');
     }
     if (ownFire) {
-      const cs = combat()?.input?.state || null;            // optional readable combat state
+      const cs = combat()?.input?.state || null;            // combat.input.state: refreshed by combat every frame
       if (cs) {
-        if (cs.missile != null) setOn('fire.msl', false, String(cs.missileLabel ?? cs.missile));
-        if (cs.flares != null) setOn('fire.flr', false, String(cs.flares));
-        if (cs.view != null) setOn('view', !!cs.view, '');
+        const ms = cs.missiles || {}, sel = cs.missile || '';
+        const n = sel === 'ir' || sel === 'radar' ? ms[sel] | 0 : (ms.ir | 0) + (ms.radar | 0);
+        setOn('fire.gun', !!(cs.firing || cs.gun), cs.rounds != null ? String(cs.rounds) : '');
+        setOn('fire.msl', cs.lock === 'locked' && n > 0, (sel ? sel.toUpperCase() + ' ' : '') + n);
+        setOn('fire.tgt', !!cs.target, cs.lock === 'locked' ? 'LOCK' : cs.lock === 'acquiring' ? 'SEEK' : cs.target ? '' : '—');
+        setOn('fire.flr', !!cs.flareProgram, cs.flares != null ? String(cs.flares) : '');
+        setOn('view', !!cs.padlock, '');
       }
     }
   }
