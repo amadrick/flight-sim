@@ -161,10 +161,10 @@ test('rookie: auto-throttle engages when the throttle is left alone; any input t
   fly(b, e, 2);
   assert.equal(c.assist.info.autoThrottle, false);
   assert.ok(Math.abs(e.controls.throttle - 0.3) < 1e-6, 'the player\'s lever is kept');
-  // veteran: never
+  // veteran gets it too (a thumb that never touches the throttle would fight far too slow); ace never
   const v = await setup({ difficulty: 'veteran' });
   fly(v.b, v.e, 5);
-  assert.equal(v.c.assist.info.autoThrottle, false);
+  assert.equal(v.c.assist.info.autoThrottle, true);
 });
 
 test('rookie: the ground protection pulls out of a dive at the last moment; veteran gets the cue', async () => {
