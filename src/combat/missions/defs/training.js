@@ -158,7 +158,6 @@ export const TRAINING = [
       const taken = s.objective('taken', `Take fewer than ${limit} gun hits`, { standing: true, progress: `0 / ${limit}`, points: 200 });
       const first = s.objective('first', 'First hit inside 60 seconds', { optional: true });
       s.objective('clean', 'Win without taking a hit', { hidden: true, points: 300 });
-      s.boundary(s.anchor, 70000);
       s.countdown(s.n(420, 360, 300), 'Fight time', () => s.lose('Out of time', [[0.5, 'instructor', 'Knock it off, knock it off. Time. We\'ll debrief the part where you didn\'t shoot me.']]));
       s.steer(rb.leader, 'RIDGEBACK');
       s.chat([
