@@ -495,9 +495,6 @@ export const CSS = /* css */`
   .menu-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-opts { grid-template-columns: 1fr; }
 }
-@media (max-width: 460px) {
-  .menu-tab { padding: 0 9px; font-size: 13px; }   /* four tabs (Hangar, Missions, Settings, Controls) at phone width */
-}
 @media (prefers-reduced-motion: reduce) {
   .menu-root *, .menu-crash, .menu-corner, .menu-corner * { animation: none !important; transition: none !important; }
 }

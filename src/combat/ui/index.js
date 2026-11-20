@@ -10,10 +10,10 @@
 import { AIRCRAFT, getAircraft } from '../../aircraft/registry.js';
 import { AIRPORTS } from '../../data/airports.js';
 import { WEATHER_PRESETS } from '../../core/weather.js';
-import { ICON } from '../../ui/menu/icons.js';
 import { CSS } from './style.js';
 import { drawMap } from './map.js';
 import { createProgressStore } from './progress.js';
+import { installMenuHooks, HOOK_CSS } from './hooks.js';
 import {
   DIFFICULTY, groupMissions, nextMission, conditionsLine, outcomeCopy, debriefDelay, statRows, breakdownRows,
   group3, fmtTime, CUSTOM_DEFAULT, ADVANTAGES, RANGE_STEPS, ALT_STEPS, cleanCustom, nearestStep, fmtFt, fmtNm, isNum,
@@ -99,7 +99,7 @@ export async function createCombatUi(combat) {
   };
 
   // ---- DOM ------------------------------------------------------------------------------------------------
-  const style = h('style', { id: 'cbt-ui-style' }); style.textContent = CSS + EXTRA_CSS;
+  const style = h('style', { id: 'cbt-ui-style' }); style.textContent = CSS + EXTRA_CSS + HOOK_CSS;
   document.head.appendChild(style);
   const root = h('div', { class: 'menu-root cbt-ui-root', id: 'cbt-ui-root', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Combat missions' });
   root.hidden = true;
@@ -376,7 +376,7 @@ export async function createCombatUi(combat) {
     acts.push(btn('cbt-ui-select', 'Mission select', null, () => openMissions(mid)));
     acts.push(btn('cbt-ui-hangar', 'Hangar', null, () => leaveTo('main')));
     const actsEl = h('div', { class: 'cbt-ui-dacts' }, acts);
-    if (acts.length === 3) actsEl.style.gridTemplateColumns = '1.4fr 1fr 1fr';
+    if (acts.length === 3) actsEl.classList.add('three');
     debPanel.append(head, scroll, actsEl);
     score = isNum(s.score) ? { el: scoreV, to: s.score, t: 0, dur: reducedMotion() ? 0 : 1.1 } : null;
     if (score && score.dur === 0) { scoreV.textContent = group3(score.to); score = null; }
@@ -538,6 +538,11 @@ export async function createCombatUi(combat) {
     i = clamp(i + (dir === 'down' || dir === 'right' ? 1 : -1), 0, list.length - 1);
     focus(list[i]);
   }
+  // keep the button history while closed, so a press that opened a screen (menu A on "Mission select") is not an edge
+  function snapPad() {
+    try { for (const g of navigator.getGamepads?.() || []) if (g && g.connected && g.mapping === 'standard') { g.buttons.forEach((b, i) => { pad.prev[i] = !!b?.pressed; }); return; } } catch {}
+    pad.prev.length = 0;
+  }
   function pollPad(rdt) {
     let gp = null;
     try { for (const g of navigator.getGamepads?.() || []) if (g && g.connected && g.mapping === 'standard') { gp = g; break; } } catch {}
@@ -550,6 +555,11 @@ export async function createCombatUi(combat) {
       if (pad.rep !== dir) { pad.rep = dir; pad.repT = 0.38; moveFocus(dir); }
       else { pad.repT -= rdt; if (pad.repT <= 0) { pad.repT = 0.11; moveFocus(dir); } }
     } else pad.rep = null;
+    // without the src/input hook the simulator also acts on A (gear) and B (speedbrake) — the menu is closed while a
+    // combat screen is up — so undo them in the same frame (both are toggles, and physics is paused)
+    const unhooked = !ctx.input?.combatPadHook;
+    if (unhooked && down(0) && !pad.prev[0]) ev.emit('cmd', { name: 'gearToggle' });
+    if (unhooked && down(1) && !pad.prev[1]) { const c = ctx.controls; if (c) c.speedbrake = c.speedbrake > 0.5 ? 0 : 1; ev.emit('cmd', { name: 'speedbrakeToggle' }); }
     if (edge(0)) { const t = document.activeElement; if (t && root.contains(t) && t.tagName === 'BUTTON') t.click(); else if (view === 'missions') fly(); }
     if (edge(1) || edge(9)) back();
   }
@@ -566,11 +576,15 @@ export async function createCombatUi(combat) {
   // the menu took over (gamepad Start, a 'menu' command from elsewhere): step aside, the menu owns pause now
   ev.on('menu:open', () => { if (ui.isOpen) hide(); });
 
+  let hooks = null;
+  try { hooks = installMenuHooks(combat, ui); } catch (e) { console.warn('[combat ui] menu hooks', e); }
+
   // ---- per frame (combat.late; runs with or without a mission) ---------------------------------------------------------
   function update() {
     const rdt = ctx.time?.realDt || 0;
+    hooks?.update();
     if (pending && !ui.isOpen && !ctx.menu?.isOpen && !ctx.time?.paused) { pendingT -= rdt; if (pendingT <= 0) showDebrief(); }
-    if (!ui.isOpen) { pad.prev.length = 0; return; }
+    if (!ui.isOpen) { snapPad(); return; }
     pollPad(rdt);
     if (score) {
       score.t += rdt;

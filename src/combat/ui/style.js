@@ -134,6 +134,7 @@ export const CSS = /* css */`
 .cbt-ui-medal b { display: block; font-size: 13.5px; font-weight: 600; }
 .cbt-ui-medal span { display: block; font-size: 12px; color: var(--fg-dim); line-height: 1.3; }
 .cbt-ui-dacts { flex: none; display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 8px; padding: 10px 2px 2px; }
+.cbt-ui-dacts.three { grid-template-columns: 1.4fr 1fr 1fr; }
 .cbt-ui-dacts .menu-btn { --r: calc(var(--r-xl) - 8px); flex-direction: column; gap: 1px; line-height: 1.15; padding: 4px 10px; }
 .cbt-ui-dacts .menu-btn small { font-size: 11px; font-weight: 500; opacity: 0.75; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cbt-ui-dacts .menu-btn.glass-tint { font-family: var(--font-display); font-size: 17px; letter-spacing: 0.14em; text-transform: uppercase; }
@@ -161,7 +162,7 @@ export const CSS = /* css */`
   .cbt-ui-fact { padding: 7px 9px 8px; }
   .cbt-ui-fact-v { font-size: 14.5px; }
   .cbt-ui-dgrid { grid-template-columns: minmax(0, 1fr); }
-  .cbt-ui-dacts { grid-template-columns: 1fr 1fr; }
+  .cbt-ui-dacts, .cbt-ui-dacts.three { grid-template-columns: 1fr 1fr; }
   .cbt-ui-dacts > :first-child { grid-column: 1 / 3; }
   .cbt-ui-dhead { padding: 10px 8px 8px; }
   .cbt-ui-badge { width: 62px; height: 62px; font-size: 40px; border-radius: 18px; }

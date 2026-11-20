@@ -76,3 +76,8 @@ export const COMBAT_PAD_BINDINGS = [
   { group: 'Combat gamepad', action: 'Switch missile type', keys: ['D-pad up'] },
   { group: 'Combat gamepad', action: 'Speedbrake', keys: ['D-pad down'] },
 ];
+
+/** Without the src/input hook (ctx.input.combatPadHook) combat only takes the free right-stick click. */
+export const PAD_FALLBACK_BINDINGS = [
+  { group: 'Combat gamepad', action: 'Fire gun (hold)', keys: ['Right stick click'] },
+];
