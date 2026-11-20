@@ -400,6 +400,8 @@ export function createOverlay(H) {
   function drawThreats(p) {
     const ps = p.state.position;
     const big = H.fontWarn, cy = H.warnY;
+    // warning column: screen centre, or just right of the touch layout's left stack when that reaches the middle
+    const wx = Math.max(P.cx, H.leftRight + H.fsWarn * 4.2);
     let line = 0;
     // inbound missiles: a small cue for each, the nearest gets the big edge arrow + range / time, and the warning box
     let nearest = null, nd = Infinity;
@@ -419,11 +421,11 @@ export function createOverlay(H) {
       const tti = nearest.tgo > 0 ? nearest.tgo : timeToImpact(nd, c);
       // steady box, flashing word
       const w = H.warnW, hh = H.fsWarn * 1.5;
-      g.fillStyle = 'rgba(70,6,0,0.55)'; g.fillRect(P.cx - w / 2, cy - hh / 2, w, hh);
-      g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
-      if (on) text('MISSILE', P.cx, cy + 1, '#ffffff', big, 'center');
-      else text('MISSILE', P.cx, cy + 1, H.C.red, big, 'center');
-      if (tti < 60) text(TTI_STR(Math.ceil(tti)), P.cx + w / 2 + 8, cy, H.C.red, H.fontB, 'left');
+      g.fillStyle = 'rgba(70,6,0,0.55)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
+      g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+      if (on) text('MISSILE', wx, cy + 1, '#ffffff', big, 'center');
+      else text('MISSILE', wx, cy + 1, H.C.red, big, 'center');
+      if (tti < 60) text(TTI_STR(Math.ceil(tti)), wx + w / 2 + 8, cy, H.C.red, H.fontB, 'left');
       // the missile itself: on screen a ring (drawn with the markers), off screen a big arrow on the edge
       if (!H.cine && !onScreen(nearest.state.position, 0)) {
         edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E);
@@ -443,24 +445,24 @@ export function createOverlay(H) {
       if (H.combat.difficulty === 'rookie' && fl > 0 && !radar) prompt = H.touch ? 'FLARES!  ·  TURN HARD' : 'FLARES: V  ·  TURN HARD';
       else if (radar) prompt = side > 0 ? 'BREAK RIGHT · NOTCH' : 'BREAK LEFT · NOTCH';
       else prompt = fl > 0 ? (side > 0 ? 'FLARES · BREAK RIGHT' : 'FLARES · BREAK LEFT') : (side > 0 ? 'BREAK RIGHT' : 'BREAK LEFT');
-      text(prompt, P.cx, cy + hh / 2 + H.fs * 1.3, H.C.amber, H.fontB, 'center');
+      text(prompt, wx, cy + hh / 2 + H.fs * 1.3, H.C.amber, H.fontB, 'center');
       line = 2;
     }
     // locked by (no missile yet)
     if (!nearest && H.lockers.length) {
       const e = H.lockers[0];
       const w = H.fsWarn * 7.5, hh = H.fsWarn * 1.15;
-      g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(P.cx - w / 2, cy - hh / 2, w, hh);
-      g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
-      text('LOCKED', P.cx, cy + 1, H.C.amber, H.fontWarnS, 'center');
-      if (e.callsign) text(e.callsign, P.cx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
+      g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
+      g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+      text('LOCKED', wx, cy + 1, H.C.amber, H.fontWarnS, 'center');
+      if (e.callsign) text(e.callsign, wx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
       line = 1;
     }
     // bandit on the six
     if (H.six) {
       const y = cy + (line ? H.fsWarn * (line === 2 ? 3.1 : 2.2) : 0);
       const on = flashOn(2);
-      text('BANDIT SIX', P.cx, y, on ? H.C.red : H.C.redHi, H.fontWarnS, 'center');
+      text('BANDIT SIX', wx, y, on ? H.C.red : H.C.redHi, H.fontWarnS, 'center');
       // down chevrons at the bottom of the scope
       g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.beginPath();
       const by = P.cy + H.ay; chevron(P.cx, by, Math.PI / 2, 12); chevron(P.cx, by - 10, Math.PI / 2, 12); g.stroke();
@@ -555,14 +557,16 @@ export function createOverlay(H) {
     const lab = CAM_LABEL[H.camMode]; if (!lab) return;
     const y = Math.round(H.camLabelY);
     const w = lab.length * H.cwB + 22, hh = H.fs * 1.8;
-    g.fillStyle = 'rgba(6,10,15,0.55)'; g.fillRect(Math.round(P.cx - w / 2), y - hh / 2, Math.round(w), hh);
+    // centred, unless the touch layout's left stack reaches the middle: then just right of it
+    const cx = Math.max(P.cx, H.leftRight + w / 2 + 14);
+    g.fillStyle = 'rgba(6,10,15,0.55)'; g.fillRect(Math.round(cx - w / 2), y - hh / 2, Math.round(w), hh);
     g.strokeStyle = H.camMode === 'padlock' ? H.C.hud : H.C.fg; g.lineWidth = 1;
-    g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));
-    text(lab, P.cx, y + 1, H.camMode === 'padlock' ? H.C.hud : H.C.fg, H.fontB, 'center');
+    g.strokeRect(Math.round(cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+    text(lab, cx, y + 1, H.camMode === 'padlock' ? H.C.hud : H.C.fg, H.fontB, 'center');
     if (H.camMode === 'missile') {
       // time to go of my newest missile in flight
       let m = null; for (const x of H.combat.weapons.missiles) if (x.owner === p && x.alive) m = x;
-      if (m && m.tgo > 0 && m.tgo < 99) text(TTI_STR(Math.ceil(m.tgo)), P.cx + w / 2 + 8, y + 1, H.C.fg, H.fontB, 'left');
+      if (m && m.tgo > 0 && m.tgo < 99) text(TTI_STR(Math.ceil(m.tgo)), cx + w / 2 + 8, y + 1, H.C.fg, H.fontB, 'left');
     }
   }
 

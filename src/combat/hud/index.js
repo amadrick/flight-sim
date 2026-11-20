@@ -64,7 +64,7 @@ export async function createCombatHud(combat) {
     near: { t: 0 }, msg: { t: 0, text: '', col: tok.fg },
     dmg: Array.from({ length: 4 }, () => ({ a: 0, t: 0, life: 0.9 })), dmgI: 0, vig: 0,
     splash: Array.from({ length: 4 }, () => ({ entity: null, t: 0, life: 1.8, x: NaN, y: NaN })), splashI: 0,
-    camMode: null, cine: false, touch: false, camLabelY: 0, tgtOn: false, seat: 'wide', seatCompact: false,
+    camMode: null, cine: false, touch: false, camLabelY: 0, leftRight: 0, tgtOn: false, seat: 'wide', seatCompact: false,
     lockSnap: 0, cue: '', cueCol: tok.hud, cueGun: false, boreX: NaN, boreY: NaN, tgtX: 0, tgtY: 0, tgtS: 0, alwaysCross: true,
     missileSide(p, pos) { return toBody(p.state, pos, _v).x >= 0 ? 1 : -1; },
   };
@@ -111,6 +111,7 @@ export async function createCombatHud(combat) {
     vignette = vc;
     radarW = panels.radarBox.clientWidth || (H.compact ? 132 : 212);
     statW = panels.statBox.clientWidth || radarW;
+    H.leftRight = seat === 'touch' ? panels.left.offsetLeft + panels.left.offsetWidth : 0;
     cv.classList.toggle('cbt-hud-shadow', ctx.quality?.level !== 'low');
   }
   ctx.events.on('quality:change', () => { layoutKey = ''; });
