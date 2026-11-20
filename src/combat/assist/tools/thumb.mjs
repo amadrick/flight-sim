@@ -253,7 +253,7 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
 }
 
 /** One fight: the thumb in the player's aircraft vs an AI. */
-export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill = 0.25, mode = 'assist', stick = 'analog', seconds = 150, range = 6000, alt = 4000, difficulty = 'veteran' }) {
+export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill = 0.25, mode = 'assist', stick = 'analog', seconds = 150, range = 6000, alt = 4000, difficulty = 'veteran', onFrame = null, throttle = 0.9 }) {
   const b = await createSandbox({ seed, difficulty });
   const c = b.combat, w = c.world, rng = c.rng;
   c.difficulty = difficulty;
@@ -265,7 +265,7 @@ export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill
   const B = w.spawnAircraft({ aircraft: aiType || type, team: 'red', position: new THREE.Vector3(-off, alt + (rng() - 0.5) * 600, -range / 2), heading: 180 + ang / DEG, speed: 220, callsign: 'Red', skill: aiSkill, loadout });
   B.pilot = c.ai.createPilot(B, { skill: aiSkill });
   P.target = B;
-  P.controls.throttle = 0.9;
+  P.controls.throttle = throttle;
   const thumb = createThumb(c, P, { mode, stick });
   const rec = { seed, type, mode, stick, aiSkill, firstSolution: null, kill: false, killT: null, died: false, deathBy: null, hits: 0, shots: 0, ground: 0, gunAssistT: 0, limiting: {} };
   c.events.on('kill', (k) => {
@@ -285,6 +285,7 @@ export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill
         console.log(`t ${c.clock.toFixed(0)} alt ${s.position.y.toFixed(0)} ias ${(s.ias / KT).toFixed(0)} g ${s.gLoad.toFixed(1)} roll ${(s.roll / DEG).toFixed(0)} pitch ${(s.pitch / DEG).toFixed(0)} vy ${s.velocity.y.toFixed(0)} stick ${P.controls.pitch.toFixed(2)},${P.controls.roll.toFixed(2)} thr ${P.controls.throttle.toFixed(2)} lim ${i.limiting} ${i.pullUp ? 'PULLUP' : ''} r ${B.state.position.distanceTo(s.position).toFixed(0)} B ${B.pilot.mode}`);
       }
       const l = c.assist.info.limiting; if (l) rec.limiting[l] = (rec.limiting[l] || 0) + dt;
+      onFrame?.(c, P, B, dt, thumb);
     }
     if ((!P.alive || !B.alive) && end === null) end = c.clock;
     return end !== null && c.clock > end + 0.5;
@@ -389,7 +390,7 @@ if (isMain) {
     console.log('type  ai       mode    stick    | kills  deaths  t-first-solution s (median, n)  t-kill s  hits/run  gunAssist s');
     for (const type of types) for (const ai of ais) for (const mode of modes) for (const stick of sticks) {
       const rs = [];
-      for (let i = 0; i < runs; i++) rs.push(await thumbDuel({ seed: seed0 + i, type, aiSkill: AI[ai] ?? +ai, mode, stick, seconds, difficulty: ai === 'rookie' ? 'rookie' : 'veteran' }));
+      for (let i = 0; i < runs; i++) rs.push(await thumbDuel({ seed: seed0 + i, type, aiSkill: AI[ai] ?? +ai, mode, stick, seconds, throttle: +flag('throttle', 0.9), difficulty: ai === 'rookie' ? 'rookie' : 'veteran' }));
       all.push(...rs);
       const fs = rs.map((r) => r.firstSolution).filter((x) => x !== null).sort((a, b) => a - b);
       const ks = rs.filter((r) => r.kill).map((r) => r.killT).sort((a, b) => a - b);

@@ -12,8 +12,10 @@
 //               integral), flown by ai/fly.js lift-vector steering with gravity compensation and the commanded rate as
 //               feed-forward; gentle for small errors (small bank, no roll-pull-roll), pushes rather than rolls for
 //               small or nose-down corrections.
-//   release   → after a held hard turn: roll-out on the flight path (no reversal), then the path holds; after a tap N
-//               simply stays. Near level the gravity-compensated lift brings the wings level; a dive or climb is kept.
+//   keys      → tap = a fixed nose step, hold = a rate ramping to the full turn, the opposite key just after = stop.
+//   release   → after a held hard turn: the turn's extra lift is shed at the rate the AoA can die away while the path
+//               catches up, so the nose stops where it was let go (or a little beyond, never behind), then the path
+//               holds; after a tap N simply stays. Near level the wings come back level; a dive or climb is kept.
 //   gun help  → with a target selected, in gun range, and its lead solution a few degrees off the nose, N is drawn to
 //               the solution, scaled by how close the player already is and faded by stick opposition.
 //   pointer   → aim.active: N = the camera ray through screen point aim.{x, y} (mouse-aim style).
@@ -110,6 +112,7 @@ export function rotateToward(a, b, ang) {
 export function keyDir(v, vp, dt) {
   const av = Math.abs(v);
   if (av >= 0.999) return Math.sign(v);
+  if (av < 1e-6) return 0;
   const dv = v - vp;
   if (v * dv > 1e-9) return Math.sign(v);
   if (dv * (v || vp) < 0 && Math.abs(dv) > KEY_AXIS.centre * 1.1 * dt) return -Math.sign(v || vp);
