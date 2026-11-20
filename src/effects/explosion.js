@@ -74,7 +74,7 @@ void main() {
 
   const lightU = {
     tFbField: { value: null }, uFbBox: bakeU.uFbBox, uFbLayer: bakeU.uFbLayer, uFbMirror: bakeU.uFbMirror,
-    uFbLightDir: { value: new THREE.Vector3(0, 0, 1) }, uFbExt: { value: 6 },
+    uFbLightDir: { value: new THREE.Vector3(0, 0, 1) }, uFbExt: { value: 6 }, uFbFireSim: { value: new THREE.Vector3(0, 0, 0.3) },
   };
   const lightMat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, uniforms: lightU,
@@ -82,7 +82,7 @@ void main() {
     fragmentShader: /* glsl */`precision highp float; precision highp sampler3D;
 in vec2 vUv; out vec4 outColor;
 uniform highp sampler3D tFbField; uniform vec4 uFbBox; uniform float uFbLayer; uniform float uFbMirror;
-uniform vec3 uFbLightDir; uniform float uFbExt;
+uniform vec3 uFbLightDir; uniform float uFbExt; uniform vec3 uFbFireSim;
 float soot(vec3 p) {
   if (uFbMirror > 0.5) p.z = abs(p.z);
   vec3 uvw = vec3((p.x - uFbBox.x) / (uFbBox.y - uFbBox.x), abs(p.y) / uFbBox.z, p.z / uFbBox.w);
@@ -97,7 +97,10 @@ void main() {
   for (int i = 0; i < 10; i++) tauS += soot(p + uFbLightDir * ds * (float(i) + 0.5));
   float du = uFbBox.w / 5.0;
   for (int i = 0; i < 5; i++) tauU += soot(p + vec3(0.0, 0.0, du * (float(i) + 0.5)));
-  outColor = vec4(exp(-tauS * ds * uFbExt), exp(-tauU * du * uFbExt * 0.6), 0.0, 1.0);
+  // toward the fire (the emission centroid): self-shadowing of the fire light on its own smoke
+  vec3 tf = uFbFireSim - p; float lf = length(tf), tauF = 0.0;
+  for (int i = 0; i < 6; i++) tauF += soot(p + tf * ((float(i) + 0.5) / 6.0));
+  outColor = vec4(exp(-tauS * ds * uFbExt), exp(-tauU * du * uFbExt * 0.6), exp(-tauF * lf / 6.0 * uFbExt * 0.5), 1.0);
 }`,
   });
   const lightPass = new FullscreenPass(lightMat);
@@ -168,7 +171,7 @@ void main() {
     vec3 uvw = vec3((qw.x - uFbBox.x) / (uFbBox.y - uFbBox.x), abs(qw.y) / uFbBox.z, qw.z / uFbBox.w);
     vec4 f = texture(tFbField, uvw);
     if (f.x + f.y > 0.004) {
-      vec2 L = texture(tFbLight, uvw).xy;
+      vec3 L = texture(tFbLight, uvw).xyz;
       // sub-grid turbulence: two octaves of the shared noise, carried up with the gas and slowly churning
       vec3 np = q * vec3(1.0, 1.0, 0.85) + vec3(uFbSeed, uFbSeed * 0.7, -uFbTime * rise);
       vec4 n1 = fxNoise(np * 0.45);
@@ -191,7 +194,7 @@ void main() {
         vec3 amb = mix(uFbAmbDn, uFbAmbUp, 0.35 + 0.65 * L.y) * (0.45 + 0.55 * L.y);
         vec3 pR = (uFbFromSim * vec4(p, 1.0)).xyz;
         vec3 dl = uFbFirePos - pR;
-        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.08 * uFbD * uFbD) * (0.15 + 0.35 * L.y);
+        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.08 * uFbD * uFbD) * L.z * 0.6;
         lit += T * a * albedo * (sun + amb + fire / FX_PI);
         dbgS += T * a * vec3(sun.g, amb.g, fire.g / FX_PI);
         emis += T * a * E;
@@ -252,7 +255,7 @@ void main() {
     bakeU.uFbBox.value.copy(fb.box4); bakeU.uFbTime.value = tEval; bakeU.uFbCond.value.set(fb.fw, fb.ui); bakeU.uFbMirror.value = fb.mirror ? 1 : 0;
     for (let k = 0; k < NZB; k++) { bakeU.uFbLayer.value = k; r.setRenderTarget(fb.rtA, k); r.render(bakePass.scene, bakeCam); }
     lightU.tFbField.value = fb.rtA.texture;
-    lightU.uFbLightDir.value.copy(fb.lightDirBaked);
+    lightU.uFbLightDir.value.copy(fb.lightDirBaked); lightU.uFbFireSim.value.copy(fb.centroid);
     for (let k = 0; k < NZB; k++) { bakeU.uFbLayer.value = k; r.setRenderTarget(fb.rtB, k); r.render(lightPass.scene, bakeCam); }
     r.setRenderTarget(prevRT, prevFace, prevMip);
     fb.bakedT = tSim;

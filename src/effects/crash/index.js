@@ -318,7 +318,19 @@ export function createCrashFx(ctx, deps) {
     fwd.normalize();
     const dist = +raw.crashdist || 260;
     const p = camW.clone().addScaledVector(fwd, dist);
-    const gp = groundPoint(p, new THREE.Vector3());
+    if (raw.crashlat) p.add(v3.set(-fwd.z, 0, fwd.x).multiplyScalar(+raw.crashlat));
+    let gp = groundPoint(p, new THREE.Vector3());
+    // water tests: if the aim point is dry, sweep around the camera for open water (nearest ring first)
+    if (T.surface === 'water' && g0.type !== 'water') {
+      search: for (let r = dist; r <= dist * 6; r += dist * 0.5) {
+        for (let a = 0; a < 24; a++) {
+          const an = Math.atan2(fwd.x, -fwd.z) + (a % 2 ? -1 : 1) * Math.ceil(a / 2) * Math.PI / 12;
+          const q = v.set(camW.x + Math.sin(an) * r, 0, camW.z - Math.cos(an) * r);
+          ctx.world.groundAt(q.x, q.z, g0);
+          if (g0.type === 'water') { fwd.set(Math.sin(an), 0, -Math.cos(an)); gp = groundPoint(q, new THREE.Vector3()); break search; }
+        }
+      }
+    }
     // velocity: test vector expressed with -Z = "away from the camera" (or across the view with crashside=1)
     const yaw = Math.atan2(fwd.x, -fwd.z) + (raw.crashside === '1' ? Math.PI / 2 : 0);
     const c = Math.cos(yaw), s = Math.sin(yaw);
@@ -331,11 +343,20 @@ export function createCrashFx(ctx, deps) {
     if (T.surface === 'grass') ov.slope = 0;
     start({ reason: T.reason }, state, player, ov);
     C.synthetic = true;
+    // slides (belly, gear collapse, ditching): move a copy of the airframe along the ground so the scrape, sparks,
+    // spray and decals can be checked without flying a real approach
+    if (C.o.breakup < 0.6 && player?.visual?.object3D) {
+      const ghost = player.visual.object3D.clone(true);
+      ghost.visible = true; ctx.scene.add(ghost);
+      C.fake = { position: state.position.clone(), velocity: state.velocity.clone(), quaternion: quat, onGround: true, ghost, mu: C.o.surface === 'water' ? 0.9 : C.o.surface === 'runway' ? 0.33 : 0.6 };
+      C.fake.position.y = gp.y + (C.o.surface === 'water' ? 0.2 : 0.4);
+    }
   }
 
   // ------------------------------------------------------------------------------------------------ API
   function clear(all = true) {
     if (C?.hidVisual) C.hidVisual.visible = true;
+    if (C?.fake?.ghost) ctx.scene.remove(C.fake.ghost);
     C = null;
     if (all) { fireballs.clear(); decals.clear(); debris.clear(); fires.length = 0; }
     else { fireballs.clear(); debris.clear(); fires.length = 0; decals.clear(); }
@@ -354,6 +375,14 @@ export function createCrashFx(ctx, deps) {
       if (C) {
         C.t += dt;
         if (s && s.crashed && player === C.player) updateSlide(dt, s);
+        if (C.fake) {
+          const F = C.fake, sp = Math.hypot(F.velocity.x, F.velocity.z);
+          const k = sp > 0.1 ? Math.max(0, sp - F.mu * 9.81 * dt) / sp : 0;
+          F.velocity.multiplyScalar(k); F.velocity.y = 0;
+          F.position.addScaledVector(F.velocity, dt);
+          ctx.world.toRender(F.position, F.ghost.position); F.ghost.quaternion.copy(F.quaternion);
+          const was = C.synthetic; C.synthetic = false; updateSlide(dt, F); C.synthetic = was;
+        }
       }
       const q = q0();
       for (let i = fires.length - 1; i >= 0; i--) if (!updateFire(fires[i], dt, q)) fires.splice(i, 1);
