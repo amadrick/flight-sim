@@ -27,6 +27,8 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
     uVegPaveS: { value: Array.from({ length: MAXR }, () => new THREE.Vector2()) },    // half length, half width (0 = unused)
     uVegGrassOn: { value: 1 },
   };
+  // the near-field crop plants (cover-crop.js) read this map
+  uniforms.tVegGrass = GU.tVegGrass; uniforms.uVegGrassWin = GU.uVegGrassWin; uniforms.uVegGrassOrg = GU.uVegGrassOrg;
   const mapMat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
     uniforms: {
@@ -84,16 +86,53 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
           // airfield: the mown sward is the turf shells' (veg/turf.js); tufts only stand in the long-grass zones
           // (seed heads, docks, thistles), sparse, never on or right beside the pavement
           float dA = min(airMap(rxz).x, pave);
-          float longZ = ss(60.0, 130.0, dA + 40.0 * (n2.r - 0.5));
+          float longZ = ss(24.0, 60.0, dA + 34.0 * (n2.r - 0.5));
           hgt = mix(0.22, 0.45, n4.r); kind = 1.0;
-          dens = (1.0 - desertAmt) * ss(3.0, 8.0, dA) * longZ * (0.18 + 0.30 * n3.r);
+          // (the rough itself is the blades' and the shells'; only the odd tall weed stands out of it)
+          dens = (1.0 - desertAmt) * ss(3.0, 8.0, dA) * longZ * 0.04 * ss(0.55, 0.8, n3.r);
+        }
+        // farm fields: the uncropped margin is rough grass and tall weeds (cow parsley, docks, thistles); the crop
+        // itself is drawn by the near-field crop plants (cover-crop.js), which read this map: kind 3 + class / 10,
+        // r = crop height, b = row direction (angle / pi), a = cover
+        vec4 cropOut = vec4(-1.0);
+        vec2 hh = vegHash(cellI + 5000.0);
+        if (C.crop > 0.3 && turf < 0.5) {
+          TerrField F = C.fld;
+          float id2 = fract(F.id.x * 13.13 + F.id.y * 7.71), id3 = fract(F.id.x * 3.37 + F.id.y * 17.9);
+          float marW = 1.5 + 3.5 * id3;
+          float marginK = 1.0 - ss(marW - 0.4, marW + 0.4, F.edge);
+          float verge = 1.0 - ss(6.0, 8.0, F.road);
+          float rough = max(marginK, verge) * (1.0 - ss(0.8, 1.2, 2.6 - F.road)) * step(1.5, F.road);
+          if (rough > hh.x * 0.9 + 0.05) { dens = 1.0; hgt = mix(0.35, 1.05, n4.b * 0.6 + n3.g * 0.4); kind = 0.0; }
+          else if (marginK < 0.5 && F.road > 7.5) {
+            float t = terrFieldT(F, rxz + uOrigin.xz, h), st = F.id.y;
+            bool wide = F.size.x > F.size.y;
+            float along = wide ? F.pq.x : F.pq.y, across = wide ? F.pq.y : F.pq.x, len = wide ? F.size.x : F.size.y, wid = wide ? F.size.y : F.size.x;
+            float headW = 12.0 + 12.0 * id3;
+            bool endHead = F.edge < headW && min(along, len - along) < min(across, wid - across);
+            vec2 dAx = F.flip > 0.5 ? vec2(0.208, 0.978) : vec2(0.978, -0.208), dAy = F.flip > 0.5 ? vec2(0.978, -0.208) : vec2(0.208, 0.978);
+            vec2 rowD = (wide != endHead) ? dAx : dAy;
+            float cls = -1.0, ch = 0.0, cov = 1.0;
+            if (t < 0.22) { cls = 0.0; ch = 0.10 + 0.75 * st; cov = clamp(0.18 + 0.95 * st, 0.1, 1.0); }
+            else if (t < 0.34) {
+              bool cut = st > 0.6 && (across / max(wid, 1.0) < fract(st * 9.7) || F.edge < headW) && id2 < 0.9;
+              cls = cut ? 2.0 : 1.0; ch = cut ? 0.14 : 0.80 + 0.15 * id2;
+            }
+            else if (t >= 0.63 && t < 0.73) { cls = 2.0; ch = 0.12 + 0.06 * id2; }
+            else if (t >= 0.80 && t < 0.88) { cls = 3.0; ch = mix(0.35, 2.4, ss(0.05, 0.6, st)) * (st > 0.97 ? 0.9 : 1.0); cov = mix(0.22, 0.92, ss(0.1, 0.55, st)); }
+            else if (t >= 0.88 && t < 0.935) { cls = 4.0; ch = mix(0.3, 1.35, ss(0.0, 0.4, st)); }
+            else if (t >= 0.935 && t < 0.965) { cls = 5.0; ch = mix(0.12, 0.45, ss(0.05, 0.5, st)); cov = mix(0.18, 0.95, ss(0.05, 0.5, st)); }
+            else if (t >= 0.73 && t < 0.80 && st < 0.45) { cls = 6.0; ch = 0.35 + 0.3 * id2; }
+            if (cls >= 0.0) { float ang = atan(rowD.y, rowD.x); cropOut = vec4(ch * (0.8 + 0.4 * n3.g), 3.0 + cls * 0.1 + 0.01, mod(ang, 3.14159265) / 3.14159265, cov); }
+          }
         }
         float reedP = ss(0.03, 0.15, water) * (1.0 - ss(0.45, 0.6, water)) * (1.0 - C.pad);
-        vec2 hh = vegHash(cellI + 5000.0);
         if (reedP > hh.y * 0.8) { hgt = mix(1.3, 2.1, n4.b); kind = 2.0; dens = reedP; }
         float dry = clamp(ss(0.08, 0.5, arid) + 0.5 * (n0.r - 0.5) + ss(1300.0, 2200.0, h) * 0.45, 0.0, 1.0);
         float exists = step(hh.x, dens);
-        outColor = vec4(hgt * exists, kind, dry, n2.r * 0.6 + n1.g * 0.4);
+        // (kind 0 carries the meadow share in 0..0.4: the near-field blades grow from it off the airfield)
+        outColor = vec4(hgt * exists, kind < 0.5 ? 0.4 * clamp(dens, 0.0, 1.0) : kind, dry, n2.r * 0.6 + n1.g * 0.4);
+        if (cropOut.y > 2.5 && kind < 1.5) outColor = cropOut;
       }`,
   });
   const tri = fullscreenTriangle();
@@ -131,7 +170,10 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         vec2 gBase = (gCell - uVegGrassOrg) * uVegGrassWin.w + (0.15 + 0.7 * gh) * uVegGrassWin.w - mod(uOrigin.xz, uVegGrassWin.w);
         float gDist = distance(gBase, uTerrCam.xz);
         float gR = gG * uVegGrassWin.w * 0.5;
-        float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x);
+        float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x) * step(gM.g, 2.5);
+        // airfield weeds stand alone in the sward: past ~30 m one is a pixel or two, a dark speck after the final
+        // sharpen, while the ground shader already carries their tone - let them go
+        gH *= gM.g > 0.5 && gM.g < 1.5 ? 1.0 - smoothstep(18.0, 32.0, gDist) : 1.0;
         float gAng = gh2.y * 6.2831853, gc = cos(gAng), gs = sin(gAng);
         float gW = gM.g > 1.5 ? 0.6 : (gM.g > 0.5 ? mix(1.1, 1.5, gh.y) : mix(0.6, 1.0, gh.y));
         vec3 gl = vec3(position.x * gW, position.y * gH, position.z * gW);
@@ -160,7 +202,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         // the surface shader's grass colours (meadow / turf / reeds), slightly brighter toward the tips
         vec3 gc = mix(vec3(0.046, 0.082, 0.024), vec3(0.092, 0.128, 0.042), vGM.a);
         gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
-        if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.062, 0.105, 0.034), vec3(0.150, 0.135, 0.075), 0.45 * vGM.a + 0.2) * (0.9 + 0.2 * vGM.a);
+        if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.090, 0.122, 0.048), vec3(0.205, 0.180, 0.105), 0.45 * vGM.a + 0.25) * (0.95 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);
         gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.8, 1.08, vGFade.y);
         gc *= 0.8 + 0.4 * vGM.w;      // per-tuft variation
@@ -170,7 +212,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
   mat.customProgramCacheKey = () => 'skyward-veg-grass';
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'veg-grass'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
-  mesh.castShadow = false; mesh.receiveShadow = true;
+  mesh.castShadow = false; mesh.receiveShadow = false;
 
   // pavement rectangles from the airport layouts (scenery) near the camera
   let rects = null, lastX = 1e18, lastZ = 1e18;
