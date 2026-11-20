@@ -43,8 +43,8 @@ export function createProjector() {
         P.y = (1 - (P.p5 * vy + P.p9 * vz) * iw) * 0.5 * P.h;
         P.dx = P.x - P.cx; P.dy = P.y - P.cy;
       } else {
-        // behind: the screen direction of the view-space offset (aspect-corrected)
-        P.dx = P.p0 * vx * P.w; P.dy = -P.p5 * vy * P.h;
+        // behind: lateral side from the view-space offset; mostly "down" (six o'clock) unless it is well above
+        P.dx = P.p0 * vx * P.w; P.dy = P.p5 * P.h * (0.6 * vz - 0.4 * vy);
         if (Math.abs(P.dx) + Math.abs(P.dy) < 1e-6) { P.dx = 0; P.dy = 1; }   // dead astern: point down
         P.x = P.y = NaN;
       }
@@ -58,7 +58,7 @@ export function createProjector() {
         const iw = -1 / vz;
         P.x = ((P.p0 * vx + P.p8 * vz) * iw + 1) * 0.5 * P.w; P.y = (1 - (P.p5 * vy + P.p9 * vz) * iw) * 0.5 * P.h;
         P.dx = P.x - P.cx; P.dy = P.y - P.cy;
-      } else { P.dx = P.p0 * vx * P.w; P.dy = -P.p5 * vy * P.h; P.x = P.y = NaN; }
+      } else { P.dx = P.p0 * vx * P.w; P.dy = P.p5 * P.h * (0.6 * vz - 0.4 * vy); P.x = P.y = NaN; }
       return P.front;
     },
   };

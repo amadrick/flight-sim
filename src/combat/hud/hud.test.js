@@ -29,7 +29,9 @@ test('projector: points behind the camera give the turn direction', () => {
   assert.ok(P.dx > 0, 'turn right');
   assert.equal(P.point(-50, 0, 100), false);
   assert.ok(P.dx < 0, 'turn left');
-  assert.equal(P.point(0, 30, 100), false);            // behind and above
+  assert.equal(P.point(0, 30, 100), false);            // behind, a little above: the six o'clock cue
+  assert.ok(P.dy > 0, 'down on screen');
+  assert.equal(P.point(0, 400, 100), false);           // behind and well above
   assert.ok(P.dy < 0, 'up on screen');
   P.point(0, 0, 100);                                  // dead astern
   near(P.dx, 0); assert.ok(P.dy > 0);
