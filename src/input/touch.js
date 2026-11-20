@@ -285,7 +285,9 @@ export function createTouchControls(ctx, h) {
     flr: { label: 'FLR', aria: 'Flares', onDown: () => actions()?.flares?.() },
   };
   for (const id of FIRE_IDS) { const r = makeButton({ id: 'fire.' + id, ...fireSpecs[id] }, 'inp-fire inp-' + id); r.el.hidden = true; }
-  makeButton({ id: 'view', label: 'View', aria: 'Target view (padlock) on / off', icon: ICON.view, onDown: () => toggleView() }).el.hidden = true;
+  makeButton({ id: 'view', label: 'View', aria: 'Target view (padlock) on / off', icon: ICON.view,
+    onDown: () => { const a = actions(); if (a && a.viewDown) a.viewDown(); else toggleView(); },
+    onUp: () => { const a = actions(); if (a && a.viewDown && a.viewUp) a.viewUp(); } }).el.hidden = true;
   function toggleView() {
     const cb = combat(); if (!cb) return;
     const a = actions();
@@ -494,7 +496,7 @@ export function createTouchControls(ctx, h) {
         setOn('fire.msl', cs.lock === 'locked' && n > 0, (sel ? sel.toUpperCase() + ' ' : '') + n);
         setOn('fire.tgt', !!cs.target, cs.lock === 'locked' ? 'LOCK' : cs.lock === 'acquiring' ? 'SEEK' : cs.target ? '' : '—');
         setOn('fire.flr', !!cs.flareProgram, cs.flares != null ? String(cs.flares) : '');
-        setOn('view', !!cs.padlock, '');
+        setOn('view', !!(cs.padlock || cs.peek), '');
       }
     }
   }

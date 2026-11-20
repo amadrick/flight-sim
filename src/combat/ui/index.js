@@ -64,6 +64,7 @@ export async function createCombatUi(combat) {
   // Combat settings: one record in the progress store, applied at boot, live on change and again on every mission start.
   // Camera keys (camKillCam / camFeel) are the ones src/combat/camera reads from this same store.
   const num01 = (k, d) => { const v = Number(store.getSetting(k, d)); return Number.isFinite(v) ? clamp(v, 0, 1) : d; };
+  const feel01 = (v) => v === false ? 0 : v === true || v == null ? 1 : (Number.isFinite(+v) ? clamp(+v, 0, 1) : 1);
   const settings = {
     musicOn: store.getSetting('musicOn', true) !== false,
     musicVolume: num01('musicVolume', 0.7),
@@ -71,7 +72,9 @@ export async function createCombatUi(combat) {
     radioVolume: num01('radioVolume', 1),
     sfxVolume: num01('sfxVolume', 1),
     camKillCam: store.getSetting('camKillCam', true) !== false,
-    camFeel: store.getSetting('camFeel', true) !== false,
+    camFeel: feel01(store.getSetting('camFeel', 1)),          // 0..1 (older saves: true / false)
+    camFight: store.getSetting('camFight', true) !== false,
+    camGunZoom: store.getSetting('camGunZoom', true) !== false,
     flightMode: ['assist', 'off'].includes(store.getSetting('flightMode')) ? store.getSetting('flightMode') : null,   // null = by difficulty
     aimHelp: AIM_HELP.some(a => a.id === store.getSetting('aimHelp')) ? store.getSetting('aimHelp') : 'auto',
     vibration: store.getSetting('vibration', true) !== false,   // read by combat.input (haptics)
@@ -104,7 +107,10 @@ export async function createCombatUi(combat) {
     if (c) {
       try {
         if (c.killCam !== settings.camKillCam) c.setKillCam?.(settings.camKillCam);
-        if (c.feel !== settings.camFeel) c.setFeel?.(settings.camFeel);
+        const fa = c.feelAmount ?? (c.feel ? 1 : 0);
+        if (Math.abs(fa - settings.camFeel) > 1e-3) c.setFeel?.(settings.camFeel);
+        if (c.fightCam !== undefined && c.fightCam !== settings.camFight) c.setFightCam?.(settings.camFight);
+        if (c.gunZoom !== undefined && c.gunZoom !== settings.camGunZoom) c.setGunZoom?.(settings.camGunZoom);
       } catch (e) { console.warn('[combat ui] camera settings', e); }
     }
   }
@@ -160,7 +166,10 @@ export async function createCombatUi(combat) {
   const briefScroll = h('div', { class: 'menu-scroll' }, briefBody);
   const flyLine = h('b');
   const flyBtn = h('button', { class: 'menu-fly glass-tint', id: 'cbt-ui-fly', type: 'button', onclick: () => fly() }, 'Fly mission', h('span', { class: 'menu-fly-arrow', 'aria-hidden': 'true' }));
-  const briefFoot = h('div', { class: 'cbt-ui-bfoot' }, h('div', { class: 'cbt-ui-flyline' }, h('span', { text: 'Sortie' }), flyLine), flyBtn);
+  const footMode = radios('Flight controls', FLIGHT_MODES, flightMode(), (id) => setSetting('flightMode', id), 'menu-seg');
+  footMode.classList.add('cbt-ui-footmode');
+  const briefFoot = h('div', { class: 'cbt-ui-bfoot' }, h('div', { class: 'cbt-ui-flyline' }, h('span', { text: 'Sortie' }), flyLine),
+    h('div', { class: 'cbt-ui-footrow' }, h('span', { class: 'cbt-ui-footlbl', text: 'Controls' }), footMode), flyBtn);
   const briefPanel = h('section', { class: 'menu-panel glass cbt-ui-brief', 'aria-label': 'Briefing' }, briefScroll, briefFoot);
   const vMissions = h('section', { class: 'cbt-ui-view cbt-ui-missions' }, listPanel, briefPanel);
   // settings
@@ -195,7 +204,9 @@ export async function createCombatUi(combat) {
           rangeField('sfxVolume', 'Effects'))),
       h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Camera' })),
         h('div', { class: 'menu-group' }, swField('camKillCam', 'Kill cam', 'A short outside shot when you shoot someone down'),
-          swField('camFeel', 'Camera shake', 'Gun shake, hit kicks and buffet. Off for a steady view'))),
+          swField('camFight', 'Fight camera', 'The chase view leans toward your target so you can see both'),
+          swField('camGunZoom', 'Gun zoom', 'Closes in a little when a gun shot lines up'),
+          rangeField('camFeel', 'Shake'))),
       h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Default difficulty' })), diffSeg, diffNote),
       h('p', { class: 'menu-note', style: 'margin:0 12px 10px', text: 'Changes apply at once. Master volume is in the main Settings.' })));
   const vSettings = h('section', { class: 'cbt-ui-view cbt-ui-dock' }, setPanel);
@@ -395,14 +406,15 @@ export async function createCombatUi(combat) {
     return f.line + (settings.flightMode ? '' : ` (${DIFFICULTY.find(d => d.id === combat.difficulty)?.label || ''} default; pick one to keep it.)`);
   }
   function syncControls() {
+    setRadio(footMode, flightMode()); footMode.title = modeText();
     if (!briefCtl || !briefCtl.grp.isConnected) return;
     setRadio(briefCtl.grp, flightMode()); briefCtl.line.textContent = modeText();
   }
   function syncSettings() {
     setRadio(modeSeg, flightMode()); setRadio(aimSeg, settings.aimHelp); modeNote.textContent = modeText();
     syncControls(); syncFlyLine();
-    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFeel', 'vibration']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
-    for (const [k, dep] of [['musicVolume', 'musicOn'], ['radioVolume', 'radioVoice'], ['sfxVolume', null]]) {
+    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFight', 'camGunZoom', 'vibration']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
+    for (const [k, dep] of [['musicVolume', 'musicOn'], ['radioVolume', 'radioVoice'], ['sfxVolume', null], ['camFeel', null]]) {
       const r = ctlByKey[k], v = Math.round(settings[k] * 100);
       if (document.activeElement !== r) r.value = String(v);
       r.style.setProperty('--v', v + '%'); r._read.textContent = v + '%';

@@ -15,6 +15,17 @@ player's physics, only while a human flies. It reads `ctx.controls.pitch / roll`
     to the full-rate turn.
   - `N` may lead the nose by up to 0.32 rad at full stick. Easing the stick shrinks that allowance only slowly
     (0.1 rad/s), so the reticle is never yanked back toward the nose.
+- **Touch** (the simulator's floating "drag to fly" stick, `src/input/touch.js`). While the assist steers and the touch
+  controls are up, it reads `ctx.input.touch.raw` `{x, y, held}` instead of the shaped `ctx.controls`, and sets
+  `ctx.input.touch.autoCoord = false` (no rudder auto-coordination fighting its own). The previous value is given back when
+  the assist disengages, on `mission:end` / `mission:abort` / `player:down`, and when another input takes over.
+  - Signs (checked in the page at 844×390): `raw.x` > 0 = drag right = the nose goes right; `raw.y` > 0 = drag DOWN =
+    stick back = nose UP; drag up = nose down (the simulator's own convention, `ASSIST_TUNING.touchPitch = 1`).
+  - Own shaping on the raw stick: radial dead zone 0.04, then linear (`expoTouch` 0): a phone thumb has no fine control to
+    spend an expo on, and the rim is where it lives. The magnitude can rise at 6 per second.
+  - `held` false (the thumb lifted) is a release at once, also with the simulator's auto-centre off.
+  - Pinned at the rim in a direction = a steady maximum-rate turn that way; a thumb circling ±25° at the rim at 2 Hz
+    turns the same (118° in 6 s either way) with bank σ 0.8° and G σ 0.3 (unit-tested).
 - **Keys** (`assist.device` `'keys'`, or `'auto'` while the simulator's input mode is keyboard / mouse without the yoke).
   The key behind each axis is recovered from the key-ramped value (`keyDir`). Then:
   - a tap moves `N` one fixed step (1.7°);
@@ -61,7 +72,7 @@ player's physics, only while a human flies. It reads `ctx.controls.pitch / roll`
     aircraft's learned full-stick G.
   - Rookie also gets a takeover at the last moment.
   - `info.limiting` reports `'ground' | 'speed' | 'aoa' | 'g' | ''`.
-- **Auto-throttle** (rookie only).
+- **Auto-throttle** (rookie and veteran).
   - It engages after the throttle has been left alone for 3 s, or for 10 s after any player throttle input.
   - It holds corner speed in a fight (corner + 40 otherwise) and uses afterburner below 1.6 × the stall speed.
 - **Stays out**:
@@ -82,7 +93,9 @@ aimAssist, setAimAssist(0..1 | null)        null = the difficulty default (0.8 /
 aim { x, y, active }                        pointer aim, -1..1 from the screen centre, +y up
 frame 'horizon' | 'view'
 device 'auto' | 'analog' | 'keys'
-info { mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint, keys }
+info { mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint, keys, touch, fightSpeed, slow }
+                                            fightSpeed: m/s IAS the auto-throttle aims for (corner speed, ≥ 1.6 × stall);
+                                            slow: IAS below 0.8 × fightSpeed (off again above 0.88) — a HUD energy cue
 command, path, frameRight, frameUp          world vectors for HUD cues (draw `command` as the "nose goes here" reticle)
 reset(), update(dt)
 ```
@@ -109,10 +122,10 @@ The **virtual thumb** only sees the screen.
   `2.6 × delay × full rate` off, the gain a human settles on to keep the loop steady for their reaction time. On
   direct controls it rolls the target above the canopy and pulls, full stick at 5° off.
 - `analog`: a pad stick through the simulator's shaping (dead zone 0.1, expo 0.4).
-- `touch`: a phone's virtual stick. It is 8-bit and shaky (σ 0.03), pinned at the rim above 0.6, has no fine control
+- `touch`: a phone's virtual stick, fed through the same path as the game: the thumb writes a mock
+  `ctx.input.touch.raw` (and the shaped controls the simulator would write, with rudder auto-coordination while it is on). It is 8-bit and shaky (σ 0.03), pinned at the rim above 0.6, has no fine control
   below 0.15, and the thumb lifts off now and then (output 0 at once, also after 0.4 s with nothing to do). It lands
-  again with an offset of 0.04–0.14 and a gain error of ±25 % until the next lift. The simulator's touch shaping follows
-  (dead zone 0.07, expo 0.4).
+  again with an offset of 0.04–0.14 and a gain error of ±25 % until the next lift.
 - `digital`: arrow keys through the real key ramp (`src/input/logic.js`). With the assist it holds a key while more
   than 6° off and lets go early by what the reticle will still move in its reaction time. Near the aim it taps (a few
   per second at most).

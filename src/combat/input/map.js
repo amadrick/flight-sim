@@ -85,6 +85,8 @@ export function padAction(i, map = PAD_MAP) { const r = map.find(x => x.button =
 /** Seconds Tab must be held to pick the most dangerous hostile instead of cycling. Touch TGT: a double tap. */
 export const TAB_HOLD = 0.4;
 export const DOUBLE_TAP = 0.35;
+/** Seconds O / VIEW must be held to peek at the target (while held) instead of toggling padlock. */
+export const PEEK_HOLD = 0.3;
 /** Flare programme: one press = this many releases (each a weapons salvo) spaced so the dispenser cooldown allows them. */
 export const FLARE_PROGRAM = { releases: 3, interval: 0.45 };
 
@@ -176,7 +178,7 @@ export const COMBAT_BINDINGS = [
   { id: 'targetNearest', group: 'Combat', action: 'Target nearest the nose', keys: ['Y', 'Middle mouse'], pad: padLabel('targetNearest'), touch: null },
   { id: 'weaponNext', group: 'Combat', action: 'Missile type: Auto / IR / radar', keys: ['Z'], pad: padLabel('weaponNext'), touch: null },
   { id: 'boost', group: 'Combat', action: 'Boost: full afterburner while held', keys: ['Shift'], pad: [], touch: null },
-  { id: 'padlock', group: 'Combat', action: 'Target view (padlock) on / off', keys: ['O'], pad: padLabel('padlock'), touch: touchLabel('padlock') },
+  { id: 'padlock', group: 'Combat', action: 'Target view: tap = padlock on / off, hold = peek', keys: ['O'], pad: padLabel('padlock'), touch: touchLabel('padlock') },
   { id: 'missileCam', group: 'Combat', action: 'Missile camera on / off', keys: [';'], pad: [], touch: null },
   { id: 'mouseAim', group: 'Combat', action: 'Mouse aim (Assisted): steer with the mouse; click to lock the pointer, Esc frees it', keys: ['Mouse'], pad: [], touch: null },
   { id: 'restart', group: 'Combat', action: 'Restart mission', keys: ['Backspace'], pad: [], touch: null },
