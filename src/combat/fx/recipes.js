@@ -121,8 +121,8 @@ export function launchPuff(ps, smoke, pos, vel, back, q) {
 /** Warhead detonation: flash, fragment ring, small fireball, dark-grey burst puff. big: 1 hit, 0.5 self-destruct. */
 export function warhead(ps, smoke, pos, vel, q, big = 1) {
   const qq = Math.max(0.5, q);
-  flash(ps, pos, Z, 18 * big, 600 * big, 1, 0.9, 0.75, 0.16);
-  flash(ps, pos, Z, 40 * big, 90 * big, 1, 0.7, 0.4, 0.35);
+  flash(ps, pos, Z, 6 * big, 400 * big, 1, 0.95, 0.85, 0.1);
+  flash(ps, pos, Z, 14 * big, 14 * big, 1, 0.7, 0.4, 0.3);
   // fragments: fast, short white-hot streaks
   sparkBurst(ps, pos, vel, Math.round(70 * big * qq), 260, 1.2, 0.5, 0.07);
   sparkBurst(ps, pos, vel, Math.round(30 * big * qq), 90, 0.8, 1.6, 0.1);
@@ -148,26 +148,50 @@ export function warhead(ps, smoke, pos, vel, q, big = 1) {
  */
 export function airFireball(ps, smoke, pos, vel, scale, q, withVolume) {
   const qq = Math.max(0.5, q);
-  flash(ps, pos, _z.copy(vel).multiplyScalar(0.3), 30 * scale, 500, 1, 0.85, 0.6, 0.3);
-  flash(ps, pos, _z, 70 * scale, 120, 1, 0.7, 0.4, 0.5);
   const p = ps.p;
-  const nf = Math.round((withVolume ? 40 : 56) * qq);
-  for (let i = 0; i < nf; i++) {
-    randDir(_w, 0.15);
-    // long-lived particles cool slowly (FIRE heat = exp(-3.6 t/life)): a ~1.5 s bright burn, then rolling soot
-    p.kind = KIND.FIRE; p.life = 2.6 + rnd() * 2.6; p.size0 = (2.0 + rnd() * 2.0) * scale; p.size1 = (8 + rnd() * 7) * scale;
-    p.drag = 1.6; p.buoy = 4 + rnd() * 3; p.delay = i > nf * 0.7 ? 0.1 + rnd() * 0.3 : rnd() * 0.05;
-    p.r = 0.13; p.g = 0.12; p.b = 0.11; p.opacity = 0.95; p.emissive = 45 + rnd() * 45; p.aux = 0;
-    _v.copy(_w).multiplyScalar((8 + rnd() * 20) * scale).addScaledVector(vel, 0.45 + rnd() * 0.2);
-    ps.spawn(_p.copy(pos).addScaledVector(_w, rnd() * 4 * scale), _v);
+  // 1. flash: a brief white-hot point (blooms) and a short orange glow — small, so it does not wash the frame
+  _z.copy(vel).multiplyScalar(0.35);
+  flash(ps, pos, _z, 9 * scale, 350, 1, 0.95, 0.85, 0.12);
+  flash(ps, pos, _z, 20 * scale, 16, 1, 0.6, 0.3, 0.4);
+  // 2. white-hot core: few, short-lived, very hot (fxFlame → white-yellow), cools to orange within ~0.2 s
+  for (let i = 0, n = Math.round(10 * qq); i < n; i++) {
+    randDir(_w, 0.1);
+    p.kind = KIND.FIRE; p.life = 0.3 + rnd() * 0.25; p.size0 = 2.5 * scale; p.size1 = (7 + rnd() * 4) * scale;
+    p.drag = 3; p.buoy = 2; p.delay = rnd() * 0.03; p.r = 0.2; p.g = 0.18; p.b = 0.16; p.opacity = 0.9; p.emissive = 140 + rnd() * 80; p.aux = 0;
+    ps.spawn(_p.copy(pos).addScaledVector(_w, rnd() * 2 * scale), _v.copy(_w).multiplyScalar((4 + rnd() * 8) * scale).addScaledVector(vel, 0.35));
   }
-  sparkBurst(ps, pos, vel, Math.round(50 * qq), 70, 1, 1.4, 0.1);
-  const s = smoke.p;
+  // 3. fireball: burst outward fast then stall (drag), varied sizes, rolling orange/red that turns into soot
+  const nf = Math.round((withVolume ? 26 : 34) * qq);
+  for (let i = 0; i < nf; i++) {
+    randDir(_w, 0.1);
+    const big = rnd();
+    p.kind = KIND.FIRE; p.life = 1.3 + rnd() * 1.6; p.size0 = (1.2 + rnd() * 1.6) * scale; p.size1 = (4 + big * big * 9) * scale;
+    p.drag = 2.6 + rnd(); p.buoy = 3 + rnd() * 3; p.delay = i > nf * 0.75 ? 0.06 + rnd() * 0.2 : rnd() * 0.04;
+    p.r = 0.1; p.g = 0.09; p.b = 0.085; p.opacity = 0.95; p.emissive = 28 + rnd() * 34; p.aux = 0;
+    _v.copy(_w).multiplyScalar((14 + rnd() * 26) * scale).addScaledVector(vel, 0.3 + rnd() * 0.15);
+    ps.spawn(_p.copy(pos).addScaledVector(_w, rnd() * 2.5 * scale), _v);
+  }
+  // 4. sparks / burning fragments: fast bright streaks with short trails, and slower falling embers
+  const pp = ps.p;
+  for (let i = 0, n = Math.round(60 * qq); i < n; i++) {
+    randDir(_w, 0.1);
+    pp.kind = KIND.SPARK; pp.life = 0.5 + rnd() * 0.9; pp.size0 = pp.size1 = 0.09 + rnd() * 0.08; pp.drag = 0.6 + rnd() * 0.6; pp.buoy = -9.8;
+    pp.delay = rnd() * 0.05; pp.r = 1; pp.g = 0.75 + rnd() * 0.25; pp.b = 0.45 + rnd() * 0.3; pp.opacity = 1; pp.emissive = 60 + rnd() * 90; pp.aux = 0.05;
+    ps.spawn(pos, _v.copy(_w).multiplyScalar(55 + rnd() * 70).addScaledVector(vel, 0.4));
+  }
   for (let i = 0, n = Math.round(22 * qq); i < n; i++) {
+    randDir(_w, 0.3);
+    pp.kind = KIND.SPARK; pp.life = 1.5 + rnd() * 1.6; pp.size0 = pp.size1 = 0.12 + rnd() * 0.1; pp.drag = 0.4; pp.buoy = -9.8;
+    pp.delay = rnd() * 0.15; pp.r = 1; pp.g = 0.5 + rnd() * 0.2; pp.b = 0.15; pp.opacity = 1; pp.emissive = 25 + rnd() * 25; pp.aux = 0.03;
+    ps.spawn(pos, _v.copy(_w).multiplyScalar(15 + rnd() * 30).addScaledVector(vel, 0.45));
+  }
+  // 5. lingering smoke: dark grey (soot), appears as the fire dies, grows and drifts with the wind for ~half a minute
+  const s = smoke.p;
+  for (let i = 0, n = Math.round(18 * qq); i < n; i++) {
     randDir(_w, 0.2);
-    s.kind = KIND.SMOKE; s.life = 16 + rnd() * 12; s.size0 = 6 * scale; s.size1 = (22 + rnd() * 18) * scale; s.drag = 1.2; s.buoy = 2.5 + rnd() * 2;
-    s.delay = 0.4 + rnd() * 1.0; const c = 0.04 + rnd() * 0.05; s.r = c; s.g = c; s.b = c; s.opacity = 0.85; s.emissive = 0; s.aux = 0;
-    smoke.spawn(_p.copy(pos).addScaledVector(_w, 3 * scale).addScaledVector(vel, 0.25), _v.copy(_w).multiplyScalar((4 + rnd() * 8) * scale).addScaledVector(vel, 0.3));
+    s.kind = KIND.SMOKE; s.life = 18 + rnd() * 14; s.size0 = 4 * scale; s.size1 = (14 + rnd() * 14) * scale; s.drag = 1.6; s.buoy = 1.2 + rnd() * 1.8;
+    s.delay = 0.25 + rnd() * 0.7; const c = 0.06 + rnd() * 0.07; s.r = c; s.g = c; s.b = c * 1.03; s.opacity = 0.8; s.emissive = 0; s.aux = 0;
+    smoke.spawn(_p.copy(pos).addScaledVector(_w, 4 * scale).addScaledVector(vel, 0.15), _v.copy(_w).multiplyScalar((5 + rnd() * 9) * scale).addScaledVector(vel, 0.25));
   }
 }
 
