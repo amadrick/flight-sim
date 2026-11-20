@@ -77,3 +77,6 @@ rebuilt only on resize / font load; numbers come from memoised string caches (no
   the crash card and the hint card stay on one screen (CSS `horizontal-/vertical-viewport-segments` + `env(viewport-segment-*)`).
 - `ctx.hud.stripRect` → `{x, y, w, h, r}` of the exterior flight-data strip while it is drawn (else null), and
   `ctx.hud.hintVisible` (controls card up): for overlays that must sit around the strip (combat HUD request 1).
+- Touch missions: when the touch layout is in mission mode (`layout.mission`) the strip is drawn in `layout.hud` (a
+  strip-sized box, top-left) even when it is short, and toasts / the warning chip start at `layout.toast` (under the combat
+  panel region), so they never land on combat objectives, stores or the fire cluster.

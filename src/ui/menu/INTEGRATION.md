@@ -48,6 +48,9 @@ in-flight help button and `F1` emit `cmd { name: 'help' }` (the HUD toggles its 
   menu is open. If `ctx.input.touchEnabled`, the in-flight corner is hidden: input's touch layout owns the top-right
   corner (Cam + Menu); fullscreen stays in Settings. The Controls screen then lists the touch controls first
   (`TOUCH_HELP` in data.js), the keyboard table below.
+- **Settings → Touch controls** (`#menu-touch-settings`, first section, shown when touch is enabled or the pointer is
+  coarse): sensitivity 50–200 % (`#menu-touch-sens`), left-handed, rudder slider, stick auto-centre, haptics (only where
+  `navigator.vibrate` exists) and "All systems buttons" (drawer open / auto). Reads and writes `ctx.input.touch.prefs`.
 - **HUD**: hides itself while `ctx.menu.isOpen`. The Settings HUD switch emits `cmd hudToggle`, and the menu tracks
   every `hudToggle` to show its state.
 - **audio**: `ctx.audio.resume()` runs on FLY and on the first pointer-down inside the menu (so the hangar can make
