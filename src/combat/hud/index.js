@@ -64,7 +64,7 @@ export async function createCombatHud(combat) {
     near: { t: 0 }, msg: { t: 0, text: '', col: tok.fg },
     dmg: Array.from({ length: 4 }, () => ({ a: 0, t: 0, life: 0.9 })), dmgI: 0, vig: 0,
     splash: Array.from({ length: 4 }, () => ({ entity: null, t: 0, life: 1.8, x: NaN, y: NaN })), splashI: 0,
-    camMode: null, cine: false, touch: false, camLabelY: 0, leftRight: 0, tgtOn: false, seat: 'wide', seatCompact: false,
+    camMode: null, cine: false, touch: false, camLabelY: 0, leftRight: 0, ayExt: 100, ayInt: 100, tgtOn: false, seat: 'wide', seatCompact: false,
     lockSnap: 0, cue: '', cueCol: tok.hud, cueGun: false, boreX: NaN, boreY: NaN, tgtX: 0, tgtY: 0, tgtS: 0, alwaysCross: true,
     missileSide(p, pos) { return toBody(p.state, pos, _v).x >= 0 ? 1 : -1; },
   };
@@ -98,6 +98,8 @@ export async function createCombatHud(combat) {
     const margin = H.compact ? 40 : 56;
     // touch: the right edge belongs to the touch buttons, keep edge cues inside them
     H.ax = W / 2 - margin - (touch ? Math.min(170, W * 0.2) : 0); H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
+    H.ayExt = Math.max(60, Math.min(H.ay, stripTop(W, Hh) - 36 - Hh / 2));   // outside views: stay above the data strip
+    H.ayInt = H.ay;
     H.lzOff = Math.min(W * 0.2, 250); H.lzH = clamp(Hh * 0.2, 90, 170);
     H.warnY = Math.round(Hh * (H.compact ? 0.33 : 0.26));
     H.cueOff = Math.round(clamp(Hh * 0.17, 64, 140));
@@ -290,6 +292,7 @@ export async function createCombatHud(combat) {
       H.camMode = combat.camera?.mode || null; H.touch = touch;
       H.camLabelY = 30;   // top centre: clear of the cue, subtitles and strip; the sim's toasts there are transient
       H.interior = ctx.cameraRig?.isInterior ?? mode === 'cockpit';
+      H.ay = H.interior ? H.ayInt : H.ayExt;
       const live = !ctx.time?.paused;
 
       // timers (real time)
