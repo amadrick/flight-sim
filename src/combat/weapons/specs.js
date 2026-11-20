@@ -8,11 +8,11 @@
  */
 export const GUNS = {
   m61: { id: 'm61', name: '20 mm rotary cannon', short: 'GUN', designation: 'M61A1', caliber: 0.020, mass: 0.102, cd: 0.30,
-    rof: 100, muzzleVelocity: 1050, dispersion: 0.0026, damage: 6.5, spinUp: 0.35, tracerEvery: 5, life: 2.6, range: 1300 },
+    rof: 100, muzzleVelocity: 1050, dispersion: 0.0026, damage: 13, spinUp: 0.35, tracerEvery: 5, life: 2.6, range: 1300 },
   gau22: { id: 'gau22', name: '25 mm rotary cannon', short: 'GUN', designation: 'GAU-22/A', caliber: 0.025, mass: 0.185, cd: 0.30,
-    rof: 55, muzzleVelocity: 1040, dispersion: 0.0022, damage: 10, spinUp: 0.25, tracerEvery: 4, life: 2.8, range: 1400 },
+    rof: 55, muzzleVelocity: 1040, dispersion: 0.0022, damage: 19, spinUp: 0.25, tracerEvery: 4, life: 2.8, range: 1400 },
   gau8: { id: 'gau8', name: '30 mm rotary cannon', short: 'GUN', designation: 'GAU-8/A', caliber: 0.030, mass: 0.395, cd: 0.28,
-    rof: 65, muzzleVelocity: 1010, dispersion: 0.0035, damage: 17, spinUp: 0.5, tracerEvery: 4, life: 3.2, range: 1600 },
+    rof: 65, muzzleVelocity: 1010, dispersion: 0.0035, damage: 34, spinUp: 0.5, tracerEvery: 4, life: 3.2, range: 1600 },
 };
 
 /**

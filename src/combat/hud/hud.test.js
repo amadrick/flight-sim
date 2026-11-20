@@ -29,7 +29,9 @@ test('projector: points behind the camera give the turn direction', () => {
   assert.ok(P.dx > 0, 'turn right');
   assert.equal(P.point(-50, 0, 100), false);
   assert.ok(P.dx < 0, 'turn left');
-  assert.equal(P.point(0, 30, 100), false);            // behind and above
+  assert.equal(P.point(0, 30, 100), false);            // behind, a little above: the six o'clock cue
+  assert.ok(P.dy > 0, 'down on screen');
+  assert.equal(P.point(0, 400, 100), false);           // behind and well above
   assert.ok(P.dy < 0, 'up on screen');
   P.point(0, 0, 100);                                  // dead astern
   near(P.dx, 0); assert.ok(P.dy > 0);
@@ -121,8 +123,11 @@ test('seat mode: phones and touch screens are narrow', async () => {
   const { seatMode } = await import('./seats.js');
   assert.equal(seatMode(1920, 1080, false), 'wide');
   assert.equal(seatMode(400, 800, false), 'narrow');
-  assert.equal(seatMode(1366, 1024, true), 'narrow');
+  assert.equal(seatMode(1366, 1024, true), 'touch');
+  assert.equal(seatMode(844, 390, true), 'touch');
   assert.equal(seatMode(900, 480, false), 'narrow');
+  const { isCompact } = await import('./seats.js');
+  assert.equal(isCompact(844, 390), true); assert.equal(isCompact(960, 540), false);
 });
 
 test('the whole hud module imports in node without touching the DOM', async () => {

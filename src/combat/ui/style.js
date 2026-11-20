@@ -81,6 +81,12 @@ export const CSS = /* css */`
 .cbt-ui-flyline { display: flex; justify-content: space-between; gap: 10px; padding: 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; }
 .cbt-ui-flyline b { font-family: var(--font-mono); font-weight: 400; letter-spacing: 0.02em; color: var(--fg); text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* first run + settings rows */
+.cbt-ui-start { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+.cbt-ui-hint { margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r-m); font-size: 13px; line-height: 1.4; color: var(--amber-soft); background: rgb(255 176 0 / 0.1); box-shadow: inset 0 0 0 1px rgb(255 176 0 / 0.35); }
+.cbt-ui-rl { font-size: 13px; color: var(--fg-dim); min-width: 62px; flex: none; }
+.cbt-ui-volfield { gap: 14px; }
+
 /* custom setup */
 .cbt-ui-form { display: flex; flex-direction: column; gap: 0; }
 .cbt-ui-step { display: inline-flex; align-items: center; gap: 4px; flex: none; }

@@ -22,6 +22,7 @@ src/combat/ui/**        mission select, briefing, debrief screens
 src/combat/audio/**     weapon sounds, tones, warnings, explosions, radio voice, music
 src/combat/fx/**        tracers, missiles, smoke trails, flares, explosions, battle damage, AI engine plumes
 src/combat/camera/**    combat cameras (padlock, missile cam, kill cam)
+src/combat/assist/**    player flight assist: point-to-fly steering, gun aim help, protections
 ```
 
 Each directory has an `index.js` written by the integrator as a small **working placeholder**. Its header and this
@@ -230,3 +231,26 @@ back to their default paint.
   early, `--pre "<js>"` runs code in the page first (place the camera, spawn things, force a state), `--eval` prints a value.
   One rendered frame costs 4–5 s here: keep `--frames` at 2–4. **Look at your screenshots.**
 - `node tools/build.mjs` must succeed and the page must boot with no console errors, with and without a mission.
+
+## 15. Flight assist (`combat.assist`) — `src/combat/assist/`
+
+Most players fly on a phone or a keyboard, where raw stick-to-surface control makes a dogfight a fight against the aeroplane.
+The assist sits between the input layer and the flight model: `combat.pre(dt)` calls `combat.assist.update(dt)` right after
+`combat.input.update(dt)` and before the player's physics, only while a human flies the player's aircraft. It reads
+`ctx.controls.pitch / roll / yaw` as the player's **intent** and overwrites them with what the aircraft needs. It works with
+every input source (keys, touch stick, gamepad, tilt) because it never reads devices itself.
+
+```
+combat.assist.mode            'off' | 'assist'. Off = the simulator's direct controls, untouched.
+combat.assist.setMode(m)      (persisted by ui/ settings; default 'assist' on rookie and veteran, on every device)
+combat.assist.aim             { x, y, active }: optional pointer aim written by combat.input (mouse / drag): offset from the
+                              screen centre, -1..1, +x right, +y up. When active the nose is flown toward that screen point.
+combat.assist.aimAssist       0..1 gun aim help (setAimAssist); strength comes from difficulty unless the player overrides it
+combat.assist.info            { mode, active, gunAssist, limiting } for the HUD ('limiting': '' | 'aoa' | 'g' | 'ground' | 'speed')
+combat.assist.reset()         mission start / restart
+```
+
+In `'assist'` mode the stick steers the NOSE in the screen frame: stick right = the nose goes right (the assist rolls, pulls
+and coordinates by itself), stick back = nose up, release = hold the flight path. Rudder input still yaws; throttle is the player's.
+On the ground, during takeoff and landing rolls, and when the simulator's autopilot is engaged the assist stays out.
+

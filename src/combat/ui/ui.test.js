@@ -118,3 +118,19 @@ test('tactical map scene from the placeholder mission shape', () => {
   assert.ok(sc.radius >= 12000);
   assert.equal(mapScene({}).player, null);
 });
+
+test('first run: gunnery training preselected, anyAttempt flips after a flight', async () => {
+  const { firstRunMission } = await import('./logic.js');
+  assert.equal(firstRunMission([{ id: 'c1', category: 'campaign' }, { id: 'train-bfm', category: 'training', order: 3 }, { id: 'train-gunnery', category: 'training', order: 1 }]).id, 'train-gunnery');
+  assert.equal(firstRunMission([{ id: 'c1', category: 'campaign' }, { id: 't9', category: 'training' }]).id, 't9');
+  assert.equal(firstRunMission([]), null);
+  const p = createProgressStore(null);
+  assert.equal(p.anyAttempt(), false);
+  p.record('x', 'rookie', { outcome: 'failure' });
+  assert.equal(p.anyAttempt(), true);
+});
+
+test('menu hooks list their base-UI dependencies', async () => {
+  const { DEPENDS } = await import('./hooks.js');
+  assert.ok(DEPENDS.tabAnchor && DEPENDS.pauseAnchor && DEPENDS.tabBar.length && DEPENDS.pauseList.length && DEPENDS.keys.length);
+});

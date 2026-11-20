@@ -71,7 +71,7 @@ export function createStatus(cv, tok, specs) {
   }
 
   /** Returns the panel height wanted (CSS px) so the caller can size the glass box. */
-  function draw(p, w, d) {
+  function draw(p, w, d, compact) {
     const lo = p?.loadout; if (!lo) return 0;
     const gun = lo.gun || {}, rounds = gun.rounds ?? 0;
     max.gun = Math.max(max.gun, gun.max || 0, rounds);
@@ -83,12 +83,15 @@ export function createStatus(cv, tok, specs) {
     // change key (strings built only when something changed would still allocate; numbers combined into one key)
     let k = rounds * 1e6 + (lo.flares || 0) * 1e3 + hp;
     let mk = 0; for (const t in lo.missiles) mk = mk * 13 + (lo.missiles[t] || 0);
-    const key2 = (diag ? partsInfo.key * 1e4 : 0) + mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0);
-    const h = heightFor(w, chips.length / 2, diag);
+    const key2 = (diag ? partsInfo.key * 1e4 : 0) + mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0) + (compact ? 0.25 : 0);
+    if (compact && worst >= 0.4) chips.push('DAMAGE', C.red);
+    const crow = 22;
+    const h = compact ? crow + 6 + (chips.length ? crow - 2 : 0) : heightFor(w, chips.length / 2, diag);
     if (k === draw.k && key2 === draw.k2 && sizeKey === w + ':' + h + ':' + d && chipKey() === last) return h;
     draw.k = k; draw.k2 = key2; last = chipKey();
     if (sizeKey !== w + ':' + h + ':' + d) { sizeKey = w + ':' + h + ':' + d; W = w; Hh = h; dpr = d; cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, Hh);
+    if (compact) { drawCompact(lo, rounds, hp, crow); return h; }
     const fs = w < 170 ? 10 : 12, row = Math.round(fs * 1.75), padX = w < 170 ? 10 : 13;
     const fL = `600 ${fs}px ${tok.display}`, fV = `600 ${fs + 1}px ${tok.mono}`;
     g.textBaseline = 'middle';
@@ -113,7 +116,7 @@ export function createStatus(cv, tok, specs) {
       g.font = fL; const lw = short.length * fs * 0.6;
       if (sel) { g.strokeStyle = C.amber; g.lineWidth = 1.2; g.strokeRect(Math.round(x - 4) + 0.5, Math.round(y - row * 0.42) + 0.5, Math.round(lw + 8 + m * fs * 0.78), Math.round(row * 0.84)); }
       label(short, x, sel ? C.amber : C.dim);
-      x += lw + 5;
+      x += lw + 8;
       const r = fs * 0.3;
       for (let i = 0; i < m; i++) {
         const cx = x + r + i * fs * 0.78;
@@ -150,6 +153,35 @@ export function createStatus(cv, tok, specs) {
       }
     }
     return h;
+  }
+  /** one line: GUN n · SRM n · MRM n · FLR n · HULL n%, warning chips on a second line */
+  function drawCompact(lo, rounds, hp, row) {
+    const fs = 11, fL = `600 ${fs}px ${tok.display}`, fV = `700 ${fs + 1}px ${tok.mono}`;
+    let x = 10, y = 3 + row / 2;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    const item = (lab, val, colL, colV) => {
+      g.font = fL; g.fillStyle = colL; g.fillText(lab, x, y + 0.5); x += lab.length * fs * 0.58 + 4;
+      g.font = fV; g.fillStyle = colV; g.fillText(val, x, y + 0.5); x += val.length * (fs + 1) * 0.62 + 11;
+    };
+    item('GUN', F.int(rounds), C.dim, rounds === 0 ? C.red : max.gun && rounds < max.gun * 0.15 ? C.amber : C.fg);
+    for (const t in lo.missiles) {
+      const sel = lo.selected === t, n = lo.missiles[t] || 0;
+      item(specs?.missiles?.[t]?.short || t.toUpperCase(), F.int(n), sel ? C.amber : C.dim, n ? (sel ? C.fg : C.dim) : C.red);
+    }
+    const fl = lo.flares || 0;
+    item('FLR', F.int(fl), C.dim, fl === 0 ? C.red : fl < 6 ? C.amber : C.fg);
+    if (x + 60 < W) item('HULL', F.int(hp), C.dim, hp < 30 ? C.red : hp < 60 ? C.amber : C.hud);
+    if (chips.length) {
+      y += row - 2; x = 10;
+      g.font = `700 ${fs - 1}px ${tok.display}`;
+      for (let i = 0; i < chips.length; i += 2) {
+        const txt = chips[i], col = chips[i + 1], cw = txt.length * (fs - 1) * 0.56 + 10;
+        if (x + cw > W - 8) break;
+        g.strokeStyle = col; g.lineWidth = 1.2; g.strokeRect(Math.round(x) + 0.5, Math.round(y - 8) + 0.5, Math.round(cw), 16);
+        g.fillStyle = col; g.textAlign = 'center'; g.fillText(txt, x + cw / 2, y + 0.5); g.textAlign = 'left';
+        x += cw + 6;
+      }
+    }
   }
   function chipKey() { let s = 0; for (let i = 0; i < chips.length; i += 2) s = s * 31 + chips[i].length + chips[i].charCodeAt(0); return s; }
 
