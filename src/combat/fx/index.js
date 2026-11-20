@@ -23,6 +23,9 @@ import { createSprites, SPR } from './sprites.js';
 import { createMissileMesh } from './meshes.js';
 import { createDebris } from './debris.js';
 import * as R from './recipes.js';
+import { gunPort } from '../weapons/specs.js';
+
+const GUN_SCALE = { m61: 1, gau22: 1.3, gau8: 2 };
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -95,7 +98,7 @@ export async function createCombatFx(combat) {
       lights: g.lights || null,
       contrail: ribbons.ribbon('long', STYLE.CONTRAIL, { spacingMin: 4, spacingMax: 60, maxDt: 0.4 }),
       tipR: [ribbons.ribbon('short', STYLE.WINGTIP, { spacingMin: 1.5, spacingMax: 12, maxDt: 0.06 }), ribbons.ribbon('short', STYLE.WINGTIP, { spacingMin: 1.5, spacingMax: 12, maxDt: 0.06 })],
-      dmg: null, dmgStyle: -1, fireAcc: { v: 0 }, fireAcc2: { v: 0 }, gunAcc: { v: 0 }, seen: 0, seed: rnd(), bigGun: /a10/i.test(def.id || '') || /30\s*mm|GAU-8/i.test(e.loadout?.gun?.name || ''),
+      dmg: null, dmgStyle: -1, fireAcc: { v: 0 }, fireAcc2: { v: 0 }, gunAcc: { v: 0 }, seen: 0, seed: rnd(), bigGun: 1, port: gunPort(def), leakR: null, wingPt: [0, 0, 0],
       deadT: -1,
     };
     acRecs.set(e, r);
@@ -105,6 +108,7 @@ export async function createCombatFx(combat) {
     const now = ctx.time.now;
     r.contrail.release(now); r.tipR[0].release(now); r.tipR[1].release(now);
     if (r.dmg) r.dmg.release(now);
+    if (r.leakR) r.leakR.release(now);
   }
 
   function bodyPoint(s, b, out) { return out.set(b[0], b[1], b[2]).applyQuaternion(s.quaternion).add(s.position); }
@@ -189,8 +193,16 @@ export async function createCombatFx(combat) {
     if ((smokeK > 0.02 || fireK > 0.02) && !hidden && !burnOut && !(onGround && !alive)) {
       // source: the engine bay (the dead engine if the weapons module says which), slightly behind the nozzle
       let src = r.centre;
-      const eo = dmg?.engineOut;
+      const eo = dmg?.engineOut, parts = dmg?.parts;
       if (Array.isArray(eo)) { for (let i = 0; i < eo.length && i < r.engines.length; i++) if (eo[i]) { src = r.engines[i].nozzle; break; } }
+      if (src === r.centre && parts && !isWreck) {
+        // smoke from the worst-hit part: a wing root, or the engine bay
+        const wl = parts.wingL || 0, wr = parts.wingR || 0, en = Array.isArray(parts.engines) ? Math.max(0, ...parts.engines) : 0;
+        if (Math.max(wl, wr) > en + 0.15 && Math.max(wl, wr) > (parts.fuselage || 0)) {
+          const tip = r.tips[wl > wr ? 0 : 1];
+          if (tip) { r.wingPt[0] = tip[0] * 0.45; r.wingPt[1] = tip[1]; r.wingPt[2] = tip[2] + 0.5; src = r.wingPt; }
+        }
+      }
       bodyPoint(s, src, v);
       const fire = fireK > 0.12;
       const style = fire ? STYLE.FIRE : STYLE.DAMAGE;
@@ -210,17 +222,28 @@ export async function createCombatFx(combat) {
         sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, (0.45 + 0.55 * fireK) * r.scale * big, I, I * 0.6, I * 0.3, back.x * L, back.y * L, back.z * L, r.seed * 7 + frame * 0.01, 1.0, 0);
         sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, (1.5 + 1.5 * fireK) * r.scale, I * 0.05, I * 0.025, I * 0.01, 0, 0, 0, 0, 1.2, 0.8);
         if (dt > 0) R.fireLicks(ps, v, s.velocity, back, (14 + 22 * fireK) * big, dt, q, r.fireAcc, (0.6 + 0.6 * fireK) * r.scale * big);
-        if (dt > 0 && (isWreck || !alive)) { bodyPoint(s, [0, 0, 0], v2); R.fireLicks(ps, v2, s.velocity, back, 18, dt, q, r.fireAcc2, 1.1 * r.scale); }
+        if (dt > 0 && (isWreck || !alive)) { v2.copy(s.position); R.fireLicks(ps, v2, s.velocity, back, 18, dt, q, r.fireAcc2, 1.1 * r.scale); }
         considerLight(v.x, v.y, v.z, 120 * fireK * big, 1, 0.5, 0.2);
       }
     } else if (r.dmg) { r.dmg.stop(); }
 
+    // ---------- fuel leak: thin white vapour trail from a wing ----------
+    const leak = clamp(dmg?.leak ?? 0, 0, 1);
+    if (leak > 0.02 && alive && !hidden && !onGround) {
+      if (!r.leakR) r.leakR = ribbons.ribbon('short', STYLE.LEAK, { spacingMin: 2, spacingMax: 14, maxDt: 0.1 });
+      const tip = r.tips[(dmg?.parts?.wingR || 0) > (dmg?.parts?.wingL || 0) ? 1 : 0] || r.centre;
+      r.wingPt[0] = tip[0] * 0.6; r.wingPt[1] = tip[1]; r.wingPt[2] = tip[2] + 0.8;
+      bodyPoint(s, r.wingPt, v);
+      ribbons.emit(r.leakR, v, 0.3 + 0.9 * leak, 0.12, 0, 0, STYLE.LEAK, 0);
+    } else if (r.leakR) r.leakR.stop();
+
     // ---------- gun: muzzle flash + gun smoke ----------
     const gun = e.loadout?.gun;
+    r.bigGun = GUN_SCALE[gun?.type] ?? (/a10/i.test(e.def?.id || '') ? 2 : 1);
     if (alive && gun?.firing && !hidden) {
       if (W?.muzzleOf) W.muzzleOf(e, muzzleV);
-      else muzzleV.copy(fwd).multiplyScalar(r.length * 0.4).add(s.position);
-      const big = r.bigGun ? 2 : 1;
+      else bodyPoint(s, r.port, muzzleV);
+      const big = r.bigGun;
       if (rnd() < 0.8) {
         ctx.world.toRender(muzzleV, rp2);
         const I = 70 * (0.6 + 0.6 * rnd()) * big;
@@ -269,7 +292,7 @@ export async function createCombatFx(combat) {
         missileMesh.setMatrixAt(n++, m4);
       }
       const age = m.age ?? 0;
-      const burn = spec.burnTime ?? spec.motorTime ?? (radar ? 6 : 4.5);
+      const burn = spec.burnTime ?? (spec.motor ? (spec.motor.boost?.[1] || 0) + ((spec.motor.sustain?.[0] || 0) > 0 ? spec.motor.sustain[1] || 0 : 0) : (radar ? 6 : 4.5));
       const motor = m.motor ?? (age < burn);
       v.copy(s.position).addScaledVector(fwd, -len * 0.5);   // nozzle (world)
       ctx.world.toRender(v, rp2);
@@ -306,7 +329,7 @@ export async function createCombatFx(combat) {
       if (!r) { r = { rb: ribbons.ribbon('short', STYLE.FLARE, { spacingMin: 1.5, spacingMax: 10, maxDt: 0.08 }), seen: 0, seed: rnd() }; flareRecs.set(f, r); }
       r.seen = frame;
       const life = f.life || 4.5, t = clamp((f.age || 0) / life, 0, 1);
-      const burn = clamp((f.age || 0) / 0.08, 0, 1) * (1 - smooth(0.78, 1, t));
+      const burn = f.heat != null ? clamp(f.heat, 0, 1) : clamp((f.age || 0) / 0.08, 0, 1) * (1 - smooth(0.78, 1, t));
       if (burn <= 0.01) { r.rb.stop(); continue; }
       ctx.world.toRender(f.state.position, rp);
       const fl = 0.75 + 0.25 * Math.sin(ctx.time.now * 47 + r.seed * 30) * Math.sin(ctx.time.now * 29 + r.seed * 11) + 0.1 * rnd();
@@ -322,7 +345,7 @@ export async function createCombatFx(combat) {
   // =============================================================================================== tracers
   function updateTracers() {
     const B = W?.bullets; if (!B) return;
-    const life = W.specs?.gun?.life || 2.2;
+    const lifeDef = W.specs?.gun?.life || 2.2;
     for (let i = 0; i < B.n; i++) {
       const b = B.items[i]; if (!b.tracer) continue;
       ctx.world.toRender(b.position, rp);
@@ -331,11 +354,11 @@ export async function createCombatFx(combat) {
       const sp = v.length();
       const len = Math.min(sp * 0.02, sp * (b.age || 0) + 0.5);
       if (sp > 1) v.multiplyScalar(-len / sp);
-      const age = b.age || 0;
+      const age = b.age || 0, life = b.life || lifeDef;
       const fade = (1 - smooth(life * 0.75, life, age)) * clamp(age / 0.02, 0.3, 1);
       const red = b.team === 'red';
       const I = 140 * fade;
-      const big = b.big || b.caliber > 25 ? 1.5 : 1;
+      const big = b.gun === 'gau8' ? 1.6 : b.gun === 'gau22' ? 1.25 : 1;
       if (red) sprites.add(SPR.STREAK, rp.x, rp.y, rp.z, 0.06 * big, I * 0.75, I, I * 0.35, v.x, v.y, v.z, 0, 0.9, 0);
       else sprites.add(SPR.STREAK, rp.x, rp.y, rp.z, 0.06 * big, I, I * 0.55, I * 0.25, v.x, v.y, v.z, 0, 0.9, 0);
     }
@@ -427,9 +450,9 @@ export async function createCombatFx(combat) {
   // =============================================================================================== events
   const offs = [];
   const on = (n, f) => { const off = combat.events.on(n, (p) => { try { f(p || {}); } catch (err) { console.warn('[combat fx]', n, err); } }); if (typeof off === 'function') offs.push(off); };
-  on('bullet:hit', ({ position, target, shooter }) => {
+  on('bullet:hit', ({ position, target, gun }) => {
     if (!position) return;
-    const big = shooter && acRecs.get(shooter)?.bigGun ? 1.6 : 1;
+    const big = gun === 'gau8' ? 1.7 : gun === 'gau22' ? 1.25 : 1;
     R.bulletHit(ps, smoke, position, target?.state?.velocity || null, q0(), big);
     lightFlash(position, 400 * big, 0.08, 1, 0.8, 0.6);
   });
@@ -449,7 +472,8 @@ export async function createCombatFx(combat) {
     R.warhead(ps, smoke, position, target?.state?.velocity ? v.copy(target.state.velocity).multiplyScalar(0.6) : missile?.state?.velocity || null, q0(), 1);
     lightFlash(position, 6e4, 0.5, 1, 0.75, 0.45);
   });
-  on('missile:miss', ({ position, missile, reason }) => {
+  on('missile:miss', ({ position, missile, reason, detonated }) => {
+    if (detonated === false && reason !== 'ground') return;   // a dud / lost missile just falls: no burst
     if (!position || reason === 'ground') {
       if (position && reason === 'ground') { ctx.world.groundAt(position.x, position.z, gnd); R.groundStrike(ps, position, gnd.type === 'water', q0() * 3, DUST); R.warhead(ps, smoke, position, null, q0(), 0.5); }
       return;
@@ -525,7 +549,9 @@ export async function createCombatFx(combat) {
     sprites.flush();
     ribbons.flush();
     ps.flush(); smoke.flush();
+    if (dbgOff) { if (dbgOff.has('sprites')) sprites.mesh.visible = false; if (dbgOff.has('ribbons')) ribbons.mesh.visible = false; if (dbgOff.has('ps')) ps.mesh.visible = false; if (dbgOff.has('smoke')) smoke.mesh.visible = false; }
   }
+  const dbgOff = raw.cfxoff ? new Set(String(raw.cfxoff).split(',')) : null;
 
   const fx = {
     update(dt) { try { update(dt); } catch (err) { if (!fx._warned) { fx._warned = true; console.warn('[combat fx] update failed', err); } } },

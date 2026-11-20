@@ -13,16 +13,17 @@ import { RibbonPool, Ribbon, STRIDE } from './ribbon-pool.js';
 
 // style table — index = STYLE.*; A: life, diff (m²/s), sink (m/s), sigma (optical depth at birth through the axis)
 //               B: formStart, formEnd (s), wobble, phase g;  C: albedo rgb, lumpiness;  D: emission rgb, tau (s)
-export const STYLE = { MISSILE: 0, DAMAGE: 1, FIRE: 2, FLARE: 3, CONTRAIL: 4, WINGTIP: 5, DEBRIS: 6, LAUNCH: 7 };
+export const STYLE = { MISSILE: 0, DAMAGE: 1, FIRE: 2, FLARE: 3, CONTRAIL: 4, WINGTIP: 5, DEBRIS: 6, LAUNCH: 7, LEAK: 8 };
 const STYLES = [
-  /* MISSILE  */ { A: [18, 5.5, 0.25, 3.2], B: [0.0, 0.06, 1.0, 0.62], C: [0.93, 0.93, 0.94, 0.9], D: [1.0, 0.62, 0.32, 0.018], E: 70 },
-  /* DAMAGE   */ { A: [12, 3.5, -0.6, 1.8], B: [0.0, 0.05, 0.6, 0.45], C: [0.55, 0.55, 0.56, 1.0], D: [1.0, 0.42, 0.12, 0.04], E: 15 },
-  /* FIRE     */ { A: [22, 7.0, -1.4, 3.6], B: [0.0, 0.04, 0.8, 0.40], C: [0.07, 0.065, 0.06, 1.1], D: [1.0, 0.40, 0.10, 0.045], E: 22 },
-  /* FLARE    */ { A: [7.5, 2.2, 0.6, 2.4], B: [0.0, 0.05, 0.7, 0.60], C: [0.95, 0.95, 0.96, 0.9], D: [1.0, 0.90, 0.78, 0.07], E: 45 },
+  /* MISSILE  */ { A: [18, 5.5, 0.25, 3.2], B: [0.0, 0.06, 1.0, 0.62], C: [0.93, 0.93, 0.94, 0.9], D: [1.0, 0.62, 0.32, 0.02], E: 40 },
+  /* DAMAGE   */ { A: [12, 3.5, -0.6, 1.8], B: [0.0, 0.05, 0.6, 0.45], C: [0.55, 0.55, 0.56, 1.0], D: [1.0, 0.42, 0.12, 0.05], E: 4 },
+  /* FIRE     */ { A: [22, 7.0, -1.4, 3.6], B: [0.0, 0.04, 0.8, 0.40], C: [0.07, 0.065, 0.06, 1.1], D: [1.0, 0.40, 0.10, 0.06], E: 6 },
+  /* FLARE    */ { A: [7.5, 2.2, 0.6, 2.4], B: [0.0, 0.05, 0.7, 0.60], C: [0.95, 0.95, 0.96, 0.9], D: [1.0, 0.90, 0.78, 0.12], E: 20 },
   /* CONTRAIL */ { A: [45, 5.0, 1.6, 3.0], B: [0.05, 0.35, 0.4, 0.72], C: [1.0, 1.0, 1.0, 0.8], D: [0, 0, 0, 1], E: 0 },
   /* WINGTIP  */ { A: [1.6, 0.03, 0.4, 0.8], B: [0.0, 0.08, 0.0, 0.75], C: [1.0, 1.0, 1.0, 0.3], D: [0, 0, 0, 1], E: 0 },
-  /* DEBRIS   */ { A: [9, 2.5, -0.5, 2.6], B: [0.0, 0.04, 0.7, 0.40], C: [0.09, 0.085, 0.08, 1.0], D: [1.0, 0.45, 0.12, 0.08], E: 20 },
+  /* DEBRIS   */ { A: [9, 2.5, -0.5, 2.6], B: [0.0, 0.04, 0.7, 0.40], C: [0.09, 0.085, 0.08, 1.0], D: [1.0, 0.45, 0.12, 0.1], E: 6 },
   /* LAUNCH   */ { A: [10, 4.0, 0.2, 2.2], B: [0.0, 0.05, 0.8, 0.60], C: [0.9, 0.9, 0.9, 0.9], D: [1.0, 0.6, 0.3, 0.05], E: 60 },
+  /* LEAK     */ { A: [3.5, 0.8, 0.2, 0.9], B: [0.0, 0.03, 0.2, 0.75], C: [0.97, 0.97, 1.0, 0.5], D: [0, 0, 0, 1], E: 0 },
 ];
 export const STYLE_LIFE = STYLES.map((s) => s.A[0]);
 
@@ -45,7 +46,7 @@ export function createRibbons(ctx, sharedU, header, anchor, opts = {}) {
     uSA: { value: STYLES.map((s) => new THREE.Vector4(...s.A)) },
     uSB: { value: STYLES.map((s) => new THREE.Vector4(...s.B)) },
     uSC: { value: STYLES.map((s) => new THREE.Vector4(...s.C)) },
-    uSD: { value: STYLES.map((s) => new THREE.Vector4(s.D[0] * s.E, s.D[1] * s.E, s.D[2] * s.E, s.D[3])) },
+    uSD: { value: STYLES.map((s) => new THREE.Vector4(s.D[0] * s.E, s.D[1] * s.E, s.D[2] * s.E, s.D[3]).multiplyScalar(ctx.params?.raw?.cfxnoemis ? 0 : 1).setW(s.D[3])) },
   };
   const material = new THREE.ShaderMaterial({
     ...premulMaterialOpts(), uniforms,
@@ -200,7 +201,8 @@ void main() {
   // emission near the source: hot exhaust / burning fuel / flare light scattered by its own smoke
   vec4 SD = uSD[st];
   float heat = mix(vH.x, vH.y, sc);
-  float hk = heat * exp(-age / max(SD.w, 1e-3));
+  float ar = age / max(SD.w, 1e-3);
+  float hk = heat * exp(-ar * ar);   // gaussian: gone within a segment or two (segments can be tens of metres long)
   vec3 emis = SD.rgb * hk * a * (0.6 + 0.8 * nz.r);
   // flame colour cools with age (yellow-white → orange → deep red)
   emis *= mix(vec3(0.75, 0.35, 0.25), vec3(1.0), exp(-age / max(SD.w * 0.6, 1e-3)));
