@@ -123,7 +123,6 @@ Quality: `ctx.quality.particles` scales the march steps, particle spawn rates an
 | `crashtest=<belly\|collapse\|breakup\|impact\|fireball\|mountain\|ditch\|water\|airburst>` | deterministic synthetic crash ahead of the camera |
 | `crashdist=<m>` `crashlat=<m>` `crashside=1` `crashat=<frame>` | where / when the test crash happens |
 | `crashrate=<x>` | sim rate once the test crash starts (main.js clamps a frame to 0.1 s; long shots) |
-| `crashshore=1` | park the player on the nearest coast facing the sea (water shots) |
 | `crashdive=1` | push the stick forward until the aircraft hits the ground (real physics crash) |
 | `fbtemp=<k>` `fbemis=<k>` | fireball temperature / emission scale |
 | `fbbake=<dlogt>` | re-bake threshold |

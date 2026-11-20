@@ -95,22 +95,22 @@ export function createCrashFx(ctx, deps) {
 
   // spray column + ring for water impacts
   function sprayColumn(pos, vel, scale, height) {
-    const p = ps.p, n = Math.round(220 * clamp(q0(), 0.5, 1));
+    const p = ps.p, n = Math.round(320 * clamp(q0(), 0.5, 1));
     const vUp = Math.sqrt(2 * 9.81 * height);
     for (let i = 0; i < n; i++) {
       const a = rnd() * Math.PI * 2, r = rnd() ** 0.5;
       const col = rnd() < 0.6;
-      p.kind = KIND.VAPOR; p.life = col ? 2.5 + rnd() * 3 : 1.5 + rnd() * 2; p.size0 = (col ? 2.5 : 1.5) * scale; p.size1 = (col ? 12 + rnd() * 10 : 6 + rnd() * 6) * scale;
+      p.kind = KIND.VAPOR; p.life = col ? 2.5 + rnd() * 3 : 1.5 + rnd() * 2; p.size0 = (col ? 4 : 2.5) * scale; p.size1 = (col ? 22 + rnd() * 18 : 10 + rnd() * 10) * scale;
       p.drag = col ? 0.25 : 0.6; p.buoy = -9.8 * (col ? 0.8 : 1); p.delay = rnd() * 0.12;
       p.r = 0.96; p.g = 0.97; p.b = 1; p.opacity = col ? 0.8 : 0.6; p.emissive = 0; p.aux = 0;
-      if (col) v2.set(Math.cos(a) * r * 6, vUp * (0.55 + 0.45 * rnd()), Math.sin(a) * r * 6).addScaledVector(vel, 0.12);
+      if (col) v2.set(Math.cos(a) * r * 9, vUp * (0.55 + 0.45 * rnd()), Math.sin(a) * r * 6).addScaledVector(vel, 0.12);
       else v2.set(Math.cos(a) * (14 + rnd() * 18), 4 + rnd() * 10, Math.sin(a) * (14 + rnd() * 18)).addScaledVector(vel, 0.2);
       ps.spawn(v3.copy(pos).setY(pos.y + 0.5), v2);
     }
     // lingering mist
     const sp = smoke.p;
     for (let i = 0; i < 30 * q0(); i++) {
-      sp.kind = KIND.VAPOR; sp.life = 8 + rnd() * 6; sp.size0 = 6 * scale; sp.size1 = (20 + rnd() * 14) * scale; sp.drag = 1; sp.buoy = 0.4;
+      sp.kind = KIND.VAPOR; sp.life = 8 + rnd() * 6; sp.size0 = 10 * scale; sp.size1 = (34 + rnd() * 20) * scale; sp.drag = 1; sp.buoy = 0.4;
       sp.delay = 0.4 + rnd() * 1.2; sp.r = 0.92; sp.g = 0.94; sp.b = 0.97; sp.opacity = 0.35; sp.emissive = 0; sp.aux = 0;
       smoke.spawn(v3.set(pos.x + sgn() * 8, pos.y + rnd() * height * 0.6, pos.z + sgn() * 8), v2.set(sgn() * 3, 1 + rnd(), sgn() * 3));
     }
@@ -402,7 +402,15 @@ export function createCrashFx(ctx, deps) {
       return null;
     },
     active() { return !!C || fires.length > 0 || fireballs.active(); },
-    warm() { return fireballs.warm(); },
+    warm() {
+      // fireball programs + one bake, and the decal program (debris uses the scene's standard material programs)
+      const t0 = performance.now();
+      fireballs.warm();
+      const vis = decals.mesh.visible; decals.mesh.visible = true;
+      try { ctx.renderer.compile(decals.mesh, ctx.camera); } catch { /* optimisation only */ }
+      decals.mesh.visible = vis;
+      return performance.now() - t0;
+    },
     clear,
     dispose() { clear(); fireballs.dispose(); decals.dispose(); debris.dispose(); },
   };

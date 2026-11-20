@@ -120,5 +120,5 @@ murk-only additive cone instead of the scattering beam; `beaconlight=0` beacons 
 `fxlevel=1` hold altitude (stub physics sinks); `fxwater=1&fxagl=<m>` teleport low over the nearest water (spray).
 Example: `node tools/shot.mjs --params "aircraft=f16&start=air&tod=23&fx=ab&fxtm=1&fxcam=side&fxdist=9"`.
 Crash: `crashtest=<belly|collapse|breakup|impact|fireball|mountain|ditch|water|airburst>`, `crashdist=<m>`,
-`crashlat=<m>`, `crashside=1`, `crashat=<frame>`, `crashrate=<x>`, `crashshore=1`, `crashdive=1`; fireball `fbtemp`,
+`crashlat=<m>`, `crashside=1`, `crashat=<frame>`, `crashrate=<x>`, `crashdive=1`; fireball `fbtemp`,
 `fbemis`, `fbbake`, `fboff=1`, `fbdbg=1..5` (see `docs/effects/CRASH.md`).
