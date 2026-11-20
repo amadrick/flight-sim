@@ -145,6 +145,10 @@ export function createAssist(combat) {
      *  'analog' or 'keys'. Keys get their own law: tap = a small fixed nose step, hold = a rate ramping to the full
      *  turn, the opposite key right after = stop. */
     device: 'auto',
+    /** Touch stick only: true = drag UP raises the nose (point where you want to go); false = the simulator's stick
+     *  convention (drag down = stick back = nose up). Set from the combat settings. */
+    dragUpClimbs: false,
+    setDragUpClimbs(v) { assist.dragUpClimbs = !!v; },
     info: { mode: 'off', active: false, gunAssist: false, limiting: '', pullUp: false, autoThrottle: false, aimPoint: false, keys: false, touch: false, fightSpeed: 0, slow: false },
     /** The commanded nose direction, the flight path that gives it (world, unit) and the stick frame (right / up,
      *  world) — for HUD cues (e.g. a reticle where the nose is going). */
@@ -257,7 +261,7 @@ export function createAssist(combat) {
     if (touch) {
       const first = !st.coordTaken;
       if (first) { st.coordSaved = tch.autoCoord !== false; st.coordTaken = true; tch.autoCoord = false; }
-      const rx = clamp(raw.x || 0, -1, 1), ry = clamp(raw.y || 0, -1, 1) * T.touchPitch, rm = Math.hypot(rx, ry);
+      const rx = clamp(raw.x || 0, -1, 1), ry = clamp(raw.y || 0, -1, 1) * T.touchPitch * (assist.dragUpClimbs ? -1 : 1), rm = Math.hypot(rx, ry);
       // radial dead zone only: the expo is the assist's own (shapeRate with expoTouch)
       const k = rm > T.touchDead ? Math.min(1, (rm - T.touchDead) / (1 - T.touchDead)) / rm : 0;
       sx = rx * k; sy = ry * k;

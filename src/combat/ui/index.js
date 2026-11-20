@@ -78,6 +78,7 @@ export async function createCombatUi(combat) {
     flightMode: ['assist', 'off'].includes(store.getSetting('flightMode')) ? store.getSetting('flightMode') : null,   // null = by difficulty
     aimHelp: AIM_HELP.some(a => a.id === store.getSetting('aimHelp')) ? store.getSetting('aimHelp') : 'auto',
     vibration: store.getSetting('vibration', true) !== false,   // read by combat.input (haptics)
+    touchUp: store.getSetting('touchUp', false) === true,       // touch stick: drag up = nose up (assist only)
   };
   const flightMode = () => flightModeFor(settings.flightMode, combat.difficulty);
   /** Flight assist (COMBAT.md §15): mode + gun aim help, from the settings and the difficulty in effect. */
@@ -87,6 +88,7 @@ export async function createCombatUi(combat) {
       const m = flightMode(), v = aimHelpFor(settings.aimHelp, combat.difficulty);
       if (a.mode !== m) a.setMode?.(m);
       if (a.aimAssist !== v) a.setAimAssist?.(v);
+      a.setDragUpClimbs?.(settings.touchUp);
     } catch (e) { console.warn('[combat ui] assist settings', e); }
   }
   function applyAudio() {
@@ -197,6 +199,7 @@ export async function createCombatUi(combat) {
       h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Controls' })),
         h('div', { class: 'menu-group' }, segField('Flight controls', null, modeSeg), modeNote,
           segField('Gun aim help', 'Nudges your aim onto the target while you fire. Auto follows difficulty.', aimSeg),
+          swField('touchUp', 'Drag up to climb', 'Touch stick with Assisted controls: on = drag toward where the nose should go. Off = like a real stick (drag down to climb).'),
           swField('vibration', 'Vibration', 'Buzz while the gun fires, a thump when you are hit (phones, gamepads)'))),
       h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Sound' })),
         h('div', { class: 'menu-group' }, swField('musicOn', 'Music', 'Score under the fight, louder when it heats up'), rangeField('musicVolume', 'Music'),
@@ -413,7 +416,7 @@ export async function createCombatUi(combat) {
   function syncSettings() {
     setRadio(modeSeg, flightMode()); setRadio(aimSeg, settings.aimHelp); modeNote.textContent = modeText();
     syncControls(); syncFlyLine();
-    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFight', 'camGunZoom', 'vibration']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
+    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFight', 'camGunZoom', 'vibration', 'touchUp']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
     for (const [k, dep] of [['musicVolume', 'musicOn'], ['radioVolume', 'radioVoice'], ['sfxVolume', null], ['camFeel', null]]) {
       const r = ctlByKey[k], v = Math.round(settings[k] * 100);
       if (document.activeElement !== r) r.value = String(v);
