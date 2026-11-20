@@ -250,6 +250,7 @@ export function createOverlay(H) {
     const show = firing || tr < gunRange * 1.5;
     // boresight (gun cross) at the target's range (or 1000 m), projected so it is right in every camera
     const bd = isFinite(tr) ? clamp(tr, 300, 3000) : 1000;
+    H.boreD = bd;
     v1.copy(p.forward).multiplyScalar(bd).add(ps);
     let bx = NaN, by = NaN;
     if (proj(v1)) { bx = P.x; by = P.y; }
@@ -530,6 +531,60 @@ export function createOverlay(H) {
     }
   }
 
+  // ---- flight assist: "nose goes here" ------------------------------------------------------------------
+  const lim = { want: '', shown: '', t: 0, pull: 0 };
+  const LIMIT_TXT = { aoa: 'MAX TURN', g: 'G LIMIT', speed: 'TOO SLOW', over: 'OVERSPEED' };
+  function drawAssist(p) {
+    const A = H.combat.assist, info = A?.info;
+    if (!info?.active || !A.command) { lim.shown = ''; lim.want = ''; lim.pull = 0; return; }
+    const ps = p.state.position, cmd = A.command, D = H.boreD || 1000;
+    // debounced limit cue (0.3 s on and off); PULL UP comes on at once and holds 0.3 s after it clears
+    let want = info.limiting === 'ground' ? '' : info.limiting || '';
+    if (want === 'speed' && p.state.overspeed) want = 'over';
+    if (want !== lim.want) { lim.want = want; lim.t = 0; } else lim.t += H.rdt;
+    if (lim.t >= 0.3) lim.shown = lim.want;
+    lim.pull = info.pullUp || info.limiting === 'ground' ? 0.3 : Math.max(0, lim.pull - H.rdt);
+    const col = info.gunAssist ? H.C.fg : H.C.hud;
+    v1.copy(cmd).multiplyScalar(D).add(ps);
+    const mouse = !!A.aim?.active;          // the input module draws its own reticle at the pointer
+    const on = onScreen(v1, 0);
+    let rx = P.x, ry = P.y;
+    if (on) {
+      // lead line from the nose (gun cross) to the reticle when they are more than ~3° apart
+      const ang = Math.acos(clamp(cmd.dot(p.forward), -1, 1));
+      if (ang > 3 * DEG && H.boreX === H.boreX) {
+        const dx = rx - H.boreX, dy = ry - H.boreY, l = Math.hypot(dx, dy);
+        if (l > 22) {
+          g.strokeStyle = H.C.hud; g.globalAlpha = 0.55; g.lineWidth = 1; g.beginPath();
+          g.moveTo(H.boreX + dx / l * 11, H.boreY + dy / l * 11); g.lineTo(rx - dx / l * 10, ry - dy / l * 10); g.stroke(); g.globalAlpha = 1;
+        }
+      }
+      if (!mouse) {
+        g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(rx + 8, ry); g.arc(rx, ry, 8, 0, TAU); g.stroke();
+        g.fillStyle = col; g.fillRect(Math.round(rx) - 1.5, Math.round(ry) - 1.5, 3, 3);
+        if (info.gunAssist) {
+          g.lineWidth = 2; g.beginPath();
+          g.moveTo(rx, ry - 11); g.lineTo(rx, ry - 16); g.moveTo(rx, ry + 11); g.lineTo(rx, ry + 16);
+          g.moveTo(rx - 11, ry); g.lineTo(rx - 16, ry); g.moveTo(rx + 11, ry); g.lineTo(rx + 16, ry); g.stroke();
+          text('AIM', rx + 14, ry - 14, col, H.fontXS, 'left', 'alphabetic');
+        }
+      }
+    } else if (!mouse) {
+      edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax * 0.86, H.ay * 0.86, E);
+      rx = E.x - Math.cos(E.a) * 14; ry = E.y - Math.sin(E.a) * 14;
+      g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(rx + 7, ry); g.arc(rx, ry, 7, 0, TAU); g.stroke();
+      g.beginPath(); arrowHead(E.x + Math.cos(E.a) * 6, E.y + Math.sin(E.a) * 6, E.a, 12); g.fillStyle = col; g.fill();
+    }
+    if (lim.shown && !lim.pull) text(LIMIT_TXT[lim.shown] || '', rx, ry + 24, H.C.amber, H.fontXS, 'center', 'alphabetic');
+    if (lim.pull > 0) {
+      const on2 = flashOn(2.5), y = P.cy - H.cueOff * 0.55, w = H.fsWarn * 5.2, hh = H.fsWarn * 1.45;
+      g.fillStyle = 'rgba(80,0,0,0.6)'; g.fillRect(P.cx - w / 2, y - hh / 2, w, hh);
+      g.strokeStyle = H.C.red; g.lineWidth = 3; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+      text('PULL UP', P.cx, y + 1, on2 ? '#ffffff' : H.C.red, H.fontWarn, 'center');
+      g.beginPath(); arrowHead(P.cx, y - hh / 2 - 34, -Math.PI / 2, 26); g.fillStyle = H.C.red; g.fill();
+    }
+  }
+
   // ---- combat cameras ---------------------------------------------------------------------------------
   /** padlock: where my nose points (and which way is "up" for the jet), so I can fly while looking at the target */
   function drawNose(p) {
@@ -584,6 +639,7 @@ export function createOverlay(H) {
     drawTarget(p);
     if (!H.cine) drawMissile(p);
     if (H.camMode === 'padlock') drawNose(p);
+    if (!H.cine) drawAssist(p);
     drawHit();
     drawSplash();
     drawThreats(p);
