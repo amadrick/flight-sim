@@ -76,7 +76,9 @@ export async function createCameraRig(ctx) {
   }
 
   // ---------- shared shake / events state ----------
-  const S = { clk: 0, trauma: 0, gain: 1, joltY: 0, joltV: 0, joltP: 0, joltPV: 0 };
+  const S = { clk: 0, trauma: 0, gain: 1, joltY: 0, joltV: 0, joltP: 0, joltPV: 0, crashShake: 0 };
+  // crash camera (effects 'crash:fx'): hold on the impact / fireball, blast shake arriving at the speed of sound
+  const crashFocus = { valid: false, pos: new THREE.Vector3(), D: 0, k: 0 }, crashWaves = [];
   function shakeLevel() {
     const st = A.st; if (!st) return 0;
     const turb = ctx.weather?.turbulence || 0;
@@ -84,7 +86,7 @@ export async function createCameraRig(ctx) {
     if (st.stalled) a += 0.5; else if (st.stallWarning) a += 0.18;
     a += A.ab * 0.12;
     if (st.onGround) a += saturate((st.groundSpeed || A.speed) / 60) * 0.22;
-    a += S.trauma * S.trauma;
+    a += S.trauma * S.trauma + S.crashShake * S.crashShake;
     return clamp(a, 0, 1);
   }
   // writes small noise rotation into tq (Euler) and position noise into t5 (metres) for the current frame
@@ -225,13 +227,15 @@ export async function createCameraRig(ctx) {
       const hdg = hl > 0.05 ? Math.atan2(A.nose.x, -A.nose.z) : this.hdg;
       // near-vertical the heading is ill-defined: slow the follow rate to nothing so loops don't whip the view around
       this.hdg = this.fresh ? hdg : dampAngle(this.hdg, hdg, 2.5 * smoothstep(0.2, 0.7, hl), dt);
-      const dT = 2.3 * big * this.zoom * (this.crashed ? 2.2 : 1);
+      let dT = 2.3 * big * this.zoom * (this.crashed ? 2.2 : 1);
+      if (this.crashed && crashFocus.valid) { crashFocus.k = Math.min(1, crashFocus.k + dt * 0.5); dT = Math.max(dT, (crashFocus.D * 1.7 + 30) * this.zoom); }
       this.dist = this.fresh ? dT : damp(this.dist, dT, 4, dt);
       const th = this.hdg + this.az + Math.PI, ce = Math.cos(this.el);
       t1.set(Math.sin(th) * ce, Math.sin(this.el), -Math.cos(th) * ce).multiplyScalar(this.dist);
       t2.copy(A.pos); t2.y += 0.15 * H;
+      if (this.crashed && crashFocus.valid) { t3.copy(crashFocus.pos); t3.y += crashFocus.D * 0.35; t2.lerp(t3, smoothstep(0, 1, crashFocus.k) * 0.75); }
       out.pos.copy(t2).add(t1);
-      const sq = shakeApply(this.crashed ? 0 : shakeLevel() * 0.5, 0.006, 0.01, t5);
+      const sq = shakeApply(this.crashed ? S.crashShake : shakeLevel() * 0.5, 0.006, 0.01, t5);
       out.pos.add(t5);
       const gy = groundAt(out.pos.x, out.pos.z) + 2.0;
       if (out.pos.y < gy) out.pos.y = gy;
@@ -475,6 +479,8 @@ export async function createCameraRig(ctx) {
       S.clk += dt;
       S.gain = damp(S.gain, ctx.time?.paused ? 0 : 1, 6, dt);
       S.trauma = Math.max(0, S.trauma - dt * 0.9);
+      S.crashShake = Math.max(0, S.crashShake - dt * 0.45);
+      for (let i = crashWaves.length - 1; i >= 0; i--) if (S.clk >= crashWaves[i].at) { S.crashShake = Math.max(S.crashShake, crashWaves[i].amp); crashWaves.splice(i, 1); }
       // jolt springs (critically-ish damped, ~3 Hz)
       { const w = 19, c = 7; S.joltV += (-w * w * S.joltY - c * S.joltV) * dt; S.joltY += S.joltV * dt;
         S.joltPV += (-w * w * S.joltP - c * S.joltPV) * dt; S.joltP += S.joltPV * dt; }
@@ -542,8 +548,16 @@ export async function createCameraRig(ctx) {
     rig.setMode('orbit', { force: true, duration: 1.2 });
     orbit.crashed = true;
   });
+  events.on('crash:fx', (e) => {
+    if (!e?.worldPos) return;
+    const d = rig.worldPosition.distanceTo(e.worldPos);
+    const amp = clamp((0.35 + 0.18 * Math.log10(1 + (e.energy || 1))) * (e.fire ? 1 : 0.6) / (1 + d / 220), 0, 1);
+    crashWaves.push({ at: S.clk + d / 340, amp });
+    if (!e.synthetic && e.kind !== 'secondary') { crashFocus.valid = !!e.fire || e.kind === 'waterImpact'; crashFocus.pos.copy(e.worldPos); crashFocus.D = e.D || 0; crashFocus.k = 0; }
+  });
   events.on('session:start', () => {
     refresh(0);
+    crashFocus.valid = false; crashWaves.length = 0; S.crashShake = 0;
     A.accValid = false; A.acc.set(0, 0, 0); A.g = 1; A.ab = 0;
     S.joltY = S.joltV = S.joltP = S.joltPV = S.trauma = 0;
     orbit.crashed = false;

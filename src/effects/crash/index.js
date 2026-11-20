@@ -210,7 +210,7 @@ export function createCrashFx(ctx, deps) {
         if (o.fire) fireballs.spawn({ worldPos: gp, D: o.D, tStar: o.tStar, windDir, fw, ui, life: 150 });
         decals.add(gp, C.yaw, o.D * 0.42, o.D * 0.36, DECAL.SCORCH, 0.95);
         if (o.crater > 0) decals.add(gp, C.yaw + 0.4, o.crater, o.crater * 0.9, DECAL.CRATER, 1);
-        if (o.fire) addFire(v.copy(gp).addScaledVector(vh.normalize(), Math.min(o.slide, 30) * 0.5), scale * (big ? 1.3 : 1), big ? 75 : 55, true);
+        if (o.fire) { const dh = new THREE.Vector3(vel.x, 0, vel.z); if (dh.lengthSq() > 1e-6) dh.normalize(); addFire(dh.multiplyScalar(Math.min(o.slide, 30) * 0.5).add(gp), scale * (big ? 1.3 : 1), big ? 75 : 55, true); }
         break;
       }
       case 'airburst': {
@@ -341,7 +341,7 @@ export function createCrashFx(ctx, deps) {
     else { fireballs.clear(); debris.clear(); fires.length = 0; decals.clear(); }
   }
 
-  return {
+  const api = {
     get last() { return C?.o || null; },
     fireballs, decals, debris,
     onCrash(e, player) { return start(e || {}, player.state, player, null); },
@@ -375,4 +375,6 @@ export function createCrashFx(ctx, deps) {
     clear,
     dispose() { clear(); fireballs.dispose(); decals.dispose(); debris.dispose(); },
   };
+  if (ctx.params?.test && typeof window !== 'undefined') window.__crashfx = api;   // headless debugging hook
+  return api;
 }

@@ -65,6 +65,8 @@ void main() {
   // fade to zero at the box faces (the box is fitted to 99.6 % of the mass; keeps the sampled field compact)
   vec3 e = min(uvw, 1.0 - uvw);
   float edge = smoothstep(0.0, 0.08, min(min(e.x, e.z), 1.0 - uvw.y));
+  // the network's residual error is a faint haze everywhere (log-space RMSE ~0.05-0.1): cut it off
+  f = max(f - vec3(0.12, 0.08, 0.06), 0.0);
   outColor = vec4(f.x * edge, f.y * edge, f.z * edge, 1.0);
 }`,
   });
@@ -72,7 +74,7 @@ void main() {
 
   const lightU = {
     tFbField: { value: null }, uFbBox: bakeU.uFbBox, uFbLayer: bakeU.uFbLayer, uFbMirror: bakeU.uFbMirror,
-    uFbLightDir: { value: new THREE.Vector3(0, 0, 1) }, uFbExt: { value: 7 },
+    uFbLightDir: { value: new THREE.Vector3(0, 0, 1) }, uFbExt: { value: 6 },
   };
   const lightMat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, uniforms: lightU,
@@ -107,11 +109,11 @@ void main() {
       ...shared,
       tFbField: { value: fb.rtA.texture }, tFbLight: { value: fb.rtB.texture },
       uFbBox: { value: fb.box4 }, uFbToSim: { value: fb.toSim }, uFbFromSim: { value: fb.fromSim }, uFbTime: { value: 0 }, uFbAge: { value: 0 },
-      uFbD: { value: fb.D }, uFbExt: lightU.uFbExt, uFbTempK: { value: 0.78 }, uFbEmisK: { value: 6.0 },
+      uFbD: { value: fb.D }, uFbExt: lightU.uFbExt, uFbTempK: { value: 0.7 }, uFbEmisK: { value: 2.0 },
       uFbFade: { value: 1 }, uFbMirror: { value: fb.mirror ? 1 : 0 }, uFbSteps: { value: steps() },
       uFbCentre: { value: new THREE.Vector3() }, uFbLightSim: { value: new THREE.Vector3(0, 0, 1) },
       uFbSun: { value: new THREE.Vector3() }, uFbAmbUp: { value: new THREE.Vector3() }, uFbAmbDn: { value: new THREE.Vector3() },
-      uFbFirePos: { value: new THREE.Vector3() }, uFbFireColor: { value: new THREE.Vector3() }, uFbSeed: { value: Math.random() * 10 },
+      uFbFirePos: { value: new THREE.Vector3() }, uFbFireColor: { value: new THREE.Vector3() }, uFbSeed: { value: Math.random() * 10 }, uFbDbg: { value: +(raw.fbdbg || 0) },
     };
     const m = new THREE.ShaderMaterial({
       ...premulMaterialOpts(), side: THREE.BackSide, depthTest: false, uniforms: u,
@@ -124,7 +126,7 @@ uniform highp sampler3D tFbField; uniform highp sampler3D tFbLight;
 uniform vec4 uFbBox; uniform mat4 uFbToSim; uniform mat4 uFbFromSim; uniform float uFbTime; uniform float uFbAge; uniform float uFbD;
 uniform float uFbExt; uniform float uFbTempK; uniform float uFbEmisK; uniform float uFbFade; uniform float uFbMirror;
 uniform float uFbSteps; uniform vec3 uFbCentre; uniform vec3 uFbLightSim; uniform vec3 uFbSun; uniform vec3 uFbAmbUp;
-uniform vec3 uFbAmbDn; uniform vec3 uFbFirePos; uniform vec3 uFbFireColor; uniform float uFbSeed;
+uniform vec3 uFbAmbDn; uniform vec3 uFbFirePos; uniform vec3 uFbFireColor; uniform float uFbSeed; uniform float uFbDbg;
 vec2 boxHit(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax) {
   vec3 inv = 1.0 / rd, t0 = (bmin - ro) * inv, t1 = (bmax - ro) * inv;
   vec3 tn = min(t0, t1), tf = max(t0, t1);
@@ -147,7 +149,7 @@ void main() {
   if (dt > maxDt) { dt = maxDt; }
   float jit = fxHash12(gl_FragCoord.xy + fract(uFrame * 0.618) * 97.0);
   float T = 1.0;
-  vec3 lit = vec3(0.0), emis = vec3(0.0);
+  vec3 lit = vec3(0.0), emis = vec3(0.0), dbgS = vec3(0.0);
   float cosT = dot(rd, uFbLightSim);
   float phase = mix(fxHG(cosT, 0.55), fxHG(cosT, -0.2), 0.35) * 4.0 * FX_PI;
   float ageK = smoothstep(4.0, 40.0, uFbAge);
@@ -158,30 +160,40 @@ void main() {
     if (float(i) >= n || t > t1 || T < 0.01) break;
     vec3 p = ro + rd * t;
     vec3 q = p; if (uFbMirror > 0.5) q.z = abs(q.z);
-    vec3 uvw = vec3((q.x - uFbBox.x) / (uFbBox.y - uFbBox.x), abs(q.y) / uFbBox.z, q.z / uFbBox.w);
+    // domain warp (sub-grid billows): the learned field is sampled at a turbulently displaced point, which breaks
+    // the smooth envelope into lobes without moving mass far from where the network put it
+    vec4 w0 = fxNoise(q * 0.32 + vec3(uFbSeed * 1.3, uFbSeed, -uFbTime * 0.12));
+    vec3 qw = q + (w0.xyz - 0.5) * vec3(0.55, 0.55, 0.45);
+    qw.z = max(qw.z, 0.0);
+    vec3 uvw = vec3((qw.x - uFbBox.x) / (uFbBox.y - uFbBox.x), abs(qw.y) / uFbBox.z, qw.z / uFbBox.w);
     vec4 f = texture(tFbField, uvw);
     if (f.x + f.y > 0.004) {
       vec2 L = texture(tFbLight, uvw).xy;
       // sub-grid turbulence: two octaves of the shared noise, carried up with the gas and slowly churning
-      vec3 np = q * vec3(1.1, 1.1, 0.9) + vec3(uFbSeed, uFbSeed * 0.7, -uFbTime * rise);
-      vec4 n1 = fxNoise(np * 0.55);
-      vec4 n2 = fxNoise(np * 1.7 + n1.xyz * 0.6);
-      float turb = n1.w * 0.65 + n2.w * 0.35;
-      float dens = max(f.x * (0.35 + 1.3 * turb) - 0.03, 0.0);
+      vec3 np = q * vec3(1.0, 1.0, 0.85) + vec3(uFbSeed, uFbSeed * 0.7, -uFbTime * rise);
+      vec4 n1 = fxNoise(np * 0.45);
+      vec4 n2 = fxNoise(np * 1.6 + (n1.xyz - 0.5) * 0.9);
+      vec4 n3 = fxNoise(np * 4.1 + (n2.xyz - 0.5) * 0.5);
+      float turb = n1.w * 0.5 + n2.w * 0.33 + n3.w * 0.17;
+      float dens = max(f.x * (0.1 + 1.8 * turb * turb) - 0.05, 0.0);
       // temperature: hot cracks where the turbulence opens the soot shell
-      float theta = f.y * (0.82 + 0.36 * n2.x + 0.25 * (1.0 - turb));
-      float burn = f.z;
-      float sig = (dens + 0.6 * burn) * uFbExt;
+      float theta = f.y * (0.75 + 0.3 * smoothstep(0.35, 0.8, 1.0 - turb) + 0.1 * n3.x);
+      float burn = f.z * (0.5 + n2.x);
+      // young soot in the hot gas is optically thinner than the agglomerated smoke it becomes as it cools
+      float hotK = mix(0.3, 1.0, smoothstep(3.5, 1.0, theta));
+      float sig = (dens * hotK + 0.25 * burn) * uFbExt;
       float a = 1.0 - exp(-sig * dt);
       if (a > 1e-4) {
-        float TK = 300.0 * (1.0 + uFbTempK * theta);
-        vec3 E = fbBlackbody(TK) * uFbEmisK * (dens + 2.5 * burn) / max(dens + 0.6 * burn, 1e-3);
+        float TK = min(300.0 * (1.0 + uFbTempK * theta), 1650.0);
+        float TKf = max(TK, 1380.0 * smoothstep(0.2, 1.5, burn));
+        vec3 E = uFbEmisK * (fbBlackbody(TK) * dens * hotK + fbBlackbody(TKf) * 0.25 * burn * 2.0) / max(dens * hotK + 0.25 * burn, 1e-4);
         vec3 sun = uFbSun * L.x * phase / (4.0 * FX_PI);
         vec3 amb = mix(uFbAmbDn, uFbAmbUp, 0.35 + 0.65 * L.y) * (0.45 + 0.55 * L.y);
         vec3 pR = (uFbFromSim * vec4(p, 1.0)).xyz;
         vec3 dl = uFbFirePos - pR;
-        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.04 * uFbD * uFbD) * (0.3 + 0.7 * L.y);
+        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.08 * uFbD * uFbD) * (0.15 + 0.35 * L.y);
         lit += T * a * albedo * (sun + amb + fire / FX_PI);
+        dbgS += T * a * vec3(sun.g, amb.g, fire.g / FX_PI);
         emis += T * a * E;
         T *= 1.0 - a;
       }
@@ -195,6 +207,11 @@ void main() {
   vec3 e = emis * uFbFade * uFxExposure;
   float le = dot(e, vec3(0.2126, 0.7152, 0.0722));
   e *= 1.0 / (1.0 + pow(max(le, 0.0) / 60.0, 0.75));
+  if (uFbDbg > 4.5) { vec3 st = step(vec3(1.0), dbgS) * 0.5 + step(vec3(10.0), dbgS) * 0.5; outColor = vec4(st * 0.2, 1.0); return; }
+  if (uFbDbg > 3.5) { float l = dot(lit, vec3(0.33)); bool bad = isnan(l) || isinf(l); vec3 fs = uFbFireColor / (0.04 * uFbD * uFbD + 1e-6); outColor = vec4(bad ? 1.0 : 0.0, clamp(log(1.0 + l) / 4.0, 0.0, 1.0), clamp(log(1.0 + fs.x) / 8.0, 0.0, 1.0), 1.0); return; }
+  if (uFbDbg > 2.5) { outColor = vec4(lit, alpha); return; }
+  if (uFbDbg > 1.5) { outColor = vec4(e / uFxExposure, 0.0); return; }
+  if (uFbDbg > 0.5) { outColor = vec4(vec3(alpha) * 0.3, alpha); return; }
   outColor = fxFinish(lit * uFbFade, alpha, e / uFxExposure, uFbCentre);
 }`,
     });
@@ -224,7 +241,7 @@ void main() {
   }
 
   const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _c = [0, 0, 0], _ev = {};
-  const keyDir = new THREE.Vector3();
+  const keyDir = new THREE.Vector3(), _lsim = new THREE.Vector3();
 
   function bake(fb, tSim) {
     const r = ctx.renderer;
@@ -239,19 +256,25 @@ void main() {
     for (let k = 0; k < NZB; k++) { bakeU.uFbLayer.value = k; r.setRenderTarget(fb.rtB, k); r.render(lightPass.scene, bakeCam); }
     r.setRenderTarget(prevRT, prevFace, prevMip);
     fb.bakedT = tSim;
-    // CPU probe of the same network: emitted power and its centroid (drives the fx point light)
-    let P = 0, cx = 0, cy = 0, cz = 0, cr = 0, cg = 0, cb = 0;
+    // CPU probe of the same network (4 x 2 x 4 points): hottest gas temperature, burning and the emission centroid,
+    // which drive the fx point light (smooth in time; the emitted power itself is too spiky to sample this coarsely)
+    let th = [0, 0, 0, 0], burn = 0, cx = 0, cz = 0, cw = 0;
     const b = fb.box, N = 4;
     for (let i = 0; i < N; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < N; k++) {
       const x = b.x0 + (b.x1 - b.x0) * (i + 0.5) / N, y = b.y1 * (j + 0.5) / 2 * 0.6, z = b.z1 * (k + 0.5) / N * 0.8;
       fireballEval(net, x, y, z, tEval, fb.fw, fb.ui, _ev);
-      blackbody(300 * (1 + fb.mat.uniforms.uFbTempK.value * _ev.theta), _c);
-      const w = (Math.min(_ev.soot, 2) + 2.5 * _ev.burn) * (_c[1] + 0.3 * _c[0]);
-      P += w; cx += w * x; cy += w * y; cz += w * z; cr += w * _c[0]; cg += w * _c[1]; cb += w * _c[2];
+      if (_ev.theta > th[3]) { th[3] = _ev.theta; th.sort((p, q) => q - p); }
+      burn += _ev.burn;
+      const w = _ev.theta * _ev.theta * (Math.min(_ev.soot, 2) + _ev.burn);
+      cx += w * x; cz += w * z; cw += w;
     }
-    const vol = (b.x1 - b.x0) * b.y1 * 2 * b.z1 / (N * N * 2);
-    fb.power = P * vol;
-    if (P > 1e-9) { fb.centroid.set(cx / P, 0, cz / P); const mx = Math.max(cr, cg, cb); fb.color = [cr / mx, cg / mx, cb / mx]; }
+    const thm = (th[0] + th[1] + th[2] + th[3]) / 4;
+    const TK = 300 * (1 + fb.mat.uniforms.uFbTempK.value * thm);
+    blackbody(TK, _c);
+    const lum = 0.2126 * _c[0] + 0.7152 * _c[1] + 0.0722 * _c[2];
+    fb.power = clamp(lum / 1.42, 0, 3) + clamp(burn / (N * N * 2) * 4, 0, 1);
+    if (cw > 1e-9) fb.centroid.set(cx / cw, 0, Math.max(0.15, cz / cw));
+    const mx = Math.max(_c[0], _c[1], _c[2], 1e-9); fb.color = [_c[0] / mx, Math.max(0.25, _c[1] / mx), Math.max(0.05, _c[2] / mx)];
   }
   const bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
@@ -264,7 +287,8 @@ void main() {
     // box mesh: unit cube -> sim box -> render
     const b = fb.box4, zmin = fb.mirror ? -b.w : 0;
     _m.makeScale(b.y - b.x, 2 * b.z, b.w - zmin).setPosition((b.x + b.y) / 2, 0, (b.w + zmin) / 2);
-    fb.mesh.matrixWorld.multiplyMatrices(fb.fromSim, _m);
+    fb.mesh.matrix.multiplyMatrices(fb.fromSim, _m);
+    fb.mesh.matrixWorldNeedsUpdate = true;
     fb.mat.uniforms.uFbCentre.value.set((b.x + b.y) / 2, 0, (b.w + zmin) * 0.35).applyMatrix4(fb.fromSim);
   }
 
@@ -282,7 +306,7 @@ void main() {
       u.uFbD.value = fb.D; u.uFbMirror.value = fb.mirror ? 1 : 0; u.uFbSeed.value = Math.random() * 10;
       if (raw.fbtemp) u.uFbTempK.value = +raw.fbtemp;
       if (raw.fbemis) u.uFbEmisK.value = +raw.fbemis;
-      fb.mesh.visible = true;
+      fb.mesh.visible = raw.fboff !== '1';
       sys.updateOne(fb, 0, true);
       return fb;
     },
@@ -298,10 +322,10 @@ void main() {
       keyDir.copy(ctx.pipeline?.lighting?.keyDir || ctx.env.sunDir || _v2.set(0, 1, 0));
       if (keyDir.y < 0.02) keyDir.y = 0.02;
       keyDir.normalize();
-      const lsim = _v.set(keyDir.x * fb.dir.x + keyDir.z * fb.dir.z, keyDir.x * fb.dir.z - keyDir.z * fb.dir.x, keyDir.y);
+      const lsim = _lsim.set(keyDir.x * fb.dir.x + keyDir.z * fb.dir.z, keyDir.x * fb.dir.z - keyDir.z * fb.dir.x, keyDir.y);
       // re-bake when the time moved enough (log time) or the light moved
       const tl = Math.log1p(tSim / 0.25), tlB = Math.log1p(Math.max(fb.bakedT, 0) / 0.25);
-      const need = force || fb.bakedT < 0 || Math.abs(tl - tlB) > (raw.fbbake ? +raw.fbbake : 0.02) || lsim.distanceTo(fb.lightDirBaked) > 0.05;
+      const need = force || fb.bakedT < 0 || Math.abs(tl - tlB) > (raw.fbbake ? +raw.fbbake : ctx.params?.test ? 0.05 : 0.02) || lsim.distanceTo(fb.lightDirBaked) > 0.05;
       if (need && (tSim <= FIREBALL_T_END + 0.5 || fb.bakedT < FIREBALL_T_END)) { fb.lightDirBaked.copy(lsim); bake(fb, tSim); }
       placeMatrices(fb);
       const u = fb.mat.uniforms;
@@ -320,7 +344,7 @@ void main() {
       u.uFbFireColor.value.set(fb.color[0] * fl, fb.color[1] * fl, fb.color[2] * fl);
     },
     /** radiant intensity scale of the fire light (contract units: irradiance = I / d^2) */
-    lightPower(fb) { return fb.power * fb.D * fb.D * 6 * fb.fade; },
+    lightPower(fb) { return fb.power * fb.D * fb.D * 0.5 * fb.fade; },
     update(dt) { for (const fb of pool) if (fb.active) sys.updateOne(fb, dt); },
     /** brightest active fireball for the fx light: { pos (render), color, intensity, distance } or null */
     light(out) {
@@ -333,6 +357,24 @@ void main() {
       return out;
     },
     active() { return pool.some((f) => f.active); },
+    /** debug: read back slice `layer` of a fireball's field (or light) volume -> Float32Array RGBA NXB x NYB */
+    debugRead(i = 0, layer = 10, light = false) {
+      const fb = pool[i], r = ctx.renderer;
+      if (!sys._dbg) {
+        sys._dbgRT = new THREE.WebGLRenderTarget(NXB, NYB, { type: THREE.FloatType, depthBuffer: false });
+        sys._dbgU = { tV: { value: null }, uW: { value: 0 } };
+        sys._dbg = new FullscreenPass(new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, uniforms: sys._dbgU, vertexShader: FULLSCREEN_VERT,
+          fragmentShader: 'precision highp float; precision highp sampler3D; in vec2 vUv; out vec4 o; uniform sampler3D tV; uniform float uW; void main() { o = texture(tV, vec3(gl_FragCoord.xy / vec2(' + NXB + '.0, ' + NYB + '.0), uW)); }' }));
+      }
+      sys._dbgU.tV.value = light ? fb.rtB.texture : fb.rtA.texture; sys._dbgU.uW.value = (layer + 0.5) / NZB;
+      const prev = r.getRenderTarget();
+      sys._dbg.render(r, sys._dbgRT);
+      const out = new Float32Array(NXB * NYB * 4);
+      r.readRenderTargetPixels(sys._dbgRT, 0, 0, NXB, NYB, out);
+      r.setRenderTarget(prev);
+      let mx = [0, 0, 0, 0]; for (let k = 0; k < out.length; k++) mx[k & 3] = Math.max(mx[k & 3], out[k]);
+      return { max: mx, box: { ...fb.box }, age: fb.age, active: fb.active, visible: fb.mesh.visible, bakedT: fb.bakedT, power: fb.power, matrix: Array.from(fb.mesh.matrix.elements).map((v) => +v.toFixed(2)) };
+    },
     clear() { for (const fb of pool) { fb.active = false; fb.mesh.visible = false; } },
     /** compile the programs and run one bake at boot so the first crash does not stall */
     warm() {
