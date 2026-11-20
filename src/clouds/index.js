@@ -552,7 +552,7 @@ export async function createClouds(ctx) {
     // share of the erosion the light march sees (clNubL)
     U.uClNub.value.set(dbg('clNub', 1), dbg('clNubP', 0.6), dbg('clNubE', 1.4), dbg('clNubT', 1.6));
     U.uClNub2.value.set(dbg('clNubS', 0.45), dbg('clNubW', 1.0), dbg('clNubB', 3), dbg('clNubF', 0.6));
-    U.uClNub3.value.set(dbg('clNubL', 0.8), dbg('clNubWP', 3), dbg('clNubCb', 0), 0);
+    U.uClNub3.value.set(dbg('clNubL', 0.8), dbg('clNubWP', 3), dbg('clNubCb', 0), dbg('clNubCbB', 0));
     U.uClBub3.value.set(dbg('clSkin', 0.3), dbg('clLobe', 1), dbg('clAnvL', 1), dbg('clLobeSh', 1));
     // cost (round six): rays stop at transmittance clTmin (round five 0.004), far-field light from the shadow map alone beyond
     // clFarL m low-res pixels (0 = off; `low` quality from 25 m), learned-MS taps without the bubble octave (clMsBub=1 keeps it), bubble octaves 2 / 3 / 4 at low / medium / high (clBubN)

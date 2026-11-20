@@ -87,6 +87,32 @@ weak silver lining; dark speckle dots along the far horizon. Shots `scratchpad r
   jitter along the light slope; it now gets the same +-k texel jitter as the near path. The second erosion octave fades
   while its cells still span 2-4 footprints (sparkle on thin edges).
 
+* Storm: profile erosion on Cb towers drew a waffle pattern (off, `clNubCb` 0); the r6b cascade on the towers cost 56 loop
+  iterations / 470 fetches per ray against round five's 45 / 298 and printed dark "camouflage" lumps. Default now
+  `clNubCbB` 0: Cb towers get the round-five detail (45.4 iterations / 332 fetches; no horizontal bands as on main).
+* Airborne spawn: with the stronger clustering no clear-air candidate was found within 9 km (spawned beside a cloud);
+  pass 1 now searches 700 candidates (~12 km): `scattered` chase spawn shift 9.4 km, clear air.
+
+### Results (shots/r6c-*.png, left main = round five, right round six c; harness 640x360, 20 frames)
+
+| view | verdict |
+| --- | --- |
+| `r6c-near-1500` (1500 m, scattered) | main: smooth white pillars with vertical curtains. r6c: cauliflower turrets, flat dark bases, frayed fringes; one smooth border cliff on a shoulder, one smoky grey dissolving cloud. Better. |
+| `r6c-chase` (full sim, f16, scattered tod 13) | main: smooth puffs and a pillar. r6c: textured cumulus in clear air. Better. |
+| `r6c-field-6km` | main: dense cotton balls, dark horizon dots. r6c: varied sizes, groups and gaps, cauliflower tops, clean horizon; still mostly single clouds, cover lower than main (r6 design). Better, not yet "real". |
+| `r6c-horizon` | main: dark / blue speckle along the horizon. r6c: clean. Fixed. |
+| `r6c-backlit` | main: tan walls with vertical curtains. r6c: dark bodies with bright sun-side rims around the sun, but smoky/ragged, floating fragments, one distant pillar with horizontal bands (shadow-map bake steps through a thin slanted column). Marginally better. |
+| `r6c-storm` | main: banded tower walls. r6c: no bands, rougher grain. About equal. |
+
+Temporal (harness 480x270, 120 m/s + 2 deg/s, frames 30 / 31, `shots/r6c-temporal.png`): mean |difference| main 1.88,
+r6c 2.11 (8-bit); speckles (> 25 above the 5x5 median of the difference) main 539, r6c 485.
+
+Cost (quality high, harness tour tiles 960x540, 10 frames per view, `shots/r6c-cost-*.log`): loop iterations main -> r6c
+36.9 -> 35.3 (1500 m), 24.1 -> 26.7 (6 km), 45.0 -> 45.4 (storm, `clNubCbB` 0), 56.4 -> 46.0 (2200 m); texture fetches per
+ray (main column = this build with every round-six switch off) 478 -> 375, 184 -> 192, 298 -> 332, 609 -> 425. Wall time
+could not be compared: the machine was shared by other agents' shots during the whole session and the same build measured
+5.4 s and 10.2 s per frame in two runs; the per-ray counts are the cost measure.
+
 | switch | default | meaning (0 / off = round six b) |
 | --- | --- | --- |
 | `clNub` | 1 | profile erosion on the big bubble octaves |
@@ -99,6 +125,7 @@ weak silver lining; dark speckle dots along the far horizon. Shots `scratchpad r
 | `clNubWP` | 3 | profile depth factor where wispy |
 | `clNubL` | 0.8 | share of the erosion the light march sees |
 | `clNubCb` | 0 | profile erosion on Cb towers too (1 drew a waffle pattern on the storm towers) |
+| `clNubCbB` | 0 | bubble octaves on Cb towers (0 = round-five detail; r6b: the cascade) |
 | `clClampC` | 1 | one factor for colour and opacity in the history clamp (horizon speckle) |
 | `clSatl`, `clClu`, `clFill` | 0, 1.2, 0.55 | satellite thermals, clustering, disk fill of the cell field (r6: 0, 0.7, 0.55) |
 

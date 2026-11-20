@@ -108,7 +108,8 @@ uniform vec4 uClNub;       // round six c: x = 1: profile erosion (big bubbles +
 uniform vec4 uClNub2;      // round six c: x = sharpening exponent of growing tops, y = of flanks / bases / dissolving cells,
                            //   z = bubble octaves kept, w = wispy share on the flanks
 uniform vec4 uClNub3;      // round six c: x = share of the erosion the light march sees (its offset; the MS taps see none), y = profile depth
-                           //   factor where wispy, z = 1: also on Cb towers, w = reserved
+                           //   factor where wispy, z = 1: also on Cb towers, w = bubble
+                           //   octaves of Cb towers without it (frame cost of the storm)
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
 // side outputs of clShape for the detail pass (globals: GLSL ES 3 functions may write them)
 float clDecay = 0.0;       // 0 = growing / mature cell (crisp edges) .. 1 = decaying fragment (soft, frayed)
@@ -319,7 +320,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   // towers (layer path of convective weather) get it too, with tower-size turrets
   // (Cb towers: turret cells of ~200-400 m and a softer cascade; with tower-size bubbles the self-shadowing printed
   //  500 m dark ovals on the towers, camouflage rather than cauliflower)
-  clBubK = isCell ? 1.0 - decay : 0.7 * uClShape2.z * smoothstep(0.25, 0.6, dev) * (1.0 - uClShape.w);
+  clBubK = isCell ? 1.0 - decay : (uClNub.x > 0.0 && uClNub3.w <= 0.0 ? 0.0 : 0.7 * uClShape2.z * smoothstep(0.25, 0.6, dev) * (1.0 - uClShape.w));   // (clNubCbB=0: round-five detail on Cb towers)
   if (!isCell && clBubK > 0.0) { clRadius = mix(1000.0, 1800.0, dev); clThermal = mix(500.0, 900.0, dev); }
   clNubW = isCell ? 1.0 : uClNub3.z * step(0.001, clBubK);         // (Cb towers: clNubCb)
   // inside the anvil slab the threshold only depends on the distance from the core; the ice cloud thins out
@@ -382,7 +383,7 @@ float clBubbles(vec3 pa, float fp, out float cav) {
     // one tile = 5 bubble cells = 64 voxels: the octave fades out once its bubbles are under ~3 footprints
     float lodk = log2(max(fp, 0.5) * 1e-3 * 12.8 / lam);
     float wk = clSat((3.0 - lodk) / 1.5);
-    if (wk <= 0.0 || float(k) >= uClCost.w || float(k) >= (uClNub.x > 0.0 ? uClNub2.z : 4.0)) break;
+    if (wk <= 0.0 || float(k) >= uClCost.w || float(k) >= (uClNub.x > 0.0 ? (clNubW > 0.0 ? uClNub2.z : uClNub3.w) : 4.0)) break;
     // rotated per octave (hides the lattice), warped by the parent (no regular packing of the sub-bubbles)
     vec3 r = k == 0 ? pk : k == 1 ? vec3(0.80 * pk.x - 0.60 * pk.z, pk.y, 0.60 * pk.x + 0.80 * pk.z)
            : k == 2 ? vec3(pk.x, 0.80 * pk.y + 0.60 * pk.z, -0.60 * pk.y + 0.80 * pk.z) : vec3(0.6 * pk.x + 0.8 * pk.y, -0.8 * pk.x + 0.6 * pk.y, pk.z);
