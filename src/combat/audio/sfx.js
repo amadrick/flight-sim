@@ -80,12 +80,24 @@ export function gunVoice(ac, pool, dest, t, o = {}) {
   };
 }
 /** Report of the trigger release: a short low "boom" decay so the burst ends with weight (one-shot). */
-export function gunTail(ac, pool, dest, t, s = 1, heavy = false) {
+/**
+ * Gun release tail: the report rumble, plus the mechanism running down — a metallic clunk as the feed stops and a
+ * ratchet of clicks slowing from half the rate of fire to a stop as the barrels coast.
+ */
+export function gunTail(ac, pool, dest, t, s = 1, heavy = false, rof = 100) {
   if (!pool.take()) return 0;
   const b = nsrc(ac, 'brown', t), f = BQ(ac, 'lowpass', heavy ? 260 : 340, 0.7), g = G(ac, 0);
   b.connect(f); f.connect(g); g.connect(dest);
   env(g.gain, t, 0.5 * s, 0.01, heavy ? 0.9 : 0.6);
-  finish(pool, [b], [f, g], t + 1.0);
+  const k = nsrc(ac, 'white', t), kf = BQ(ac, 'bandpass', heavy ? 700 : 950, 7), kg = G(ac, 0);
+  k.connect(kf); kf.connect(kg); kg.connect(dest); env(kg.gain, t + 0.015, 1.4 * s, 0.001, 0.06);
+  const run = heavy ? 1.1 : 0.8;
+  const r = OSC(ac, 'square', rof * 0.5), rh = BQ(ac, 'highpass', 1600, 0.7), rb = BQ(ac, 'bandpass', heavy ? 2200 : 2900, 2.5), rg = G(ac, 0);
+  r.frequency.setValueAtTime(rof * 0.5, t); r.frequency.exponentialRampToValueAtTime(7, t + run);
+  r.connect(rh); rh.connect(rb); rb.connect(rg); rg.connect(dest);
+  rg.gain.setValueAtTime(0.0001, t); rg.gain.linearRampToValueAtTime(0.5 * s, t + 0.02); rg.gain.exponentialRampToValueAtTime(0.0001, t + run);
+  r.start(t);
+  finish(pool, [b, k, r], [f, g, kf, kg, rh, rb, rg], t + Math.max(1.0, run));
   return 1;
 }
 
