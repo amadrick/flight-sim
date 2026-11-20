@@ -44,6 +44,10 @@ export const CAMPAIGN = [
         [8, 'awacs', 'Halyard 1, Cathedral. Two unknowns, bearing zero two five from Haven, twenty-five miles, descending. No squawk, no flight plan, no manners.'],
         [22, 'awacs', 'Halyard 2 is airborne and will join on you.'],
       ]);
+      if (!s.combat.headless) {
+        s.say('tower', 'Halyard 1, quick reminder from the tower: 0 is full afterburner, pull back gently at about one fifty knots, G brings the gear up.', { priority: 1, delay: 4, key: 'hint-takeoff' });
+        s.after(30, () => { const p = s.player; if (p && p.state.position.y - s.ground(p.state.position.x, p.state.position.z) < 20) s.say('tower', 'Halyard 1, you\'re still on our runway. Throttle up: 0 for burner, R for a little more.', { priority: 1 }); });
+      }
       s.after(24, () => { wing.spawn(); s.say(wing.leader, 'Halyard 2, joining. Nice morning to be woken up.', { priority: 0 }); });
       let hostile = false;
       const turn = () => {
@@ -69,6 +73,7 @@ export const CAMPAIGN = [
           unknowns.mark('', 'target');
           s.steer(null);
           s.say('awacs', 'Cinder 1 is diving for the field! Don\'t let it reach Haven!', { priority: 2, delay: 3 });
+          s.say('awacs', 'Weapons check, {cs}: Tab picks a target, Enter fires a missile, Space the gun, V for flares.', { priority: 0, delay: 9, key: 'hint-keys' });
           s.after(s.n(40, 30, 0), () => { const e = unknowns.members[0]; if (e?.alive && e.pilot) { e.pilot.passive = false; e.pilot.setOrder(s.orders.engage()); } });
         });
         s.after(s.n(70, 45, 30), () => more.spawn());
