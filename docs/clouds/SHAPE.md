@@ -41,6 +41,12 @@ can be compared side by side; all round-four and round-five switches still work.
   striations on lit faces. Default now 0 (off). With it off, `clBubL=0.3` (largest bubble 0.3 x the cell radius, was
   0.45) and `clBub=1.1` (was 0.85) the close turret reads as opaque cauliflower: many bulges of several sizes, each shaded
   across, creases in the gaps (c4/diag14.png, middle). New defaults.
+* Full-sim chase, fair (the lead's command, default weather): unchanged composition, ~12 % cover, small cumulus, spawn in
+  clear air (shots/r6b-after-chase.png). With `weather=scattered&tod=13` (the r6 critique shot) the central tower is now
+  opaque cauliflower, but the grey walls at the frame edges stayed: they are neighbouring clouds that the GPU cascade
+  makes bigger than the CPU mirror the spawn guard tests. New: an airborne start inside the layer also needs no cloud
+  within `clSpawnClear` (1800 m) of the aircraft at its level (12 directions x 3 radii x 3 heights); falls back to the
+  sun-path test alone if no candidate within ~9 km has both. Scattered: shift 8.0 km, clear air, no walls.
 
 ## 0. Round six: cauliflower, field variety, cost
 

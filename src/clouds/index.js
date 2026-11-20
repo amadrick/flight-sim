@@ -351,7 +351,21 @@ export async function createClouds(ctx) {
     spawnPos0.copy(pos); spawnTime = ctx.time.now;
     const ox0 = windOffset.x, oz0 = windOffset.y;
     const look = dbg('clSpawnAhead', 90), r1 = 500 * marginK, r2 = 800 * marginK;
+    // round six b: an airborne start inside the layer also needs clear air AROUND the aircraft (otherwise the chase
+    // camera opens on grey cloud walls a few tens of metres away): no cloud within ~0.9 km at the player's level
+    let clearR = dbg('clSpawnClear', 1800);
+    const inLayer = pos.y > Pt.base - 150 && pos.y < Pt.top + 150;
+    const crowded = (ox, oz) => {
+      if (!inLayer || clearR <= 0) return false;
+      for (const rr of [0.35, 0.7, 1]) for (let k = 0; k < 12; k++) for (const dy of [-120, 0, 120]) {
+        const a = k * Math.PI / 6;
+        spawnP.set(pos.x + Math.cos(a) * rr * clearR, pos.y + dy, pos.z + Math.sin(a) * rr * clearR);
+        if (densityAtP(spawnP, Pt, ox, oz, ctx.time.now) > 0) return true;
+      }
+      return false;
+    };
     const shaded = (ox, oz) => {
+      if (crowded(ox, oz)) return true;
       // (the CPU density has no detail erosion and only approximates the turrets: fine vertical steps and two rings
       //  of margin keep the eroded GPU cloud off the sun path too)
       for (let ta = 0; ta <= look; ta += 30) {
@@ -369,7 +383,8 @@ export async function createClouds(ctx) {
       }
       return false;
     };
-    for (let i = 0; i < 400; i++) {
+    // (a second pass without the clear-air ring when no candidate within ~9 km has both)
+    for (let pass = 0; pass < 2; pass++, clearR = 0) for (let i = 0; i < 400; i++) {
       // sunflower spiral: candidates in order of distance
       const r = 450 * Math.sqrt(i), a = i * 2.39996;
       const ox = ox0 + r * Math.cos(a), oz = oz0 + r * Math.sin(a);
@@ -377,7 +392,7 @@ export async function createClouds(ctx) {
         windOffset.set(ox, oz);
         wxDirty = true; shadowValid = false; historyValid = false;
         spawnVerify = { player, marginK, tries: spawnVerify?.tries ?? 0 };
-        spawnInfo = { shift: r, candidates: i + 1, marginK };
+        spawnInfo = { shift: r, candidates: i + 1, marginK, clearAir: clearR > 0 };
         return true;
       }
     }
