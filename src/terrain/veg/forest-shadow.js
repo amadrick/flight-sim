@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { vegVertexCommon, VEG_SM_COVER_GLSL } from './common.js';
 import { SPECIES } from './species.js';
 
-const NX = 4, NY = 3;          // grid vertices across / along the sun
+const NX = 3, NY = 3;          // grid vertices across / along the sun (8 triangles: follows the ground over a crown length)
 
 export function createForestShadows(ctx, { L, G, U, info }) {
   const pos = [], idx = [];
