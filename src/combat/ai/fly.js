@@ -210,7 +210,8 @@ export function createFlightController(e, prof) {
       const aLim = Math.min(fc.alphaLimit, p.fbw ? p.alphaFcs : fc.alphaLimit);
       const sm = e.sim?.debug?.aero?.stallMargin;              // rad to the angle of maximum lift (flight model)
       const aCap = sm != null && sm < 1 ? Math.min(aLim, s.aoa + sm - 0.05) : aLim;
-      if (s.aoa > 0.03 && nz > 0) {
+      // AoA cap (only near the limit: during the G onset the AoA leads the load factor, and the ratio would cut the pull)
+      if (s.aoa > Math.max(0.03, aCap * 0.8) && nz > 0) {
         const nzA = Math.max(s.gLoad, 0.3) * (aCap / s.aoa);
         if (nzA < nz) nz = Math.max(nzA, Math.min(nz, 0.6));
       }
