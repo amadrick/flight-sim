@@ -18,19 +18,23 @@ export const MUSIC_SCENARIOS_EXTRA = {
   async 'sfx-gun'(H) {
     const { A } = H;
     const gun = async (label, o) => one(H, `gun ${label}: 1.5 s burst + release`, 3, (ac, d, pool, st) => {
-      const v = gunVoice(ac, pool, d, 0.2, o); st.tick = (t) => { if (t >= 1.7 && !st.s) { st.s = true; v.stop(1.7); if (!o.far) gunTail(ac, pool, d, 1.72, 1, o.heavy); } };
+      const v = gunVoice(ac, pool, d, 0.2, o); st.tick = (t) => { if (t >= 1.7 && !st.s) { st.s = true; v.stop(1.7); if (!o.far) gunTail(ac, pool, d, 1.72, 1, o.heavy, o.rof); } };
     }, (x) => ({ centroid: Math.round(A.centroid(x, 0.7, 1.6)), low200: +A.bandFrac(x, 0.7, 1.6, 20, 200).toFixed(3), hi2k: +A.bandFrac(x, 0.7, 1.6, 2000, 12000).toFixed(3), fund: Math.round(A.peakFreq(x, 0.7, 1.6, 30, 400)) }));
     const m61 = await gun('M61 20mm (rof 100)', { rof: 100 }), gau8 = await gun('GAU-8 30mm (rof 65, heavy)', { rof: 65, heavy: true, level: 0.9 });
+    const gau22 = await gun('GAU-22 25mm (rof 55)', { rof: 55, level: 1.05 });
     const far = await gun('M61 heard at 1.5 km', { rof: 100, far: true, cutoff: 2000, level: 0.9 / (1 + 1500 / 180) * 1.4 });
     const g = (o) => ({ c: A.centroid(o.x, 0.7, 1.6), lo: A.bandFrac(o.x, 0.7, 1.6, 20, 200), hi: A.bandFrac(o.x, 0.7, 1.6, 2000, 12000), f: A.peakFreq(o.x, 0.7, 1.6, 30, 400), rms: A.rms(o.x, 0.7, 1.6) });
-    const a = g(m61), b = g(gau8), c = g(far);
+    const a = g(m61), b = g(gau8), c = g(far), m = g(gau22);
+    const clicks = A.bandFrac(m61.x, 1.8, 2.4, 1500, 4500), clicksBurst = A.bandFrac(m61.x, 0.7, 1.6, 1500, 4500);
     const ad = A.attackDecay(m61.x, 0.15, 0.6, 0.005);
     const tail = A.rms(m61.x, 1.8, 2.2), fire = a.rms;
     H.results.sfx.gun = { m61: { rmsDb: +A.db(a.rms).toFixed(1), centroid: Math.round(a.c), below200: +a.lo.toFixed(3), above2k: +a.hi.toFixed(3), fundamentalHz: Math.round(a.f), attackMs: Math.round(ad.attack * 1000), tailDb: +A.db(tail).toFixed(1) },
-      gau8: { rmsDb: +A.db(b.rms).toFixed(1), centroid: Math.round(b.c), below200: +b.lo.toFixed(3), fundamentalHz: Math.round(b.f) }, far1500m: { rmsDb: +A.db(c.rms).toFixed(1), centroid: Math.round(c.c) } };
+      gau8: { rmsDb: +A.db(b.rms).toFixed(1), centroid: Math.round(b.c), below200: +b.lo.toFixed(3), fundamentalHz: Math.round(b.f) }, gau22: { rmsDb: +A.db(m.rms).toFixed(1), centroid: Math.round(m.c), fundamentalHz: Math.round(m.f) }, tailMechanism1k5_4k5Share: +clicks.toFixed(3), far1500m: { rmsDb: +A.db(c.rms).toFixed(1), centroid: Math.round(c.c) } };
     H.check('M61: buzz fundamental at the rate of fire (100 Hz)', Math.abs(a.f - 100) < 8, `${Math.round(a.f)} Hz`);
     H.check('M61: punch below 200 Hz and bite above 2 kHz', a.lo > 0.2 && a.hi > 0.05, `<200: ${a.lo.toFixed(2)}, >2k: ${a.hi.toFixed(2)}`);
     H.check('GAU-8: heavier — lower fundamental (65 Hz) and centroid than the M61', Math.abs(b.f - 65) < 8 && b.c < a.c, `${Math.round(b.f)} Hz, centroid ${Math.round(b.c)} vs ${Math.round(a.c)}`);
+    H.check('GAU-22: its own rate (55 Hz buzz), between the M61 and the GAU-8', Math.abs(m.f - 55) < 6, `${Math.round(m.f)} Hz`);
+    H.check('gun tail: mechanism clicks (1.5-4.5 kHz share in the tail above the burst share)', clicks > clicksBurst, `${clicks.toFixed(3)} vs ${clicksBurst.toFixed(3)}`);
     H.check('gun: fast attack (< 60 ms)', ad.attack < 0.06, `${Math.round(ad.attack * 1000)} ms`);
     H.check('gun: audible spin-down tail after release, below the burst', tail > fire * 0.01 && tail < fire * 0.5, `tail ${A.db(tail).toFixed(1)} vs burst ${A.db(fire).toFixed(1)} dB`);
     H.check('distant gun: duller and much quieter', c.c < a.c && c.rms < a.rms * 0.25, `centroid ${Math.round(c.c)}, ${A.db(c.rms).toFixed(1)} dB`);
@@ -98,6 +102,7 @@ export const MUSIC_SCENARIOS_EXTRA = {
     H.check('radar search: pulsed (~5 per second)', Math.abs(bursts(rds, 0.1, 2.1) - 10) <= 2, `${bursts(rds, 0.1, 2.1)} pulses in 2 s`);
     H.check('launch warning: repeating bursts, alternating two pitches', bursts(lw, 0, 3) >= 4 && Math.abs(A.peakFreq(lw, 0.1, 2.9, 500, 2500) - 1360) < 40 || Math.abs(A.peakFreq(lw, 0.1, 2.9, 500, 2500) - 960) < 40, `${bursts(lw, 0, 3)} bursts, peak ${Math.round(A.peakFreq(lw, 0.1, 2.9, 500, 2500))} Hz`);
     H.check('launch warning stops when the threat is gone', A.db(A.rms(off, 1.3, 3)) < -70, `${A.db(A.rms(off, 1.3, 3)).toFixed(1)} dB`);
+    H.check('RWR and missile-launch warning are distinct (pitch band and rhythm)', A.peakFreq(rw, 0.1, 2.9, 500, 5000) > 1.5 * A.peakFreq(lw, 0.1, 2.9, 500, 5000) && bursts(rw, 0, 3) !== bursts(lw, 0, 3), `RWR ${Math.round(A.peakFreq(rw, 0.1, 2.9, 500, 5000))} Hz / ${bursts(rw, 0, 3)} groups vs launch ${Math.round(A.peakFreq(lw, 0.1, 2.9, 500, 5000))} Hz / ${bursts(lw, 0, 3)} bursts`);
     H.check('RWR: ~1 chirp group per second, high', bursts(rw, 0, 3) >= 2 && bursts(rw, 0, 3) <= 12 && A.peakFreq(rw, 0.1, 2.9, 500, 5000) > 2000, `${bursts(rw, 0, 3)} groups, ${Math.round(A.peakFreq(rw, 0.1, 2.9, 500, 5000))} Hz`);
     H.check('fire bell: low bell distinct from tones', A.peakFreq(fw, 0.1, 3.3, 200, 3000) < 500, `${Math.round(A.peakFreq(fw, 0.1, 3.3, 200, 3000))} Hz`);
     H.check('no-lock blip: low and short', A.peakFreq(nl, 0.1, 0.4, 100, 2000) < 400, `${Math.round(A.peakFreq(nl, 0.1, 0.4, 100, 2000))} Hz`);
@@ -128,8 +133,9 @@ export const MUSIC_SCENARIOS_EXTRA = {
     const gunEng = await lvl({ s: (ac, M) => ({ rig: createRig(ac, M.flightIn, F16, {}), g: gunVoice(ac, createPool(), M.flightIn, 2, { rof: 100 }) }), t: (t, o) => o.rig.update({ dt: 1 / 30, st, mix: 0, L: { dist: 25, front: -0.9, pan: 0, dop: 1 }, now: t, rough: 0.3, turbulence: 0 }) }, 2.3, 3.5, 3.6);
     const warn = await lvl({ s: (ac, M) => { const g = ac.createGain(); g.gain.value = MIX.warnings * MIX.warnExterior; g.connect(M.flightIn); return { w: createWarnings(ac, g) }; }, t: (t, o) => o.w.update(t, { launch: true }) }, 0.2, 2.8, 3);
     const lock = await lvl({ s: (ac, M) => { const g = ac.createGain(); g.gain.value = MIX.warnings * MIX.warnExterior; g.connect(M.flightIn); const w = createWarnings(ac, g); w.setSeeker('ir-lock', 0.05); } }, 0.3, 1.5, 1.6);
-    const mus = await lvl({ s: (ac, M) => { const m = H.createMusic(ac, M.master, { cue: 'sweep' }); m.setVolume(0.8 * MIX.music); return { m }; }, t: (t, o) => o.m.update(t, 'fight') }, 2, 14, 14);
-    const musCalm = await lvl({ s: (ac, M) => { const m = H.createMusic(ac, M.master, { cue: 'sweep' }); m.setVolume(0.8 * MIX.music); return { m }; }, t: (t, o) => o.m.update(t, 'calm') }, 2, 12, 12);
+    const stems = await H.stemsFor('sweep');
+    const mus = await lvl({ s: (ac, M) => { const m = H.createMusic(ac, M.master, { cue: 'sweep', stems }); m.setVolume(0.8 * MIX.music); return { m }; }, t: (t, o) => o.m.update(t, 'hero') }, 8, 20, 20);
+    const musCalm = await lvl({ s: (ac, M) => { const m = H.createMusic(ac, M.master, { cue: 'sweep', stems }); m.setVolume(0.8 * MIX.music); return { m }; }, t: (t, o) => o.m.update(t, 'calm') }, 2, 12, 12);
     const d = (v) => +A.db(v).toFixed(1);
     H.results.sfx.mix = { engineMilChaseDb: d(eng), gunDb: d(gun), gunOverEngineDb: d(gunEng), engineBand1k5_6kDb: d(bOff), withGunBand1k5_6kDb: d(bOn), launchWarnDb: d(warn), irLockToneDb: d(lock), musicFightDb: d(mus), musicCalmDb: d(musCalm) };
     H.check('mix: gun clearly above the music (>= 5 dB RMS; its peaks far more)', A.db(gun) - A.db(mus) >= 5, `${d(gun)} vs ${d(mus)} dB`);

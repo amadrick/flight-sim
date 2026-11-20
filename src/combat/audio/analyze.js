@@ -72,3 +72,37 @@ export function beatPeriod(x, t0, t1, lo = 0.25, hi = 1.2, sr = SR, cutoff = 150
   for (let lag = Math.floor(lo / 0.005); lag <= Math.floor(hi / 0.005); lag++) { let s = 0, c = 0; for (let i = 0; i + lag < env.length; i++) { s += env[i] * env[i + lag]; c++; } s /= Math.max(1, c); if (s > best) { best = s; bl = lag; } }
   return bl * 0.005;
 }
+/** Biquad (RBJ / BS.1770 form) applied in place to a copy. */
+function biquad(x, b0, b1, b2, a1, a2) {
+  const y = new Float32Array(x.length); let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) { const v = x[i], o = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = v; y2 = y1; y1 = o; y[i] = o; }
+  return y;
+}
+/** K-weighting (ITU-R BS.1770-4) for any sample rate: high-shelf pre-filter + RLB high-pass. */
+function kWeight(x, sr) {
+  let f0 = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196;
+  let K = Math.tan(Math.PI * f0 / sr), Vh = Math.pow(10, G / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+  let a0 = 1 + K / Q + K * K;
+  const y = biquad(x, (Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
+  f0 = 38.13547087602444; Q = 0.5003270373238773; K = Math.tan(Math.PI * f0 / sr); a0 = 1 + K / Q + K * K;
+  return biquad(y, 1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
+}
+/** Integrated loudness (LUFS, BS.1770 gating: 400 ms blocks, 75 % overlap, -70 LUFS absolute and -10 LU relative gates). */
+export function lufs(buf, t0 = 0, t1 = Infinity, sr = SR) {
+  const chans = []; for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) { const d = buf.getChannelData(c), [a, b] = seg(d, t0, t1, sr); chans.push(kWeight(d.subarray(a, b), sr)); }
+  const n = chans[0].length, B = Math.floor(0.4 * sr), hop = Math.floor(0.1 * sr), blocks = [];
+  for (let s = 0; s + B <= n; s += hop) { let z = 0; for (const ch of chans) { let e = 0; for (let i = s; i < s + B; i++) e += ch[i] * ch[i]; z += e / B; } blocks.push(z); }
+  const L = (z) => -0.691 + 10 * Math.log10(Math.max(z, 1e-12));
+  let g = blocks.filter((z) => L(z) > -70); if (!g.length) return -70;
+  const rel = L(g.reduce((a, b) => a + b, 0) / g.length) - 10;
+  g = g.filter((z) => L(z) > rel);
+  return L(g.reduce((a, b) => a + b, 0) / g.length);
+}
+/** energy fraction above f0 in a short window centred on t (click / discontinuity detector for band-limited stems) */
+export function hfEnergy(x, t, f0 = 17000, sr = SR, N = 1024) {
+  const s = Math.max(0, Math.floor(t * sr - N / 2)); if (s + N > x.length) return 0;
+  const re = new Float64Array(N), im = new Float64Array(N);
+  for (let k = 0; k < N; k++) re[k] = x[s + k] * (0.5 - 0.5 * Math.cos(2 * Math.PI * k / N));
+  fft(re, im); let hi = 0; for (let k = Math.ceil(f0 / (sr / N)); k < N / 2; k++) hi += re[k] * re[k] + im[k] * im[k];
+  return hi / N;
+}
