@@ -507,6 +507,29 @@ export const CSS = /* css */`
   .menu-keyrow { min-height: 44px; }
   .menu-device-touch { display: block; }
 }
+/* dual-screen devices spanned across a hinge (viewport segments): nothing sits on or across the hinge.
+   Side by side: aircraft on the left screen, flight setup + Fly on the right, tabs on the right screen, docked panels
+   kept to one screen. Stacked: the sheet and docked panels stay on the bottom screen. Unsupported browsers ignore this. */
+@media (horizontal-viewport-segments: 2) {
+  .menu-root { --hinge-l: env(viewport-segment-right 0 0, 50vw); --hinge-r: env(viewport-segment-left 1 0, 50vw); --seg1-w: env(viewport-segment-width 1 0, 50vw); }
+  .menu-top { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .menu-tabs { grid-column: 3; justify-self: end; }
+  .menu-status { display: none; }
+  .menu-main { display: grid !important; grid-template-columns: calc(var(--hinge-l) - var(--gl) - 16px) calc(var(--hinge-r) - var(--hinge-l) + 32px) minmax(0, 1fr) !important; column-gap: 0 !important; }
+  .menu-main .menu-sheet { display: contents !important; }
+  .menu-main .menu-panel-ac { grid-column: 1 !important; grid-row: 1 / 3 !important; }
+  .menu-main .menu-panel-plan { grid-column: 3 !important; grid-row: 1 !important; }
+  .menu-main .menu-flybar { grid-column: 3 !important; grid-row: 2 !important; }
+  .menu-main .menu-hero, .menu-grab { display: none !important; }
+  .menu-dock > .menu-panel { max-width: calc(var(--seg1-w) - var(--gr) - 16px); }
+  .menu-dock-c, .menu-dock-wide { justify-content: flex-end; }
+  .menu-dock-l > .menu-panel { max-width: calc(var(--hinge-l) - var(--gl) - 16px); }
+  .menu-crash.menu-crash { left: calc(var(--hinge-r) + var(--seg1-w) / 2); width: min(440px, calc(var(--seg1-w) - 32px)); }
+}
+@media (vertical-viewport-segments: 2) {
+  .menu-root .menu-sheet, .menu-root .menu-dock > .menu-panel { max-height: calc(env(viewport-segment-height 0 1, 50vh) - 8px) !important; }
+  .menu-crash.menu-crash { bottom: auto; top: calc(env(viewport-segment-top 0 1, 50vh) + 24px); }
+}
 @media (prefers-reduced-motion: reduce) {
   .menu-root *, .menu-crash, .menu-corner, .menu-corner * { animation: none !important; transition: none !important; }
 }

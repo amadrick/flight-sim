@@ -4,6 +4,7 @@
 import { clamp, approach, shapeAxis, shapeStick, stepKeyAxis, stepThrottle, snapDetent, milLever, AB_DETENT } from './logic.js';
 import { KEY_TABLE, CODE_MAP, BINDINGS, GAMEPAD_BINDINGS } from './bindings.js';
 import { createTouchControls } from './touch.js';
+import { viewportHinge } from './segments.js';
 
 const CSS = `
 .inp-yoke{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none!important;z-index:5}
@@ -78,6 +79,7 @@ export async function createInput(ctx) {
     if (open && !(row.kind === 'cmd' && row.always)) return;       // menu owns every other key
     e.preventDefault();
     setMode('keyboard');
+    if (row.kind !== 'cmd' || !row.always) handsOnKeys();
     if (row.kind === 'axis' || row.kind === 'hold' || row.id === 'throttleUp' || row.id === 'throttleDown') held.add(e.code);
     if (e.repeat) return;
     switch (row.kind) {
@@ -223,7 +225,7 @@ export async function createInput(ctx) {
       if (press(7)) fire('cameraNext');
       if (press(11)) fire('menu', true);
     }
-    if (activity) setMode('gamepad');
+    if (activity) { setMode('gamepad'); handsOnKeys(); }
   }
 
   // ---- touch (touch.js: layout, stick, throttle, rudder, buttons, extra-button slots) ----------------------------
@@ -252,6 +254,8 @@ export async function createInput(ctx) {
       };
     },
     removeButton(id) { return touchUI ? touchUI.api.removeButton(id) : false; },
+    /** Gap between two viewport segments (dual-screen spanned) in CSS px, or null. Works without the touch UI too. */
+    get hinge() { return viewportHinge(ctx.uiRoot.clientWidth || window.innerWidth, ctx.uiRoot.clientHeight || window.innerHeight); },
     showHints(sec) { if (touchUI) touchUI.api.showHints(sec); },
   };
   function buildTouch() {
@@ -269,6 +273,11 @@ export async function createInput(ctx) {
     if (!on_ && touchUI) { touchUI.setShown(false); touchVisible = false; }
   }
   setTouch(raw.touch === '1' || (coarse && raw.touch !== '0'));
+  // Hybrid devices (touch screen + keyboard / gamepad): the touch controls appear on the first touch anywhere and step
+  // aside when flight keys or a gamepad are used; the next touch brings them back. ?touch=1 / ?touch=0 pin them.
+  const touchPinned = raw.touch === '1' || raw.touch === '0';
+  on(window, 'pointerdown', (e) => { if (e.pointerType === 'touch' && !touchPinned && !input.touchEnabled) setTouch(true); }, { capture: true });
+  function handsOnKeys() { if (input.touchEnabled && !touchPinned && !menuOpen()) setTouch(false); }
 
   // ---- session -----------------------------------------------------------------------------------------------
   unsubs.push(ctx.events.on('session:start', () => {

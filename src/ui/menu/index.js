@@ -553,6 +553,7 @@ export async function createMenu(ctx) {
     tabBar.hidden = flight;
     for (const [k, t] of Object.entries(tabs)) { if ((k === 'hangar' ? 'main' : k) === v) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); }
     if (v === 'pause') syncPause();
+    if (v === 'controls') renderKeys();   // touch rows come and go with ctx.input.touchEnabled (hybrid devices)
     if (v !== 'main') setAptOpen(false);
     // panels grow out of the control that opened them: tabs (top centre) or the corner Menu button (top right)
     if (v === 'pause') views[v].style.setProperty('--origin', 'top right');

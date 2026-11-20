@@ -5,6 +5,7 @@
 // Pointer events with pointer capture; every control tracks its own pointerId, so stick + throttle + a button work at once.
 import { clamp, shapeAxis, shapeStick, snapDetent, AB_DETENT } from './logic.js';
 import { touchLayout, BUTTON_IDS, MAX_EXTRA } from './layout.js';
+import { viewportHinge } from './segments.js';
 
 const CSS = `
 .inp-touch{position:absolute;inset:0;pointer-events:none!important;touch-action:none;z-index:6;font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);color:var(--fg,#f2f6fa);
@@ -192,11 +193,11 @@ export function createTouchControls(ctx, h) {
   let layoutKey = '';
   function relayout(force) {
     const W = ctx.uiRoot.clientWidth || window.innerWidth, H = ctx.uiRoot.clientHeight || window.innerHeight;
-    const ins = insets();
-    const key = [W, H, ins.t, ins.r, ins.b, ins.l, extras.length].join(',');
+    const ins = insets(), hg = viewportHinge(W, H);
+    const key = [W, H, ins.t, ins.r, ins.b, ins.l, extras.length, hg ? [hg.x, hg.y, hg.w, hg.h].join(':') : ''].join(',');
     if (!force && key === layoutKey) return;
     layoutKey = key;
-    L = touchLayout(W, H, ins, { extra: extras.length });
+    L = touchLayout(W, H, ins, { extra: extras.length, hinge: hg });
     place(zone, L.zone); place(thr, L.thr); place(rud, L.rud);
     for (const id of BUTTON_IDS) place(buttons.get(id).el, L.btn[id]);
     place(buttons.get('cam').el, L.cam); place(buttons.get('menu').el, L.menu);
@@ -219,6 +220,9 @@ export function createTouchControls(ctx, h) {
   window.addEventListener('resize', onResize);
   try { window.visualViewport?.addEventListener('resize', onResize); } catch {}
   const unResize = ctx.events.on('resize', onResize);
+  // spanning / unspanning a dual-screen device can change the segments without a resize
+  const segMQ = [];
+  try { for (const q of ['(horizontal-viewport-segments: 2)', '(vertical-viewport-segments: 2)']) { const m = matchMedia(q); m.addEventListener?.('change', onResize); segMQ.push(m); } } catch {}
 
   // ---- page guards while the touch UI is up: no pinch zoom, double-tap zoom, long-press callouts or text selection ----
   const prevent = (e) => { if (shown) e.preventDefault(); };
@@ -268,7 +272,7 @@ export function createTouchControls(ctx, h) {
   }
 
   // ---- per-frame UI ----
-  let lastThr = -1, lastAB = null;
+  let lastThr = -1, lastAB = null, tick = 0;
   function setOn(id, on, sub) {
     const b = buttons.get(id); if (!b) return;
     if (b.on !== on) { b.on = on; b.el.classList.toggle('on', !!on); b.el.setAttribute('aria-pressed', String(!!on)); }
@@ -277,7 +281,7 @@ export function createTouchControls(ctx, h) {
   function update(dt) {
     if (coachT > 0) { coachT -= dt; if (coachT <= 0) el.classList.remove('coach'); }   // runs while hidden too
     if (!shown) return;
-    relayout();
+    if ((++tick % 10) === 0) relayout();     // insets / segments can change without a resize event; resizes relayout at once
     const t = c.throttle, ab = h.hasAB();
     if (t !== lastThr || ab !== lastAB) {
       lastThr = t;
@@ -350,6 +354,7 @@ export function createTouchControls(ctx, h) {
     get shown() { return shown; },
     dispose() {
       window.removeEventListener('resize', onResize);
+      for (const m of segMQ) { try { m.removeEventListener?.('change', onResize); } catch {} }
       try { window.visualViewport?.removeEventListener('resize', onResize); } catch {}
       try { unResize && unResize(); } catch {}
       document.removeEventListener('gesturestart', prevent);

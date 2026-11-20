@@ -34,6 +34,13 @@ const D = {
   pixel7: [devices['Pixel 7'], devices['Pixel 7'].viewport, devices['Pixel 7 landscape'].viewport],
   small: [{ ...devices['Pixel 7'] }, { width: 360, height: 640 }, { width: 640, height: 360 }],
   ipad: [devices['iPad Mini'], devices['iPad Mini'].viewport, devices['iPad Mini landscape'].viewport],
+  // generic touch devices by size (no name-specific code in the sim: these just exercise the layout)
+  duo: [{ ...devices['Pixel 7'] }, { width: 540, height: 720 }, { width: 720, height: 540 }],
+  duospan: [{ ...devices['Pixel 7'] }, { width: 720, height: 1114 }, { width: 1114, height: 720 },
+    { portrait: { orientation: 'horizontal', offset: 540, maskLength: 34 }, landscape: { orientation: 'vertical', offset: 540, maskLength: 34 } }],
+  large: [{ ...devices['Pixel 7'] }, { width: 430, height: 932 }, { width: 932, height: 430 }],
+  fold: [{ ...devices['Pixel 7'] }, { width: 884, height: 1104 }, { width: 1104, height: 884 }],
+  tab: [{ ...devices['Pixel 7'] }, { width: 800, height: 1280 }, { width: 1280, height: 800 }],
   desktop: [{ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false }, null, { width: 1280, height: 720 }],
 };
 const devList = flag('devices', 'iphone14,pixel7,small,ipad,desktop').split(',');
@@ -89,12 +96,27 @@ const AUDIT = () => {
     const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
     if (ox > 2 && oy > 2) out.push('overlap: ' + name(regs[i]) + ' × ' + name(regs[j]));
   }
+  // dual-screen: nothing visible may sit on or straddle the hinge
+  const segs = window.viewport && window.viewport.segments;
+  if (segs && segs.length === 2) {
+    const a = segs[0], b = segs[1];
+    const hg = Math.abs(a.y - b.y) < 1 ? { l: a.x + a.width, r: b.x, t: 0, b: vh } : { l: 0, r: vw, t: a.y + a.height, b: b.y };
+    const els = [...document.querySelectorAll('#ui button, .inp-region, .menu-panel, .menu-flybar, .menu-cap, .menu-sheet, .hud-plate, .hud-toast.on, .menu-crash, .hud-crash, .hud-paused, .inp-tip, .inp-ring')].filter(vis);
+    for (const el of els) {
+      if (el.closest('.menu-scroll, .menu-aclist') && el.tagName === 'BUTTON') continue;
+      if (el.parentElement && el.parentElement.closest('.menu-sheet')) continue;     // clipped by the sheet, which is checked itself
+      const r = el.getBoundingClientRect();
+      if (r.left < hg.r && r.right > hg.l && r.top < hg.b && r.bottom > hg.t) out.push('on the hinge: ' + name(el) + ` [${r.left | 0},${r.top | 0},${r.width | 0}x${r.height | 0}]`);
+    }
+  }
   if (document.scrollingElement.scrollHeight > vh + 1 || document.scrollingElement.scrollWidth > vw + 1) out.push('page scrolls');
   return out;
 };
 
+let foldCdp = null;     // set while a hinge is emulated: Playwright's own screenshot re-applies its device metrics (drops the fold)
 async function shoot(page, file, label) {
-  await page.screenshot({ path: file, timeout: 240000 });
+  if (foldCdp) writeFileSync(file, Buffer.from((await foldCdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  else await page.screenshot({ path: file, timeout: 240000 });
   const issues = await page.evaluate(AUDIT);
   console.log('shot', file.replace(root + '/', ''), issues.length ? '\n   ' + issues.slice(0, 30).join('\n   ') : '');
   for (const s of issues) problems.push(label + ': ' + s);
@@ -174,6 +196,14 @@ async function touchTest() {
     check('page did not scroll or zoom', sc.sx === 0 && sc.sy === 0 && sc.vv === 1, sc);
     await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test.png`) });
     await page.evaluate(() => window.__sim.ctx.input.touch.removeButton('fire'));
+    // hybrid device (touch screen + keyboard): flight keys hide the touch UI, the next touch brings it back
+    await page.keyboard.down('ArrowLeft'); await step(2); await page.keyboard.up('ArrowLeft'); await step(2);
+    const k = await page.evaluate(() => ({ on: window.__sim.ctx.input.touchEnabled, vis: window.__sim.ctx.input.touch.visible }));
+    check('a flight key hides the touch controls', !k.on && !k.vis, k);
+    await down(6, L.home.x, L.home.y); await step(2);
+    const t2 = await page.evaluate(() => ({ on: window.__sim.ctx.input.touchEnabled, vis: window.__sim.ctx.input.touch.visible }));
+    check('the next touch shows them again', t2.on && t2.vis, t2);
+    await upAll(); await step(1);
   }
   if (errors.length) { failed = true; console.log('CONSOLE ERRORS:', errors.slice(0, 10).join('\n  ')); }
   console.log(`touch test: ${results.filter(r => r[1]).length}/${results.length} passed`);
@@ -183,7 +213,7 @@ async function touchTest() {
 try {
   if (has('touch-test')) { await touchTest(); devList.length = 0; }
   for (const dn of devList) {
-    const [desc, pv, lv] = D[dn] || [];
+    const [desc, pv, lv, folds] = D[dn] || [];
     if (!desc) { console.log('unknown device', dn); continue; }
     const orients = [];
     if (pv && orient !== 'landscape') orients.push(['portrait', pv]);
@@ -206,9 +236,15 @@ try {
     const step = (n) => page.evaluate((n) => window.__sim.step(n, 1 / 30), n);
     const ev = (fn, a) => page.evaluate(fn, a);
     for (const [on, vp] of orients) {
+      if (foldCdp) { await foldCdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {}); foldCdp = null; }
       await page.setViewportSize(vp);
+      if (folds && folds[on]) {
+        // a hinge between two screens: Chromium emulates it as a display feature → viewport segments (CSS + JS)
+        const cdp = foldCdp = await bctx.newCDPSession(page);
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: vp.width, height: vp.height, deviceScaleFactor: 1, mobile: true, displayFeature: folds[on] });
+      }
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));   // let 'resize' fire first
-      await step(2);
+      await step(folds && folds[on] ? 31 : 2);     // the HUD polls the segments every 30 frames
       const f = (s) => resolve(root, 'shots', `${prefix}${dn}-${on}-${s}.png`);
       const L = (s) => `${dn}-${on}-${s}`;
       mkdirSync(resolve(root, 'shots'), { recursive: true });
@@ -251,7 +287,7 @@ try {
       }
     }
     if (errors.length) { failed = true; console.log(dn, 'CONSOLE ERRORS:', errors.slice(0, 10).map(e => e.slice(0, 400)).join('\n  ')); }
-    await bctx.close();
+    foldCdp = null; await bctx.close();
   }
 } catch (e) { failed = true; console.log('mobile-shots failure:', e.stack || e.message); }
 finally { await browser.close(); release(); }

@@ -37,6 +37,9 @@ const CSS = `
 .hud-plate[hidden]{display:none}
 @media (max-width:520px),(pointer:coarse){.hud-toast{font-size:12px;height:34px}.hud-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.hud-toast,.hud-hint{transition:none}}
+@media (horizontal-viewport-segments:2){.hud-root .hud-paused,.hud-root .hud-crash{left:calc(env(viewport-segment-left 1 0) + env(viewport-segment-width 1 0) / 2)}
+  .hud-root .hud-crash{width:min(500px,calc(env(viewport-segment-width 1 0) - 32px))}.hud-root .hud-hint{width:min(300px,calc(env(viewport-segment-width 0 0) - 32px))}}
+@media (vertical-viewport-segments:2){.hud-root .hud-paused,.hud-root .hud-crash{top:calc(env(viewport-segment-height 0 0) / 2)}}
 `;
 
 const HINT = [
@@ -186,10 +189,17 @@ export function createNotices(ctx) {
   return {
     toast,
     /** Touch layout: start the toast stack below the HUD region (px from the top), or null for the default spot. */
-    setToastTop(px) {
-      px = px == null ? null : Math.round(px);
-      if (px === toastTop) return;
-      toastTop = px; toasts.style.top = px == null ? '' : px + 'px';
+    setToastTop(px, x, w) {
+      const k = px == null ? null : Math.round(px) + ',' + Math.round(x ?? -1) + ',' + Math.round(w ?? -1);
+      if (k === toastTop) return;
+      toastTop = k;
+      toasts.style.top = px == null ? '' : Math.round(px) + 'px';
+      // touch layout: centre the stack over the HUD region (keeps it on one screen of a dual-screen device)
+      const box = px != null && x != null && w != null;
+      toasts.style.left = box ? Math.round(x) + 'px' : '';
+      toasts.style.right = box ? 'auto' : '';
+      toasts.style.width = box ? Math.round(w) + 'px' : '';
+      toasts.style.padding = box ? '0' : '';
     },
     onSession,
     toggleHint,

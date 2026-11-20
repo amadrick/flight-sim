@@ -72,3 +72,6 @@ Measured in headless Chrome (software raster, so an upper bound): fighter HUD �
 ≈ 0.4 ms at 1920×1080, external strip ≈ 0.07 ms. Static parts (panel, bezels, strip labels) are cached in offscreen canvases and
 rebuilt only on resize / font load; numbers come from memoised string caches (no per-frame string building). The glow is a CSS
 `drop-shadow` filter on the overlay canvas (GPU-composited, zero main-thread cost).
+- Dual-screen devices spanned across a vertical hinge (viewport segments) without touch: the strip docks on the left screen;
+  the conformal fighter HUD would sit on the hinge (the camera centre), so it falls back to the strip. Toasts, the paused tag,
+  the crash card and the hint card stay on one screen (CSS `horizontal-/vertical-viewport-segments` + `env(viewport-segment-*)`).

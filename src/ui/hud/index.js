@@ -110,6 +110,8 @@ export async function createHud(ctx) {
   const camPos = { x: 0, y: 0, z: 0 };
   const E = { box: null, clear: null, s: null, def: null, p: null, ctx, proj, nav, tok, t: 0, W, H, dpr, camPos: null, hudColor: tok.hud, realDt: 0 };
   let t = 0;
+  let hingeTick = 0, hingeCache = null;
+  const hingeBox = { x: 0, y: 0, w: 0, h: 0 }, hingeClear = { x: 0, y: 0, w: 0, h: 0 };
 
   const hud = {
     get destination() { return nav.dest; },
@@ -147,6 +149,16 @@ export async function createHud(ctx) {
       const tl = ctx.input?.touch?.layout || null;
       E.box = tl && tl.hud && tl.hud.w > 120 && tl.hud.h > 60 ? tl.hud : null;
       E.clear = tl ? tl.clear : null;
+      if (!tl) {
+        // keyboard / gamepad on a dual-screen device spanned side by side: keep the strip on the left screen (top) and
+        // the conformal HUD off the hinge (it falls back to the strip when centred on it)
+        if ((hingeTick++ % 30) === 0) hingeCache = ctx.input?.touch?.hinge || null;
+        const hg = hingeCache;
+        if (hg && hg.w >= 2 && hg.h > H * 0.5) {
+          E.box = hingeBox; hingeBox.x = 16; hingeBox.y = 12; hingeBox.w = hg.x - 32; hingeBox.h = Math.round(Math.min(220, H * 0.4));
+          E.clear = hingeClear; hingeClear.x = hg.x + hg.w + 16; hingeClear.y = 12; hingeClear.w = W - hingeClear.x - 16; hingeClear.h = H - 24;
+        }
+      }
       let below = null;
       if (interior && p.def.hudType !== 'airliner') {
         const night = num(ctx.env?.nightFactor, 0);
@@ -169,7 +181,7 @@ export async function createHud(ctx) {
         syncPlate(true);
         const r = ext.rect; if (E.box && r) below = r.y + r.h + 40;   // room for the warning chip under the strip
       }
-      notices.setToastTop(below);
+      notices.setToastTop(below, E.box ? E.box.x : null, E.box ? E.box.w : null);
     },
   };
   return hud;

@@ -9,7 +9,9 @@
 ## Touch (phones, tablets)
 Files: `touch.js` (DOM, pointer handling), `layout.js` (pure layout, tested in `layout.test.js`).
 
-- Auto-enables on `(pointer: coarse)`; `?touch=1` forces it, `?touch=0` disables it. Hidden while the menu is open and in the hangar showcase.
+- Auto-enables on `(pointer: coarse)`; `?touch=1` forces it, `?touch=0` disables it. Hidden while the menu is open, in the hangar showcase and after a crash.
+- Hybrid devices (touch screen + keyboard / gamepad): the first touch (`pointerType: 'touch'`) shows the touch controls; a flight
+  key or gamepad input hides them again (not while the menu is open; `?touch=0/1` pins the choice).
 - Every flight-time element owns a rectangle computed by `touchLayout(W, H, safeAreaInsets, { extra })`; nothing overlaps
   at any size from 320×568 to 1366×1024 (unit-tested, with and without notch insets, with 0–4 extra buttons).
 
@@ -26,8 +28,14 @@ Files: `touch.js` (DOM, pointer handling), `layout.js` (pure layout, tested in `
 - Safe areas: insets read from `env(safe-area-inset-*)` (a probe element); every target is ≥ 44 px; `viewport-fit=cover`,
   `maximum-scale=1, user-scalable=no` are added to the viewport meta if missing; while the touch UI is up, pinch
   (`gesturestart`, two-finger `touchmove`), double-tap zoom, long-press callouts and text selection are suppressed.
+- Dual-screen / foldable devices spanned across a hinge: `segments.js` reads the gap from `window.viewport.segments`, else
+  `env(viewport-segment-*)`; `touchLayout(…, { hinge })` keeps every control, the HUD box and `clear` off the hinge
+  (side-by-side screens: HUD box + throttle + buttons + rudder on the left screen, stick zone on the right; stacked screens:
+  controls on the bottom screen, HUD on the top one). Zero-width folds (one continuous panel) are ignored. The layout also
+  relayouts when the `(horizontal|vertical)-viewport-segments: 2` media queries change. Nothing is keyed to device names:
+  only viewport size, aspect, `(pointer: coarse)`, safe-area insets and segments.
 - Pointer events with pointer capture; each control tracks its own `pointerId`, so stick + throttle + a button work together.
-- Coach marks (amber tips at the stick and throttle) for the first three flights (`localStorage skyward.touch.coach`,
+- A single coach card (in the free area: top of the stick zone in landscape, bottom of `clear` in portrait) for the first three flights (`localStorage skyward.touch.coach`,
   `hint=0` suppresses, `hint=1` forces) and on `cmd { name: 'help' }`. The keyboard controls card stays hidden on touch.
 - Not implemented: device-tilt steering (motion permission is often refused inside the artifact frame; the stick works everywhere).
 

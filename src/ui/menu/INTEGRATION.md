@@ -76,3 +76,6 @@ always take priority.
 `node tools/shot.mjs --params "menu=main" --size 1280x720`. `glass=lite|plain` forces the cheap material or no refraction.
 To check the 16-type roster:
 `node tools/shot.mjs --entry src/ui/menu/harness.js --html dist/menu.html --params "menu=main&aircraft=sr71"`.
+- Dual-screen devices (CSS `horizontal-/vertical-viewport-segments: 2`, `env(viewport-segment-*)`): side by side, the hangar
+  list sits on the left screen and the plan + Fly dock on the right, Settings / Controls panels and the crash dialog keep to one
+  screen; stacked, the sheet is limited to the bottom screen. Browsers without segment support get the normal layout.
