@@ -48,7 +48,7 @@ const CSS = `
 .inp-btn.inp-extra{border-radius:50%}
 .inp-btn.inp-extra b{font-size:11.5px}
 /* coach marks (first flights / help) */
-.inp-tip{position:absolute;pointer-events:none;max-width:150px;padding:6px 10px;border-radius:10px;background:rgb(255 176 0/.92);color:var(--accent-ink,#1c1300);
+.inp-tip{position:absolute;pointer-events:none;box-sizing:border-box;padding:8px 12px;border-radius:12px;background:rgb(255 176 0/.94);color:var(--accent-ink,#1c1300);display:grid;gap:4px;
   font:600 12px/1.25 var(--font-body,'Saira',system-ui,sans-serif);letter-spacing:.01em;box-shadow:0 4px 14px rgb(0 0 0/.3);opacity:0;transition:opacity .4s}
 .inp-touch.coach .inp-tip{opacity:1}
 @media (prefers-reduced-motion:reduce){.inp-touch *{transition:none!important}}
@@ -74,14 +74,13 @@ export function createTouchControls(ctx, h) {
     <div class="inp-ring"><span>DRAG<br>TO FLY</span></div><div class="inp-base" hidden></div><div class="inp-knob" hidden></div>
     <div class="inp-region inp-glass inp-thr" data-r="thr" role="slider" aria-label="Throttle" aria-valuemin="0" aria-valuemax="100"><div class="inp-pct">0</div><div class="inp-track"><div class="inp-fill"></div></div><div class="inp-mil" hidden></div><div class="inp-thr-knob"></div></div>
     <div class="inp-region inp-glass inp-rud" data-r="rud" role="slider" aria-label="Rudder"><div class="inp-rud-c"></div><div class="inp-lbl"><span>◀</span><span>Rudder</span><span>▶</span></div><div class="inp-rud-knob"></div></div>
-    <div class="inp-tip" data-tip="stick">Right thumb: drag anywhere here to fly</div>
-    <div class="inp-tip" data-tip="thr">Left thumb: slide for power</div>`;
+    <div class="inp-tip" aria-hidden="true"><span>◀ Left thumb: slide THR for power</span><span>Right thumb: drag on the right to fly ▶</span></div>`;
   ctx.uiRoot.appendChild(el);
   const $ = (s) => el.querySelector(s);
   const zone = $('.inp-zone'), ring = $('.inp-ring'), base = $('.inp-base'), knob = $('.inp-knob');
   const thr = $('.inp-thr'), fill = $('.inp-fill'), tKnob = $('.inp-thr-knob'), pct = $('.inp-pct'), mil = $('.inp-mil');
   const rud = $('.inp-rud'), rKnob = $('.inp-rud-knob');
-  const tipStick = el.querySelector('[data-tip=stick]'), tipThr = el.querySelector('[data-tip=thr]');
+  const tip = el.querySelector('.inp-tip');
   const place = (node, q) => { const s = node.style; s.left = q.x + 'px'; s.top = q.y + 'px'; s.width = q.w + 'px'; s.height = q.h + 'px'; };
 
   // ---- stick (floating: the base appears where the thumb lands; it trails the thumb beyond full throw) ----
@@ -205,8 +204,14 @@ export function createTouchControls(ctx, h) {
     const d = L.stickR * 2;
     ring.style.left = L.home.x + 'px'; ring.style.top = L.home.y + 'px'; ring.style.width = ring.style.height = d + 'px';
     // coach tips next to the controls they explain
-    tipStick.style.left = Math.max(L.zone.x, L.home.x - 75) + 'px'; tipStick.style.top = Math.max(L.zone.y, L.home.y - L.stickR - 62) + 'px';
-    tipThr.style.left = L.thr.x + 'px'; tipThr.style.top = Math.max(L.safe.t, L.thr.y - 50) + 'px';
+    // one coach card, bottom-centred in the area free of controls (clear of the HUD strip at its top)
+    // (landscape: top of the stick zone, above where the thumb rests)
+    const A = L.portrait ? L.clear : L.zone;
+    const cw = Math.min(A.w, 300);
+    tip.style.width = cw + 'px';
+    tip.style.left = Math.round(A.x + (A.w - cw) / 2) + 'px';
+    if (L.portrait) { tip.style.top = ''; tip.style.bottom = Math.round(L.H - (A.y + A.h)) + 'px'; }
+    else { tip.style.bottom = ''; tip.style.top = A.y + 'px'; }
     lastThr = -1;
     ctx.events.emit('touch:layout', L);
   }
