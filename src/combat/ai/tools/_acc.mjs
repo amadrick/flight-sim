@@ -1,0 +1,10 @@
+import * as THREE from 'three';
+import { createSandbox } from './sandbox.mjs';
+import { createFlightController, profileOf } from '../fly.js';
+const b = await createSandbox({ seed: 1 });
+const T = b.combat.world.spawnAircraft({ aircraft: 'f16', team: 'red', position: new THREE.Vector3(0, 5000, 0), heading: 0, speed: 210, loadout: { ir: 0, radar: 0 } });
+const fc = createFlightController(T, profileOf(T.def, T.sim));
+T.pilot = { mode: 'target', update(dt) { fc.direct(3, Math.acos(1 / 3), 9); fc.speed(180); fc.apply(dt); } };
+const pv = new THREE.Vector3().copy(T.state.velocity);
+let last = 0;
+b.run(8, (t) => { const a = T.state.acceleration; if (t - last > 1) { last = t; const dv = new THREE.Vector3().copy(T.state.velocity).sub(pv).multiplyScalar(60); console.log(t.toFixed(1), 'acc', a.x.toFixed(1), a.y.toFixed(1), a.z.toFixed(1), '|a|', a.length().toFixed(1), 'dv/dt', dv.length().toFixed(1), 'g', T.state.gLoad.toFixed(2)); } pv.copy(T.state.velocity); });

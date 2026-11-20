@@ -26,7 +26,8 @@ export function predictRecovery(groundAt, s, p, out = {}) {
     if (t > tRoll) {
       // pulling: the lift accelerates the flight path up (minus gravity's share), until the target climb angle
       if (gam < climb) {
-        const gd = (G0 * (p.nz - Math.cos(gam))) / V;
+        const n = 1 + (p.nz - 1) * clamp((t - tRoll) / (p.onset ?? 0.6), 0, 1);     // G onset
+        const gd = (G0 * (n - Math.cos(gam))) / V;
         gam = Math.min(climb, gam + gd * dt);
       }
       psi += (p.turn || 0) * dt;

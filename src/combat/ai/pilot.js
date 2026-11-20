@@ -17,7 +17,7 @@ const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(),
 const CA = { t: 0, miss: 0 }, REC = { clear: 0, at: 0, ground: 0 }, RS = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, roll: 0, psi: 0 };
 const RP = { nz: 4, rollRate: 3, climb: 0.3, turn: 0, horizon: 12, dt: 0.4, delay: 0.1 };
 const DISTS = [400, 1000, 2000, 3500, 5500], FRAC = [0.15, 0.4, 0.8, 1.4, 2.2];
-const SOL = { point: new THREE.Vector3(), tof: 0, range: 0, inRange: false };
+const SOL = { point: new THREE.Vector3(), tof: 0, range: 0, inRange: false }, solA = new THREE.Vector3();
 const FIGHT_MODES = new Set(['pursuit', 'lead', 'pure', 'lag', 'guns', 'yoyo-high', 'yoyo-low', 'lag-roll', 'scissors', 'break', 'jink', 'extend',
   'merge', 'vertical', 'split-s', 'defend-missile', 'crank', 'reattack', 'bugout']);
 export const isFightMode = (m) => FIGHT_MODES.has(m);
@@ -42,9 +42,10 @@ export function createPilot(combat, team, e, o = {}) {
   const ageo = { range: 0, closure: 0, ata: 0, aa: 0, threatAta: 0, hca: 0, dAlt: 0, situation: 'neutral' };
   const tmpGeo = { range: 0, closure: 0, ata: 0, aa: 0, threatAta: 0, hca: 0, dAlt: 0, situation: 'neutral' };
   const want = { dir: new THREE.Vector3(1, 0, 0), g: 3, gain: 1.4, ff: new THREE.Vector3(), useFF: false, spd: 200, ab: true, brake: true,
-    direct: false, nz: 1, bank: 0, fire: false, minLever: 0 };
+    direct: false, nz: 1, bank: 0, fire: false, minLever: 0, track: false, kp: 2, kd: 0.4, w0: new THREE.Vector3(), bias: 0 };
   const off = { x: 0, y: 0, z: 0 };
   const slot = new THREE.Vector3(), lastKnown = new THREE.Vector3(), home = new THREE.Vector3().copy(e.state.position), orbitC = new THREE.Vector3();
+  let aoaS = 0;
   const manDir = new THREE.Vector3(), aim = new THREE.Vector3(), ffv = new THREE.Vector3(), escDir = new THREE.Vector3();
   const mslots = [];                                   // missile threat memory: { m, onset, seen }
   for (let i = 0; i < 6; i++) mslots.push({ m: null, onset: 0, seen: false });
@@ -55,12 +56,12 @@ export function createPilot(combat, team, e, o = {}) {
   let activity = 'cruise', man = '', manT = 0, manSide = 1, manChoice = '', lockMan = 0;
   let attacker = null, attackerOnset = -1, gunOnset = -1, missile = null, missileTgo = 99, missileOnset = 0;
   let targetSince = 0, lastTarget = null, lastTally = null, fighting = false, wasFighting = false;
-  let aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
+  let fineTrack = false, aimNX = 0, aimNY = 0, aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
   let flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
   let extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1;
 
   const pilot = {
-    entity: e, skill, personality, mode: 'cruise', sub: '', profile: prof, tuning: sk,
+    entity: e, skill, personality, mode: 'cruise', sub: '', profile: prof, tuning: sk, _fc: fc,
     /** debugging / tools: current steering request and safety state */
     debug: { want, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; } },
     setOrder(ord) {
@@ -102,13 +103,14 @@ export function createPilot(combat, team, e, o = {}) {
     if ((thinkT -= dt) <= 0) { thinkT = sk.think * (0.8 + 0.4 * rng()); think(); }
     manT -= dt; lockMan -= dt; mistakeT -= dt; lostSightT -= dt;
     // ---- default request
-    want.direct = false; want.useFF = false; want.fire = false; want.ab = true; want.brake = true; want.minLever = 0;
+    want.direct = false; want.useFF = false; want.fire = false; want.ab = true; want.brake = true; want.minLever = 0; want.track = false; want.bias = 0;
     want.g = 3; want.gain = 1.3;
     act(dt);
     guard(dt);
     // ---- fly
     if (want.direct) fc.direct(want.nz, want.bank, want.g);
-    else fc.steer(want.dir, want.g, want.gain, want.useFF ? want.ff : null);
+    else if (want.track) fc.track(want.dir, want.useFF ? want.ff : null, want.g, want.kp, want.kd, dt, want.w0, want.bias);
+    else { fc.trackValid = false; fc.steer(want.dir, want.g, want.gain, want.useFF ? want.ff : null, want.bias); }
     fc.speed(want.spd, want.ab, want.brake, want.minLever);
     fc.apply(dt);
     // ---- weapons
@@ -474,7 +476,7 @@ export function createPilot(combat, team, e, o = {}) {
         if (pilot.sub === 'lost') { aimAt(lastKnown); want.g = gHard * 0.7; return; }
         pursuitPoint(e, T, pilot.sub || 'pure', aim, 1);
         aimAt(aim);
-        if (pilot.sub === 'lead' || pilot.sub === 'pure') { losFeedForward(e, T, want.ff); want.ff.multiplyScalar(pilot.sub === 'lead' ? 0.6 : 0.3); want.useFF = true; }
+        if ((pilot.sub === 'lead' || pilot.sub === 'pure') && T.state.acceleration && geo.range < 3000) { want.ff.copy(T.state.acceleration).multiplyScalar(pilot.sub === 'lead' ? 0.7 : 0.4); want.useFF = true; }
         // radar crank: own radar missile in flight and the target still far: hold it near the edge of the radar cone
         if (geo.range > 7000 && ownMissileInFlight(T, 'radar')) crank(T);
         return;
@@ -551,20 +553,34 @@ export function createPilot(combat, team, e, o = {}) {
     const losRate = ffv.length() / Math.max(s.tas, 50);           // rad/s
     const sig = sk.aimSigma * (1 + 6 * losRate) * (mistake === 'lost' ? 3 : 1);
     const a = Math.exp(-dt / sk.aimTau), b = sig * Math.sqrt(1 - a * a);
-    aimX = aimX * a + b * gauss(); aimY = aimY * a + b * gauss();
+    aimNX = aimNX * a + b * gauss(); aimNY = aimNY * a + b * gauss();
+    const k2 = 1 - Math.exp(-dt / 0.25);                  // smooth the wander (a hand, not white noise)
+    aimX += (aimNX - aimX) * k2; aimY += (aimNY - aimY) * k2;
+    // the gun solution is a straight-line lead; a turning target needs its acceleration too (good pilots lead the turn)
+    const tof = SOL.tof || r / 1000;
+    if (T.state.acceleration) { solA.copy(T.state.acceleration); solA.y += G0 * 0; SOL.point.addScaledVector(solA, 0.5 * tof * tof * lerp(0.5, 1, sk.precision)); }
     aim.copy(SOL.point).addScaledVector(e.right, aimX * r).addScaledVector(e.up, aimY * r);
-    noseAimDir(e, aim, want.dir);
-    want.ff.copy(ffv); want.useFF = true;
-    want.gain = lerp(2.2, 3.4, sk.precision);
+    aimAt(aim);
+    if (T.state.acceleration) want.ff.copy(T.state.acceleration); else want.ff.set(0, 0, 0);
+    want.useFF = true;
+    // steer the velocity vector at the aim point corrected by the (smoothed) nose–velocity offset, so the NOSE ends
+    // on the aim point; smoothing keeps the AoA change of the pull from feeding back into the roll
+    aimAt(aim);
+    D.copy(s.velocity).normalize();
+    aoaS += (Math.acos(clamp(D.dot(e.forward), -1, 1)) - aoaS) * Math.min(1, dt / 0.3);
+    want.bias = aoaS;
+    want.track = true; want.kp = lerp(1.8, 2.6, sk.precision); want.kd = 0.6;
+    if (!fc.trackValid) { D.copy(T.state.position).sub(s.position); E.copy(T.state.velocity).sub(s.velocity); want.w0.crossVectors(D, E).multiplyScalar(1 / Math.max(D.lengthSq(), 100)); }
     // closure control in the gun envelope
     want.spd = clamp(T.state.ias + (r - 450) * 0.08 - geo.closure * 0.4, prof.stall * 1.4, prof.corner + 120);
     want.ab = want.spd > s.ias + 20; want.brake = true;
-    if (r < 180 && geo.closure > 0) { pursuitPoint(e, T, 'lag', aim, 1); aimAt(aim); want.useFF = false; }
+    if (r < 180 && geo.closure > 0) { pursuitPoint(e, T, 'lag', aim, 1); aimAt(aim); want.useFF = false; want.track = false; }
     // fire control
     A.copy(SOL.point).sub(s.position).normalize();
     const err = Math.acos(clamp(A.dot(e.forward), -1, 1));
     const tol = sk.fireTol + (T.radius || 5) / Math.max(r, 50) * 0.8;
     const good = err < tol && r < sk.gunMax && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
+    if (globalThis.__AIDBG) globalThis.__AIDBG(e, { err, tol, r, aa: geo.aa, ata: geo.ata, settleT, good, losRate, burstT, gapT });
     settleT = good ? settleT + dt : 0;
     gapT -= dt;
     if (burstT > 0) {
@@ -833,24 +849,42 @@ export function createPilot(combat, team, e, o = {}) {
         A.multiplyScalar(-1);
         if (A.lengthSq() < 1) A.copy(e.up);
         A.normalize().addScaledVector(UP, 0.4).normalize();
-        want.direct = false; want.dir.copy(s.velocity).normalize().addScaledVector(A, 1.5).normalize();
+        want.direct = false; want.track = false; want.dir.copy(s.velocity).normalize().addScaledVector(A, 1.5).normalize();
         want.g = Math.max(want.g, Math.min(5, gFight)); want.gain = 3; want.useFF = false; want.fire = false;
         break;
       }
     }
-    // ---- soft floor: terrain ahead + hard deck
+    // ---- soft floor: terrain ahead + hard deck. Limits the dive angle to what can still be recovered above the deck
+    // (altitude lost pulling out of a dive γ at load factor n: R·(1 − cos γ), R = V²/(g(n−1)), plus the roll-upright time)
     if ((floorT -= dt) <= 0) {
-      floorT = 0.5;
+      floorT = 0.25;
       const hd = s.velocity.x * s.velocity.x + s.velocity.z * s.velocity.z > 100 ? Math.atan2(s.velocity.x, -s.velocity.z) : s.heading;
       for (let i = 0; i < DISTS.length; i++) DISTS[i] = FRAC[i] * V * 5;
-      floorAlt = terrainAhead(ground, p.x, p.z, hd, DISTS, 0.35) + (prof.heavy ? 500 : sk.deck);
+      floorAlt = terrainAhead(ground, p.x, p.z, hd, DISTS, 0.35);
     }
-    const below = floorAlt - (p.y + Math.min(s.velocity.y, 0) * 3);
-    if (below > 0) {
-      if (want.direct) { want.direct = false; want.dir.copy(e.forward); }
-      const lift = clamp(below / 400, 0, 1);
-      if (want.dir.y < lift * 0.5) { want.dir.y = lerp(want.dir.y, 0.5, lift); want.dir.normalize(); }
-      want.g = Math.max(want.g, 3);
+    {
+      const deck = prof.heavy ? 500 : sk.deck;
+      const nS = Math.max(2, Math.min(gFight * 0.7, prof.heavy ? 1.8 : 6));
+      const R = (V * V) / (G0 * (nS - 1));
+      const gamNow = Math.asin(clamp(s.velocity.y / V, -1, 1));
+      const rollT = Math.abs(s.roll) > 1.2 ? Math.abs(s.roll) / Math.max(prof.rollRate * 0.7, 0.5) + 0.3 : 0.3;
+      const aglA = p.y - floorAlt - deck - 60 + Math.min(s.velocity.y, 0) * rollT;
+      const room = aglA / (1.6 * R);
+      // lowest flight-path angle allowed now
+      const gMin = room <= 0 ? clamp(-room * 0.6, 0.05, 0.35) : room >= 1 ? -1.5 : -Math.acos(1 - room);
+      const gWant = Math.asin(clamp(want.dir.y, -1, 1));
+      if (gWant < gMin || gamNow < gMin) {
+        if (want.direct) { want.direct = false; want.dir.copy(e.forward); }
+        want.track = false;
+        if (gWant < gMin) {
+          const h = Math.hypot(want.dir.x, want.dir.z);
+          if (h < 1e-3) { want.dir.x = e.forward.x; want.dir.z = e.forward.z; }
+          const hh = Math.hypot(want.dir.x, want.dir.z) || 1;
+          want.dir.x *= Math.cos(gMin) / hh; want.dir.z *= Math.cos(gMin) / hh; want.dir.y = Math.sin(gMin);
+        }
+        if (gamNow < gMin - 0.05) { want.g = Math.max(want.g, nS); want.gain = Math.max(want.gain, 2); want.useFF = false; }
+        if (pilot.sub !== 'terrain') pilot.sub = pilot.sub || 'deck';
+      }
     }
     // ---- hard terrain recovery (predictive)
     safeT -= dt;
@@ -859,9 +893,9 @@ export function createPilot(combat, team, e, o = {}) {
       RS.x = p.x; RS.y = p.y - 3; RS.z = p.z; RS.vx = s.velocity.x; RS.vy = s.velocity.y; RS.vz = s.velocity.z; RS.roll = s.roll; RS.psi = s.heading;
       const nzAvail = Math.min(prof.fbw ? prof.fcsNzMax * 0.95 : prof.gMax * 0.85, Math.max(1.3, (s.ias / Math.max(prof.stall, 40)) ** 2 * 0.9));
       RP.nz = nzAvail; RP.rollRate = Math.min(prof.rollRate, 3) * 0.8; RP.climb = prof.heavy ? 0.15 : 0.35; RP.turn = 0;
-      RP.horizon = clamp(V / 25, 8, 16); RP.dt = 0.4; RP.delay = 0.15;
+      RP.horizon = clamp(V / 22, 8, 18); RP.dt = 0.35; RP.delay = 0.25; RP.nz *= 0.85;
       predictRecovery(ground, RS, RP, REC);
-      const margin = 60 + V * 0.35;
+      const margin = 80 + V * 0.5;
       if (REC.clear < margin) {
         if (!recovering) { recovering = true; recT = 0; escTurn = 0; }
         // can a turning escape do better? (mountain ahead)
@@ -881,7 +915,7 @@ export function createPilot(combat, team, e, o = {}) {
       const hd = Math.hypot(s.velocity.x, s.velocity.z) > 10 ? Math.atan2(s.velocity.x, -s.velocity.z) : s.heading;
       const h = hd + escTurn * 2;
       const climb = prof.heavy ? 0.2 : 0.5;
-      want.direct = false; want.useFF = false;
+      want.direct = false; want.useFF = false; want.track = false;
       want.dir.set(Math.sin(h) * Math.cos(climb), Math.sin(climb), -Math.cos(h) * Math.cos(climb));
       want.g = prof.fbw ? prof.fcsNzMax : prof.gMax * 0.85; want.gain = 4;
       want.spd = prof.vmo; want.ab = true; want.brake = false; want.fire = false;
@@ -889,7 +923,7 @@ export function createPilot(combat, team, e, o = {}) {
     }
     // ---- stall / departure
     if ((s.stalled || s.ias < prof.stall * 1.08) && !recovering) {
-      want.direct = false; want.useFF = false;
+      want.direct = false; want.useFF = false; want.track = false;
       B.set(e.forward.x, 0, e.forward.z);
       if (B.lengthSq() < 1e-4) B.set(s.velocity.x, 0, s.velocity.z);
       B.normalize(); B.y = s.pitch > 0.6 ? -0.4 : -0.1; B.normalize();

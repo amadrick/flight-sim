@@ -86,7 +86,7 @@ export function createFlightController(e, prof) {
      * (world m/s², e.g. the line-of-sight rate of a target), limited to `gLimit`.
      * Returns the angle (rad) between the velocity vector and dir.
      */
-    steer(dir, gLimit, gain = 2.5, ff = null) {
+    steer(dir, gLimit, gain = 2.5, ff = null, bias = 0) {
       const s = e.state, vel = s.velocity;
       const V = Math.max(vel.length(), 1);
       _v.copy(vel).multiplyScalar(1 / V);                       // v̂
@@ -97,7 +97,9 @@ export function createFlightController(e, prof) {
       else _n.set(0, 0, 0);
       // centripetal acceleration for the requested turn rate; beyond 90° of error turn at the limit
       const aMax = gLimit * G0;
-      let ac = gain * (ang > 1.6 ? 1.6 + (ang - 1.6) * 3 : ang) * V;
+      // bias: the nose sits ~AoA above the velocity vector in the lift plane, so for nose pointing the velocity only
+      // has to come within `bias` of dir (shifts the turn magnitude, never the roll)
+      let ac = gain * ((ang > 1.6 ? 1.6 + (ang - 1.6) * 3 : ang) - bias) * V;
       _l.copy(_n).multiplyScalar(ac);
       if (ff) { _l.add(ff); _l.addScaledVector(_v, -_v.dot(ff)); }
       // + gravity compensation (the lift must also hold the aircraft up): lift = a_turn − g⟂
@@ -138,6 +140,41 @@ export function createFlightController(e, prof) {
 
     /** Hold the current roll (no roll command). */
     holdRoll() { fc.rollValid = false; fc.rollErr = 0; },
+
+    /**
+     * Nose tracking (gunnery): put the NOSE on world direction `aimDir` with a PD loop on the nose error, plus the
+     * feed-forward acceleration `ff` (world, e.g. the line-of-sight turn of the target). kp (1/s), kd (-) set how
+     * crisp / smooth the tracking is. Returns the nose error (rad).
+     */
+    track(aimDir, ff, gLimit, kp, kd, dt, w0 = null, bias = 0) {
+      const f = e.forward, s = e.state, V = Math.max(s.velocity.length(), 50);
+      // roll: lift-vector steering of the velocity vector (stable, no nose/roll coupling at high AoA)
+      fc.steer(aimDir, gLimit, 2, ff, bias);
+      const rollErr = fc.rollErr, rollValid = fc.rollValid;
+      // pitch: G from the nose error along the lift axis (PD; the error rate uses the measured pitch rate, because the
+      // nose answers the stick long before the velocity vector does)
+      const c = clamp(f.dot(aimDir), -1, 1);
+      const err = Math.acos(c);
+      if (!fc.trackValid) { fc.trackPrev.copy(aimDir); if (w0) fc.trackRate.copy(w0); else fc.trackRate.set(0, 0, 0); fc.trackValid = true; fc.trackInt = 0; }
+      _v.crossVectors(fc.trackPrev, aimDir).multiplyScalar(1 / Math.max(dt, 1e-3));
+      fc.trackRate.lerp(_v, Math.min(1, dt / 0.12));
+      fc.trackPrev.copy(aimDir);
+      _n.copy(aimDir).addScaledVector(f, -c);
+      let ey = _n.dot(e.up);
+      if (c < 0) ey = ey >= 0 ? 1 : -1;
+      ey = clamp(ey, -0.35, 0.35);
+      const eyDot = fc.trackRate.dot(e.right) - s.bodyRates.q;
+      fc.trackInt = clamp(fc.trackInt + ey * 0.6 * V * dt, -2 * G0, 3 * G0);
+      // feed-forward along the current lift axis: target acceleration + gravity
+      _l.set(0, G0, 0); if (ff) _l.add(ff);
+      const nzFF = _l.dot(e.up) / G0;
+      const nz = nzFF + ((kp * ey + kd * eyDot) * V + fc.trackInt) / G0;
+      fc.rollErr = rollErr; fc.rollValid = rollValid;
+      fc.nzCmd = clamp(Math.abs(rollErr) > 0.5 ? Math.min(nz, 2) : nz, -1, gLimit);
+      fc.yawCmd = err < 0.05 ? clamp(_n.dot(e.right) * 12, -0.4, 0.4) : 0;
+      return err;
+    },
+    trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
 
     /** Speed hold: target IAS (m/s). opts: { ab: allow afterburner, brake: allow the speedbrake, min, max lever } */
     speed(ias, ab = true, brake = true, minLever = 0) {
@@ -191,7 +228,7 @@ export function createFlightController(e, prof) {
         stick = clamp(fc.integ + err * KP * k - s.bodyRates.q * KQ + prot, -1, 1);
         if (s.stalled) fc.integ = Math.min(fc.integ, 0.0);
       }
-      c.pitch = clamp(stick, -1, 1);
+      c.pitch = clamp(stick, -1, 1); fc.dbgNz = nz;
       // ---- roll: rate command from the roll error
       let pDes = 0;
       // roll-angle loop with lead on the current roll rate (conventional aircraft respond slower: more lead)
