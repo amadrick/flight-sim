@@ -258,8 +258,8 @@ export { clamp, saturate, smoothstep, dampK };
  *  pullG, pullAB pull-back fractions at 9 g / full afterburner
  */
 export const FIGHT = {
-  dist: 1.55, rollFollow: 0.3, biasMax: 26, biasStart: 6, biasFull: 55, biasUp: 17, biasDown: 9,
-  turnLead: 0.5, turnMax: 7, fovBase: 56, fovWide: 8, zoom: 0.24, zoomIn: 4, zoomOut: 7, pullG: 0.12, pullAB: 0.08,
+  dist: 1.55, rollFollow: 0.3, biasMax: 20, biasStart: 6, biasFull: 70, biasUp: 15, biasDown: 8,
+  turnLead: 0.5, turnMax: 7, fovBase: 56, fovWide: 12, zoom: 0.24, zoomIn: 4, zoomOut: 7, pullG: 0.12, pullAB: 0.08,
 };
 
 /**

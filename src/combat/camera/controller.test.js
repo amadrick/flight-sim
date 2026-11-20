@@ -200,7 +200,7 @@ test('setFeel: boolean and 0..1 amount', async () => {
 test('pure helpers: fight bias, gun zoom gate, feel amount, kill cam duration', () => {
   const o = { yaw: 0, pitch: 0 };
   fightBias(o, 2 * DEG, 0); assert.equal(o.yaw, 0);
-  fightBias(o, 60 * DEG, 0); assert.ok(Math.abs(o.yaw - FIGHT.biasMax * DEG) < 1e-9);
+  fightBias(o, 80 * DEG, 0); assert.ok(Math.abs(o.yaw - FIGHT.biasMax * DEG) < 1e-9);
   fightBias(o, 0, 80 * DEG); assert.ok(o.pitch <= FIGHT.biasUp * DEG + 1e-9);
   fightBias(o, 0, -80 * DEG); assert.ok(o.pitch >= -FIGHT.biasDown * DEG - 1e-9);
   fightBias(o, 90 * DEG, 0, FIGHT, 10 * DEG); assert.ok(o.yaw <= 10 * DEG + 1e-9);
