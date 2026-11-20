@@ -185,6 +185,7 @@ export const TOUCH_HELP = [
   ['Autopilot', 'AP holds altitude and heading'],
   ['Camera', 'Cam, top right'],
   ['Pause and menu', 'Menu, top right'],
+  ['Weapons (missions)', 'GUN (hold), MSL, FLR and TGT at the right edge, beside the stick area'],
 ];
 
 /**

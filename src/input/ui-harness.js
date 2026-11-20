@@ -15,6 +15,8 @@ import { AIRPORTS, runwayEnd } from '../data/airports.js';
 import { createInput } from './index.js';
 import { createHud } from '../ui/hud/index.js';
 import { createMenu } from '../ui/menu/index.js';
+import { installMenuHooks, HOOK_CSS } from '../combat/ui/hooks.js';
+import { COMBAT_BINDINGS } from '../combat/input/index.js';
 
 const sim = (window.__sim = { ready: false, error: null, ctx: null, step: null });
 
@@ -69,6 +71,11 @@ async function boot() {
   ctx.input = await createInput(ctx);
   ctx.hud = await createHud(ctx);
   ctx.menu = await createMenu(ctx);
+  // the combat module's menu hooks (Missions tab, pause 'Mission select', combat key rows), as in the real sim
+  try {
+    const st = document.createElement('style'); st.textContent = HOOK_CSS; document.head.appendChild(st);
+    installMenuHooks({ ctx, active: false, input: { bindings: COMBAT_BINDINGS, padBindings: [] }, restart() {} }, { openMissions() {} });
+  } catch (e) { console.warn('combat hooks', e); }
   const resize = () => {
     const w = Math.max(2, innerWidth), h = Math.max(2, innerHeight);
     camera.aspect = w / h; camera.updateProjectionMatrix();

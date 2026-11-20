@@ -39,10 +39,15 @@ export const CSS = /* css */`
 
 /* ---------- top bar: three floating capsules ---------------------------------------------------- */
 .menu-top {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; pointer-events: none;
+  display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items: center; gap: 10px; min-width: 0; pointer-events: none;
   padding: var(--gt) var(--gr) 0 var(--gl);
 }
 .menu-top > * { pointer-events: auto; }
+/* the side capsules keep their content width; when the bar is short of room the tabs give way (and scroll) instead of
+   overlapping them (other modules add tabs: combat's Missions) */
+.menu-tabs { min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.menu-tabs::-webkit-scrollbar { display: none; }
+.menu-tabs > .menu-tab { flex: none; white-space: nowrap; }
 .menu-cap { --r: var(--r-pill); height: 44px; display: flex; align-items: center; box-sizing: border-box; }
 .menu-brand { gap: 10px; padding: 0 18px 0 14px; justify-self: start; grid-column: 1; }
 .menu-brand-mark { width: 22px; height: 22px; flex: none; color: var(--accent, #ffb000); }
@@ -373,6 +378,7 @@ export const CSS = /* css */`
   .menu-main { grid-template-columns: minmax(256px, 290px) minmax(0, 1fr) minmax(290px, 330px); column-gap: 14px; }
   .menu-status-item.menu-status-opt { display: none; }
   .menu-tab { padding: 0 14px; }
+  .menu-tab svg { display: none; }
 }
 @media (max-width: 1000px) {
   .menu-status-k { display: none; }
@@ -427,6 +433,7 @@ export const CSS = /* css */`
   .menu-brand { padding: 0 12px; }
   .menu-tabs { justify-self: end; }
   .menu-tab { padding: 0 13px; font-size: 13.5px; }
+  .menu-top .menu-tab svg { display: none; }
   .menu-view { padding: 0; }
   .menu-main { display: block; }
   .menu-main .menu-panel-ac, .menu-main .menu-panel-plan { align-self: stretch; min-width: 0; }
@@ -482,12 +489,23 @@ export const CSS = /* css */`
 @media (max-aspect-ratio: 1/1) and (max-height: 500px) {
   .menu-sheet, .menu-dock > .menu-panel { max-height: 72%; }
 }
+@media (max-width: 700px) and (max-aspect-ratio: 1/1) {
+  .menu-brand-name { display: none; }
+  .menu-brand { padding: 0 11px; }
+}
 @media (max-width: 420px) {
   .menu-brand-name { display: none; }
   .menu-tab { padding: 0 11px; }
+  /* the top bar holds four tabs (Missions is added by the combat module): squeeze them, never overlap the brand */
+  .menu-tabs .menu-tab { padding: 0 8px; font-size: 13px; letter-spacing: 0; }
   .menu-tab svg { display: none; }
   .menu-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menu-opts { grid-template-columns: 1fr; }
+}
+@media (max-width: 359px) {
+  .menu-top { grid-template-columns: minmax(0, 1fr); }
+  .menu-brand { display: none; }
+  .menu-tabs { justify-self: stretch; justify-content: space-between; grid-column: 1; }
 }
 /* touch screens: every control is at least 44 px tall (Apple HIG / WCAG 2.5.5); switches keep their look with a
    transparent border that widens the hit area */

@@ -306,6 +306,8 @@ export async function createMenu(ctx) {
   // ---- CONTROLS ---------------------------------------------------------------------------------
   const keysWrap = h('div', { class: 'menu-keys' });
   function renderKeys() {
+    // groups other modules appended (combat adds [data-cbt] rows at runtime) survive the re-render, kept at the end
+    const foreign = [...keysWrap.children].filter(el => el.dataset && Object.keys(el.dataset).length);
     keysWrap.textContent = '';
     let src = Array.isArray(ctx.input?.bindings) && ctx.input.bindings.length ? ctx.input.bindings : DEFAULT_BINDINGS;
     // F1 (the in-flight controls card) is handled here and in the HUD, not by input
@@ -331,6 +333,7 @@ export async function createMenu(ctx) {
           return h('div', { class: 'menu-keyrow' }, h('span', { class: 'menu-keyrow-a', text: b.action }), k);
         }))));
     }
+    keysWrap.append(...foreign);
   }
   const controlsBack = h('button', { class: 'menu-back', id: 'menu-controls-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
   const vControls = h('section', { class: 'menu-view menu-dock menu-dock-c menu-dock-wide', 'data-view': 'controls', style: '--origin: top center' },

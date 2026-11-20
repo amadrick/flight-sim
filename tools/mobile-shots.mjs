@@ -90,7 +90,7 @@ const AUDIT = () => {
     if (matchMedia('(pointer: coarse)').matches && min < 43.5 && el.type !== 'range' && !el.closest('.menu-aptwrap:not(.open)')) out.push('small target ' + (min | 0) + 'px: ' + name(el));
   }
   // flight-time regions must not overlap one another
-  const regs = [...document.querySelectorAll('.inp-region:not(.inp-zone), .inp-pnl, .inp-btn, .menu-corner > button, .hud-plate, .hud-toast.on, .hud-hint')].filter(vis);
+  const regs = [...document.querySelectorAll('.inp-region:not(.inp-zone), .inp-pnl, .inp-btn, .menu-corner > button, .hud-plate, .hud-toast.on, .hud-hint, .menu-top > .menu-cap')].filter(vis);
   for (let i = 0; i < regs.length; i++) for (let j = i + 1; j < regs.length; j++) {
     const a = regs[i].getBoundingClientRect(), b = regs[j].getBoundingClientRect();
     if (regs[i].contains(regs[j]) || regs[j].contains(regs[i])) continue;
