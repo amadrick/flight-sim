@@ -25,6 +25,8 @@ This module covers weapon sounds, warning tones, explosions, other jets, radio v
 - `setRadioVolume(0..1)`, `radioVolume`, `setSfxVolume(0..1)`, `sfxVolume`
 - `mood` is the current music mood. `info` gives `{ cue, section, bar, mood, playing, waiting, fills, risers, cuts, musicVoices, nodes, cpu, stems, voices, refused, radio, seeker }`, for diagnostics.
 
+- `prepare(missionOrId)`: start rendering that mission's music now (also done automatically on `briefing:open`).
+
 New events: none. Optional mission field: `mission.music = 'sweep' | 'nightfall'`.
 
 ## Mix
@@ -109,10 +111,22 @@ The direction is late-90s/2000s post-grunge arena rock crossed with 80s action-f
 
 ### How it plays (`render.js`, `engine.js`)
 
-- At mission load every section of the mission's cue is rendered once in an `OfflineAudioContext` (32 kHz) into two stems, band and drums. The heavy instrument graph (about 80 oscillators, 4× oversampled waveshapers, feedback-delay reverbs) only ever exists offline. The three drum fills and the merge riser are rendered as short one-shots.
-- The main-thread part of that work (building the graph, scheduling the notes, copying buffers) is cut into ≤ 3 ms slices that yield to the game through a `MessageChannel`; the rendering itself runs on the browser's audio rendering thread. The first two sections come first, so the music can start, then the fills, then the rest.
+- Every section of the mission's cue is rendered once in `OfflineAudioContext`s into two stems: band and drums. The heavy instrument graph (about 80 oscillators, 4× oversampled waveshapers, feedback-delay reverbs) only ever exists offline. The three drum fills and the merge riser are rendered as short one-shots.
+- Rendering starts as soon as a briefing opens (`briefing:open`), before the player has touched anything: offline rendering needs no audio unlock. It runs in priority order: tension, intro, verse, fills, riser, then calm, pre, chorus, danger, cool, win, lose and solo last. A section the arranger needs right now jumps the queue.
+- Stems are cached per cue for the session, so restarts and repeat missions do not render again. A phone keeps one cue, a desktop two (LRU). An evicted cue's buffers are released at once.
+- Device profiles (`?audioprofile=phone|desktop` overrides the detection):
+  - phone: `navigator.deviceMemory <= 4`, or a coarse pointer with a short screen side ≤ 900 px. Mono 24 kHz band and drum stems, budget 24 MB per cue.
+  - desktop: stereo 24 kHz band, mono 30 kHz drums, budget 40 MB.
+  - Measured: Sweep 18.8 MB / 31.7 MB, Nightfall 22.4 MB / 37.8 MB (phone / desktop). Round 2 was 64 / 75 MB.
+- Cost control:
+  - The main-thread part (building the graph, scheduling the notes, copying buffers) is cut into ≤ 3 ms slices that yield through a `MessageChannel`.
+  - The rendering itself runs on the audio rendering thread in 0.5 s chunks (`suspend`/`resume`), one section at a time, so it never holds more than one core.
+  - While a mission runs and the smoothed frame time is over 34 ms, the renderer slows to one chunk per 400 ms. In pauses, menus and briefings it runs at full speed.
+- Cold start (harness, real `AudioContext`, nothing cached, fight from the first frame): the first note sounds 0.08 s after the fight starts, from the live band. At 1× the stems take over at bar 4, which is 7.1 s for Sweep and 8.7 s for Nightfall. At 4× CPU throttle they take over at bar 4 or bar 8, so 7–18 s depending on the load on the host. All stems are ready after 11–16 s at 1× and 16–33 s at 4×. The worst main-thread slice is 8–19 ms at 1× and typically 20–45 ms at 4×: one instrument constructor, the rhythm guitar or the drum kit, before the kit was split. Isolated longer stalls came from host load.
+- **Live fallback** (`live.js`): if a section is needed before its stem exists, its bars are played live by a small fixed graph (drums, picked bass, one mono rhythm guitar, synth-bass pulse; no reverbs, about 90 nodes). The band therefore comes in on the next bar on any device. At the next section boundary with a ready stem the engine hands over, and it disposes the live graph after 4 idle bars.
 - Live, the engine is a bar scheduler on the `AudioContext` clock (0.3 s look-ahead). Each section entry starts one band and one drum `AudioBufferSourceNode` at the bar line, at the right bar offset. A cut section fades with a 30 ms time constant, a section that reached its end rings out on its own tail, and a section entered mid-buffer fades in over 6 ms.
 - A fill mutes the drum stem from step 8 (or 12) and plays the fill one-shot. The riser starts mid-bar so it lands on the bar line where the band comes in.
+- A live voice hands over to a stem at the next 4-bar phrase once that stem is ready, with the same 6 ms fade-in. The low, chuggy sections carry a `tilt` (a high shelf above 700 Hz: verse +4 dB, tension +6 dB) so they still read on a phone speaker.
 - Steady state is 2–4 buffer sources (16 nodes at most in the harness). A steady frame allocates nothing: the arranger is asked again only when the mood, the push signal or the bar changes.
 
 ### Instruments (all synthesised, `music/synth.js`)
@@ -151,17 +165,16 @@ Both cues share one form. Bars are 4/4, 16 steps per bar.
 | calm | 8 | FM-bell motif, clean guitar arpeggio, pad, soft synth-bass pulse, ghost hats | quiet |
 | tension | 4 | muted 8th/16th chugs, toms, root 8ths, pad, synth arp pulse; riser in the last bar | low |
 | intro | 4 | the main riff, full band, crash; pick scrape out. Also the interlude after a chorus | loud |
-| verse | 8 | palm-muted drop-tuned chugs with ringing stabs, half-time drums (snare on 3), bass doubling the chugs, pulsing synth bass, dark pad; synth arp and a low counter-line in bars 5–8; small fill out | low (−6 LU) |
+| verse | 8 | palm-muted drop-tuned chugs with ringing stabs, half-time drums (snare on 3), bass doubling the chugs, pulsing synth bass, dark pad; synth arp and a low counter-line in bars 5–8; small fill out | low (−4 to −5 LU; −5 LU on a phone speaker) |
 | pre | 4 | lift: ringing 8th chords, four-on-the-floor kick, open hats, melody plus brass, pad, arp; swells; snare build and riser in the last bar | rising |
-| chorus | 8 | big open chords with slow vibrato, slide in, drive bass, bright pad, brass stabs, open hats, crashes on bars 1 and 5, the "sung" lead melody doubled by brass | loudest |
-| chorus2 | 8 | as chorus, other stab rhythm; twin lead in thirds in bars 5–8 | loudest |
+| chorus | 8 | big open chords with slow vibrato, slide in, drive bass, bright pad, brass stabs, open hats, crashes on bars 1 and 5, the "sung" lead melody doubled by brass; twin lead in thirds in bars 5–8 | loudest |
 | solo | 8 | lead-guitar solo over driving chugs, ride, crashes; pick scrape out | loud |
 | danger | 4 | half-time, darker (Phrygian ♭II), wailing bent-note lead, dark pad, 16th arp | loud |
 | cool | 2 | ringing chord, crash, pad, clean guitar: the fight dies down instead of cutting | fading |
 | win | 3 | victory tag: snare build, then a big held major chord with brass stab, lead run up to the major third with bend and bloom | — |
 | lose | 3 | defeat tag: clean guitar, dark pad, falling lead | — |
 
-**Song form during a fight:** intro → verse → pre → chorus → intro (interlude) → verse → pre → chorus2 → **solo** → chorus2 → interlude → verse → … The solo comes after the second chorus.
+**Song form during a fight:** intro → verse → pre → chorus → intro (interlude) → verse → pre → chorus → **solo** → chorus → interlude → verse → … The solo comes after the second chorus.
 
 **What drives it** (`mood.js` → `arranger.js`). `push` = the player holds a lock, or scored a kill in the last 10 s.
 
@@ -171,7 +184,7 @@ Both cues share one form. Bars are 4/4, 16 steps per bar.
 | an enemy within 25 km | tension |
 | first contact: enemy within 6 km, weapons fired in the last 8 s, or anyone locked up | band in **at the next bar line**: big drum fill over the rest of the current bar plus a riser landing on the downbeat, then the intro riff |
 | `push` during a verse | jump to the pre-chorus at the next 4-bar phrase, so the chorus lands on the lock or the kill |
-| hero (a kill in the last 25 s, or winning 2:1 and healthy) at the end of a chorus | the solo (once per chorus), then chorus2 |
+| hero (a kill in the last 25 s, or winning 2:1 and healthy) at the end of a chorus | the solo (once per chorus), then the chorus |
 | a missile guiding on the player, or health < 35 % | danger on the next bar (big fill); when it clears, the interrupted section resumes from its start, never the song's top |
 | the fight dies down (fight mood held 20 s after the last activity) | cool-down (2 bars), then calm or tension |
 | fighting again within 64 bars | the next verse (the intro only for a fresh fight) |
@@ -189,7 +202,7 @@ Every change lands on a bar line. Fills are dynamic only for unplanned changes; 
 | intro | riff cells A B C D (D5 D5 B♭5 C5) |
 | verse | cells VA VB VA VC VA VB VA VD (D5 D5 D5 B♭5 D5 D5 D5 C5) |
 | pre | Gm B♭ Gm Asus4→A (half bars) |
-| chorus / chorus2 | B♭ C F Dm \| B♭ C F A |
+| chorus | B♭ C F Dm \| B♭ C F A |
 | solo | Dm B♭ C Dm \| Gm B♭ C A |
 | danger | D5 E♭5 D5 C5 |
 | cool | B♭ Dm |
@@ -215,7 +228,7 @@ Dm: F5(0,4)    E5(4,4)   D5(8,8,v)
 B♭: D5(0,6,b)  C5(6,2)   D5(8,4)   F5(12,4)
 C : E5(0,6)    F5(6,2)   G5(8,8,bv)
 F : A5(0,6)    B♭5(6,2)  C6(8,4,b) A5(12,4)
-A : A5(0,16,vf)                     (chorus2: twin lead a diatonic third below in bars 5-8)
+A : A5(0,16,vf)                     (twin lead a diatonic third below in bars 5-8)
 PRE-CHORUS
 Gm: B♭4(0,8) D5(8,8,v) | B♭: D5(0,8) F5(8,8,v) | Gm: G5(0,8,b) F5(8,4) D5(12,4) | Asus4/A: D5(0,8,v) E5(8,8,bv)
 VERSE (bars 5-8, low counter-line)
@@ -297,7 +310,10 @@ A cue is picked per mission: `mission.music` if set, Nightfall for night start t
 - `node src/combat/audio/run-harness.mjs [filter]` builds `dist/cbt-audio.html` from `harness.js` and runs it in headless Chromium.
   - It renders the real stems and the live engine through an `OfflineAudioContext` and walks a scripted game per cue: calm, contact, a lock, a kill, a missile, disengage, re-engage, win.
   - Per section it reports integrated loudness (BS.1770 gating), low/mid/high energy (< 250 Hz, 250 Hz–4 kHz, > 4 kHz), peak and stereo width.
-  - It also checks clicks at every cut (energy above 17 kHz, which band-limited 32 kHz stems cannot contain on their own), how fast the band starts after contact, the riser, the duck depth and the intelligibility of radio and warnings over the ducked music, and the scheduler cost.
+  - It also checks clicks at every cut (energy above 17 kHz, which band-limited 24 kHz stems cannot contain on their own), how fast the band starts after contact, the riser, the duck depth and the intelligibility of radio and warnings over the ducked music, and the scheduler cost.
+  - Phone speaker: the same per-section loudness after a 4th-order 300 Hz high-pass. The verse must sit within 6 LU of the chorus. To get there, palm mutes carry pick attack and 1.7 kHz presence, the verse and tension hats are louder, and the bass has an overdriven 700 Hz–1.5 kHz layer.
+  - `music-memory`: MB per cue and profile against the budget, and the cache releasing a cue on a switch.
+  - `music-coldstart`: a real `AudioContext` with nothing rendered. It measures the time to the first note (live fallback), the first stem, all stems, and the worst main-thread stall. `THROTTLE=4 node src/combat/audio/run-harness.mjs music-coldstart` runs it under CDP CPU throttling.
   - The SFX, warnings, radio, pool and mix scenarios run the real one-shot builders into the simulator's master (or the real F-16 rig).
 - `node --test src/combat/audio` covers the pure logic:
   - theory and cue integrity: every note in key and in range, downbeat melody notes are chord tones

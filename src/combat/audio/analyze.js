@@ -110,3 +110,10 @@ export function hfEnergy(x, t, f0 = 17000, sr = SR, N = 1024) {
   fft(re, im); let hi = 0; for (let k = Math.ceil(f0 / (sr / N)); k < N / 2; k++) hi += re[k] * re[k] + im[k] * im[k];
   return hi / N;
 }
+/** "Phone speaker": a 4th-order high-pass at f0 (two Butterworth biquads) over every channel; returns a buffer-like object. */
+export function highpassBuf(buf, f0 = 300, sr = SR) {
+  const w = Math.tan(Math.PI * f0 / sr), Q = Math.SQRT1_2, a0 = 1 + w / Q + w * w;
+  const b0 = 1 / a0, b1 = -2 / a0, b2 = 1 / a0, a1 = 2 * (w * w - 1) / a0, a2 = (1 - w / Q + w * w) / a0;
+  const ch = []; for (let c = 0; c < buf.numberOfChannels; c++) { let y = biquad(buf.getChannelData(c), b0, b1, b2, a1, a2); y = biquad(y, b0, b1, b2, a1, a2); ch.push(y); }
+  return { numberOfChannels: ch.length, length: ch[0].length, getChannelData: (c) => ch[c] };
+}

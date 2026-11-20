@@ -119,6 +119,11 @@ export const MUSIC_SCENARIOS_EXTRA = {
     // queue behaviour with an urgent line
     const { obj: o2 } = await H.render({ seconds: 4, setup: (ac, M) => { const r = createRadio(ac, M.flightIn, { speech: null }); r.say({ text: 'Viper two, say fuel state when able.', role: 'lead', priority: 0 }, 0); return { r, seen: [] }; },
       tick: (t, o) => { if (t > 0.6 && !o.u) { o.u = 1; o.r.say({ text: 'Missile launch, break right!', role: 'wingman', priority: 2 }, t); } o.r.update(t, false); const c = o.r.current?.text; if (c && o.seen[o.seen.length - 1] !== c) o.seen.push(c); } });
+    // mobile: speak() accepted but never started -> murmur after 1.5 s
+    const deaf = { getVoices: () => [{ name: 'x', lang: 'en-US' }], speak() {}, cancel() {} };
+    const { buf: b3, obj: o3 } = await H.render({ seconds: 4, setup: (ac, M) => ({ r: createRadio(ac, M.flightIn, { speech: deaf }) }), tick: (t, o) => { if (!o.s) { o.s = 1; o.r.say({ text: 'Splash one, returning to station.', role: 'lead', priority: 1 }, t); } o.r.update(t, false); } });
+    const x3 = A.mono(b3);
+    H.check('radio: speech that never starts falls back to the murmur after 1.5 s', o3.r.stats.speechFallbacks === 1 && A.rms(x3, 1.7, 2.6) > 3 * A.rms(x3, 0.6, 1.4), `fallbacks ${o3.r.stats.speechFallbacks}, ${A.db(A.rms(x3, 0.6, 1.4)).toFixed(1)} -> ${A.db(A.rms(x3, 1.7, 2.6)).toFixed(1)} dB`);
     H.check('radio: an urgent line pre-empts chatter', o2.seen[1] === 'Missile launch, break right!', o2.seen.join(' | '));
   },
   async 'mix'(H) {

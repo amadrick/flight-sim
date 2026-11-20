@@ -39,7 +39,7 @@ function row(name, buf, extra = {}) {
 }
 
 const H = { render, results, check, row, A, createMusic, SR };
-H.stemsFor = (id) => stemsFor(H, id);
+H.stemsFor = (id, p) => stemsFor(H, id, p);
 window.__sim = { ready: false, error: null, results, ctx: {}, step() {}, H };
 const filter = new URLSearchParams(location.search).get('only') || '';
 (async () => {
