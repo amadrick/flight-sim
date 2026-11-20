@@ -57,7 +57,7 @@ TurfP turfPlan(vec2 w, float dP, float nA, float nB, float nC) {
   T.longG = T.longG * T.longG * (3.0 - 2.0 * T.longG);
   T.H = mix(0.04, 0.13, T.longG) * (0.8 + 0.45 * T.since);
   // (rotary gang mowers without rollers lay the grass only a little: stripes are subtle and fade as it regrows)
-  T.lay = mix(0.48, 0.18, T.longG) * (1.0 - 0.6 * T.since);
+  T.lay = mix(0.62, 0.18, T.longG) * (1.0 - 0.5 * T.since);
   T.dir = ax * (mod(pid, 2.0) < 0.5 ? 1.0 : -1.0);
   return T;
 }
