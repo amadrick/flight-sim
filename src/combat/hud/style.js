@@ -11,8 +11,9 @@ export const CSS = `
 .cbt-hud-cap{font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--fg-dim,#a9b8c7)}
 
 /* objectives (top left) */
-.cbt-hud-obj{--r:20px;position:absolute;left:var(--cbt-gl);top:var(--cbt-gt);width:min(310px,calc(100vw - var(--cbt-side) - 64px));box-sizing:border-box;padding:11px 14px 12px;
-  transition:transform .5s var(--spring,cubic-bezier(.34,1.32,.5,1)),opacity .3s}
+.cbt-hud-left{position:absolute;left:var(--cbt-gl);top:var(--cbt-gt);width:min(310px,calc(100vw - var(--cbt-side) - 64px));display:flex;flex-direction:column;gap:8px;align-items:stretch;
+  transition:transform .5s var(--spring,cubic-bezier(.34,1.32,.5,1))}
+.cbt-hud-obj{--r:20px;position:relative;box-sizing:border-box;padding:11px 14px 12px}
 .cbt-hud-obj-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
 .cbt-hud-timer{font:600 15px/1 var(--font-mono,'B612 Mono',ui-monospace,monospace);color:var(--fg,#f2f6fa);letter-spacing:.02em}
 .cbt-hud-timer.cbt-hud-low{color:var(--accent,#ffb000)}
@@ -33,7 +34,7 @@ export const CSS = `
 .cbt-hud-obj-f b{font:600 13px/1 var(--font-mono,monospace);color:var(--fg,#f2f6fa)}
 
 /* right column: radar, own-ship status, kill feed */
-.cbt-hud-side{position:absolute;right:var(--cbt-gr);top:calc(var(--cbt-gt) + 54px);width:var(--cbt-side);display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.cbt-hud-side{position:absolute;right:var(--cbt-gr);top:calc(var(--cbt-gt) + var(--cbt-side-top,54px));width:var(--cbt-side);display:flex;flex-direction:column;gap:10px;align-items:stretch}
 .cbt-hud-radar{--r:24px;aspect-ratio:1;overflow:hidden;pointer-events:auto;cursor:pointer;touch-action:manipulation}
 .cbt-hud-radar canvas,.cbt-hud-stat canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1}
 .cbt-hud-radar.cbt-hud-mini{aspect-ratio:auto;height:34px;width:84px;align-self:flex-end;--r:17px}
@@ -53,6 +54,8 @@ export const CSS = `
 .cbt-hud-subs{position:absolute;left:50%;transform:translateX(-50%);bottom:120px;width:min(660px,calc(100% - 32px));display:flex;flex-direction:column;align-items:center;gap:6px}
 .cbt-hud-sub{max-width:100%;box-sizing:border-box;padding:6px 14px 7px;border-radius:12px;background:rgba(6,10,15,.62);font-size:15px;line-height:1.35;text-align:center;color:var(--fg,#f2f6fa);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cbt-hud-subs.cbt-hud-subs-left{position:static;transform:none;width:auto;align-items:stretch;gap:5px}
+.cbt-hud-subs-left .cbt-hud-sub{text-align:left;-webkit-line-clamp:3}
 .cbt-hud-sub b{font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-right:8px;font-size:13px}
 .cbt-hud-sub[data-team=blue] b{color:var(--cbt-blue)}.cbt-hud-sub[data-team=red] b{color:#ff8a74}.cbt-hud-sub[data-team=neutral] b{color:var(--fg-dim,#a9b8c7)}
 .cbt-hud-sub.cbt-hud-urgent{background:rgba(40,14,8,.72);box-shadow:inset 0 0 0 1.5px rgba(255,176,0,.75);font-weight:600}
@@ -82,10 +85,12 @@ export const CSS = `
 .cbt-hud-kbd{display:inline-grid;place-items:center;min-width:24px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:7px;color:var(--fg,#f2f6fa);
   font:700 11px/1 var(--font-mono,'B612 Mono',ui-monospace,monospace);background:rgba(10,14,20,.6);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22),inset 0 -2px 0 rgba(0,0,0,.3)}
 .cbt-hud-hints.cbt-hud-out{opacity:0}
+.cbt-hud-hints.cbt-hud-off{display:none}
 
 @media (max-width:640px),(max-height:520px){
   .cbt-hud-root{--cbt-side:132px}
-  .cbt-hud-obj{padding:8px 11px 9px;--r:16px;width:min(310px,calc(100vw - 236px))}
+  .cbt-hud-left{width:min(310px,calc(100vw - 236px))}
+  .cbt-hud-obj{padding:8px 11px 9px;--r:16px}
   .cbt-hud-obj li{font-size:12px;gap:6px;grid-template-columns:11px 1fr auto}
   .cbt-hud-obj li::before{width:8px;height:8px;margin-top:3px}
   .cbt-hud-obj-f{display:none}
@@ -94,12 +99,13 @@ export const CSS = `
   .cbt-hud-radar{--r:18px}
   .cbt-hud-kill{font-size:11px;padding:3px 8px}
   .cbt-hud-sub{font-size:13px;padding:5px 11px}
-  .cbt-hud-sub b{font-size:11.5px}
+  .cbt-hud-subs.cbt-hud-subs-left{position:static;transform:none;width:auto;align-items:stretch;gap:5px}
+.cbt-hud-subs-left .cbt-hud-sub{text-align:left;-webkit-line-clamp:3}
+.cbt-hud-sub b{font-size:11.5px}
   .cbt-hud-pops{top:calc(var(--cbt-gt) + 44px)}
 }
-@media (max-width:520px),(pointer:coarse){.cbt-hud-hints{display:none}}
 @media (prefers-reduced-motion:reduce){
-  .cbt-hud-obj,.cbt-hud-obj li,.cbt-hud-kill,.cbt-hud-pop,.cbt-hud-banner,.cbt-hud-hint,.cbt-hud-hints{transition:none!important}
+  .cbt-hud-left,.cbt-hud-obj li,.cbt-hud-kill,.cbt-hud-pop,.cbt-hud-banner,.cbt-hud-hint,.cbt-hud-hints{transition:none!important}
   .cbt-hud-banner.cbt-hud-in{transform:translate(-50%,-50%)}
 }
 `;

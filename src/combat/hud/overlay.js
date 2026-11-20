@@ -422,8 +422,8 @@ export function createOverlay(H) {
     }
     // incoming gunfire
     if (H.near.t > 0) {
-      const y = cy - H.fsWarn * 1.6;
-      text('GUNS', P.cx, y, H.C.red, H.fontWarnS, 'center');
+      // above the screen centre, mirroring the shoot cue below it (clear of the warning stack and score pops)
+      text('GUNS', P.cx, P.cy - H.cueOff, H.C.red, H.fontWarnS, 'center');
     }
   }
 

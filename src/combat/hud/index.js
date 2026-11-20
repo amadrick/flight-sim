@@ -14,6 +14,7 @@ import { createPanels } from './panels.js';
 import { createRadar } from './radar.js';
 import { createStatus } from './status.js';
 import { createOverlay } from './overlay.js';
+import { SEATS, seatMode, applySeats } from './seats.js';
 
 const HIST = 64, HIST_DT = 0.04;           // gun-line history: 64 samples at 25 Hz ≈ 2.5 s
 
@@ -75,12 +76,14 @@ export async function createCombatHud(combat) {
   ctx.events.on('cmd', (c) => { if (c?.name === 'hudToggle') userVisible = !userVisible; });
 
   // ---- layout ---------------------------------------------------------------------------------------------
-  let layoutKey = '', vignette = null, sideW = 212, statH = 0;
+  let layoutKey = '', vignette = null, sideW = 212, seat = '', subsLeft = false;
   function layout(W, Hh, dpr) {
     const k = W + 'x' + Hh + '@' + dpr;
     if (k === layoutKey) return;
     layoutKey = k;
     H.compact = W < 640 || Hh < 520;
+    const mode = seatMode(W, Hh, coarse);
+    if (mode !== seat) { seat = mode; subsLeft = applySeats(panels, root, mode); }
     const m = Math.min(W, Hh);
     H.fs = Math.round(clamp(m * 0.016, 11, 15));
     H.fsWarn = Math.round(clamp(m * 0.042, 20, 40));
@@ -234,7 +237,7 @@ export async function createCombatHud(combat) {
     if (!simHint) simHint = doc.querySelector('.hud-hint');
     const up = !!simHint && !simHint.hidden && !simHint.classList.contains('off');
     const want = up ? simHint.offsetHeight + 10 : 0;
-    if (want !== hintShift) { hintShift = want; panels.obj.style.transform = want ? `translateY(${want}px)` : ''; panels.setHintsBlocked(up); }
+    if (want !== hintShift) { hintShift = want; panels.left.style.transform = want ? `translateY(${want}px)` : ''; panels.setHintsBlocked(up); }
   }
 
   let shown = false, lastStat = -1, frame = 0;
@@ -311,8 +314,7 @@ export async function createCombatHud(combat) {
       // ---- DOM panels ----
       panels.setTimer(combat.director?.timer);
       if (combat.director?.stats?.score != null) panels.setScore(combat.director.stats.score);
-      const bottom = H.interior ? Math.max(Hh * 0.05, 16) : Hh - stripTop(W, Hh) + 12;
-      panels.setSubsBottom(coarse ? Math.max(bottom, 96) : bottom);
+      if (!subsLeft) panels.setSubsBottom(H.interior ? Math.max(Hh * 0.05, 16) : Hh - stripTop(W, Hh) + SEATS.subsStripGap);
       panels.tick(rdt, live);
       syncHintShift();
     },

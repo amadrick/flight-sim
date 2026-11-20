@@ -117,6 +117,14 @@ test('strip estimate sits in the lower part of the screen', () => {
   assert.ok(b > 550 && b < 760, String(b));      // phones wrap the strip into more rows
 });
 
+test('seat mode: phones and touch screens are narrow', async () => {
+  const { seatMode } = await import('./seats.js');
+  assert.equal(seatMode(1920, 1080, false), 'wide');
+  assert.equal(seatMode(400, 800, false), 'narrow');
+  assert.equal(seatMode(1366, 1024, true), 'narrow');
+  assert.equal(seatMode(900, 480, false), 'narrow');
+});
+
 test('the whole hud module imports in node without touching the DOM', async () => {
   const m = await import('./index.js');
   assert.equal(typeof m.createCombatHud, 'function');
