@@ -58,10 +58,14 @@ float vegGround(vec2 rxz) {
 }
 // per-tree foliage colour: species mean, per-tree brightness / hue, autumn tint for broadleaf
 vec3 vegTreeColour(int s, vec2 vh, vec2 vh2) {
-  vec3 c = uVegLeaf[s] * (0.78 + 0.44 * vh.x);
+  // individuals differ a lot in a real stand (age, vigour, light, genotype): brightness over about 2:1, yellower
+  // and bluer greens, a few greyish ones
+  float b = vh.x * 0.6 + fract(vh.x * 7.31 + vh2.y * 3.7) * 0.4;
+  vec3 c = uVegLeaf[s] * (0.62 + 0.76 * b);
   float broad = 1.0 - uVegSp[s].z;
-  c = mix(c, c * vec3(1.30, 1.15, 0.80), smoothstep(0.55, 1.0, vh.y) * 0.6 * broad);      // yellower individuals
-  c = mix(c, c * vec3(0.85, 1.0, 1.15), smoothstep(0.45, 0.0, vh.y) * 0.4);                // bluer individuals
+  c = mix(c, c * vec3(1.35, 1.18, 0.75), smoothstep(0.5, 1.0, vh.y) * 0.75 * broad);      // yellower individuals
+  c = mix(c, c * vec3(0.82, 0.98, 1.2), smoothstep(0.5, 0.0, vh.y) * 0.55);                // bluer individuals
+  c = mix(c, vec3(dot(c, vec3(0.3, 0.55, 0.15))), step(0.9, vh2.y) * 0.35);                 // greyish
   float aut = uVegSeason.x * broad * smoothstep(0.2, 0.9, vh2.x);
   c = mix(c, vec3(0.22, 0.10, 0.025) * (0.6 + 0.8 * vh2.y), aut * 0.8);
   return c;
