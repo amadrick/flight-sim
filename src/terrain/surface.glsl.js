@@ -259,7 +259,7 @@ uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
 // airfield turf (set by terrSurface, read by the turf reflectance): cover, lay direction (world xz), lay 0..1, sward height (m)
 float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
 // diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)
-const vec3 TURF_REF = vec3(0.060, 0.108, 0.034);
+const vec3 TURF_REF = vec3(0.066, 0.104, 0.040);
 uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m)
 float gGrassK = 0.0;             // natural grass share of the pixel (gets the long-sward reflectance)
 
@@ -1089,8 +1089,14 @@ TerrSurf terrSurface(vec3 rp) {
     vec4 TR = turfReflectance(ng, Vw, uSunDir, turfK > grassK ? gTurfDir : vec2(1.0, 0.0), tL);
     vec3 skyK = TR.a * uTurfSky.rgb, sunK = TR.rgb;
     vec3 ref = mix(uTurfRefA, uTurfRefB, tL);
-    S.albedo = mix(S.albedo, S.albedo * skyK / ref, bK);
-    S.canopyK *= mix(vec3(1.0), sunK / max(skyK, vec3(1.0e-4)), bK);
+    // brightness from the networks, colour mostly from the painted albedo (the traced leaf optics are one cultivar;
+    // 30 % of the traced chroma change is kept: yellower toward the sheen, bluer-green down-sun)
+    const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
+    vec3 skyR = skyK / ref, sunR = sunK / max(skyK, vec3(1.0e-4));
+    skyR = mix(vec3(dot(skyR, LUM)), skyR, 0.3);
+    sunR = mix(vec3(dot(sunK, LUM) / max(dot(skyK, LUM), 1.0e-4)), sunR, 0.3);
+    S.albedo = mix(S.albedo, S.albedo * skyR, bK);
+    S.canopyK *= mix(vec3(1.0), sunR, bK);
     S.specK = 1.0 - 0.85 * bK;                         // the cuticle sheen is part of the learned BRF
   }
 #endif

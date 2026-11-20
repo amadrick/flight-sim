@@ -18,12 +18,13 @@ test('turf network: better than the fitted analytic vegetation BRDF and far bett
 });
 test('turf reflectance: physical sanity', () => {
   const [A, B] = TURF_CORNERS;
-  // hot spot: looking down-sun (view = sun direction) is brighter than looking into the sun
-  const hot = turfBRF(sun, A.lean, A.H, 0.5, 1.0, 0.5, 1.0)[1], into = turfBRF(sun, A.lean, A.H, 0.5, 1.0, 0.5, 1.0 + Math.PI)[1];
+  // hot spot: looking down-sun (view = sun direction) at an upright sward is much brighter than looking into the sun
+  // (a laid sward is not: its sheen and lay compete)
+  const hot = turfBRF(sun, B.lean, B.H, 0.5, 1.0, 0.5, 1.0)[1], into = turfBRF(sun, B.lean, B.H, 0.5, 1.0, 0.5, 1.0 + Math.PI)[1];
   assert.ok(hot > 1.3 * into, `hot ${hot} into ${into}`);
   // mowing stripes: a laid sward looks lighter viewed along the lay (from behind, view azimuth pi) than against it
   const along = turfBRF(sun, A.lean, A.H, 0.6, Math.PI / 2, 0.3, Math.PI)[1], against = turfBRF(sun, A.lean, A.H, 0.6, Math.PI / 2, 0.3, 0)[1];
-  assert.ok(along > 1.12 * against, `along ${along} against ${against}`);
+  assert.ok(along > 1.25 * against, `along ${along} against ${against}`);
   // green canopy: green channel dominates, albedos plausible for turf
   for (const C of TURF_CORNERS) { const a = turfAlbedo(sky, C.lean, C.H); assert.ok(a[1] > a[0] && a[1] > a[2] && a[1] > 0.03 && a[1] < 0.2, JSON.stringify(a)); }
   for (let i = 0; i < 200; i++) {

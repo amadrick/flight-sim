@@ -74,7 +74,7 @@ export async function createTerrain(ctx) {
   let sel = createLodSelector({ P, s0: S0, L, k: cfg.k, maxInstances: 4096, heightAt });
   const noiseTex = createNoiseTextures(ctx.quality.anisotropy ?? 4);
   // pavement distance field of the nearest airport (worn verges, mowing strips, where the near-field turf may grow)
-  const airfield = createAirfieldMap(ctx, { texel: ctx.quality.level === 'low' ? 4 : 2 });
+  const airfield = createAirfieldMap(ctx, { texel: ctx.quality.level === 'low' ? 4 : 2, maxSize: ['high', 'ultra'].includes(ctx.quality.level) ? 2048 : 1536 });
 
   // ---- uniforms (shared by reference with the public height hook) ------------------------------------------
   const F = ctx.uniforms.frame;
