@@ -11,6 +11,7 @@
 | `ui/logic.js` | pure grouping / next-mission / formatting / custom-setup validation |
 | `ui/progress.js` | saved progress + settings, one guarded localStorage key `skyward.combat.v1` |
 | `ui/map.js` | briefing tactical map (canvas) |
+| `ui/hooks.js` | menu entry points registered at runtime (see INTEGRATION.md) |
 | `input/index.js` | controller (`createCombatInput`) |
 | `input/map.js` | single source of truth for keys, pad buttons, touch buttons and the help rows |
 | `*.test.js` | `node --test src/combat/ui/ui.test.js src/combat/input/input.test.js` |
@@ -27,9 +28,10 @@
 `createCombatInput(combat)` → `{ update(dt), trigger, bindings }` (COMBAT.md §9), plus (additive):
 - `bindings` rows carry `id` (`gun, missile, flare, targetNext, targetPrev, targetNearest, weaponNext, restart`),
   `pad` (button names) and `touch` (button label) next to `group / action / keys` — the HUD's first-minute hints use them.
-- `padBindings` — gamepad rows for the help screen (group `Combat gamepad`).
+- `padBindings` — gamepad rows for the help screen (group `Combat gamepad`; the full map or the R3-only fallback).
+- `padHooked()` — whether the simulator's input honours `padOwns` (`ctx.input.combatPadHook`).
 - `padOwns(i)` — true when combat owns standard-gamepad button `i` this frame (src/input skips it).
-- `touchVisible`, `release()` (drops the trigger).
+- `touchVisible`, `release()` (drops the trigger). Export `createTouchButtons(parent, onPress, onHold)`.
 
 `combat.start(id, { aircraft, difficulty, custom })` is called with `custom` only for a custom mission
 (`id === 'instant-custom'` or `def.custom`): `{ enemies 1..8, wingmen 0..3, enemyType id|'mixed', gunsOnly, startRange m,
@@ -45,8 +47,8 @@ Audio (all optional): `combat.audio.setMusicVolume(v)`, `combat.audio.musicEnabl
 `combat.audio.setRadioVoice(on)`; applied at boot, on change and on every `mission:start`.
 
 ## Behaviour
-- **Entry**: the menu's top bar has a **Missions** tab (hangar), the pause menu has **Mission select**; both call
-  `ctx.combat.ui.openMissions()`. `?cbtui=missions[&cbtmission=<id>]` / `?cbtui=settings` open a screen at boot.
+- **Entry**: a **Missions** tab in the menu's top bar (hangar) and **Mission select** in the pause menu, both added at
+  runtime by `hooks.js` and calling `ctx.combat.ui.openMissions()`. `?cbtui=missions[&cbtmission=<id>]` / `?cbtui=settings` open a screen at boot.
 - **Mission select** lists `combat.director.missions` by category (Training, Campaign, Instant action, then anything
   else) in `order`, with completion ticks, best rating and threat. Wide screens show list and briefing side by side;
   at ≤ 720 px the list opens the briefing as its own page (Back / Esc returns).
@@ -67,20 +69,21 @@ Audio (all optional): `combat.audio.setMusicVolume(v)`, `combat.audio.musicEnabl
 - `localStorage` may be missing or throw: progress and settings then live for the session only.
 
 ## Control map (combat, mission running)
-| action | keyboard | mouse | gamepad (standard, airborne) | touch |
-|---|---|---|---|---|
-| Gun (hold) | `Space` (airborne; wheel brake on the ground) | left button on the 3D view (airborne) | A | GUN (hold) |
-| Missile | `Enter`, `X` | | X | MSL |
-| Flares | `V` | | B | FLR |
-| Next / previous target | `Tab` / `Shift+Tab` | | Y | TGT |
-| Target nearest the nose | `Y` | | R3 | |
-| Switch missile type | `Z` | | D-pad up | |
-| Speedbrake | `B` (simulator) | | D-pad down (moved from B) | (simulator) |
-| Restart mission | `Backspace` (core) | | | |
+| action | keyboard | mouse | gamepad: full map (needs the src/input patch) | gamepad: today | touch |
+|---|---|---|---|---|---|
+| Gun (hold) | `Space` (airborne; wheel brake on the ground) | left button on the 3D view (airborne) | A | right stick click | GUN (hold) |
+| Missile | `Enter`, `X` | | X | – | MSL |
+| Flares | `V` | | B | – | FLR |
+| Next / previous target | `Tab` / `Shift+Tab` | | Y / – | – | TGT |
+| Target nearest the nose | `Y` | | R3 | – | |
+| Switch missile type | `Z` | | D-pad up | – | |
+| Speedbrake | `B` (simulator) | | D-pad down (moved from B) | B (simulator) | (simulator) |
+| Restart mission | `Backspace` (core) | | | | |
 
-On the ground the simulator keeps every gamepad button (A gear, B speedbrake, X / Y flaps, D-pad trim). Nothing uses
-Ctrl / Alt / Meta. Keys are ignored while the menu or a combat screen is open, while paused and while typing in a field;
-the trigger is released on window blur, tab switch, pause and menu open. Right-drag look, wheel zoom and the `M`
+The full gamepad map applies only airborne in a live mission; on the ground the simulator keeps every button. Nothing
+uses Ctrl / Alt / Meta. Keys are ignored while the menu or a combat screen is open, while paused and while typing in a
+field; the trigger is released on window blur, tab switch, pause and menu open. Right-drag look, wheel zoom and the `M`
 mouse-yoke toggle are unchanged (with the yoke on, the first left click also takes pointer lock).
-Touch buttons (≥ 52 px) appear only on touch devices while a mission runs: a 2×2 cluster (MSL FLR / wide GUN) above the
-simulator's button grid in portrait, to the left of it on short (≤ 520 px tall) screens.
+Touch buttons (≥ 52 px; GUN largest, red) appear only on touch devices while a mission runs, in their own container on
+the right edge above mid-height (TGT FLR / MSL / GUN; 2 × 2 on screens ≤ 520 px tall) — one CSS block in
+`input/index.js` places it.

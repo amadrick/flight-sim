@@ -1,43 +1,62 @@
-# Combat UI / input — edits outside src/combat/ui and src/combat/input
+# Combat UI / input — integration notes
 
-All small, additive and behaviour-preserving when no mission is running. `ctx.combat` is created after the menu and
-the input, so every access is lazy (`ctx.combat?.…` at call time).
+**No file outside `src/combat/ui/` and `src/combat/input/` is modified.** (A first version edited `src/ui/menu/**` and
+`src/input/index.js`; both were reverted because the mobile-layout rework touches those files in parallel.)
+Everything that reaches into the simulator's UI is registered at runtime from one file, `ui/hooks.js`, and every hook
+finds its anchor by id and silently does nothing if the anchor is gone.
 
-## src/ui/menu/ (exception (a))
-| file | change | why |
+## Runtime hooks (`ui/hooks.js`)
+| hook | anchor | what |
 |---|---|---|
-| `icons.js` | new `ICON.missions` (crosshair line icon) | icon for the Missions tab |
-| `index.js` ~158 | **Missions** tab in the top bar (Hangar · Missions · Settings · Controls) → `ctx.combat.ui.openMissions()` | prominent entry to combat from the hangar |
-| `index.js` ~344, ~354 | pause menu: restart button keeps its id but its label is a span; new **Mission select** button (`#menu-pause-missions`) → `openMissions()` | in-mission entry points |
-| `index.js` `syncPause` | label reads **Restart mission** while `ctx.combat.active`; mission title above the aircraft line; Mission select hidden if `ctx.combat.ui` is missing | |
-| `index.js` `restart()` | while `ctx.combat.active`: `close(); ctx.combat.restart()` instead of `ctx.session.restart()` | a plain session restart would abort the mission (core aborts on `session:start`) |
-| `index.js` new `openMissions()` | guarded call into `ctx.combat?.ui?.openMissions?.()` | |
-| `index.js` `renderKeys` | appends `ctx.combat.input.bindings` (group `Combat`) and `padBindings` (group `Combat gamepad`); re-rendered once the first time the Controls view is shown after combat exists | combat keys on the help screen |
-| `index.js` `'crash'` listener and `showCrash()` | return early while `ctx.combat?.active` | the combat debrief owns the moment after a crash / shoot-down |
-| `style.js` end | `@media (max-width: 460px) { .menu-tab { padding: 0 9px; font-size: 13px } }` | four tabs still fit at 400 px |
+| **Missions** tab | after `#menu-tab-hangar` | `button.menu-tab#menu-tab-missions` → `ctx.combat.ui.openMissions()` |
+| **Mission select** | after `#menu-restart` (pause menu) | `button.menu-act#menu-pause-missions` → `openMissions()` |
+| Restart restarts the mission | capture-phase click listener on `#menu-restart` | while `combat.active`: `ctx.menu.close(); combat.restart()` and stops the menu's own handler (a session restart would abort the mission); its text node reads "Restart mission" on each `menu:open` |
+| Controls reference | appended to `#menu-root .menu-keys` | key groups "Combat" (`combat.input.bindings`) and "Combat gamepad" (`combat.input.padBindings`), built with the menu's classes |
+| Crash card stands down | `html.cbt-active` while a mission runs + CSS `.cbt-active .menu-crash { display: none }` | the debrief owns that moment |
+| Four tabs at phone width | CSS `@media (max-width: 460px) .menu-tabs .menu-tab { padding: 0 9px; font-size: 13px }` | |
 
-"Leave to hangar" is the pause menu's existing **Back to hangar** (core aborts the mission when the hangar session
-starts). Gamepad LB / RB tab cycling still covers Hangar / Settings / Controls only.
+While a combat screen is open, `html.cbt-ui-open` hides `.menu-corner`, `.menu-crash`, `.inp-yoke`, `.inp-touch` and
+the combat touch buttons. "Leave to hangar" is the pause menu's existing **Back to hangar** (core aborts the mission
+when the hangar session starts). When the menu is merged, the integrator may replace these hooks with real entry points
+(the menu would call `ctx.combat?.ui?.openMissions?.()`, read `ctx.combat?.input?.bindings`, check
+`ctx.combat?.active` in its crash listener) and delete `hooks.js`.
 
-## src/input/index.js (exception (b)) — `pollPad`, standard mapping only
+## Keyboard and mouse — handled from this side
+- Combat keys `Enter X V Tab Y Z` are not in the simulator's key table. `Space` is shared on purpose (wheel brake on the
+  ground, gun only when the press starts airborne; braking in the air is harmless). Left click on the canvas is unused by
+  the simulator except to request pointer lock while the mouse yoke is on.
+- While a combat screen is open, its `window` keydown listener runs in the **capture** phase and calls
+  `stopPropagation()`, so neither the simulator's input nor the menu sees keys (no Backspace restart, no P pause, no Esc
+  opening the pause menu under the screen). Keyups are swallowed only for keys pressed while the screen was open, so a
+  key held before it opened cannot stick in the simulator's input.
+
+## Gamepad — one optional patch for `src/input/index.js` (not applied)
+Without it, combat uses only the free button: **right stick click = gun (hold)**; missiles / flares / targets are on
+keyboard and touch. The combat screens navigate with the pad (D-pad / stick, A, B) and undo the simulator's own A (gear)
+and B (speedbrake) toggles in the same frame (physics is paused then; both are toggles). With the patch, combat owns
+A gun, B flares, X missile, Y next target, R3 nearest, D-pad up switch missile, D-pad down speedbrake — **only while
+airborne in a live mission** (and every button while a combat screen is open); on the ground the simulator keeps its map.
+
+In `pollPad`, standard-mapping branch (after `const open = menuOpen();`):
 ```js
-const owned = (i) => !!(ctx.combat && ctx.combat.input && ctx.combat.input.padOwns && ctx.combat.input.padOwns(i));
+const owned = (i) => !!(ctx.combat?.input?.padOwns?.(i));
+// then guard each edge-triggered use, e.g.
+if (press(0) && !open && !owned(0)) command('gearToggle');
+if (press(1) && !open && !owned(1)) toggleSpeedbrake();
+if (press(2) && !owned(2)) fire('flapsDown');   // likewise 3, 8, 9, 14, 15
+const up = !!(bt[12] && bt[12].pressed) && !owned(12), dn = !!(bt[13] && bt[13].pressed) && !owned(13);
 ```
-Every edge-triggered button (`A` gear, `B` speedbrake, `X` / `Y` flaps, Back / D-pad left-right camera, Start menu) and
-the D-pad up / down trim are skipped when `owned(i)` is true. Why: without it the gamepad gun (A) would also cycle the
-landing gear, missile (X) / target (Y) would move the flaps, flares (B) would toggle the speedbrake, and while a mission
-screen is open (the menu is closed then) A / B / Start would fire gear / speedbrake / the pause menu underneath it.
-`padOwns(i)` is true only (1) while a combat screen is open (any button: the screens navigate with the pad) or (2) during
-a live mission, airborne, not in the menu, for buttons 0, 1, 2, 3, 11, 12, 13. On the ground and outside missions it
-is always false, so the simulator's gamepad map is unchanged. Analog axes (sticks, triggers, LB / RB rudder) are never
-touched. Keyboard and mouse needed no change: combat keys (`Enter X V Tab Y Z`) are not in the simulator's key table,
-`Space` is shared on purpose (brake on the ground, gun airborne; braking in the air is harmless), left click is unused
-by the simulator except to take pointer lock while the mouse yoke is on, and the combat screens capture keys at window
-level before the simulator's listeners.
+and once in `createInput`: `input.combatPadHook = true;` (combat switches to the full map when it sees it; the UI then
+stops undoing A / B).
 
-## Requests (not done — owned by others)
-- **Simulator HUD** (`src/ui/hud/index.js:129`): it hides on `ctx.menu.isOpen` or the `showcase` camera. The combat
-  screens switch the camera to `showcase` so the HUD hides today; a direct `|| ctx.combat?.ui?.isOpen` there would be
-  more robust.
-- **Combat HUD**: hide while `combat.ui.isOpen` (agreed).
-- **Missions**: the screens read the fields listed in README.md; `instant-custom` receives `options.custom`.
+## Touch fire buttons
+Own container `.cbt-inp-touch` (in `ctx.uiRoot`), placed by one CSS block at the top of `input/index.js`: right edge
+(`right: max(16px, safe-area-inset-right)`), `top: clamp(64px + safe-area-inset-top, 28vh, 280px)` (64px + inset on
+screens ≤ 520 px tall, where the grid becomes 2 × 2). That keeps it below top-right buttons and above any bottom-right
+throttle up to ~44 % of the height, and away from a bottom-left stick. Buttons are built by
+`createTouchButtons(parent, onPress, onHold)` (exported), so they can be re-parented into a future touch-slot API.
+
+## Requests (owned by others)
+- Simulator HUD (`src/ui/hud`): hides on `ctx.menu.isOpen` or the `showcase` camera; the combat screens switch the
+  camera to `showcase`, so it hides today. A direct `|| ctx.combat?.ui?.isOpen` would be more robust.
+- Combat HUD: hide while `combat.ui.isOpen` (agreed). The placeholder HUD still draws under the debrief.
