@@ -85,7 +85,7 @@ export const CSS = `
 
 @media (max-width:640px),(max-height:520px){
   .cbt-hud-root{--cbt-side:132px}
-  .cbt-hud-obj{padding:8px 11px 9px;--r:16px}
+  .cbt-hud-obj{padding:8px 11px 9px;--r:16px;width:min(310px,calc(100vw - 236px))}
   .cbt-hud-obj li{font-size:12px;gap:6px;grid-template-columns:11px 1fr auto}
   .cbt-hud-obj li::before{width:8px;height:8px;margin-top:3px}
   .cbt-hud-obj-f{display:none}

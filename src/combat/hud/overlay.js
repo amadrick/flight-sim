@@ -4,6 +4,7 @@
 // the real camera (createProjector in math.js), so it registers in chase, cockpit, flyby and orbit views alike.
 import * as THREE from 'three';
 import { F, strCache } from '../../ui/hud/common.js';
+import { angleOff } from '../util.js';
 import { edgeClamp, outsideEllipse, launchZone, aspectWord, timeToImpact, clamp, NM, KT, FT, RAD, DEG } from './math.js';
 
 const TAU = Math.PI * 2;
@@ -255,7 +256,9 @@ export function createOverlay(H) {
     // bullet stream: where rounds fired over the last ~2 s are now (with the aircraft's real manoeuvring history)
     const hist = H.gunHist, n = hist.n;
     let k = 0;
-    if (n > 1) {
+    // the funnel only helps with the nose near the target (or while firing); in a hard turn off-target it is clutter
+    const nearNose = firing || (t && t.alive && angleOff(p.state, t.state.position) < 35 * DEG);
+    if (n > 1 && nearNose) {
       const step = Math.max(1, Math.floor(n / NS));
       for (let i = 0; i < n && k < NS; i += step) {
         const h = hist.at(i);                  // i = 0 newest

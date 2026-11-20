@@ -95,8 +95,8 @@ export function createStatus(cv, tok, specs) {
     g.font = fV; g.textAlign = 'left'; g.fillStyle = fl === 0 ? C.red : fl < 6 ? C.amber : C.fg; g.fillText(F.int(fl), padX + fs * 2.4, y + 0.5);
     const hx = padX + fs * 5.4;
     label('HULL', hx);
-    const hbX = hx + fs * 3.0, hbW = Math.max(16, valX - hbX - fs * 2.6);
-    bar(hbX, hbW, hp / 100, hp < 30 ? C.red : hp < 60 ? C.amber : C.hud);
+    const hbX = hx + fs * 3.0, hbW = valX - hbX - fs * 2.6;
+    if (hbW >= 16) bar(hbX, hbW, hp / 100, hp < 30 ? C.red : hp < 60 ? C.amber : C.hud);
     g.font = fV; g.textAlign = 'right'; g.fillStyle = hp < 30 ? C.red : C.fg; g.fillText(F.int(hp), valX, y + 0.5);
     // chips
     if (chips.length) {
