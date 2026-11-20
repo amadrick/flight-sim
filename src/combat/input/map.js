@@ -9,6 +9,8 @@ export const KEY_MAP = [
   { code: 'Tab', shift: false, act: 'targetNext' }, { code: 'Tab', shift: true, act: 'targetPrev' },
   { code: 'KeyY', act: 'targetNearest' },
   { code: 'KeyZ', act: 'weaponNext' },
+  { code: 'KeyO', act: 'padlock' },                    // combat cameras (src/combat/camera): padlock view on / off
+  { code: 'Semicolon', act: 'missileCam' },            // missile camera on / off
 ];
 
 /**
@@ -63,6 +65,8 @@ export const COMBAT_BINDINGS = [
   { id: 'targetPrev', group: 'Combat', action: 'Previous target', keys: ['Shift+Tab'], pad: [], touch: null },
   { id: 'targetNearest', group: 'Combat', action: 'Target nearest the nose', keys: ['Y'], pad: padLabel('targetNearest'), touch: null },
   { id: 'weaponNext', group: 'Combat', action: 'Switch missile type', keys: ['Z'], pad: padLabel('weaponNext'), touch: null },
+  { id: 'padlock', group: 'Combat', action: 'Padlock view (keep the target in sight) on / off', keys: ['O'], pad: [], touch: null },
+  { id: 'missileCam', group: 'Combat', action: 'Missile camera on / off', keys: [';'], pad: [], touch: null },
   { id: 'restart', group: 'Combat', action: 'Restart mission', keys: ['Backspace'], pad: [], touch: null },
 ];
 
