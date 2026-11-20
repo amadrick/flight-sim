@@ -156,28 +156,29 @@ export function airFireball(ps, smoke, pos, vel, scale, q, withVolume) {
   // 2. white-hot core: few, short-lived, very hot (fxFlame → white-yellow), cools to orange within ~0.2 s
   for (let i = 0, n = Math.round(10 * qq); i < n; i++) {
     randDir(_w, 0.1);
-    p.kind = KIND.FIRE; p.life = 0.3 + rnd() * 0.25; p.size0 = 2.5 * scale; p.size1 = (7 + rnd() * 4) * scale;
+    p.kind = KIND.FIRE; p.life = 0.2 + rnd() * 0.12; p.size0 = 2.5 * scale; p.size1 = (7 + rnd() * 4) * scale;
     p.drag = 3; p.buoy = 2; p.delay = rnd() * 0.03; p.r = 0.2; p.g = 0.18; p.b = 0.16; p.opacity = 0.9; p.emissive = 140 + rnd() * 80; p.aux = 0;
     ps.spawn(_p.copy(pos).addScaledVector(_w, rnd() * 2 * scale), _v.copy(_w).multiplyScalar((4 + rnd() * 8) * scale).addScaledVector(vel, 0.35));
   }
   // 3. fireball: burst outward fast then stall (drag), varied sizes, rolling orange/red that turns into soot
-  const nf = Math.round((withVolume ? 26 : 34) * qq);
+  // many overlapping, moderately hot puffs (orange, not white) so the ball reads as one rolling mass
+  const nf = Math.round((withVolume ? 36 : 48) * qq);
   for (let i = 0; i < nf; i++) {
     randDir(_w, 0.1);
-    const big = rnd();
-    p.kind = KIND.FIRE; p.life = 1.3 + rnd() * 1.6; p.size0 = (1.2 + rnd() * 1.6) * scale; p.size1 = (4 + big * big * 9) * scale;
-    p.drag = 2.6 + rnd(); p.buoy = 3 + rnd() * 3; p.delay = i > nf * 0.75 ? 0.06 + rnd() * 0.2 : rnd() * 0.04;
-    p.r = 0.1; p.g = 0.09; p.b = 0.085; p.opacity = 0.95; p.emissive = 28 + rnd() * 34; p.aux = 0;
-    _v.copy(_w).multiplyScalar((14 + rnd() * 26) * scale).addScaledVector(vel, 0.3 + rnd() * 0.15);
+    const big = rnd(), sp = rnd();
+    p.kind = KIND.FIRE; p.life = 0.75 + rnd() * 0.75; p.size0 = (1.5 + rnd() * 1.5) * scale; p.size1 = (5 + big * 6) * scale;
+    p.drag = 2.8 + rnd(); p.buoy = 3 + rnd() * 3; p.delay = i > nf * 0.7 ? 0.05 + rnd() * 0.18 : rnd() * 0.04;
+    p.r = 0.07; p.g = 0.065; p.b = 0.06; p.opacity = 0.97; p.emissive = 22 + rnd() * 18; p.aux = 0;
+    _v.copy(_w).multiplyScalar((8 + sp * sp * 30) * scale).addScaledVector(vel, 0.3 + rnd() * 0.15);
     ps.spawn(_p.copy(pos).addScaledVector(_w, rnd() * 2.5 * scale), _v);
   }
   // 4. sparks / burning fragments: fast bright streaks with short trails, and slower falling embers
   const pp = ps.p;
-  for (let i = 0, n = Math.round(60 * qq); i < n; i++) {
+  for (let i = 0, n = Math.round(34 * qq); i < n; i++) {
     randDir(_w, 0.1);
-    pp.kind = KIND.SPARK; pp.life = 0.5 + rnd() * 0.9; pp.size0 = pp.size1 = 0.16 + rnd() * 0.12; pp.drag = 0.6 + rnd() * 0.6; pp.buoy = -9.8;
-    pp.delay = rnd() * 0.05; pp.r = 1; pp.g = 0.7 + rnd() * 0.25; pp.b = 0.35 + rnd() * 0.3; pp.opacity = 1; pp.emissive = 150 + rnd() * 150; pp.aux = 0.04;
-    ps.spawn(pos, _v.copy(_w).multiplyScalar(55 + rnd() * 70).addScaledVector(vel, 0.4));
+    pp.kind = KIND.SPARK; pp.life = 0.35 + rnd() * 0.5; pp.size0 = pp.size1 = 0.22 + rnd() * 0.14; pp.drag = 1.2 + rnd() * 0.8; pp.buoy = -9.8;
+    pp.delay = rnd() * 0.05; pp.r = 1; pp.g = 0.62 + rnd() * 0.2; pp.b = 0.2 + rnd() * 0.15; pp.opacity = 1; pp.emissive = 220 + rnd() * 180; pp.aux = 0.06;
+    ps.spawn(pos, _v.copy(_w).multiplyScalar(45 + rnd() * 55).addScaledVector(vel, 0.4));
   }
   for (let i = 0, n = Math.round(22 * qq); i < n; i++) {
     randDir(_w, 0.3);
@@ -187,10 +188,10 @@ export function airFireball(ps, smoke, pos, vel, scale, q, withVolume) {
   }
   // 5. lingering smoke: dark grey (soot), appears as the fire dies, grows and drifts with the wind for ~half a minute
   const s = smoke.p;
-  for (let i = 0, n = Math.round(18 * qq); i < n; i++) {
+  for (let i = 0, n = Math.round(22 * qq); i < n; i++) {
     randDir(_w, 0.2);
     s.kind = KIND.SMOKE; s.life = 18 + rnd() * 14; s.size0 = 4 * scale; s.size1 = (14 + rnd() * 14) * scale; s.drag = 1.6; s.buoy = 1.2 + rnd() * 1.8;
-    s.delay = 0.25 + rnd() * 0.7; const c = 0.06 + rnd() * 0.07; s.r = c; s.g = c; s.b = c * 1.03; s.opacity = 0.8; s.emissive = 0; s.aux = 0;
+    s.delay = 0.15 + rnd() * 0.6; const c = 0.06 + rnd() * 0.07; s.r = c; s.g = c; s.b = c * 1.03; s.opacity = 0.8; s.emissive = 0; s.aux = 0;
     smoke.spawn(_p.copy(pos).addScaledVector(_w, 4 * scale).addScaledVector(vel, 0.15), _v.copy(_w).multiplyScalar((5 + rnd() * 9) * scale).addScaledVector(vel, 0.25));
   }
 }

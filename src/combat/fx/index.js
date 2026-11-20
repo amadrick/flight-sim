@@ -410,7 +410,7 @@ export async function createCombatFx(combat) {
     const n = Math.round((gone ? 34 : missile ? 16 : 8) * Math.max(0.5, q));
     debris.burst(pos, s.velocity, n, { colour: airframeTint(victim), size: r.length * 0.06, spread: missile || gone ? 55 : 30, burnFrac: 0.45,
       ribbons: gone ? 6 : missile ? 4 : 2, big: gone ? 5 : 0, span: r.span, length: r.length });
-    lightFlash(pos, 4000 * k * r.scale, 0.6, 1, 0.6, 0.3);
+    lightFlash(pos, 3000 * k * r.scale, 0.3, 1, 0.6, 0.3);
     r.deadT = ctx.time.now;
   }
 

@@ -134,8 +134,8 @@ export function createDebris(ctx, ribbons, capacity = 128, sprites = null) {
         if (sprites && pc.burn && pc.heat > 0.25 && pc.t < 14) {
           const sp = pc.v.length();
           if (sp > 3) {
-            const L = (1.5 + pc.size * 2.5) * Math.min(1.5, sp / 80), k = -L / sp, I = 6 * pc.heat;
-            sprites.add(SPR.FLAME, v.x, v.y, v.z, 0.25 + pc.size * 0.35, I, I * 0.6, I * 0.28, pc.v.x * k, pc.v.y * k, pc.v.z * k, pc.size * 13.7, 0.8, -1);
+            const L = (1 + pc.size * 1.6) * Math.min(1.2, sp / 80), k = -L / sp, I = 4.5 * pc.heat;
+            sprites.add(SPR.FLAME, v.x, v.y, v.z, 0.18 + pc.size * 0.2, I, I * 0.6, I * 0.28, pc.v.x * k, pc.v.y * k, pc.v.z * k, pc.size * 13.7, 0.8, -1);
           }
         }
         heatAttr.array[n] = pc.heat;
