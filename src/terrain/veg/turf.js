@@ -72,6 +72,7 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
     tTurfBlade: { value: blade.texture },
     uTurfGrid: { value: new THREE.Vector4(0, 0, cell, R) },      // xy = render-space xz of the grid's low corner
     uTurfOn: { value: 1 },
+    uTurfShell: uniforms.uTurfShell,
     tTerrNoise: uniforms.tTerrNoise, uTerrTile: uniforms.uTerrTile,
     tAirMap: uniforms.tAirMap, uAirMap: uniforms.uAirMap, uAirInfo: uniforms.uAirInfo,
   };
@@ -130,7 +131,7 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
       .replace('#include <begin_vertex>', 'vec3 transformed = tp;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform highp sampler2DArray tTurfBlade; uniform vec4 uTurfGrid; uniform float uTurfOn;
+        uniform highp sampler2DArray tTurfBlade; uniform vec4 uTurfGrid; uniform float uTurfOn; uniform vec4 uTurfShell;
         varying vec3 vTW; varying vec3 vTV; varying vec4 vTP; varying vec4 vTP2; varying float vTZ;
         float tss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }`)
       .replace('#include <map_fragment>', /* glsl */`
@@ -147,7 +148,9 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         float fadeD = 1.0 - tss(uTurfGrid.w * 0.45, uTurfGrid.w * 0.85, dc);
         vec3 V = normalize(vTV);
         float graze = tss(0.08, 0.30, abs(V.y) + 1.5 / max(dc, 1.0));      // shells read as sheets at grazing angles far off
-        float a = bl.r * edge * fadeD * graze * uTurfOn;
+        // under the 3-D blades (veg/blades.js) the upper shells give way: they would read as fuzz over the blades
+        float underB = uTurfShell.z > 0.0 ? (1.0 - tss(uTurfShell.z * 0.6, uTurfShell.z, dc)) * tss(0.2, 0.6, vTZ) : 0.0;
+        float a = bl.r * edge * fadeD * graze * uTurfOn * (1.0 - 0.9 * underB);
         if (a < 0.02) discard;
         vec3 c = vec3(0.072, 0.100, 0.042) * (0.75 + 0.5 * bl.g);
         c = mix(c, vec3(0.165, 0.150, 0.080), longG * 0.30 * bl.g + 0.25 * tss(0.6, 0.85, vTP2.x));
