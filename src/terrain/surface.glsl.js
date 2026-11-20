@@ -255,8 +255,10 @@ ${AIRFIELD_GLSL}
 float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
 // diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)
 const vec3 TURF_REF = vec3(0.060, 0.108, 0.034);
+uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m)
+float gGrassK = 0.0;             // natural grass share of the pixel (gets the long-sward reflectance)
 
-struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
+struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; float specK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
 
 const float M_GRASS = 0.0, M_SOIL = 1.0, M_GRAVEL = 2.0, M_ROCK = 3.0, M_SAND = 4.0, M_MUD = 5.0, M_CANOPY = 6.0, M_STRATA = 7.0;
 // per material: x = tint amplitude, y = cavity (height) darkening, z = detail normal strength, w = roughness
@@ -650,17 +652,9 @@ TerrSurf terrSurface(vec3 rp) {
   if (turf > 0.001) {
     vec2 am = airMap(rp.xz);
     float dP = am.x;
-    vec2 ax = uAirInfo.z > 0.5 ? uAirInfo.xy : vec2(1.0, 0.0), axp = vec2(-ax.y, ax.x);
-    float acr = dot(w, axp) + 5.0 * (n2.g - 0.5) + 1.2 * (n3.r - 0.5), alg = dot(w, ax);
-    float passW = 6.4;
-    float pid = floor(acr / passW), pf = fract(acr / passW);
-    float laySign = mod(pid, 2.0) < 0.5 ? 1.0 : -1.0;
-    // the field is not all cut on one day: blocks of passes at different times since mowing
-    float since = terrHash2(vec2(floor(alg / 310.0 + 0.3 * n2.r), floor(acr / (passW * 7.0))) + 811.0).x;
-    float longG = ss(55.0, 120.0, dP + 50.0 * (n2.r - 0.5) + 20.0 * (n3.g - 0.5));
-    gTurfH = mix(0.04, 0.13, longG) * (0.8 + 0.45 * since);
-    gTurfLay = mix(0.70, 0.18, longG) * (1.0 - 0.55 * since);
-    gTurfDir = ax * laySign;
+    TurfP TP = turfPlan(w, dP, n2.r, n2.g, n3.r);
+    float longG = TP.longG, since = TP.since, pf = TP.pf, passW = TP.passW;
+    gTurfH = TP.H; gTurfLay = TP.lay; gTurfDir = TP.dir;
     vec3 tc = TURF_REF;
     // clumps and tussocks (0.3 - 4 m), patchy growth (20 - 100 m)
     float clump = 0.55 * (n5.g - 0.5) * near5 + 0.6 * (n4.r - 0.5) * near4 + 0.5 * (n3.g - 0.5) + 0.35 * (C.mac.y - 0.5);
@@ -682,6 +676,9 @@ TerrSurf terrSurface(vec3 rp) {
     tc *= 1.0 - 0.5 * lip;
     // turf without an airfield map (other airports, classic fallback): the old diagonal stripe tint
     if (uAirInfo.z < 0.5) tc *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);
+    // under the 3-D shells (near the camera) the ground between the blades is thatch and shade
+    float shellK = uTurfShell.x * (1.0 - ss(uTurfShell.y * 0.45, uTurfShell.y * 0.85, distance(rp.xz, uTerrCam.xz))) * (1.0 - bare);
+    tc = mix(tc, vec3(0.050, 0.052, 0.030), shellK * 0.55);
     col = mix(col, tc, turf * 0.95);
     rough = mix(rough, mix(0.95, 0.88, bare), turf);
     gTurfAmt = turf * (1.0 - bare);
@@ -714,8 +711,10 @@ TerrSurf terrSurface(vec3 rp) {
   float steep = ss(0.24, 0.50, slope);
   if (rockAmt > 0.5) mat = M_ROCK;
 
+  gGrassK = grassAmt * (1.0 - cropAmt) * (1.0 - washAmt) * (1.0 - rockAmt) * (1.0 - screeAmt) * (1.0 - turf) * (1.0 - 0.6 * shrubAmt);
   // painted forest canopy goes over ground, scree and low outcrops (but not over cliffs)
   paint *= 1.0 - steepPix;
+  gGrassK *= 1.0 - paint;
   col = mix(col, fcol, paint);
   rough = mix(rough, 0.95, paint);
   if (paint > 0.5) mat = M_CANOPY;
@@ -1071,11 +1070,32 @@ TerrSurf terrSurface(vec3 rp) {
   float nl = dot(ng, uSunDir);
   S.shadow = nl > 0.0 ? mix(1.0, terrShadow(rp, ng, lf, TERR_SHADOW_STEPS), ss(0.0, 0.10, nl)) : 1.0;
   S.emis = vec3(0.0);
+  S.specK = 1.0;
   S.shadow *= microSh;
+#ifdef TERR_TURF
+  // grass is a canopy of blades, not paint: the learned turf reflectance (src/neural/ground-turf.js) gives the
+  // directional behaviour (hot spot down-sun, dark and sheeny into the sun, mowing stripes from the lay) and the
+  // sky-light response, both relative to the albedo the colours above are written against
+  float turfK = clamp(gTurfAmt, 0.0, 1.0), grassK = clamp(gGrassK, 0.0, 1.0) * (1.0 - turfK);
+  turfK *= (1.0 - snow) * (1.0 - wsurf); grassK *= (1.0 - snow) * (1.0 - wsurf);
+  float bK = turfK + grassK;
+  if (bK > 0.002 && uTurfSky.w > 0.5) {
+    float tL = (turfK * clamp((gTurfH - 0.045) / 0.085, 0.0, 1.0) + grassK) / bK;
+    vec4 TR = turfReflectance(ng, Vw, uSunDir, turfK > grassK ? gTurfDir : vec2(1.0, 0.0), tL);
+    vec3 skyK = TR.a * uTurfSky.rgb, sunK = TR.rgb;
+    vec3 ref = mix(uTurfRefA, uTurfRefB, tL);
+    S.albedo = mix(S.albedo, S.albedo * skyK / ref, bK);
+    S.canopyK *= mix(vec3(1.0), sunK / max(skyK, vec3(1.0e-4)), bK);
+    S.specK = 1.0 - 0.85 * bK;                         // the cuticle sheen is part of the learned BRF
+  }
+#endif
 #ifdef TERR_MICRO
   // relief this pixel no longer resolves (the 4 m detail scale has faded): the learned micro-relief transfer gives
   // its mean effect on direct light, so the far field keeps the directional behaviour of the near field
   float sig = TERR_SIG[int(mat)] * (1.0 - fade4) * (1.0 - 0.7 * snow) * (1.0 - wsurf) * (1.0 - playa);
+#ifdef TERR_TURF
+  sig *= 1.0 - clamp(gTurfAmt + gGrassK, 0.0, 1.0);    // the turf reflectance already holds the canopy's self-shadowing
+#endif
 #ifdef TERR_SETTLE
   sig *= 1.0 - paved;
 #endif

@@ -24,6 +24,31 @@ vec2 airMap(vec2 rxz) {
   if (uAirInfo.z < 0.5 || any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec2(1.0e4);
   return textureLod(tAirMap, uv, 0.0).rg;
 }
+// Mowing plan of the airfield turf (shared by the ground shader and the near-field turf so they agree): w = world xz,
+// dP = distance to pavement, nA / nB = two independent noise values ~ U(0,1) varying over hundreds of metres, nC over
+// tens of metres. dir = unit world xz direction the blades lie, lay 0..1, H = sward height (m), longG 0 mown .. 1 long
+// grass zone, since 0..1 time since mowing, pf = position across the mower pass 0..1.
+struct TurfP { vec2 dir; float lay; float H; float longG; float since; float pf; float passW; };
+TurfP turfPlan(vec2 w, float dP, float nA, float nB, float nC) {
+  TurfP T;
+  vec2 ax = uAirInfo.z > 0.5 ? uAirInfo.xy : vec2(1.0, 0.0), axp = vec2(-ax.y, ax.x);
+  T.passW = 6.4;
+  float acr = dot(w, axp) + 5.0 * (nB - 0.5) + 1.2 * (nC - 0.5), alg = dot(w, ax);
+  float pid = floor(acr / T.passW);
+  T.pf = fract(acr / T.passW);
+  // the field is not all cut on one day: blocks of passes at different times since mowing
+  vec2 bq = vec2(floor(alg / 310.0 + 0.3 * nA), floor(acr / (T.passW * 7.0))) + 811.0;
+  uvec2 q = uvec2(ivec2(bq));
+  uint hh = q.x * 0x8da6b343u + q.y * 0xd8163841u + 0x9e3779b9u;
+  hh ^= hh >> 15; hh *= 0x2c1b3c6du; hh ^= hh >> 12; hh *= 0x297a2d39u; hh ^= hh >> 15;
+  T.since = float(hh & 0xffffu) / 65536.0;
+  T.longG = clamp((dP + 50.0 * (nA - 0.5) + 20.0 * (nC - 0.5) - 55.0) / 65.0, 0.0, 1.0);
+  T.longG = T.longG * T.longG * (3.0 - 2.0 * T.longG);
+  T.H = mix(0.04, 0.13, T.longG) * (0.8 + 0.45 * T.since);
+  T.lay = mix(0.70, 0.18, T.longG) * (1.0 - 0.55 * T.since);
+  T.dir = ax * (mod(pid, 2.0) < 0.5 ? 1.0 : -1.0);
+  return T;
+}
 `;
 
 const GEN_FRAG = /* glsl */`
