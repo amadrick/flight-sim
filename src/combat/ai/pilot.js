@@ -48,16 +48,16 @@ export function createPilot(combat, team, e, o = {}) {
   let aoaS = 0;
   const manDir = new THREE.Vector3(), aim = new THREE.Vector3(), ffv = new THREE.Vector3(), escDir = new THREE.Vector3();
   const mslots = [];                                   // missile threat memory: { m, onset, seen }
-  for (let i = 0; i < 6; i++) mslots.push({ m: null, onset: 0, seen: false });
+  for (let i = 0; i < 6; i++) mslots.push({ m: null, onset: 0, seen: false, flares: 0, flareAt: 0, flareNext: 0, plan: '', breakAt: 0 });
   const enemies = [], friends = [];
   const lastCall = Object.create(null);
   let order = o.order || { type: 'engage' };
   let thinkT = rng() * 0.3, senseT = rng() * 0.2, safeT = rng() * 0.1, floorT = rng() * 0.5;
   let activity = 'cruise', man = '', manT = 0, manSide = 1, manChoice = '', lockMan = 0;
-  let attacker = null, attackerOnset = -1, gunOnset = -1, missile = null, missileTgo = 99, missileOnset = 0;
+  let attacker = null, attackerOnset = -1, gunOnset = -1, missile = null, missileTgo = 99, missileOnset = 0, missileSlot = null;
   let targetSince = 0, lastTarget = null, lastTally = null, fighting = false, wasFighting = false;
   let fineTrack = false, aimNX = 0, aimNY = 0, aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
-  let flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
+  let lockSince = -1, flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
   let extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1;
 
   const pilot = {
@@ -137,14 +137,17 @@ export function createPilot(combat, team, e, o = {}) {
       if (sl) continue;
       for (const q of mslots) if (!q.m) { sl = q; break; }
       if (!sl) break;
-      sl.m = m; sl.onset = t;
+      sl.m = m; sl.onset = t; sl.flares = 0; sl.flareNext = 0; sl.plan = ''; sl.breakAt = sk.breakTgo * lerp(0.7, 1.15, rng());
       // radar shots ring the RWR; IR shots are passive: seen with a probability (missile warning / eyes)
-      const seeker = m.spec?.seeker || m.type || 'ir';
+      const seeker = m.seeker || m.spec?.seeker || m.type || 'ir';
+      // flare plan for this missile (IR): first pair at time-to-go flareAt, then up to sk.flarePairs pairs flareGap apart.
+      // Rookies flare late (or too early and spend them), aces at the last few seconds, in time with the break
+      sl.flareAt = seeker === 'radar' ? -1 : skill < 0.4 && rng() < 0.35 ? 5 + 2 * rng() : sk.flareTgo * (0.8 + 0.4 * rng());
       sl.seen = seeker === 'radar' ? rng() < 0.6 + 0.4 * skill : rng() < sk.seeIr;
       sl.seenAt = t + (sl.seen ? 0 : 1e9);
     }
     // late detection of an unseen IR shot when it gets close (the smoke trail)
-    missile = null; missileTgo = 99;
+    missile = null; missileTgo = 99; missileSlot = null;
     for (const q of mslots) {
       if (!q.m) continue;
       const m = q.m;
@@ -152,10 +155,8 @@ export function createPilot(combat, team, e, o = {}) {
       const r = A.length();
       if (!q.seen && r < 1800 + 2500 * skill && rng() < 0.3 + 0.5 * skill) { q.seen = true; q.onset = t; }
       if (!q.seen || t - q.onset < sk.reaction * 0.8) continue;
-      B.copy(m.state.velocity).sub(s.velocity);
-      const closing = -B.dot(A) / Math.max(r, 1);
-      const tgo = closing > 30 ? r / closing : 40;
-      if (tgo < missileTgo) { missileTgo = tgo; missile = m; missileOnset = q.onset; }
+      const tgo = liveTgo(m, r);
+      if (tgo < missileTgo) { missileTgo = tgo; missile = m; missileOnset = q.onset; missileSlot = q; }
     }
     // ---- attackers: enemies behind us with their nose on us
     const prev = attacker;
@@ -185,6 +186,17 @@ export function createPilot(combat, team, e, o = {}) {
       const gunsThreat = ageo.range < 1700 && ageo.threatAta < 12 * DEG;
       if (gunsThreat) { if (gunOnset < 0) gunOnset = t; } else gunOnset = -1;
     } else gunOnset = -1;
+  }
+
+  /** Time to go (s) of missile m: the weapon's own estimate when it has one, else range / closing speed. */
+  function liveTgo(m, r) {
+    if (m.tgo > 0) return m.tgo;
+    const s = e.state;
+    A.copy(m.state.position).sub(s.position);
+    if (r < 0) r = A.length();
+    B.copy(m.state.velocity).sub(s.velocity);
+    const closing = -B.dot(A) / Math.max(r, 1);
+    return closing > 30 ? r / closing : 40;
   }
 
   // =====================================================================================================  think
@@ -292,32 +304,39 @@ export function createPilot(combat, team, e, o = {}) {
   function tryMissile(T) {
     const W = combat.weapons, t = combat.clock;
     const L = e.lock;
-    if (!L || L.state !== 'locked' || (L.target && L.target !== T)) return;
+    if (!L || L.state !== 'locked' || L.target !== T) { lockSince = -1; return; }
+    if (lockSince < 0) lockSince = t;
+    if (t - lockSince < sk.shotDelay) return;                // time to decide to shoot (rookies hesitate)
     const type = e.loadout.selected, spec = W.specs?.missiles?.[type];
     if (!spec || !(e.loadout.missiles[type] > 0)) return;
     if (t - lastShot < sk.shotGap) return;
-    const r = geo.range;
-    const rMin = Math.max((spec.rMin || 400) * 1.5, 700);
-    let rMax = (spec.rMax || 8000) * sk.shotRange;
-    if ((spec.seeker || type) === 'ir') {
-      if (geo.aa > 140 * DEG) return;                       // no head-on IR shots
-      if (geo.aa > 90 * DEG) rMax = Math.min(rMax, (spec.rMax || 8000) * 0.4);
-      if (geo.ata > (spec.fov || 30) * DEG * 0.8) return;
-    } else if (geo.closure < -150 && r > rMax * 0.6) return;   // running target: wait
-    if (r < rMin || r > rMax) return;
+    const r = L.range || geo.range;
+    const seeker = spec.seeker || type;
+    // launch zone from the weapon (rMin arming distance, rMax kinematic reach, rNe no-escape); never outside rMax.
+    // Aces wait for the no-escape zone; others shoot at a skill fraction of rMax
+    const rMax = L.rMax || 0, rNe = L.rNe || 0;
+    if (!(rMax > 0) || !(L.tti > 0)) return;
+    const rMin = Math.max(L.rMin || 0, 300) * 1.2;
+    let rShot = Math.max(rNe, rMax * sk.shotRange);
+    if (rNe > rMin * 1.5 && skill > 0.5) rShot = lerp(rMax * sk.shotRange, rNe, (skill - 0.5) / 0.4);
+    if (seeker === 'ir') {
+      if (L.aspect > 140 * DEG && r > 1500) return;           // head-on IR shots only very close (the seeker sees the hot nose badly)
+      if (geo.ata > 35 * DEG) return;
+    } else if (geo.closure < -100 && r > rNe) return;          // running target: wait for the no-escape zone
+    if (r < rMin || r > Math.min(rShot, rMax)) return;
     // one missile at a time at the same target (aces fire a second after a while)
     let inFlight = 0;
-    for (const m of W.missiles) if (m.owner === e && m.target === T) inFlight++;
+    for (const m of W.missiles) if (m.owner === e && m.target === T && m.alive) inFlight++;
     if (inFlight > (skill > 0.75 && t - lastShot > 10 ? 1 : 0)) return;
     // do not shoot when a friendly is close to the target (IR seekers switch, radar fuzes)
     combat.world.friendsOf(e, friends);
     for (let i = 0; i < friends.length; i++) if (friends[i].state.position.distanceToSquared(T.state.position) < 700 * 700) return;
     // personality: cautious pilots love missiles, turn fighters save them for good shots
-    if (rng() > sk.missilePref + (r < rMax * 0.6 ? 0.3 : 0)) { lastShot = t - sk.shotGap * 0.5; return; }
+    if (rng() > sk.missilePref + (r < rNe ? 0.4 : 0)) { lastShot = t - sk.shotGap * 0.6; return; }
     const m = W.launchMissile(e, type);
     if (m) {
       lastShot = t;
-      call((spec.seeker || type) === 'radar' ? 'fox3' : 'fox2', T, true);
+      call(seeker === 'radar' ? 'fox3' : 'fox2', T, true);
     }
   }
 
@@ -366,7 +385,7 @@ export function createPilot(combat, team, e, o = {}) {
     // energy fighters disengage from a slow turning fight to come back with speed
     if (personality === 'energy' && geo.situation === 'neutral' && V < corner - 10 && geo.range > 1200 && geo.range < 4000 && rng() < 0.15) { setMode('extend', 12); return; }
     // 5. head-on: merge handling
-    if (geo.situation === 'head-on' && geo.range < 7000 && geo.range > 500) {
+    if (geo.situation === 'head-on' && geo.range < 7000 && (geo.range > 1500 && geo.hca > 120 * DEG && geo.closure > 80 || pilot.mode === 'merge')) {
       if (pilot.mode !== 'merge') {
         // pass to the side the bandit already is on; one-circle (turn away, nose-to-nose) if we out-rate it slow,
         // two-circle (turn toward, nose-to-tail) if we have the energy / sustained turn
@@ -384,7 +403,7 @@ export function createPilot(combat, team, e, o = {}) {
     }
     // 6. offensive / neutral pursuit
     if (mistake === 'lost' && lostSightT > 0) { setMode('pursuit', 0, 'lost'); return; }
-    if (geo.range < sk.gunMax * 1.15 && geo.ata < 22 * DEG && geo.aa < 120 * DEG) { setMode('guns'); return; }
+    if (geo.range < Math.max(sk.gunMax * 1.4, 1100) && geo.ata < 22 * DEG && geo.aa < 120 * DEG) { setMode('guns'); return; }
     const myR = turnRadius(Math.max(s.tas, 60), gFight);
     // overshoot coming: too fast, too close, too much angle
     if (geo.range < Math.max(1100, myR * 1.4) && geo.closure > 45 && (geo.hca > 45 * DEG || geo.ata > 30 * DEG) && geo.aa < 110 * DEG && mistake !== 'overshoot') {
@@ -446,9 +465,13 @@ export function createPilot(combat, team, e, o = {}) {
       default: cruise();
     }
     // flares against a close IR missile even outside the defensive manoeuvre (and by passive aircraft)
-    if (missile && (flareT -= dt) <= 0 && missileTgo < 6 && missileTgo > 0.3) {
-      const seeker = missile.spec?.seeker || missile.type;
-      if (seeker !== 'radar' || skill < 0.35) { combat.weapons?.dropFlares?.(e); flareT = sk.flareGap * (0.7 + 0.6 * rng()); }
+    // timed flare pairs against a seen IR missile (each rejected flare makes the next one weaker: no spamming)
+    if (missile && missile.alive) {
+      missileTgo = liveTgo(missile, -1);
+      const q = missileSlot;
+      if (q && q.flareAt > 0 && q.flares < sk.flarePairs + (q.flareAt > 4 ? 2 : 0) && missileTgo < q.flareAt && missileTgo > 0.25 && combat.clock >= q.flareNext) {
+        if (combat.weapons?.dropFlares?.(e)) { q.flares++; q.flareNext = combat.clock + sk.flareGap * (0.8 + 0.4 * rng()); }
+      }
     }
   }
 
@@ -556,9 +579,6 @@ export function createPilot(combat, team, e, o = {}) {
     aimNX = aimNX * a + b * gauss(); aimNY = aimNY * a + b * gauss();
     const k2 = 1 - Math.exp(-dt / 0.25);                  // smooth the wander (a hand, not white noise)
     aimX += (aimNX - aimX) * k2; aimY += (aimNY - aimY) * k2;
-    // the gun solution is a straight-line lead; a turning target needs its acceleration too (good pilots lead the turn)
-    const tof = SOL.tof || r / 1000;
-    if (T.state.acceleration) { solA.copy(T.state.acceleration); solA.y += G0 * 0; SOL.point.addScaledVector(solA, 0.5 * tof * tof * lerp(0.5, 1, sk.precision)); }
     aim.copy(SOL.point).addScaledVector(e.right, aimX * r).addScaledVector(e.up, aimY * r);
     aimAt(aim);
     if (T.state.acceleration) want.ff.copy(T.state.acceleration); else want.ff.set(0, 0, 0);
@@ -572,15 +592,15 @@ export function createPilot(combat, team, e, o = {}) {
     want.track = true; want.kp = lerp(1.8, 2.6, sk.precision); want.kd = 0.6;
     if (!fc.trackValid) { D.copy(T.state.position).sub(s.position); E.copy(T.state.velocity).sub(s.velocity); want.w0.crossVectors(D, E).multiplyScalar(1 / Math.max(D.lengthSq(), 100)); }
     // closure control in the gun envelope
-    want.spd = clamp(T.state.ias + (r - 450) * 0.08 - geo.closure * 0.4, prof.stall * 1.4, prof.corner + 120);
+    want.spd = clamp(T.state.ias + (r - sk.gunIdeal) * 0.08 - geo.closure * 0.4, prof.stall * 1.4, prof.corner + 120);
     want.ab = want.spd > s.ias + 20; want.brake = true;
     if (r < 180 && geo.closure > 0) { pursuitPoint(e, T, 'lag', aim, 1); aimAt(aim); want.useFF = false; want.track = false; }
     // fire control
     A.copy(SOL.point).sub(s.position).normalize();
     const err = Math.acos(clamp(A.dot(e.forward), -1, 1));
     const tol = sk.fireTol + (T.radius || 5) / Math.max(r, 50) * 0.8;
-    const good = err < tol && r < sk.gunMax && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
-    if (globalThis.__AIDBG) globalThis.__AIDBG(e, { err, tol, r, aa: geo.aa, ata: geo.ata, settleT, good, losRate, burstT, gapT });
+    const good = err < tol && r < sk.gunMax && SOL.inRange !== false && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
+    if (globalThis.__AIDBG) globalThis.__AIDBG(e, { err, tol, r, aa: geo.aa, ata: geo.ata, settleT, good, losRate, burstT, gapT, ex: A.dot(e.right), ey: A.dot(e.up) });
     settleT = good ? settleT + dt : 0;
     gapT -= dt;
     if (burstT > 0) {
@@ -687,7 +707,7 @@ export function createPilot(combat, team, e, o = {}) {
     const r = A.length(); A.multiplyScalar(1 / Math.max(r, 1));      // LOS to the missile
     want.g = gFight; want.gain = 2.2; want.brake = false;
     const q = sk.defendQuality;
-    if (missileTgo < sk.breakTgo * lerp(0.7, 1.15, rng()) ) {
+    if (missileTgo < (missileSlot ? missileSlot.breakAt : sk.breakTgo)) {
       // last-ditch break: max G perpendicular to the missile's velocity, the way needing the least roll
       B.copy(m.state.velocity).normalize();
       C.copy(e.up).addScaledVector(B, -e.up.dot(B));
@@ -703,21 +723,25 @@ export function createPilot(combat, team, e, o = {}) {
     B.copy(A); B.y = 0; if (B.lengthSq() < 1e-6) B.set(e.forward.x, 0, e.forward.z); B.normalize();
     if (!defendSide) { C.crossVectors(B, UP); defendSide = C.dot(e.forward) >= 0 ? 1 : -1; }
     C.crossVectors(B, UP).multiplyScalar(defendSide);          // beam direction (missile at 3 or 9 o'clock)
-    const agl = aglAt();
-    if (seeker === 'radar' && missileTgo > 10 && r > 7000) {
+    const agl = aglAt(), q2 = missileSlot;
+    // radar plan, chosen once per missile: drag it out of energy when it comes from far, otherwise beam / notch
+    if (q2 && !q2.plan) q2.plan = seeker === 'radar' && (r > 15000 || missileTgo > 22) && rng() < 0.4 + 0.6 * q ? 'drag' : 'beam';
+    const plan = q2?.plan || 'beam';
+    if (seeker === 'radar' && plan === 'drag' && missileTgo > 6) {
       // drag: turn the tail to it and run (kinematic defeat), descend to thicker air
       want.dir.copy(B).multiplyScalar(-1); want.dir.y = agl > sk.deck + 1500 ? -0.15 : 0;
-      want.dir.normalize(); want.spd = prof.vmo; want.ab = true; pilot.sub = 'drag';
+      want.dir.normalize(); want.spd = prof.vmo; want.ab = true; want.g = Math.min(gFight, 5); pilot.sub = 'drag';
+    } else if (seeker === 'radar') {
+      // notch: put the missile exactly on the wing line (no closing speed for its doppler) and go low into the clutter;
+      // keep the speed for the last-ditch break (5 g, afterburner)
+      want.dir.copy(C).addScaledVector(B, 0.05); want.dir.y = agl > sk.deck + 900 ? -clamp((agl - sk.deck) / 4000, 0.12, 0.5) * q : 0.03;
+      want.dir.normalize(); want.spd = prof.corner + 60; want.ab = true; want.g = Math.min(gFight, lerp(7, 5, q)); pilot.sub = 'notch';
     } else {
-      // beam / notch: missile on the wing line, slight descent; IR: out of afterburner, flares
-      want.dir.copy(C).addScaledVector(B, -0.25 * q); want.dir.y = agl > sk.deck + 1200 ? -0.18 * q : 0.05;
-      want.dir.normalize();
-      want.spd = prof.corner + 40;
-      want.ab = seeker === 'radar';
-      if (seeker !== 'radar') { want.minLever = 0; want.spd = Math.min(want.spd, s.ias); }
-      pilot.sub = seeker === 'radar' ? 'notch' : 'beam';
+      // IR: beam and pull the throttle back out of afterburner (less heat), flares come from the timed plan in act()
+      want.dir.copy(C).addScaledVector(B, -0.25 * q); want.dir.y = agl > sk.deck + 1200 ? -0.12 * q : 0.05;
+      want.dir.normalize(); want.spd = Math.min(prof.corner + 40, s.ias); want.ab = false; want.minLever = 0;
+      want.g = Math.min(gFight, lerp(7.5, 5.5, q)); pilot.sub = 'beam';
     }
-    if (seeker !== 'radar') want.ab = false;
   }
 
   function doFlee(damaged) {
@@ -891,11 +915,14 @@ export function createPilot(combat, team, e, o = {}) {
     if (safeT <= 0 || recovering) {
       safeT = 0.1;
       RS.x = p.x; RS.y = p.y - 3; RS.z = p.z; RS.vx = s.velocity.x; RS.vy = s.velocity.y; RS.vz = s.velocity.z; RS.roll = s.roll; RS.psi = s.heading;
-      const nzAvail = Math.min(prof.fbw ? prof.fcsNzMax * 0.95 : prof.gMax * 0.85, Math.max(1.3, (s.ias / Math.max(prof.stall, 40)) ** 2 * 0.9));
-      RP.nz = nzAvail; RP.rollRate = Math.min(prof.rollRate, 3) * 0.8; RP.climb = prof.heavy ? 0.15 : 0.35; RP.turn = 0;
+      // battle damage: less control authority (G and roll rate) and less thrust → assume a weaker pull, start earlier
+      const dm = e.sim?.damage, ctrl = dm ? clamp(dm.ctrl ?? 1, 0.12, 1) : 1, thr = dm ? clamp(dm.thrust ?? 1, 0, 1) : 1;
+      const auth = Math.min(1, ctrl * 1.6);                    // the pilot's extra stick recovers some authority
+      const nzAvail = Math.min((prof.fbw ? prof.fcsNzMax * 0.95 : prof.gMax * 0.85) * auth, Math.max(1.3, (s.ias / Math.max(prof.stall, 40)) ** 2 * 0.9));
+      RP.nz = Math.max(1.2, nzAvail); RP.rollRate = Math.min(prof.rollRate, 3) * 0.8 * auth; RP.climb = prof.heavy ? 0.15 : thr < 0.6 ? 0.15 : 0.35; RP.turn = 0;
       RP.horizon = clamp(V / 22, 8, 18); RP.dt = 0.35; RP.delay = 0.25; RP.nz *= 0.85;
       predictRecovery(ground, RS, RP, REC);
-      const margin = 80 + V * 0.5;
+      const margin = (80 + V * 0.5) * (1 + (1 - auth) * 1.5 + (1 - thr) * 0.5);
       if (REC.clear < margin) {
         if (!recovering) { recovering = true; recT = 0; escTurn = 0; }
         // can a turning escape do better? (mountain ahead)

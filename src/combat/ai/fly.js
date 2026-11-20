@@ -169,8 +169,17 @@ export function createFlightController(e, prof) {
       _l.set(0, G0, 0); if (ff) _l.add(ff);
       const nzFF = _l.dot(e.up) / G0;
       const nz = nzFF + ((kp * ey + kd * eyDot) * V + fc.trackInt) / G0;
-      fc.rollErr = rollErr; fc.rollValid = rollValid;
-      fc.nzCmd = clamp(Math.abs(rollErr) > 0.5 ? Math.min(nz, 2) : nz, -1, gLimit);
+      // close in, roll the lift plane through the aim point using the NOSE error (the velocity-based roll above keeps
+      // a lateral offset of ~AoA·sin(roll error) that only decays slowly)
+      let re = rollErr, rv = rollValid;
+      if (err < 0.2 && c > 0) {
+        const ex = _n.dot(e.right);
+        const lat = _l.dot(e.right) + 0.5 * ex * V, upc = Math.max(_l.dot(e.up) + kp * ey * V + fc.trackInt, 0.5 * G0);
+        const rn = Math.atan2(lat, upc), w = clamp((0.2 - err) / 0.1, 0, 1);
+        re = rv ? rollErr + (rn - rollErr) * w : rn; rv = true;
+      }
+      fc.rollErr = re; fc.rollValid = rv;
+      fc.nzCmd = clamp(Math.abs(re) > 0.5 ? Math.min(nz, 2) : nz, -1, gLimit);
       fc.yawCmd = err < 0.05 ? clamp(_n.dot(e.right) * 12, -0.4, 0.4) : 0;
       return err;
     },
@@ -248,6 +257,15 @@ export function createFlightController(e, prof) {
       }
       c.roll = clamp(rs, -1, 1);
       c.yaw = clamp(fc.yawCmd, -1, 1);
+      // battle damage: the flight model scales the stick by dmg.ctrl and adds trim offsets; the pilot holds the
+      // offsets out and uses more stick (authority still runs out at full deflection)
+      const d = e.sim?.damage;
+      if (d && (d.ctrl !== 1 || d.rollBias || d.pitchBias)) {
+        const k = 1 / Math.max(d.ctrl || 1, 0.2);
+        c.pitch = clamp((c.pitch - (d.pitchBias || 0)) * k, -1, 1);
+        c.roll = clamp((c.roll - (d.rollBias || 0)) * k, -1, 1);
+        c.yaw = clamp(c.yaw * k, -1, 1);
+      }
       c.throttle = clamp(fc.thrCmd, 0, 1);
       c.speedbrake = fc.sbCmd > 0.5 ? 1 : 0;
       fc.yawCmd = 0;

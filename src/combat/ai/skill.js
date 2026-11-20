@@ -36,10 +36,12 @@ export function makeSkill(skill, personality, rng) {
     aimTau: lerp(0.5, 0.9, s),
     fireTol: lerp(0.035, 0.012, s),
     settle: lerp(0.08, 0.3, s),
-    burst: [lerp(1.2, 0.35, s), lerp(2.4, 0.8, s)],
+    burst: [lerp(0.9, 0.3, s), lerp(2.0, 0.7, s)],
     burstGap: [lerp(0.5, 0.8, s), lerp(1.2, 1.8, s)],
     // gun employment range (m) and the most head-on aspect the pilot will snapshot at (rad off the target's tail)
-    gunMax: lerp(1300, 950, s) * p.gunRange,
+    gunMax: lerp(1000, 600, s) * p.gunRange,
+    // range the pilot tries to settle at behind a target before shooting (m): aces close to 300–400 m
+    gunIdeal: lerp(560, 340, s) * p.closeIn ** -0.3,
     headOnGuns: lerp(2.3, 2.0, s),
     // chance per think of a mistake while fighting (lose sight / overshoot / get slow), and the flight-path precision
     mistake: lerp(0.06, 0.006, s),
@@ -47,8 +49,12 @@ export function makeSkill(skill, personality, rng) {
     // missile shots: fraction of rMax used, minimum time between shots (s)
     shotRange: lerp(0.92, 0.6, s),
     shotGap: lerp(5, 9, s) * j(),
+    // hesitation between getting a lock and pressing the pickle (s)
+    shotDelay: lerp(3.5, 0.4, s) * j(),
     // missile defence: chance to see an IR shot, timing of the last-ditch break (time to go, s), flare discipline
-    seeIr: lerp(0.45, 0.95, s), breakTgo: lerp(1.0, 1.9, s), flareGap: lerp(1.1, 0.45, s), defendQuality: lerp(0.4, 1, s),
+    seeIr: lerp(0.45, 0.95, s), breakTgo: lerp(1.0, 2.2, s), defendQuality: lerp(0.4, 1, s),
+    // flares: first pair at this missile time-to-go (s), number of pairs, gap between pairs (s)
+    flareTgo: lerp(1.3, 3.0, s), flarePairs: s < 0.35 ? 1 : 2, flareGap: lerp(0.5, 0.75, s),
     // terrain: hard deck above the ground (m) during manoeuvring
     deck: lerp(650, 220, s),
     // speed discipline: how far below the fight speed before the pilot notices (m/s)
