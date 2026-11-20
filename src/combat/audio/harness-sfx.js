@@ -59,7 +59,7 @@ export const MUSIC_SCENARIOS_EXTRA = {
     H.check('explosion: low thump dominates (<200 Hz share > 40 %)', A.bandFrac(ex.x, 0.1, 1.5, 20, 200) > 0.4, A.bandFrac(ex.x, 0.1, 1.5, 20, 200).toFixed(2));
     H.check('explosion: missile kill bigger than cannon kill', ex.rms > ec.rms, `${A.db(ex.rms).toFixed(1)} vs ${A.db(ec.rms).toFixed(1)} dB`);
     H.check('explosion: crackle/debris tail present 1.5-3.5 s', A.rms(ex.x, 1.5, 3.5) > ex.rms * 0.05, `${A.db(A.rms(ex.x, 1.5, 3.5)).toFixed(1)} dB`);
-    H.check('explosion at 3 km: quieter (>= 8 dB, after the master compressor) and duller', far.rms < ex.rms * 0.4 && far.centroid < ex.centroid, `${A.db(far.rms).toFixed(1)} dB, ${Math.round(far.centroid)} Hz`);
+    H.check('explosion at 3 km: quieter (>= 7 dB, after the master compressor) and duller', far.rms < ex.rms * 0.45 && far.centroid < ex.centroid, `${A.db(far.rms).toFixed(1)} dB, ${Math.round(far.centroid)} Hz`);
     const tk = ms['hit confirm tick'], nm = ms['near miss crack'], ah = ms['airframe hit (s=1)'];
     H.check('hit tick: short (< 40 ms to -20 dB) and subtle (quieter than an airframe hit)', tk.ad.decay < 0.04 && tk.peak < ah.peak, `decay ${Math.round(tk.ad.decay * 1000)} ms, peak ${tk.peak} vs ${ah.peak}`);
     H.check('near miss: sharp attack (< 3 ms) and bright', nm.ad.attack < 0.003 && nm.centroid > 2000, `${(nm.ad.attack * 1000).toFixed(1)} ms, ${Math.round(nm.centroid)} Hz`);

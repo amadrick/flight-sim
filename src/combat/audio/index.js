@@ -159,7 +159,10 @@ export async function createCombatAudio(combat) {
     if (!detonated || !position) return;
     const s = spot(position, 400, 0.8, 6); if (s.d < 9000) explosion(A.ac, A.pool, s.dest, s.t, { size: 0.7, cutoff: s.cutoff });
   });
+  const dropGun = (e) => { const v = guns.get(e); if (v) { guns.delete(e); v.stop(now() + (v.delay || 0)); } };
+  on('despawn', ({ entity }) => dropGun(entity));
   on('kill', ({ victim, killer, weapon }) => {
+    dropGun(victim);
     if (killer && isP(killer)) st.lastKill = st.clock;
     if (!victim || isP(victim) || victim.kind !== 'aircraft' || !victim.state) return;   // the player's death is the simulator's crash audio
     const missile = weapon === 'missile', recent = st.missileHit === victim && st.clock - st.missileHitT < 0.3;

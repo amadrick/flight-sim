@@ -60,7 +60,7 @@ export function gunVoice(ac, pool, dest, t, o = {}) {
   pulse.connect(bodyF); bodyF.connect(body); body.connect(sum);
   bite.connect(sum); whG.connect(sum);
   sum.connect(sh); sh.connect(lp); lp.connect(hp); hp.connect(out); out.connect(dest);
-  out.gain.setValueAtTime(0.0001, t); out.gain.linearRampToValueAtTime((far ? 0.4 : 0.85) * lvl, t + 0.015);
+  out.gain.setValueAtTime(0.0001, t); out.gain.linearRampToValueAtTime((far ? 0.4 : 0.95) * lvl, t + 0.015);
   if (!far) { whG.gain.setValueAtTime(0, t); whG.gain.linearRampToValueAtTime(0.05, t + 0.05); whG.gain.setTargetAtTime(0.02, t + 0.1, 0.2); }
   pulse.start(t); wh.start(t);
   let stopped = false;

@@ -43,7 +43,7 @@ window.__sim = { ready: false, error: null, results, ctx: {}, step() {}, H };
 const filter = new URLSearchParams(location.search).get('only') || '';
 (async () => {
   for (const [name, fn] of Object.entries(SCENARIOS)) {
-    if (filter && !name.includes(filter)) continue;
+    if (filter ? !name.includes(filter) : name.startsWith('debug')) continue;
     const t0 = performance.now();
     try { await fn(H); } catch (e) { check(`scenario ${name} ran`, false, String(e?.stack || e).slice(0, 400)); }
     results.rows.push({ name: `(${name} render ${Math.round(performance.now() - t0)} ms)` });

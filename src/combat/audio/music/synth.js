@@ -22,7 +22,7 @@ export function driveCurve(k = 10, asym = 0.12, n = 4096) {
   for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = (Math.tanh(k * x + asym) - off) / norm; }
   return c;
 }
-function shaper(ac, curve) { const w = ac.createWaveShaper(); w.curve = curve; try { w.oversample = '4x'; } catch {} return w; }
+function shaper(ac, curve, os = '2x') { const w = ac.createWaveShaper(); w.curve = curve; try { w.oversample = os; } catch {} return w; }
 
 /** Looping noise buffer (white or pink), one per context. */
 const noiseCache = new WeakMap();
@@ -91,7 +91,7 @@ export function makeChorus(ac, { rate = 0.8, depth = 0.0025, base = 0.012, mix =
 // ---- drums --------------------------------------------------------------------------------------------------
 export function makeDrums(ac, bus, room, gateIn, white) {
   // kick: pitched sine thump + beater click, slightly saturated
-  const kO = OSC(ac, 'sine', 50), kG = G(ac, 0), kSh = shaper(ac, driveCurve(1.6, 0)), kOut = G(ac, 0.9);
+  const kO = OSC(ac, 'sine', 50), kG = G(ac, 0), kSh = shaper(ac, driveCurve(1.6, 0), 'none'), kOut = G(ac, 0.9);
   chain(kO, kG, kSh, kOut, bus); kO.start();
   const kcF = BQ(ac, 'bandpass', 3500, 0.9), kcG = G(ac, 0); chain(white, kcF, kcG, kOut);
   const kSub = BQ(ac, 'lowshelf', 70, 0.7, 2); // a touch of chest
@@ -289,7 +289,7 @@ export function makeCleanGuitar(ac, out) {
 export function makeBass(ac, out, white) {
   const a = OSC(ac, 'sawtooth', 55), b = OSC(ac, 'square', 55, 4), mix = G(ac, 0.5); a.connect(mix); b.connect(mix); a.start(); b.start();
   const sub = OSC(ac, 'sine', 55), subG = G(ac, 0.22); sub.connect(subG); sub.start();
-  const lp = BQ(ac, 'lowpass', 600, 1.1), env = G(ac, 0), sh = shaper(ac, driveCurve(2.2, 0.05)), lvl = G(ac, 0.22);
+  const lp = BQ(ac, 'lowpass', 600, 1.1), env = G(ac, 0), sh = shaper(ac, driveCurve(2.2, 0.05), 'none'), lvl = G(ac, 0.22);
   chain(mix, lp, env); subG.connect(env); chain(env, sh, BQ(ac, 'highpass', 35, 0.7), lvl, out);
   const pk = BQ(ac, 'bandpass', 1800, 1), pkG = G(ac, 0); chain(white, pk, pkG, env);
   return {
