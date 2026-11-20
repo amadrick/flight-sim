@@ -79,6 +79,7 @@ export async function createCombat(ctx, opts = {}) {
     }
     combat.active = true;
     combat.director.start(mission, combat.options);
+    combat.assist.reset();
     combat.events.emit('mission:start', { mission, options: combat.options });
     ctx.menu?.close?.();
     return true;

@@ -232,25 +232,27 @@ back to their default paint.
   One rendered frame costs 4–5 s here: keep `--frames` at 2–4. **Look at your screenshots.**
 - `node tools/build.mjs` must succeed and the page must boot with no console errors, with and without a mission.
 
-## 15. Flight assist (`combat.assist`) — `src/combat/assist/`
+## 15. Player flight assist (`combat.assist`) — `src/combat/assist/`
 
-Most players fly on a phone or a keyboard, where raw stick-to-surface control makes a dogfight a fight against the aeroplane.
-The assist sits between the input layer and the flight model: `combat.pre(dt)` calls `combat.assist.update(dt)` right after
-`combat.input.update(dt)` and before the player's physics, only while a human flies the player's aircraft. It reads
-`ctx.controls.pitch / roll / yaw` as the player's **intent** and overwrites them with what the aircraft needs. It works with
-every input source (keys, touch stick, gamepad, tilt) because it never reads devices itself.
+Point-to-fly for touch / keyboard / pad. `combat.pre(dt)` runs it after the input layer, before the player's physics, only
+while a human flies. It reads `controls.pitch/roll` as intent and rewrites pitch/roll/yaw; throttle and speedbrake stay the
+player's except for the rookie auto-throttle. It never reads devices, so it works with every input source.
 
-```
-combat.assist.mode            'off' | 'assist'. Off = the simulator's direct controls, untouched.
-combat.assist.setMode(m)      (persisted by ui/ settings; default 'assist' on rookie and veteran, on every device)
-combat.assist.aim             { x, y, active }: optional pointer aim written by combat.input (mouse / drag): offset from the
-                              screen centre, -1..1, +x right, +y up. When active the nose is flown toward that screen point.
-combat.assist.aimAssist       0..1 gun aim help (setAimAssist); strength comes from difficulty unless the player overrides it
-combat.assist.info            { mode, active, gunAssist, limiting } for the HUD ('limiting': '' | 'aoa' | 'g' | 'ground' | 'speed')
-combat.assist.reset()         mission start / restart
-```
+- The stick turns a commanded nose N (`assist.command`) at a nose rate in the stick frame (`assist.frame` 'horizon' default:
+  right = level turn, back = nose up; 'view': camera axes). Rate = expo × the available turn rate: taps give fine
+  corrections, a held stick gives the maximum turn at the AoA/G limit. Small corrections use a small bank; a forward stick
+  pushes and never rolls inverted.
+- The aircraft flies the path that puts the nose on N (`assist.path`) with the `ai/fly.js` lift-vector controller.
+- Release: after a hard turn held > 0.7 s it rolls out on the flight path, then holds the path; after a tap N stays.
+  A dive / climb is kept; near level the wings come back level.
+- Gun help (`aimAssist` 0..1; defaults rookie 0.8, veteran 0.4, ace 0): only with a target, inside 1.4 km and gun range, with
+  the solution within 0.1 rad of the nose; N is drawn to it × closeness × (1 − stick opposition). `info.gunAssist` while acting.
+- Pointer aim: `aim.active` → N = the camera ray through `aim.{x,y}` (offset from the screen centre, -1..1, +x right, +y up).
+- Protections: AoA/G limit (rookie 0.92 α / 0.95 G, veteran 1/1, ace off); low-speed nose cap (rookie, veteran); ground
+  pull-up cue `info.pullUp` (all); last-moment ground takeover (rookie). `info.limiting` 'ground' | 'speed' | 'aoa' | 'g' | ''.
+- Rookie auto-throttle: engages after 3 s of an untouched throttle; any throttle input turns it off for 10 s (`info.autoThrottle`).
+- Stays out: on the ground, gear down below 200 ft AGL, autopilot engaged, player dead, mission ended, paused, mode 'off'.
 
-In `'assist'` mode the stick steers the NOSE in the screen frame: stick right = the nose goes right (the assist rolls, pulls
-and coordinates by itself), stick back = nose up, release = hold the flight path. Rudder input still yaws; throttle is the player's.
-On the ground, during takeoff and landing rolls, and when the simulator's autopilot is engaged the assist stays out.
-
+API: `mode`, `setMode('assist' | 'off' | null = difficulty default)`, `aim {x,y,active}`, `aimAssist`, `setAimAssist(v | null)`,
+`frame`, `info {mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint}`, `command`, `path`, `frameRight`, `frameUp`,
+`reset()` (core calls it on mission start / restart), `update(dt)`. The HUD draws `command` as the "nose goes here" reticle.
