@@ -14,6 +14,7 @@ import { createCombatHud } from './hud/index.js';
 import { createCombatInput } from './input/index.js';
 import { createCombatAudio } from './audio/index.js';
 import { createCombatUi } from './ui/index.js';
+import { createCombatCamera } from './camera/index.js';
 
 export const DIFFICULTIES = ['rookie', 'veteran', 'ace'];
 
@@ -29,8 +30,8 @@ export async function createCombat(ctx, opts = {}) {
     result: null,                  // null while the mission is undecided, else { outcome: 'success'|'failure', reason, stats }
     difficulty: DIFFICULTIES.includes(ctx.params?.raw?.difficulty) ? ctx.params.raw.difficulty : 'veteran',
     clock: 0,                      // mission time, simulated seconds
-    world: null, targeting: null, ai: null, weapons: null, director: null, fx: null, hud: null, input: null, audio: null, ui: null,
-    start, restart, abort, end, kill, pre, step, late,
+    world: null, targeting: null, ai: null, weapons: null, director: null, fx: null, hud: null, input: null, audio: null, ui: null, camera: null,
+    start, restart, abort, end, kill, pre, step, cam, late,
   };
   combat.world = createWorld(combat);
   combat.weapons = createWeapons(combat);
@@ -43,6 +44,7 @@ export async function createCombat(ctx, opts = {}) {
     combat.hud = await createCombatHud(combat);
     combat.input = await createCombatInput(combat);
     combat.ui = await createCombatUi(combat);
+    combat.camera = await createCombatCamera(combat);
   }
   const world = combat.world;
   let starting = false;
@@ -137,6 +139,8 @@ export async function createCombat(ctx, opts = {}) {
     }
     if (!headless) { world.syncVisuals(dt); combat.fx?.update?.(dt); }
   }
+  /** Right after the simulator's camera rig: combat cameras may override the camera pose. */
+  function cam(realDt) { if (!headless) combat.camera?.update?.(realDt); }
   /** After the regular HUD: combat overlay, audio, mission screens. */
   function late(dt) {
     if (headless) return;

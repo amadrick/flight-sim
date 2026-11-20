@@ -55,6 +55,7 @@ combat.kill(victim, killer|null, weapon, info?)     destroy an entity (weapons /
 input.update → weather.update → combat.pre(dt) → session.update (player physics, floating origin, player visual)
 → combat.step(dt) → cameraRig.update → frame uniforms → terrain/…/effects/audio/hud/menu.update → combat.late(dt) → render
 combat.pre   : combat.input.update, the bot pilot when it flies the player's aircraft
+combat.cam   : combat cameras, right after cameraRig.update
 combat.step  : director.update → world.stepAircraft (AI pilot.update → flight model) → targeting.update → weapons.update
                → AI visuals placed in render space → fx.update
 combat.late  : hud.update → audio.update → ui.update
@@ -207,7 +208,16 @@ voice for `'radio'` lines, music. Procedural Web Audio only; shares the simulato
 
 `createCombatUi(combat) → { update(dt), openMissions(), isOpen }`: mission select, briefing, debrief; calls `combat.start`.
 
-## 13. Testing
+## 13. Cameras — `src/combat/camera/`
+
+`createCombatCamera(combat) → { update(realDt), mode, setMode(m) }`. `update` runs right after `ctx.cameraRig.update`
+(before the frame uniforms are refreshed) and may override the pose of `ctx.camera` (render space) for combat views:
+padlock (keeps the designated target in view), missile cam, kill cam. With `mode === null` it must leave the camera alone.
+
+Enemy aircraft are spawned with `livery: 'aggressor'` unless a mission says otherwise; visuals without that livery fall
+back to their default paint.
+
+## 14. Testing
 
 - **Headless bench (fast, no rendering):** `node tools/combat-bench.mjs <missionId> --seconds 240 --log --trace 10
   [--runs 20] [--seed 1] [--difficulty ace]` flies a mission in node with every aircraft on the AI, ~100× real time.
