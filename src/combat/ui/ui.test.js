@@ -134,3 +134,12 @@ test('menu hooks list their base-UI dependencies', async () => {
   const { DEPENDS } = await import('./hooks.js');
   assert.ok(DEPENDS.tabAnchor && DEPENDS.pauseAnchor && DEPENDS.tabBar.length && DEPENDS.pauseList.length && DEPENDS.keys.length);
 });
+
+test('controls: Assisted by default on rookie / veteran, Direct on ace unless chosen; aim help', async () => {
+  const { flightModeFor, aimHelpFor, FLIGHT_MODES } = await import('./logic.js');
+  assert.equal(flightModeFor(null, 'rookie'), 'assist'); assert.equal(flightModeFor(null, 'veteran'), 'assist');
+  assert.equal(flightModeFor(null, 'ace'), 'off'); assert.equal(flightModeFor('assist', 'ace'), 'assist'); assert.equal(flightModeFor('off', 'rookie'), 'off');
+  assert.equal(aimHelpFor('off', 'rookie'), 0); assert.ok(aimHelpFor('high', 'ace') > aimHelpFor('low', 'ace'));
+  assert.ok(aimHelpFor('auto', 'rookie') > aimHelpFor('auto', 'veteran')); assert.equal(aimHelpFor('auto', 'ace'), 0);
+  assert.match(FLIGHT_MODES[0].line, /Point the stick where you want to go/);
+});

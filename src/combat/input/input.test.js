@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { keyAction, padAction, padStep, triggerHeld, PAD_MAP, PAD_FREE, PAD_OWNED, COMBAT_BINDINGS, COMBAT_PAD_BINDINGS, PAD_FALLBACK_BINDINGS, TOUCH_BUTTONS } from './map.js';
+import { keyAction, padAction, padStep, triggerHeld, PAD_MAP, PAD_FREE, PAD_OWNED, COMBAT_BINDINGS, COMBAT_PAD_BINDINGS, PAD_FALLBACK_BINDINGS, TOUCH_BUTTONS,
+  missileShot, nextMissileMode, aimFromPointer, accumulateAim, HUD_HINTS, KEY_MAP, FLARE_PROGRAM, NOLOCK_TEXT } from './map.js';
 import { COMBAT_BINDINGS as FROM_INDEX } from './index.js';
 
 test('keys map to COMBAT.md §9 commands', () => {
@@ -23,7 +24,7 @@ test('never Ctrl / Alt / Meta combinations', () => {
 
 test('combat keys do not collide with the simulator key table', async () => {
   const { CODE_MAP } = await import('../../input/bindings.js');
-  for (const code of ['Enter', 'KeyX', 'KeyV', 'Tab', 'KeyY', 'KeyZ']) assert.equal(CODE_MAP.has(code), false, code);
+  for (const r of KEY_MAP) if (r.code !== 'Space') assert.equal(CODE_MAP.has(r.code), false, r.code);
   assert.ok(CODE_MAP.has('Space'));   // shared on purpose: wheel brake on the ground, gun in the air
 });
 
@@ -68,4 +69,51 @@ test('bindings list every action for the help screen', () => {
   for (const id of ['gun', 'missile', 'flare', 'targetNext', 'targetPrev', 'targetNearest', 'weaponNext', 'padlock']) assert.ok(ids.includes(id), id);
   for (const b of [...COMBAT_BINDINGS, ...COMBAT_PAD_BINDINGS]) { assert.ok(b.group && b.action); assert.ok(Array.isArray(b.keys) && b.keys.length); }
   assert.deepEqual(TOUCH_BUTTONS.map(t => t.label).sort(), ['FLR', 'GUN', 'MSL', 'TGT', 'VIEW']);
+});
+
+test('two-hand layout: Shift boost, Tab, X / Enter missile, V flares, O view', () => {
+  assert.equal(keyAction({ code: 'ShiftLeft', shiftKey: true }), 'boost');
+  assert.equal(keyAction({ code: 'ShiftRight', shiftKey: true }), 'boost');
+  assert.equal(keyAction({ code: 'KeyO' }), 'padlock');
+  assert.equal(keyAction({ code: 'KeyF' }), null);              // F is the simulator's throttle down
+  for (const h of HUD_HINTS) assert.ok(h.keys.length && h.text && h.cmd);
+  assert.ok(FLARE_PROGRAM.releases === 3 && FLARE_PROGRAM.interval * (FLARE_PROGRAM.releases - 1) <= 1.0);
+});
+
+const T = (o) => ({ rounds: 2, locked: false, see: false, off: 0.05, fov: 0.5, range: 3000, rMin: 400, rMax: 8000, ...o });
+test('missile: best type for the shot', () => {
+  // IR locked inside its envelope
+  assert.deepEqual(missileShot({ mode: 'auto', selected: 'ir', hasTarget: true, ir: T({ locked: true, see: true }), radar: T({ see: true, rMax: 30000 }) }), { type: 'ir', reason: '' });
+  // beyond IR range: radar (not selected, but its seeker sees the target)
+  const far = { range: 20000 };
+  assert.equal(missileShot({ mode: 'auto', selected: 'ir', hasTarget: true, ir: T({ ...far }), radar: T({ ...far, see: true, rMax: 30000 }) }).type, 'radar');
+  // forced IR (Z) at long range: held, out of range
+  assert.deepEqual(missileShot({ mode: 'ir', selected: 'ir', hasTarget: true, ir: T({ ...far }), radar: T({ ...far, see: true, rMax: 30000 }) }), { type: null, reason: 'out of range' });
+});
+test('missile: specific reasons when it holds fire', () => {
+  const base = { mode: 'auto', selected: 'ir' };
+  assert.equal(missileShot({ ...base, hasTarget: false, ir: T(), radar: T() }).reason, 'no target');
+  assert.equal(missileShot({ ...base, hasTarget: true, ir: T({ rounds: 0 }), radar: T({ rounds: 0 }) }).reason, 'no missiles');
+  assert.equal(missileShot({ ...base, hasTarget: true, ir: T({ off: 1.2 }), radar: T({ rounds: 0 }) }).reason, 'off boresight');
+  assert.equal(missileShot({ ...base, hasTarget: true, ir: T({ range: 200, see: true, locked: true }), radar: T({ rounds: 0 }) }).reason, 'too close');
+  assert.equal(missileShot({ ...base, hasTarget: true, ir: T({ see: true }), radar: T({ rounds: 0 }) }).reason, 'locking');
+  assert.equal(missileShot({ ...base, hasTarget: true, ir: T({ range: 9000 }), radar: T({ rounds: 0 }) }).reason, 'out of range');
+  for (const r of ['no target', 'no missiles', 'off boresight', 'out of range', 'too close', 'locking', 'no lock']) assert.ok(NOLOCK_TEXT[r]);
+});
+test('missile type cycle: Auto, IR, radar, skipping empty rails', () => {
+  assert.equal(nextMissileMode('auto', { ir: 2, radar: 2 }), 'ir');
+  assert.equal(nextMissileMode('ir', { ir: 2, radar: 2 }), 'radar');
+  assert.equal(nextMissileMode('radar', { ir: 2, radar: 2 }), 'auto');
+  assert.equal(nextMissileMode('auto', { ir: 0, radar: 2 }), 'radar');
+  assert.equal(nextMissileMode('auto', { ir: 0, radar: 0 }), 'auto');
+});
+test('pointer aim: centre offset, +y up, clamped; locked accumulation', () => {
+  const rect = { left: 0, top: 0, width: 1000, height: 500 };   // R = 0.4 * 500 = 200
+  let a = aimFromPointer(600, 150, rect);
+  assert.ok(Math.abs(a.x - 0.5) < 1e-9 && Math.abs(a.y - 0.5) < 1e-9);
+  a = aimFromPointer(1000, 250, rect); assert.ok(Math.abs(a.x - 1) < 1e-9 && a.y === 0);
+  a = aimFromPointer(503, 251, rect); assert.deepEqual([a.x, a.y], [0, 0]);   // dead zone
+  const m = { x: 0, y: 0 };
+  accumulateAim(m, 100, -100, rect); assert.ok(Math.abs(m.x - 0.5) < 1e-9 && Math.abs(m.y - 0.5) < 1e-9);
+  accumulateAim(m, 5000, 0, rect); assert.ok(Math.abs(Math.hypot(m.x, m.y) - 1) < 1e-9);
 });
