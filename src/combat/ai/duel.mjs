@@ -75,7 +75,7 @@ export async function duel({ seed, typeA, typeB, skillA, skillB, guns = false, s
     rec.t = first.t; rec.loser = first.victim === A ? 'A' : 'B'; rec.winner = rec.loser === 'A' ? 'B' : 'A';
     rec.weapon = first.killer ? first.weapon : /Structural/.test(first.reason || '') ? 'structural' : 'terrain';
   }
-  rec.shots = (A.stats?.shots || 0) + (B.stats?.shots || 0);
+  rec.shots = [A, B].reduce((a, e) => a + Math.max(0, (e.loadout?.gun?.max ?? 0) - (e.loadout?.gun?.rounds ?? 0)), 0);
   rec.gunRounds = [A, B].map((e) => e.loadout?.gun?.rounds);
   return rec;
 }

@@ -17,11 +17,11 @@ for (let seed = 1; seed <= +(process.env.RUNS || 4); seed++) {
   const A = w.spawnAircraft({ aircraft: 'f16', team: 'blue', position: new THREE.Vector3(0, 5000, 900), heading: 0, speed: 220, skill, loadout: { ir: 0, radar: 0 }, order: { type: 'cruise', heading: 0, alt: 5000, weaponsHold: true } });
   let engaged = false;
   let n = 0, sum = 0, good = 0, hits = 0, kill = null, shots = 0;
-  globalThis.__AIDBG = (e, d) => { if (e !== A) return; n++; sum += d.err; if (d.good) good++; };
+  
   b.combat.events.on('bullet:hit', (h) => { if (h.shooter === A) hits++; });
   b.combat.events.on('kill', (k) => { if (k.victim === T) kill = b.combat.clock; });
   let rounds0 = A.loadout.gun.rounds;
-  b.run(40, (t) => { if (!engaged && t > 3) { engaged = true; A.pilot.setOrder({ type: 'engage', target: T }); } return kill != null; });
+  b.run(40, (t) => { if (!engaged && t > 3) { engaged = true; A.pilot.setOrder({ type: 'engage', target: T }); } if (A.pilot.mode === 'guns') { const d = A.pilot.debug.gun; n++; sum += d.err; if (d.good) good++; } return kill != null; });
   shots = rounds0 - A.loadout.gun.rounds;
   res.push({ seed, meanErr: n ? (sum / n) * 1000 : NaN, goodPct: n ? (100 * good) / n : 0, gunsTime: n / 60, hits, shots, kill, attackerAlive: A.alive, modeEnd: A.pilot.mode });
 }

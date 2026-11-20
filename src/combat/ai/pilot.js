@@ -62,12 +62,13 @@ export function createPilot(combat, team, e, o = {}) {
   let prevGunErr = 1, gunErrS = 0, lockSince = -1, flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
   let stalemateT = 0, holdSet = false, extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1;
 
+  const gunDbg = { err: 0, tol: 0, r: 0, good: false, losRate: 0 };      // last gun fire-control numbers (tools)
   const pilot = {
     entity: e, skill, personality, mode: 'cruise', sub: '', profile: prof, tuning: sk, _fc: fc,
     /** true = never attacks, flies its order and evades (missions may set this directly, as well as order.passive) */
     passive: !!o.passive,
     /** debugging / tools: current steering request and safety state */
-    debug: { want, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; } },
+    debug: { want, gun: gunDbg, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; } },
     setOrder(ord) {
       order = ord || { type: 'engage' };
       if (order.type === 'orbit' && !order.center) orbitC.copy(e.state.position);
@@ -687,7 +688,7 @@ export function createPilot(combat, team, e, o = {}) {
     gunErrS += (err - gunErrS) * Math.min(1, dt / 0.6);
     const tol = sk.fireTol + (T.radius || 5) / Math.max(r, 50) * 0.8;
     const good = err < tol && r < sk.gunMax * (losRate < 0.05 && geo.aa < 40 * DEG ? 1.35 : 1) && SOL.inRange !== false && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r);
-    if (globalThis.__AIDBG) globalThis.__AIDBG(e, { err, tol, r, aa: geo.aa, ata: geo.ata, settleT, good, losRate, burstT, gapT, ex: A.dot(e.right), ey: A.dot(e.up) });
+    { const g = gunDbg; g.err = err; g.tol = tol; g.r = r; g.good = good; g.losRate = losRate; }
     settleT = good ? settleT + dt : 0;
     gapT -= dt;
     if (burstT > 0) {
@@ -695,7 +696,7 @@ export function createPilot(combat, team, e, o = {}) {
       if (burstT <= 0) gapT = lerp(sk.burstGap[0], sk.burstGap[1], rng());
     } else if (good && settleT > sk.settle && gapT <= 0) {
       burstT = lerp(sk.burst[0], sk.burst[1], rng()); want.fire = true;
-    } else if (gapT <= 0 && err < tol * 1.6 && err < prevGunErr && r < sk.gunMax * 0.8 && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r)) {
+    } else if (gapT <= 0 && err < tol * 2.2 && err < prevGunErr && r < sk.gunMax * 0.8 && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r)) {
       // snapshot: the pipper sweeps through the target while we can't track it: a short burst as it passes
       burstT = lerp(0.25, 0.45, rng()); want.fire = true;
     }
