@@ -14,6 +14,7 @@ const GROUND_ROUGH = { runway: 0.2, taxiway: 0.3, apron: 0.3, deck: 0.25, terrai
 
 export async function createAudio(ctx) {
   let ac = null, M = null, rig = null, wx = null, rainD = null, ambD = null, worldD = null, boomD = null;
+  let graphRef = null;
   let volume = 0.8, mixS = 0, dopS = 1, prevDucked = false, camPrev = null, speaking = false;
   const tmpC = new THREE.Vector3(), camVel = new THREE.Vector3(), camW = new THREE.Vector3(), tmpG = {}, geo = { dist: 0, front: 0, pan: 0, dop: 1 };
   const ev = [];                       // event unsubscribers
@@ -149,6 +150,10 @@ export async function createAudio(ctx) {
     resume,
     /** the live AudioContext (null until a user gesture / resume()) — for diagnostics */
     get audioContext() { return ac; },
+    /** add-on audio (combat): the live graph once the AudioContext exists, else null. Same object every call. */
+    get graph() { return ac && M ? (graphRef ||= { ac, flightIn: M.flightIn, ambIn: M.ambIn, master: M.master }) : null; },
+    /** interior/exterior blend of the flight sounds (0 = outside view, 1 = cockpit) */
+    get interiorMix() { return mixS; },
     update(dt) {
       if (!ac || !M || ac.state !== 'running') return;
       const rdt = clamp(ctx.time?.realDt || dt || 1 / 60, 1e-3, 0.1), now = ac.currentTime;

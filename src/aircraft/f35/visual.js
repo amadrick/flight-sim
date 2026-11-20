@@ -21,11 +21,18 @@ import geometry from './geometry.js';
 import * as K from '../kit/index.js';
 
 const DEG = Math.PI / 180;
-export const LIVERIES = ['usaf', 'lowvis', 'raaf'];
+export const LIVERIES = ['usaf', 'lowvis', 'raaf', 'aggressor'];
+
+// adversary palette (the rest of the aggressor family code is at the end of the file)
+const AGG = { sand: '#b39c72', rust: '#8a623e', earth: '#4a4233', under: '#c4bba4', red: '#c02e1d', ink: '#141617', white: '#ece9df' };
 
 const SCHEMES = {
   usaf: { name: 'USAF 388th FW (HL)', skin: '#58595a', tape: '#6b6d6d', mark: '#3e4245', code: 'HL', serial: 'AF 19-5427', unit: '388 FW', star: 'usaf', tip: '#2c2f31', weather: 1.25 },
   lowvis: { name: 'Low-visibility (sanitised)', skin: '#4f5152', tape: '#5d5f60', mark: '#4a4e51', code: '', serial: '5481', unit: '', star: 'usaf', tip: null, weather: 0.45, halo: '#6f7375' },
+  // the invented adversary air force (AGG block at the end of the file): hard splinter bands in the family colours, under the
+  // same RAM tapes, saw-tooth panels and in-service blotching as the grey jets
+  aggressor: { name: 'Adversary desert splinter', skin: AGG.sand, tape: '#c2b18f', mark: '#2b2620', code: '', serial: '', unit: '', star: 'agg', tip: AGG.red, weather: 0.8, halo: '#c9bb9d',
+    agg: { seed: 3535, step: 1.45, A: -0.55, Ax: 0.25, B: 0.8, splinter: 0.28 }, num: 35 },
   raaf: { name: 'RAAF No. 3 Sqn', skin: '#56585a', tape: '#686a6b', mark: '#3c4043', code: '', serial: 'A35-052', unit: '3SQN', star: 'raaf', tip: null, weather: 0.9 },
 };
 
@@ -526,7 +533,12 @@ function paint(atlas, o) {
 
   // ================= fuselage (unwrap: a = z, b = t) =================
   const P = atlas.pen(cFus);
+  const pat = SC.agg ? aggPattern({ ...SC.agg, z: [-9.3, 6.5] }) : null, num = SC.agg ? aggNumber(SC.num) : null, ramF = (c) => ({ color: c, rough: 0.64, metal: 0.06 });
   P.fill('all', skinF);
+  if (pat) {   // splinter bands over the upper body, pale sand below the chines
+    aggCamo(P, pat, { c: [0, 1], z: [-9.25, 5.05], pos: (t, z) => fus.at(z, t).p, pt: (t, z) => [z, t], iter: 3, finish: ramF, feather: 0.6 });
+    for (const t0 of [0, 0.775]) P.fill((g) => g.rect(-9.3, t0, 14.4, 0.225), ramF(AGG.under), { feather: 2 });
+  }
   const tl = (pts, px = TP) => {
     const path = (g) => pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
     P.stroke(path, 0, halo, { px: px * 4.5, alpha: 0.1 * W8 });
@@ -575,7 +587,8 @@ function paint(atlas, o) {
   if (livery === 'raaf') P.textOn('ROYAL AUSTRALIAN AIR FORCE', -1.0, 0.5, 'both', 0.06, { color: mark, weight: 700 });
   P.textOn('RESCUE', -5.6, 0.32, 'both', 0.04, { color: mark });
   P.decalOn(-5.95, 0.32, 'both', (g) => { g.strokeStyle = mark; g.lineWidth = 0.014; g.beginPath(); g.moveTo(-0.12, 0); g.lineTo(0.08, 0); g.moveTo(0.02, -0.045); g.lineTo(0.09, 0); g.lineTo(0.02, 0.045); g.stroke(); });
-  if (livery !== 'lowvis') P.textOn(livery === 'raaf' ? 'SQNLDR J. MORGAN' : 'MAJ T. "VAPOR" REYES', -4.6, 0.3, 'L', 0.035, { color: mark });
+  if (num) P.textOn(num, -6.85, 0.08, 'both', 0.4, AGG_NUM);                                                                // side number on the nose
+  if (livery !== 'lowvis' && !pat) P.textOn(livery === 'raaf' ? 'SQNLDR J. MORGAN' : 'MAJ T. "VAPOR" REYES', -4.6, 0.3, 'L', 0.035, { color: mark });
   // DAS (distributed aperture system) windows: faceted dark glossy apertures with a tape surround
   const das = (g, layer, w = 0.075, h = 0.055) => {
     const hex = () => { g.beginPath(); g.moveTo(-w, 0); g.lineTo(-w * 0.55, -h); g.lineTo(w * 0.55, -h); g.lineTo(w, 0); g.lineTo(w * 0.55, h); g.lineTo(-w * 0.55, h); g.closePath(); };
@@ -609,20 +622,24 @@ function paint(atlas, o) {
   // ================= intake cowls (side projections, one per side so markings read correctly) =================
   for (const key of ['R', 'L']) {
     const Q = atlas.pen(cCowl[key]); Q.fill('all', skinF);
+    if (pat) { aggCamo(Q, pat, { c: [-0.82, 0.42], z: [-3.95, -1.35], pos: (y) => [1.0, y], pt: (y, z) => [z, y], finish: ramF, feather: 0.6 }); Q.fill((g) => g.rect(-3.95, -0.82, 2.6, 0.22), ramF(AGG.under), { feather: 3 }); }
     const ln = (pts, w = 0.03) => Q.stroke((g) => pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))), w, tape);
     ln([[-3.5, 0.215], [-1.4, 0.27]]); ln([[-3.86, -0.56], [-1.4, -0.66]]);
     // saw-tooth access door behind the lip and a small vent panel
     const pts = []; for (let i = 0; i <= 4; i++) pts.push([-3.15 + (i % 2) * 0.07, 0.1 - i * 0.14]); for (let i = 4; i >= 0; i--) pts.push([-2.82 + (i % 2) * 0.07, 0.1 - i * 0.14]); pts.push(pts[0]);
     ln(pts, 0.025);
     ln([[-2.05, -0.38], [-1.7, -0.38], [-1.7, -0.52], [-2.05, -0.52], [-2.05, -0.38]], 0.02);
-    if (SC.star === 'usaf') Q.decal(-2.35, -0.12, (g) => K.drawStarBar(g, 0.4, { lowVis: SC.mark })); else Q.decal(-2.35, -0.12, (g) => roundel(g, 0.19, SC.mark));
+    if (pat) Q.decal(-2.35, -0.1, (g) => aggDevice(g, 0.46));
+    else if (SC.star === 'usaf') Q.decal(-2.35, -0.12, (g) => K.drawStarBar(g, 0.4, { lowVis: SC.mark })); else Q.decal(-2.35, -0.12, (g) => roundel(g, 0.19, SC.mark));
     Q.text('DANGER', -3.3, -0.2, 0.035, { color: '#7d3a33', weight: 700 });
     Q.decal(-3.3, -0.27, (g) => { g.strokeStyle = '#7d3a33'; g.lineWidth = 0.012; g.beginPath(); g.moveTo(-0.08, 0.03); g.lineTo(0, -0.03); g.lineTo(0.08, 0.03); g.stroke(); });
     Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); Q.noise({ alpha: 0.04, scale: 0.5, mode: 'light' });
     blotch(Q, 10, -3.6, -1.5, -0.6, 0.2, 0.2, 0.15);
   }
   // ================= booms =================
-  { const Q = atlas.pen(cBoom); Q.fill('all', skinF); for (const t of [0.25, 0.75]) Q.stroke((g) => { g.moveTo(1.3, t); g.lineTo(6.1, t); }, 0, tape, { px: 2 }); Q.fill((g) => g.rect(5.2, 0, 1.0, 1), { color: 'rgba(40,36,32,0.25)' }, { feather: 6 }); Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); }
+  { const Q = atlas.pen(cBoom); Q.fill('all', skinF);
+    if (pat) { aggCamo(Q, pat, { c: [0, 1], z: [1.2, 6.2], pos: (t) => [1.02 + 0.3 * Math.sin(t * 6.283), 0.14 - 0.22 * Math.cos(t * 6.283)], pt: (t, z) => [z, t], finish: ramF, feather: 0.6 }); for (const t0 of [0, 0.775]) Q.fill((g) => g.rect(1.2, t0, 5, 0.225), ramF(AGG.under), { feather: 2 }); }
+    for (const t of [0.25, 0.75]) Q.stroke((g) => { g.moveTo(1.3, t); g.lineTo(6.1, t); }, 0, tape, { px: 2 }); Q.fill((g) => g.rect(5.2, 0, 1.0, 1), { color: 'rgba(40,36,32,0.25)' }, { feather: 6 }); Q.noise({ alpha: 0.07, scale: 1.2, rough: 0.05 }); }
 
   // ================= wings (plan: a = x, b = z) =================
   for (const key of ['R', 'L']) {
@@ -631,7 +648,8 @@ function paint(atlas, o) {
     const hTE = (x) => wg.lines.hingeTE.at(wg.spanToU(x)), hLE = (x) => wg.lines.hingeLE.at(wg.spanToU(x));
     for (const [chart, isTop] of [[cWT[key], true], [cWB[key], false]]) {
       const Q = atlas.pen(chart);
-      Q.fill('all', skinF);
+      Q.fill('all', isTop || !pat ? skinF : ramF(AGG.under));
+      if (isTop && pat) aggCamo(Q, pat, { c: s > 0 ? [0.95, 5.4] : [-5.4, -0.95], z: [-2.1, 3.5], pos: (x) => [x, 0.12], pt: (x, z) => [x, z], finish: ramF, feather: 0.6 });
       const t2 = (pts, w = 0.035) => { const path = (g) => pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); Q.stroke(path, w * 4, halo, { alpha: 0.1 * W8 }); Q.stroke(path, w, tape); };
       // leading edge band and LE-flap hinge, flaperon outline, tip edge
       t2([at(1.3, 0.004), at(5.35, 0.004)], 0.07);
@@ -650,7 +668,8 @@ function paint(atlas, o) {
       Q.noise({ alpha: 0.08, scale: 1.2, stretch: [1, 2.5], rough: 0.05 });
       blotch(Q, 26, s > 0 ? 1.0 : -5.3, s > 0 ? 5.3 : -1.0, -1.8, 3.4, 0.28, 0.28, isTop ? 1 : 0.6);
       for (let i = 0; i < 6; i++) { const x = 1.6 + rnd() * 2.4, a = at(x, hTE(x)); Q.streak(a[0], a[1], a[0], a[1] + 0.25 + rnd() * 0.3, 0.03, { alpha: 0.12 }); }
-      if (SC.star === 'usaf') {
+      if (pat) Q.decal(s * 3.3, 1.05, (g) => aggDevice(g, 0.85));                                                // insignia on all four wing faces
+      else if (SC.star === 'usaf') {
         if (isTop && key === 'L') Q.decal(-3.4, 1.0, (g) => K.drawStarBar(g, 0.55, { lowVis: mark }));
         if (!isTop && key === 'R') Q.decal(3.4, 1.0, (g) => K.drawStarBar(g, 0.55, { lowVis: mark }));
       } else if (SC.star === 'raaf' && isTop) Q.decal(s * 3.4, 1.0, (g) => roundel(g, 0.3, mark));
@@ -659,7 +678,8 @@ function paint(atlas, o) {
   }
   // ================= stabilators (plan, mirrored) =================
   for (const [chart, isTop] of [[cST, true], [cSB, false]]) {
-    const Q = atlas.pen(chart); Q.fill('all', skinF);
+    const Q = atlas.pen(chart); Q.fill('all', isTop || !pat ? skinF : ramF(AGG.under));
+    if (isTop && pat) aggCamo(Q, pat, { c: [1.1, 3.1], z: [3.4, 6.45], pos: (x) => [x, 0.1], pt: (x, z) => [x, z], finish: ramF, feather: 0.6 });
     const le = (x) => 3.45 + (x - 1.15) * Math.tan(35 * DEG), te = (x) => 6.4 - (x - 1.15) * (6.4 - 5.78) / 1.9;
     Q.stroke((g) => { g.moveTo(1.2, le(1.2) + 0.02); g.lineTo(3.05, le(3.05) + 0.02); }, 0.06, tape);
     Q.stroke((g) => { g.moveTo(1.2, te(1.2) - 0.02); g.lineTo(3.05, te(3.05) - 0.02); }, 0.04, tape);
@@ -673,6 +693,7 @@ function paint(atlas, o) {
   for (const key of ['RO', 'LO', 'RI', 'LI']) {
     const Q = atlas.pen(cFin[key]), outer = key[1] === 'O', fin = key[0] === 'R' ? fins.R : fins.L;
     Q.fill('all', skinF);
+    if (pat) aggCamo(Q, pat, { c: [0.28, 2.85], z: [2.05, 5.85], pos: (y) => [FIN.x0 + Math.max(0, y - FIN.y0) * Math.tan(20 * DEG), y], pt: (y, z) => [z, y], finish: ramF, feather: 0.6 });
     const at = (u, f) => { const p = fin.at(u, f); return [p[2], p[1]]; };
     const hz = (u) => fin.lines.hinge.at(fin.spanToU(u));
     const t2 = (pts, w = 0.035) => { const path = (g) => pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); Q.stroke(path, w * 4, halo, { alpha: 0.1 * W8 }); Q.stroke(path, w, tape); };
@@ -682,9 +703,13 @@ function paint(atlas, o) {
     Q.line([at(0.12, hz(0.12)), at(FIN.len - 0.08, hz(FIN.len - 0.08))], { px: 1.5, depth: 0.7, dark: 0.4 });
     { const pts = []; for (let i = 0; i <= 4; i++) pts.push(at(0.5 + i * 0.3, 0.2 + (i % 2) * 0.04)); for (let i = 4; i >= 0; i--) pts.push(at(0.5 + i * 0.3, 0.45 + (i % 2) * 0.04)); pts.push(pts[0]); t2(pts, 0.03); }
     if (outer) {
-      if (SC.tip) Q.fill([at(FIN.len - 0.3, 0), at(FIN.len, 0), at(FIN.len, 1), at(FIN.len - 0.3, 1)], { color: SC.tip, rough: 0.55, metal: 0.1 });
+      if (pat) {   // deeper signal-red tip over a thin black line, insignia
+        Q.fill([at(FIN.len - 0.48, 0), at(FIN.len, 0), at(FIN.len, 1), at(FIN.len - 0.48, 1)], ramF(AGG.red));
+        Q.fill([at(FIN.len - 0.52, 0), at(FIN.len - 0.48, 0), at(FIN.len - 0.48, 1), at(FIN.len - 0.52, 1)], ramF(AGG.ink));
+        const c = at(1.15, 0.42); Q.decal(c[0], c[1], (g) => aggDevice(g, 0.55));
+      } else if (SC.tip) Q.fill([at(FIN.len - 0.3, 0), at(FIN.len, 0), at(FIN.len, 1), at(FIN.len - 0.3, 1)], { color: SC.tip, rough: 0.55, metal: 0.1 });
       if (SC.code) { const c = at(1.25, 0.42); Q.text(SC.code, c[0], c[1], 0.5, { color: mark, weight: 700 }); }
-      const d = at(0.62, 0.5); Q.text(SC.serial, d[0], d[1], SC.code ? 0.1 : 0.12, { color: mark, weight: 700 });
+      const d = at(0.62, 0.5); if (SC.serial) Q.text(SC.serial, d[0], d[1], SC.code ? 0.1 : 0.12, { color: mark, weight: 700 });
       if (SC.unit) { const u = at(1.95, 0.4); Q.text(SC.unit, u[0], u[1], 0.09, { color: mark, weight: 700 }); }
       if (livery === 'raaf') { const c = at(1.3, 0.4); Q.decal(c[0], c[1], (g) => roundel(g, 0.22, mark, true)); }
     }
@@ -715,3 +740,66 @@ function roundel(g, r, color, small) {
   const pts = [[-0.55, 0.45], [-0.2, 0.2], [0.05, 0.25], [0.3, 0.05], [0.35, -0.3], [0.5, -0.5], [0.42, -0.55], [0.25, -0.32], [0.15, -0.05], [-0.05, -0.05], [-0.15, 0.1], [-0.6, 0.55]];
   pts.forEach((p, i) => (i ? g.lineTo(p[0] * k, p[1] * k) : g.moveTo(p[0] * k, p[1] * k))); g.closePath(); g.fill();
 }
+
+// ---- "aggressor": the adversary paint family ------------------------------------------------------------------------------
+// One invented air force across the whole adversary fleet (this block is repeated verbatim in every fighter visual that has an
+// `aggressor` livery): a three-tone sand / rust / dark-earth disruptive camouflage over pale-sand undersides, signal-red fin
+// tips and two-digit side numbers, and an invented insignia — a red chevron on a white-rimmed black hexagon. The pattern
+// changes per type (band width, slant, wavy or hard splinter edges); palette and markings do not. No real nation, unit or text.
+let aggSpawn = 0;
+/** Side number for the next adversary airframe of this type (each spawn wears a different one). */
+function aggNumber(base) { aggSpawn++; return String(10 + ((base + aggSpawn * 37) % 90)); }
+/**
+ * Camouflage field shared by every chart of one airframe, so bands run on from the fuselage onto wings, tails and fins:
+ * boundary k lies at z = c_k + A·|x| + Ax·x + B·y + an edge term (wavy sine or hard zigzag "splinter"). Colour 0 is the sand
+ * base (left unpainted), 1 rust, 2 earth; neighbouring bands never share a colour.
+ * o: { seed, step (mean band width, m), A, Ax, B, wave (0..0.2, of step) | splinter (0..0.3, of step), z: [zMin, zMax] }
+ */
+function aggPattern(o) {
+  let s = o.seed; const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const cs = [], ci = [], ph = []; let z = o.z[0] - o.step * 6, c = 1;
+  while (z < o.z[1] + o.step * 6) { cs.push(z); ci.push(c); ph.push(rnd() * 6.283); z += o.step * (0.65 + rnd() * 0.7); c = (c + 1 + (rnd() < 0.5 ? 0 : 1)) % 3; }
+  cs.push(z); ph.push(rnd() * 6.283);
+  const w = (o.wave ?? 0) * o.step, sp = (o.splinter ?? 0) * o.step, f = 1.5 / o.step;
+  const tri = (u) => { const v = ((u % 2) + 2) % 2; return v < 1 ? v : 2 - v; };
+  const zb = (k, x, y) => {
+    const ax = Math.abs(x); let d = cs[k] + o.A * ax + (o.Ax ?? 0) * x + o.B * y;
+    if (w) d += w * (Math.sin(ax * f + y * f * 0.7 + ph[k]) + 0.35 * Math.sin(ax * f * 2.6 - y * f * 1.9 + ph[k] * 1.7));
+    if (sp) d += sp * (2 * tri((ax + y * 0.6) * f * 0.45 + ph[k]) - 1);
+    return d;
+  };
+  return { cs, ci, zb, n: cs.length - 1 };
+}
+/**
+ * Paint a pattern onto one chart. o: { c: [c0, c1] range of the chart's cross coordinate, z: [z0, z1] its range along the body,
+ * pos(c, z) → body [x, y], pt(c, z) → paint coordinates, iter (refinement passes when pos depends on z, e.g. unwrap charts),
+ * n (samples across), finish(colour) → finish, feather (px) }
+ */
+function aggCamo(P, pat, o) {
+  const n = o.n ?? 28, it = o.iter ?? 1, cols = [null, o.finish(AGG.rust), o.finish(AGG.earth)];
+  const edge = (k) => {
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const c = o.c[0] + (o.c[1] - o.c[0]) * i / n; let z = pat.cs[k];
+      for (let r = 0; r < it; r++) { const p = o.pos(c, Math.min(o.z[1], Math.max(o.z[0], z))); z = pat.zb(k, p[0], p[1]); }
+      out.push([c, z]);
+    }
+    return out;
+  };
+  let prev = edge(0), lo = Math.min(...prev.map((q) => q[1]));
+  for (let k = 0; k < pat.n; k++) {
+    const next = edge(k + 1), hi = Math.max(...next.map((q) => q[1]));
+    if (pat.ci[k] && hi > o.z[0] && lo < o.z[1]) P.fill(prev.concat(next.slice().reverse()).map(([c, z]) => o.pt(c, z)), cols[pat.ci[k]], { feather: o.feather ?? 1 });
+    prev = next; lo = Math.min(...next.map((q) => q[1]));
+  }
+}
+/** The insignia, centred on the decal origin: red chevron (pointing up / forward) on a black hexagon with a white rim. s = height (m). */
+function aggDevice(g, s) {
+  const r = s / 2, hex = (k) => { g.beginPath(); for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + i * Math.PI / 3; g.lineTo(Math.cos(a) * r * k, Math.sin(a) * r * k); } g.closePath(); g.fill(); };
+  g.fillStyle = AGG.white; hex(1); g.fillStyle = AGG.ink; hex(0.85);
+  g.fillStyle = AGG.red; g.beginPath();
+  g.moveTo(0, -0.6 * r); g.lineTo(0.56 * r, 0.44 * r); g.lineTo(0.27 * r, 0.44 * r); g.lineTo(0, -0.05 * r); g.lineTo(-0.27 * r, 0.44 * r); g.lineTo(-0.56 * r, 0.44 * r);
+  g.closePath(); g.fill();
+}
+/** Side number style: signal red with a thin black outline. */
+const AGG_NUM = { color: AGG.red, outline: AGG.ink, outlineWidth: 7, weight: 700, font: K.FONT.sans };
