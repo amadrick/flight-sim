@@ -25,6 +25,7 @@ import * as THREE from 'three';
 import { clamp, G0 } from '../util.js';
 import { profileOf, createFlightController } from '../ai/fly.js';
 import { predictRecovery } from '../ai/safety.js';
+import { KEY_AXIS } from '../../input/logic.js';
 
 /** Per-difficulty defaults. alpha: × the fight AoA (ace: up to the FCS / stall AoA). */
 export const ASSIST_DIFFICULTY = {
@@ -36,9 +37,15 @@ export const ASSIST_DIFFICULTY = {
 /** Tuning (exported for the tests / bench). */
 export const ASSIST_TUNING = {
   mRise: 4,            // 1/s: fastest growth of the stick magnitude
-  expo: 0.75,          // stick shaping: rate = m·(1 − expo + expo·m²) of the maximum
+  expo: 0.3,           // stick shaping: rate = m·(1 − expo + expo·m²) of the maximum (on top of the input layer's own expo)
   leadMin: 0.035,      // rad: how far N may sit ahead of the nose with the stick released
   leadMax: 0.32,       // rad: … at full stick
+  ffTau: 2,            // s: smoothing of the stick's feed-forward (a held turn's rate is learned, a jittery thumb is not)
+  ffTauRel: 1,         // s: … with the stick released (it dies away quickly)
+  ffGain: 1,
+  leadDecay: 0.1,      // rad/s: how fast the allowed lead shrinks when the stick is eased
+  releaseClamp: 1,     // 1: on release N is pulled back to leadMin ahead of the nose; 0: N stays where the stick left it
+  releaseClampKeys: 0, // … for keys (the reticle stays where the key left it)
   pushG: 0.5,          // g: below this much lift a small correction pushes instead of rolling
   gainSmall: 1.2,      // 1/s: flight-path steering gain for small errors (bank stays small)
   gainBig: 2.5,        // 1/s: … for large errors
@@ -57,6 +64,11 @@ export const ASSIST_TUNING = {
   aoaTau: 0.15,        // s: smoothing of the AoA used to turn nose aims into path aims (faster = G oscillation)
   rudder: 0,         // rudder per rad of small lateral nose error
   frameRelax: 2.5,     // rad/s: the stick frame re-erects to the horizon when not pulling through the vertical
+  keyStep: 0.03,       // rad (1.7°): the nose step of one key tap
+  keyStepRate: 0.45,   // rad/s: how fast a tap's step is applied
+  keyTap: 0.15,        // s: a key held longer than this starts the continuous nose rate …
+  keyRamp: 0.4,        // s: … which ramps to the full rate over this
+  keyCancel: 0.4,      // s: an opposite key within this of letting a key go cancels the motion still to come
   gunWin: 0.1,         // rad: gun help acts inside this angle between the nose and the lead solution
   gunRate: 7,          // 1/s: how fast N is drawn to the solution at full help
   gunRange: 1400,      // m
@@ -90,6 +102,20 @@ export function rotateToward(a, b, ang) {
   return full - ang;
 }
 
+/**
+ * The key behind a key-ramped axis value (src/input/logic.js stepKeyAxis), from this frame's value and the last:
+ * moving away from the centre (or pinned at ±1) = that key held; moving toward it faster than the auto-centring =
+ * the opposite key; otherwise none. Also right for raw ±1 / 0 keys.
+ */
+export function keyDir(v, vp, dt) {
+  const av = Math.abs(v);
+  if (av >= 0.999) return Math.sign(v);
+  const dv = v - vp;
+  if (v * dv > 1e-9) return Math.sign(v);
+  if (dv * (v || vp) < 0 && Math.abs(dv) > KEY_AXIS.centre * 1.1 * dt) return -Math.sign(v || vp);
+  return 0;
+}
+
 export function createAssist(combat) {
   const T = ASSIST_TUNING;
   const st = {
@@ -98,6 +124,7 @@ export function createAssist(combat) {
     aoaS: 0, safeT: 0, clear: 1e9, mPrev: 0, mEff: 0, holdT: 0, holdHi: 0, settle: 0, Ps: new THREE.Vector3(), E: new THREE.Vector3(), eMag: 0, settleTau: 1, settleT: 0, vPrev: new THREE.Vector3(), nAero: 9, nI: new THREE.Vector3(), Ld: new THREE.Vector3(0, 1, 0), recovering: false, recHdg: 0,
     thrWritten: -1, thrTouchT: -1e9, thrTouched: false, auto: false,
     modeSet: false, aimSet: false,
+    lead: 0, wMax: 0.4, ffS: new THREE.Vector3(), kv: [0, 0], kd: [0, 0], kt: [0, 0], kpend: [0, 0], kEnd: [-9, -9], kLast: [0, 0], keys: false,
   };
 
   const assist = {
@@ -106,7 +133,11 @@ export function createAssist(combat) {
     aimAssist: 0,
     /** Stick frame: 'horizon' (default) or 'view' (see update). */
     frame: 'horizon',
-    info: { mode: 'off', active: false, gunAssist: false, limiting: '', pullUp: false, autoThrottle: false, aimPoint: false },
+    /** What the stick is: 'auto' (keys when the simulator's input mode is keyboard / mouse without the mouse yoke),
+     *  'analog' or 'keys'. Keys get their own law: tap = a small fixed nose step, hold = a rate ramping to the full
+     *  turn, the opposite key right after = stop. */
+    device: 'auto',
+    info: { mode: 'off', active: false, gunAssist: false, limiting: '', pullUp: false, autoThrottle: false, aimPoint: false, keys: false },
     /** The commanded nose direction, the flight path that gives it (world, unit) and the stick frame (right / up,
      *  world) — for HUD cues (e.g. a reticle where the nose is going). */
     command: st.A, path: st.P, frameRight: st.R, frameUp: st.U,
@@ -140,7 +171,8 @@ export function createAssist(combat) {
   }
   function disengage() {
     st.engaged = false; st.recovering = false; st.auto = false;
-    const i = assist.info; i.active = false; i.gunAssist = false; i.limiting = ''; i.pullUp = false; i.autoThrottle = false; i.aimPoint = false;
+    const i = assist.info; i.active = false; i.gunAssist = false; i.limiting = ''; i.pullUp = false; i.autoThrottle = false; i.aimPoint = false; i.keys = false;
+    st.kd[0] = st.kd[1] = 0; st.kpend[0] = st.kpend[1] = 0;
   }
   function bind(e) {
     st.ent = e; st.prof = profileOf(e.def, e.sim); st.fc = createFlightController(e, st.prof);
@@ -236,19 +268,61 @@ export function createAssist(combat) {
     const nAvail = Math.max(1.05, Math.min(gLim, (ias / Math.max(prof.stall, 40)) ** 2 * 0.95));
     // full stick asks a little more than the G limit (the AoA / G limiters in fly.js cut it to the best turn)
     const wMax = Math.max(0.2, gLim * 1.1 * G0 / V);
+    st.wMax = wMax;
     // stick magnitude, rising at most at mRise per second (a tapped or flicked stick gives a small correction; holding it
     // builds to the full-rate turn), falling at once
-    const mRaw = Math.min(1, Math.hypot(sx, sy));
-    st.mEff = mRaw < st.mEff ? mRaw : Math.min(mRaw, st.mEff + T.mRise * dt);
-    const m = st.mEff, sh = shapeRate(m), w = sh * wMax;
-    st.holdT = m > 0.6 ? st.holdT + dt : m < 0.3 ? 0 : st.holdT;     // how long a hard turn has been held
+    const inp = combat.ctx?.input;
+    const keys = assist.device === 'keys' || (assist.device === 'auto' && !!inp && (inp.mode === 'keyboard' || inp.mode === 'mouse') && !inp.mouseYoke);
+    info.keys = keys;
     _ff.set(0, 0, 0);
-    if (m > 1e-3) {
-      const ux = sx / Math.max(mRaw, 1e-6), uy = sy / Math.max(mRaw, 1e-6);
-      _d.copy(R).multiplyScalar(ux).addScaledVector(U, uy);          // direction the nose is asked to move (world)
-      N.addScaledVector(_d, w * dt).normalize();
-      _ff.copy(_d).multiplyScalar(w * V);                           // feed-forward: turn the flight path at that rate
+    let m, sh;
+    if (keys) {
+      // keys: per axis, recover the key from the key-ramped axis value, then tap = a fixed nose step, hold = a rate
+      // ramping to the full turn, the opposite key just after = stop (the motion still to come is dropped)
+      let mx = 0, my = 0, rx = 0, ry = 0;
+      for (let i = 0; i < 2; i++) {
+        const v = i ? sy : sx, vp = st.kv[i], dir = keyDir(v, vp, dt), A = i ? U : R;
+        st.kv[i] = v;
+        const was = st.kd[i];
+        if (dir !== was) {
+          if (was !== 0) { st.kEnd[i] = st.t; st.kLast[i] = was; }
+          if (dir !== 0) {
+            st.kt[i] = 0;
+            if (st.kLast[i] === -dir && st.t - st.kEnd[i] < T.keyCancel) {
+              // stop: drop the pending step and N's lead along this axis (the nose stops about where it is)
+              st.kpend[i] = 0;
+              const lead = _d.copy(N).sub(F).dot(A);
+              if (lead * dir < 0) N.addScaledVector(A, -lead).normalize();
+              st.kLast[i] = 0; st.kEnd[i] = -9;
+              st.kt[i] = -T.keyTap * 0.5;                                     // a cancelling tap does not step
+            } else st.kpend[i] += dir * T.keyStep;
+          }
+          st.kd[i] = dir;
+        }
+        let r = 0;
+        if (dir !== 0) { st.kt[i] += dt; r = clamp((st.kt[i] - T.keyTap) / T.keyRamp, 0, 1); }
+        const pend = st.kpend[i], stp = Math.sign(pend) * Math.min(Math.abs(pend), T.keyStepRate * dt);
+        st.kpend[i] -= stp;
+        const mv = dir * r * wMax * dt + stp;
+        if (i) { my = mv; ry = dir * r; } else { mx = mv; rx = dir * r; }
+      }
+      if (mx !== 0 || my !== 0) N.addScaledVector(R, mx).addScaledVector(U, my).normalize();
+      _ff.copy(R).multiplyScalar(rx * wMax * V).addScaledVector(U, ry * wMax * V);
+      m = Math.min(1, Math.hypot(rx, ry)); sh = m; st.mEff = m;
+    } else {
+      st.kd[0] = st.kd[1] = 0; st.kv[0] = sx; st.kv[1] = sy; st.kpend[0] = st.kpend[1] = 0;
+      const mRaw = Math.min(1, Math.hypot(sx, sy));
+      st.mEff = mRaw < st.mEff ? mRaw : Math.min(mRaw, st.mEff + T.mRise * dt);
+      m = st.mEff; sh = shapeRate(m);
+      const w = sh * wMax;
+      if (m > 1e-3) {
+        const ux = sx / Math.max(mRaw, 1e-6), uy = sy / Math.max(mRaw, 1e-6);
+        _d.copy(R).multiplyScalar(ux).addScaledVector(U, uy);          // direction the nose is asked to move (world)
+        N.addScaledVector(_d, w * dt).normalize();
+        _ff.copy(_d).multiplyScalar(w * V);                           // feed-forward: turn the flight path at that rate
+      }
     }
+    st.holdT = m > 0.6 ? st.holdT + dt : m < 0.3 ? 0 : st.holdT;     // how long a hard turn has been held
     // rudder pedals: a small yaw rate about the frame up axis (fine aim)
     if (rz !== 0) N.addScaledVector(R, rz * 0.12 * dt).normalize();
 
@@ -262,7 +336,11 @@ export function createAssist(combat) {
     } else if (m >= 0.05 || st.mPrev >= 0.05) {
       // lead clamp while the stick is in use and on release: N never runs far ahead of the nose (release = the nose
       // stops about where it was let go); released, N stays put in the world
-      const L = m >= 0.05 ? T.leadMin + (T.leadMax - T.leadMin) * sh : T.leadMin;
+      // the allowed lead grows at once with the stick but shrinks only slowly (easing the stick must not yank the
+      // reticle back toward the nose: the player steers by it)
+      const Lw = T.leadMin + (T.leadMax - T.leadMin) * sh;
+      st.lead = Math.max(Lw, Math.min(st.lead, T.leadMax) - T.leadDecay * dt);
+      const L = m >= 0.05 || !(keys ? T.releaseClampKeys : T.releaseClamp) ? st.lead : T.leadMin;
       if (N.dot(F) < Math.cos(L)) { _d.copy(N); N.copy(F); rotateToward(N, _d, L); }
       st.settle = 0;
       if (m > 0.3) st.holdHi = st.holdT;
@@ -387,6 +465,9 @@ export function createAssist(combat) {
     // firm for large ones; the commanded rate goes in as feed-forward
     const err = Math.acos(clamp(vh.dot(P), -1, 1));
     const wBig = clamp((err - T.smallLo) / (T.smallHi - T.smallLo), 0, 1);
+    // the stick's feed-forward, smoothed (a shaky or jabbing thumb must not shake the lift vector; the reticle itself
+    // follows the stick at once)
+    if (T.ffTau > 0 && st.settle <= 0) { st.ffS.lerp(_ff, Math.min(1, dt / (m >= 0.05 ? T.ffTau : T.ffTauRel))); _ff.copy(st.ffS).multiplyScalar(T.ffGain); } else st.ffS.copy(_ff);
     fc.steer(P, gUse, T.gainSmall + (T.gainBig - T.gainSmall) * wBig, _ff, 0);
     // small corrections, and nose-down requests, that need less than ~1/2 g of lift (or negative lift) are made by easing
     // off / pushing with the wings where they are, not by rolling the lift vector round (at low G its direction means

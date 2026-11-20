@@ -47,7 +47,7 @@ test('API: names, difficulty defaults, overrides', async () => {
 
 test('shapeRate / rotateToward', () => {
   assert.equal(shapeRate(0), 0); assert.equal(shapeRate(1), 1);
-  assert.ok(shapeRate(0.2) < 0.08, 'small deflection = fine aiming');
+  assert.ok(shapeRate(0.2) < 0.15, 'small deflection = fine aiming');
   for (let m = 0; m < 1; m += 0.1) assert.ok(shapeRate(m + 0.1) > shapeRate(m));
   const a = new THREE.Vector3(0, 0, -1), b = new THREE.Vector3(1, 0, 0);
   const left = rotateToward(a, b, 0.5);
@@ -106,7 +106,7 @@ test('stick back = nose up; a released dive is kept, not fought', async () => {
   const { b, e } = await setup({ alt: 5000 });
   fly(b, e, 1.5);
   fly(b, e, 1.2, 0, 1);
-  assert.ok(e.state.velocity.y > 20, `climbing ${e.state.velocity.y.toFixed(0)} m/s`);
+  assert.ok(e.state.velocity.y > 15, `climbing ${e.state.velocity.y.toFixed(0)} m/s`);
   fly(b, e, 6, 0, -1);                                         // pushes (no roll inverted) into a dive
   assert.ok(Math.abs(e.state.roll) < 30 * DEG, `pushed, not rolled: bank ${(e.state.roll / DEG).toFixed(0)}°`);
   fly(b, e, 2);
