@@ -4,6 +4,7 @@
 // floodlight pools). Paint quads widen to a minimum on-screen footprint (with matching alpha) so markings never alias.
 import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../core/glsl.js';
+import { createPaveLUT, PNA, PNV, PMU0 } from '../neural/ground-pave.js';
 import { glyphUV, makeAggregateTexture, makeRubberTexture, makeDefectTexture, RUBBER, DEFECT, AGGR_TILE } from './textures.js';
 
 const DEG = Math.PI / 180;
@@ -26,7 +27,7 @@ float rubberAt(float a0, float cr, float len, float wid) {
   float a = mix(a0, len - a0, e), c = mix(cr, -cr, e);
   // (integers first: interpolated varyings of a constant are not exactly constant, a floor() of them flickers)
   float layer = mod(floor(len + 0.5) + floor(wid + 0.5) + e, ${RUBBER.layers.toFixed(1)});
-  vec2 rb = texture(tRubber, vec3(c / ${RUBBER.span.toFixed(1)} + 0.5, a / ${RUBBER.len.toFixed(1)}, layer)).rg;
+  vec2 rb = texture(tRubber, vec3(c / ${RUBBER.span.toFixed(1)} + 0.5, (sqrt(0.0625 + 3.0 * max(a, 0.0) / ${RUBBER.len.toFixed(1)}) - 0.25) / 1.5, layer)).rg;
   return max(rb.r * 0.92, rb.g) * (0.3 + 0.7 * smoothstep(25.0, 45.0, wid)) * step(abs(c), wid * 0.5);
 }
 `;
@@ -91,6 +92,20 @@ export function makePavementMaterial(ctx, shared, pools) {
   for (let i = 0; i < MAX_POOLS; i++) { const p = pools[i]; poolArr.push(p ? new THREE.Vector4(p.x, p.h, p.z, p.I) : new THREE.Vector4()); }
   const local = { uPools: { value: poolArr }, uPoolCount: { value: Math.min(MAX_POOLS, pools.length) }, uPoolGain: { value: 1 } };
   mat.userData.pools = local;
+  // learned reflectance of grooved / rubbered / damp asphalt (neural/ground-pave.js): a LUT per airport, rebaked as
+  // the sun moves; pavebrdf=0 (or quality low) = the classic shading with a fixed grazing occlusion
+  const raw = ctx.params?.raw || {};
+  const netOn = raw.pavebrdf !== '0' && ctx.quality?.level !== 'low';
+  const lut = netOn ? createPaveLUT() : null;
+  local.tPaveLUT = { value: lut ? lut.texture : null };
+  local.uPaveAxis = { value: new THREE.Vector2(1, 0) };
+  if (lut) {
+    mat.onBeforeRender = (renderer, scene, camera, geometry) => {
+      const ax = geometry.userData.rwyAxis || [1, 0];
+      local.uPaveAxis.value.set(ax[0], ax[1]);
+      if (ctx.env?.sunDir) lut.update(ctx.env.sunDir, ax, shared.uWet.value);
+    };
+  }
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, local);
     sh.vertexShader = sh.vertexShader
@@ -104,10 +119,15 @@ export function makePavementMaterial(ctx, shared, pools) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         #define PAVE_DBG ${+(ctx.params?.raw?.pavedbg || 0)}
+        #define PAVE_NET ${netOn ? 1 : 0}
+        #if PAVE_NET
+        uniform highp sampler2DArray tPaveLUT; uniform vec2 uPaveAxis;
+        #endif
+        float gGroove = 0.0, gNetK = 0.0;
         uniform sampler2D tNoise; uniform sampler2D tAggr; uniform sampler2D tDefect; uniform float uAggrMean; uniform float uWet; uniform float uNight;
         varying vec2 vLocal; varying vec4 vInfo; varying vec2 vField; varying vec4 vEdge;
         ${RUBBER_GLSL} ${POOLS_GLSL} ${BUMP_GLSL}
-        float gWetMask; float gRough; float gHeight;`)
+        float gWetMask; float gRough; float gHeight; float gRub = 0.0;`)
       .replace('#include <map_fragment>', `
         {
           float kind = floor(vInfo.x + 0.5); float plen = vInfo.y; float pwid = vInfo.z; float seed = floor(vInfo.w + 0.5);
@@ -125,6 +145,8 @@ export function makePavementMaterial(ctx, shared, pools) {
           vec3 col; float rough; float hgt = aggr * 0.004;
           float tarK = 0.0;                                  // tar sealant / fresh binder over the stones
           bool concrete = (kind > 0.5 && kind < 1.5) || (kind > 2.5 && kind < 3.5);
+          gNetK = concrete ? 0.0 : 1.0;
+          gGroove = kind < 1.5 ? step(abs(vLocal.y), pwid * 0.5 - 3.0) : 0.0;
           if (concrete) {
             // Portland cement concrete: 7.5 m (runway) / 6 m (apron) slabs, sealed joints, per-slab cure tone,
             // corner breaks, tar over-banding on re-sealed joints, oil and fuel stains, fine pitting
@@ -189,7 +211,7 @@ export function makePavementMaterial(ctx, shared, pools) {
             if (PAVE_DBG == 5) df.b = 0.0;
             float pt = df.g * 2.0 - 1.0;
             float patchK = smoothstep(0.08, 0.2, abs(pt));
-            col *= pt < 0.0 ? mix(1.0, 0.5, smoothstep(0.1, 0.8, -pt)) : 1.0 + 0.35 * smoothstep(0.1, 0.6, pt);
+            col *= pt < 0.0 ? mix(1.0, 0.36, smoothstep(0.1, 0.45, -pt)) : 1.0 + 0.45 * smoothstep(0.1, 0.4, pt);
             float fresh = smoothstep(0.1, 0.5, -pt);
             // sealed cracks: black, glossy, slightly raised bands; denser on the older parts of the pavement
             float crackAmt = 0.45 + 0.55 * smoothstep(0.35, 0.65, nC.g * 0.7 + nB.b * 0.3);
@@ -247,8 +269,9 @@ export function makePavementMaterial(ctx, shared, pools) {
             float fwc = fwidth(vLocal.y);
             float stri = texture(tNoise, vec2(sl.x / 47.0, vLocal.y / 0.11)).r;
             rub *= mix(1.0, 0.55 + 0.9 * stri, 1.0 - smoothstep(0.02, 0.1, fwc));
-            col = mix(col, vec3(0.017, 0.016, 0.015), clamp(rub, 0.0, 1.0) * (concrete ? 0.92 : 0.9));
-            rough = mix(rough, 0.40, clamp(rub, 0.0, 1.0));
+            col = mix(col, vec3(0.012, 0.0115, 0.011), clamp(rub, 0.0, 1.0) * (concrete ? 0.95 : 0.97));
+            gRub = clamp(rub, 0.0, 1.0);
+            rough = mix(rough, 0.5, gRub);
           }
           // shoulders and blast pads: weathered, paler, loose grit; soil blown and washed onto the outer margin, which
           // crumbles into the verge; runway shoulders carry the edge light bases and the sealed cable slot between them
@@ -297,6 +320,9 @@ export function makePavementMaterial(ctx, shared, pools) {
           float fpS = length(fwidth(F));
           gHeight = hgt * (1.0 - gWetMask * puddle) * (1.0 - smoothstep(0.02, 0.08, fpS));
           gRough = max(rough, mix(0.42, 0.62, smoothstep(0.004, 0.04, fpS)) * (1.0 - 0.75 * gWetMask));
+          #if PAVE_DBG == 7
+          if (kind < 1.5) col = vec3(0.12 * (1.0 - clamp(rubberAt(sl.x, vLocal.y, plen, pwid), 0.0, 1.0))) + vec3(0.03 * step(fract(sl.x / 50.0), 0.02), 0.0, 0.0);
+          #endif
           #if PAVE_DBG == 6
           col = vec3(texture(tDefect, vec2(F.x / 64.0, F.y / 32.0)).g * 0.4);
           #endif
@@ -305,6 +331,35 @@ export function makePavementMaterial(ctx, shared, pools) {
       .replace('#include <roughnessmap_fragment>', `float roughnessFactor = gRough;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         normal = scnBump(-vViewPosition, normal, gHeight);`)
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+        {
+          // dry pavement is not a smooth dielectric with a few bumps: the stones and grooves shadow and mask the grazing
+          // mirror image of the sky (horizon occlusion), which otherwise washes the runway out to a uniform pale grey
+          // from the cockpit. Water fills the texture and brings the reflection back.
+          float nvP = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+          // Rubber fills the texture but is black and matte to the sky: its sheen is the sun's (direct) lobe only.
+          float occ = mix(0.22, 1.0, smoothstep(0.02, 0.6, nvP)) * (1.0 - 0.75 * gRub);
+          #if PAVE_NET
+          // asphalt: factors from the learned reflectance (sun diffuse, sun specular, sky diffuse, sky specular) for
+          // this view direction about the runway axis, groove / rubber state; standing water keeps the classic glint
+          if (gNetK > 0.5) {
+            vec3 vW = inverseTransformDirection(normalize(vViewPosition), viewMatrix);
+            float muV = clamp(vW.y, ${PMU0.toFixed(3)}, 1.0);
+            float phV = atan(-vW.x * uPaveAxis.y + vW.z * uPaveAxis.x, vW.x * uPaveAxis.x + vW.z * uPaveAxis.y);
+            vec2 uvL = vec2(phV / 6.2831853, (sqrt((muV - ${PMU0.toFixed(3)}) / ${(1 - PMU0).toFixed(3)}) * ${(PNV - 1).toFixed(1)} + 0.5) / ${PNV.toFixed(1)});
+            float lay = gGroove * 2.0;
+            vec4 q = mix(texture(tPaveLUT, vec3(uvL, lay)), texture(tPaveLUT, vec3(uvL, lay + 1.0)), gRub);
+            q.ga = mix(q.ga, vec2(1.0), gWetMask);
+            reflectedLight.directDiffuse *= q.r; reflectedLight.directSpecular *= q.g;
+            reflectedLight.indirectDiffuse *= q.b; reflectedLight.indirectSpecular *= q.a;
+            occ = 1.0;
+          }
+          #endif
+          reflectedLight.indirectSpecular *= mix(occ, 1.0, gWetMask);
+          #if PAVE_DBG == 8
+          reflectedLight.indirectSpecular *= 0.0;
+          #endif
+        }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         if (uNight > 0.001) totalEmissiveRadiance += diffuseColor.rgb * poolLight(vField) * uNight;`);
   };
@@ -371,6 +426,9 @@ export function buildPavementGeometry(L) {
   g.setAttribute('aLocal', new THREE.Float32BufferAttribute(loc, 2));
   g.setAttribute('aInfo', new THREE.Float32BufferAttribute(info, 4));
   g.setAttribute('aEdge', new THREE.Float32BufferAttribute(edge, 4));
+  // the first runway's axis in world xz: the pavement reflectance LUT is baked about it (grooves run across it)
+  const r0 = L.pave.find((r) => r.kind === 'rwy' || r.kind === 'rwyConcrete');
+  if (r0) g.userData.rwyAxis = [Math.sin(r0.hdg * DEG), -Math.cos(r0.hdg * DEG)];
   g.setIndex(idx);
   g.computeBoundingSphere();
   return g;
