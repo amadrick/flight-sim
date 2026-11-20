@@ -38,10 +38,19 @@ const glf = (v) => { let s = Number(v).toPrecision(8); if (!/[.e]/.test(s)) s +=
 
 // ------------------------------------------------------------------------------------------------ network
 let _net = null;
-/** Decoded network: layers [{ nIn, nOut, W (row-major [out][in]), b }] (input normalisation folded into layer 0). */
-export function getCloudMsNet() {
+const _nets = new Map();
+/** Decoded network: layers [{ nIn, nOut, W (row-major [out][in]), b }] (input normalisation folded into layer 0).
+ *  model: another weights object of the same format (round seven: CLOUD_MS_MODEL_R7), default the shipped one. */
+export function getCloudMsNet(model = null) {
+  if (model && model !== CLOUD_MS_MODEL) {
+    if (!_nets.has(model)) _nets.set(model, decodeNet(model));
+    return _nets.get(model);
+  }
   if (_net) return _net;
-  const m = CLOUD_MS_MODEL;
+  _net = decodeNet(CLOUD_MS_MODEL);
+  return _net;
+}
+function decodeNet(m) {
   const f = b64ToF32(m.b64);
   const layers = [];
   let p = 0;
@@ -51,8 +60,7 @@ export function getCloudMsNet() {
     p += nIn * nOut + nOut;
   }
   if (p !== f.length) throw new Error(`cloud ms weights: expected ${p} floats, got ${f.length}`);
-  _net = { layers, params: p, desc: m.desc, meta: m.meta };
-  return _net;
+  return { layers, params: p, desc: m.desc, meta: m.meta };
 }
 
 /** Descriptor -> network inputs (must match tools/neural/clouds/export.py: encode). */
@@ -68,8 +76,8 @@ export function cloudMsEncode(tauSun, tauCam, muSun, cosTheta, taps, out = []) {
 }
 
 /** JS reference of cloudMsLight: [J_ms, V_sky, V_gnd]. taps = { up: [..], down: [..], fwd: [..] } segment depths. */
-export function cloudMsLight(tauSun, tauCam, muSun, cosTheta, taps) {
-  const net = getCloudMsNet();
+export function cloudMsLight(tauSun, tauCam, muSun, cosTheta, taps, model = null) {
+  const net = getCloudMsNet(model);
   let x = cloudMsEncode(tauSun, tauCam, muSun, cosTheta, taps);
   for (let l = 0; l < net.layers.length; l++) {
     const { nIn, nOut, W, b } = net.layers[l];
@@ -161,7 +169,7 @@ const mieU = (cosTheta, C) => {
 export function createCloudMultiScatter(opts = {}) {
   const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
   const t0 = now();
-  const net = getCloudMsNet();
+  const net = getCloudMsNet(opts.model);
   const D = net.desc;
   const mie = cloudMieTable(opts.reff ?? 10);
   const nu = mie.nu;

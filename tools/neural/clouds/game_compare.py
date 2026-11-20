@@ -45,10 +45,11 @@ def main():
     spp = int(next((a.split('=')[1] for a in sys.argv if a.startswith('--spp=')), 8))
     sky = float(next((a.split('=')[1] for a in sys.argv if a.startswith('--sky=')), 0.06))
     gnd = float(next((a.split('=')[1] for a in sys.argv if a.startswith('--gnd=')), 0.025))
+    refc = next((a.split('=')[1] for a in sys.argv if a.startswith('--ref=')), None)   # reuse a cached reference
     d = load(log)
     im, f = d['img'], d['field']
     W, H = im['w'], im['h']
-    game = np.frombuffer(base64.b64decode(im['px']), np.float32).reshape(H, W, 4)[::-1].copy()
+    game = np.frombuffer(base64.b64decode(im['px']), np.float16).astype(np.float32).reshape(H, W, 4)[::-1].copy()
     # field: slices k (altitude) of rows (z) x cols (x) -> [x, y, z]
     n, nz = f['nx'], f['nz']
     full = np.frombuffer(base64.b64decode(f['full']), np.uint8).reshape(nz, n, n).astype(np.float32) / 255.0
@@ -58,6 +59,15 @@ def main():
         a = S.resample(a, (dx, dz, dx), dx)
     sig = a * f['sigma']
     cam = np.array(im['camAir'], float)
+    lum = lambda c: c @ np.array([0.2126, 0.7152, 0.0722])
+    gL = game[..., :3]; gA = 1 - game[..., 3]
+    if refc and os.path.exists(refc):
+        z = np.load(refc)
+        if '--ss' in sys.argv: return report(gL, gA, z['ss'], z['opac'], prefix, W, H, lum)       # single scattering only
+        if '--tau' in sys.argv:        # opacity-weighted optical depth toward the sun (game: clDbg=10, red channel)
+            gL = np.stack([gL[..., 0]] * 3, -1); return report(gL, gA, z['tau'], z['opac'], prefix, W, H, lambda c: c[..., 0])
+        if '--ms' in sys.argv: return report(gL, gA, z['ref'] - z['ss'], z['opac'], prefix, W, H, lum)
+        return report(gL, gA, z['ref'], z['opac'], prefix, W, H, lum)
     origin = (f['x0'] - cam[0], f['base'], f['z0'] - cam[2])
     sc = pt.Scene(sig, dx, origin, name='game')
     sc.set_sun(np.array(im['sun'], float))
@@ -113,8 +123,16 @@ def main():
     L_ms = np.stack([np.bincount(pix, Sms[:, c], N) / spp for c in range(3)], 1) * opac[:, None]
     ref = (L_ss + L_ms).reshape(H, W, 3)
     opac = opac.reshape(H, W)
-    gL = game[..., :3]; gA = 1 - game[..., 3]
-    lum = lambda c: c @ np.array([0.2126, 0.7152, 0.0722])
+    L_tau = np.bincount(ri, w * np.minimum(ts_, 60.0), N).reshape(H, W)
+    np.savez_compressed(prefix + '_ref.npz', ref=ref, opac=opac, ss=L_ss.reshape(H, W, 3), tau=np.stack([L_tau] * 3, -1))
+    return report(gL, gA, ref, opac, prefix, W, H, lum)
+
+
+def report(gL, gA, ref, opac, prefix, W, H, lum):
+    cols = next((a.split('=')[1] for a in sys.argv if a.startswith('--cols=')), None)
+    if cols:
+        c0, c1 = map(int, cols.split(':')); keep = np.zeros_like(opac, bool); keep[:, c0:c1] = True
+        opac = np.where(keep, opac, 0.0); gA = np.where(keep, gA, 0.0)
     m = (opac > 0.9) & (gA > 0.9)
     gl, rl = lum(gL)[m], lum(ref)[m]
     q = [5, 25, 50, 75, 95, 99]

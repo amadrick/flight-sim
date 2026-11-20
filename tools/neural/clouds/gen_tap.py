@@ -40,7 +40,7 @@ def main():
         if not os.path.exists(os.path.join(out_dir, os.path.basename(f))):
             by_scene.setdefault(str(np.load(f)['scene']), []).append(f)
     seen = set()
-    for kind, kw, split in gen.SCENES + gen.SCENES2:
+    for kind, kw, split in gen.SCENES + gen.SCENES2 + getattr(gen, "SCENES3", []):
         if (kind, str(kw)) in seen:
             continue
         seen.add((kind, str(kw)))

@@ -643,6 +643,8 @@ ${atmosphereGLSL}
 ${CLOUD_SHADOW_GLSL}
 ${CLOUD_DENSITY_GLSL}
 ${scatterGLSL}
+uniform vec4 uClR7;          // round seven: x = 1: two cheap light samples before the shadow map in the far field (clFarN),
+                             // y = gain on the light march's optical depth (clTauK), z = gain on the learned-MS taps (clTapK)
 ${msGLSL ? `
 // ---- round five: learned multiple scattering (docs/clouds/NEURAL.md). Taps = physical extinction of the cheap base
 // density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
@@ -651,7 +653,7 @@ ${/float\s+cloudMsForwardPeak\s*\(\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float/.
 vec4 clMsWx = vec4(0.0); float clMsLod = 1.0; vec3 clMsP0 = vec3(0.0); float clMsOff = 0.0, clMsOffR = 600.0;
 // (round six b: the taps see the cheap surface moved by the sample's own bubble displacement, as the light march does)
 float clMsSigma(vec3 p) { vec4 info; clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
-  float s = clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; clNoBub0 = false; clLightOff = 0.0; return s; }
+  float s = clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8 * uClR7.z; clNoBub0 = false; clLightOff = 0.0; return s; }
 #define CLOUD_MS_SIGMA(p) clMsSigma(p)
 ${msGLSL}
 uniform vec4 uClMs;          // x = network evaluations per ray (deeper samples reuse the last), y = strength of lam / occ on this path
@@ -728,6 +730,7 @@ float clSurfMu(vec3 pa, vec4 wx, float lod, float F0, float fp, float lam0) {
 float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, float edge) {
   float tau = 0.0, d0 = 0.0;
   float offL = clLightOffIn; clLightOffIn = 0.0;
+  vec4 info;
   // round six, inside the anvil: the ice slab is nearly uniform, so its optical depth toward the sun is its extinction x
   // the slant path to its top (up to the 1 km the shadow map takes over from). The 4 point samples cut the thin
   // horizontal slab with a count that changes with the depth below its top: contour arcs under the anvil.
@@ -742,6 +745,25 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
   // depth inside the layer), 4 fetches instead of ~16. Within the map only (+-41 km, faded from 30 km).
   if (uClCost.y > 0.0 && clPixM > uClCost.y && uCloudShadowC.z > 0.5) {
     vec2 dm = pa.xz - uCloudShadowA.xy; float rm = max(abs(dm.x), abs(dm.y));
+    if (rm < 30000.0 && uClR7.x > 0.0) {
+      // round seven (clFarN): the map alone puts the column's optical depth uniformly between its moments; on the sun-facing
+      // tops and flanks of a cumulus (the 80 m texels mix in the rays through the thick core) that left the lit side in deep
+      // shadow: far clouds (most of the chase view) were dark-topped balls lit only by multiple scattering. Two jittered
+      // cheap-density samples over the first kilometre, then the map from there (as the near path does).
+      float t1 = 0.0;
+      for (int j = 0; j < 2; j++) {
+        float a0 = j == 0 ? 0.0 : 250.0, a1 = j == 0 ? 250.0 : 1000.0;
+        vec3 pl = pa + uClLightDir * mix(a0, a1, fract(jit + 0.618 * float(j)));
+        clLightOff = offL * clSat(1.0 - 0.5 * (a0 + a1) / clLightOffR);
+        t1 += clDensityBase(pl, wx, lod + 1.0 + float(j), info) * info.w * (a1 - a0);
+      }
+      clLightOff = 0.0;
+      vec3 pe = pa + uClLightDir * 1000.0;
+      float sl = length(uCloudShadowB.xy), texM = 1.0 / (uCloudShadowA.z * float(textureSize(tCloudShadowMap, 0).x));
+      vec2 jo = uCloudShadowB.xy / max(sl, 1e-3) * ((jit - 0.5) * 2.0 * texM * max(uClFullRes.w, 1.0));
+      clNF += 4.0;
+      return t1 * uClNoise.w * 0.8 * uClR7.y + cloudShadowTauF(pe.xz + uCloudShadowC.xy + jo, pe.y, true);
+    }
     if (rm < 30000.0) {
       clNF += 4.0;
       // (round six c: with the same +-k texel jitter along the light slope as the near path below: at low sun the map's
@@ -754,7 +776,6 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
       return cloudShadowTauF(pa.xz + uCloudShadowC.xy + jo, pa.y, true);
     }
   }
-  vec4 info;
   // round four: close to the camera the first segment (0 .. 62 m at 4 steps) is sampled twice WITH the detail
   // erosion: the shadow one lobe casts on the next, i.e. the dark creases of a cauliflower surface under side light
   bool micro = uClDet.y > 0.5 && fp > 0.0;
@@ -802,7 +823,7 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
     d0 = d1;
   }
   clLightOff = 0.0;
-  tau *= uClNoise.w * 0.8;                                         // 0.8: base density is not eroded
+  tau *= uClNoise.w * 0.8 * uClR7.y;                               // 0.8: base density is not eroded (round seven: x clTauK)
   vec3 pe = pa + uClLightDir * 1000.0;
   // undo the air-mass offset: cloudShadowTau wants world XZ (it subtracts the wind offset itself)
   // At low sun the 2.5D shadow map projects its horizontal structure onto cloud faces compressed by tan(elevation),
@@ -1148,6 +1169,9 @@ void main() {
           vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
           #endif
           #ifdef CL_MS5
+          if (uClDet3.x > 9.5) S = vec3(min(tauSun, 60.0), min(-log(max(T, 1e-30)), 60.0), 0.0); else    // round seven debug: tauSun, tauCam
+          if (uClDet3.x > 7.5) S = E * msLast.x * jK * occM.x + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;    // round seven debug: all multiple scattering
+          else if (uClDet3.x > 6.5) S = E * (msPhase * exp(-tauSun) + msFwd) * occM.x; else                    // round seven debug: single scattering
           if (uClDet3.x > 5.5) S = vec3(msLast.x * 2.0, msLast.y, exp(-tauSun)) * 0.6; else      // round six b debug: J_ms, V_sky, direct sun
           #endif
           if (uClDet3.x > 4.5) S = vec3(bubS, gradS / 8.0, decS);   // round six debug: bubble weight, |gradient| estimate, decay
