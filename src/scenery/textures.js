@@ -123,7 +123,11 @@ export function makeAggregateTexture(ctx, N = 512) {
 // at a lognormally distributed distance past the aiming point, laterally scattered about the centre line, slightly
 // crabbed; every tyre lays a short, very dark spin-up skid and a long faint smear. R = accumulated deposit
 // (1 - exp(-k acc)), G = the most recent few hundred landings only (crisp black marks over the grey smear).
+// v is stretched toward the threshold (0.75 m texels there, 2.4 m at 300 m, 5 m at the far end) so the line-up arcs
+// and the first touchdown marks under the default view stay sharp: a = len * (0.25 v + 0.75 v^2).
 export const RUBBER = { nu: 512, nv: 512, span: 64, len: 1536, layers: 2 };
+export const rubberA = (v, len = RUBBER.len) => len * (0.25 * v + 0.75 * v * v);
+export const rubberV = (a, len = RUBBER.len) => (Math.sqrt(0.0625 + 3 * Math.max(0, a) / len) - 0.25) / 1.5;
 const AIRCRAFT_MIX = [
   // share, gear track (m) [min, max], tyres per side, tyre spacing (m), tyre width (m), deposit strength
   [0.46, [5.7, 7.6], 2, 0.86, 0.36, 1.0],     // narrow bodies
@@ -135,7 +139,9 @@ export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span 
   const r = rngA(seed * 7919 + 13);
   const gauss = () => { let s = 0; for (let k = 0; k < 6; k++) s += r(); return (s - 3) * 1.414; };
   const acc = new Float32Array(nu * nv), rec = new Float32Array(nu * nv);
-  const du = span / nu, dv = len / nv;
+  const du = span / nu;
+  const A = new Float32Array(nv + 1); for (let j = 0; j <= nv; j++) A[j] = rubberA(j / nv, len);
+  const rowOf = (a) => Math.floor(rubberV(a, len) * nv);
   // box-filtered stripe [x0, x1] (m across) added to row j with weight w
   const stamp = (buf, j, x0, x1, w) => {
     const u0 = (x0 + span / 2) / du, u1 = (x1 + span / 2) / du;
@@ -147,7 +153,7 @@ export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span 
     for (const m of AIRCRAFT_MIX) { if (t < m[0]) { ac = m; break; } t -= m[0]; }
     const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r();
     const off = gauss() * 1.5 + (r() < 0.12 ? gauss() * 3.5 : 0);           // lateral scatter about the centre line
-    const td = 95 + Math.exp(Math.log(265) + 0.5 * gauss());               // touchdown, m past the threshold
+    const td = 60 + Math.exp(Math.log(240) + 0.5 * gauss());               // touchdown, m past the threshold
     const crab = gauss() * 0.005;                                            // de-crab drift (m per m)
     const I = ac[5] * Math.exp(0.5 * gauss());                               // hard / soft landing
     const l0 = 6 + 18 * r(), l1 = 50 + 110 * r();                             // skid, smear lengths
@@ -156,10 +162,10 @@ export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span 
       const x0 = off + sd * track / 2 + (k - (ac[2] - 1) / 2) * ac[3];
       const tw = ac[4] * (0.85 + 0.3 * r());
       const aEnd = Math.min(len, td + l0 * 4 + l1 * 2.5);
-      for (let j = Math.max(0, Math.floor(td / dv)); j < nv; j++) {
-        const a0 = j * dv, a1 = a0 + dv;
+      for (let j = Math.max(0, rowOf(td)); j < nv; j++) {
+        const a0 = A[j], a1 = A[j + 1];
         if (a0 > aEnd) break;
-        const lo = Math.max(a0, td), cover = (a1 - lo) / dv;               // first row only partly covered
+        const lo = Math.max(a0, td), cover = (a1 - lo) / (a1 - a0);        // first row only partly covered
         if (cover <= 0) continue;
         const s = (lo + a1) / 2 - td;
         const w = I * cover * (Math.exp(-s / l0) + 0.13 * Math.exp(-s / l1));
@@ -169,13 +175,29 @@ export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span 
       }
     }
   }
-  // take-off starts: brake release / spool-up scuffs where aircraft line up just past the threshold
-  for (let n = 0; n < landings * 0.25; n++) {
-    const ac = AIRCRAFT_MIX[Math.floor(r() * 3)];
-    const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r(), off = gauss() * 0.6, a0 = 5 + 70 * r() * r(), I = 0.22 * ac[5] * Math.exp(0.5 * gauss());
-    for (const sd of [-1, 1]) for (let k = 0; k < ac[2]; k++) {
-      const x = off + sd * track / 2 + (k - (ac[2] - 1) / 2) * ac[3], tw = ac[4];
-      for (let j = Math.floor(a0 / dv); j < Math.min(nv, (a0 + 90) / dv); j++) stamp(acc, j, x - tw / 2, x + tw / 2, I * Math.exp(-(j * dv - a0) / 25));
+  // departures: lining up from the entry taxiway at the threshold (main gear arcs, the inner wheel scrubbing hard
+  // through a tight turn), then brake release / spool-up scuffs on the centre line
+  const path = (buf, pts, tw, I) => {                                         // pts: [a, x] every ~0.25 m
+    for (const [a, x] of pts) { const j = rowOf(a); if (a >= 0 && j < nv) stamp(buf, j, x - tw / 2, x + tw / 2, I * 0.25 / (A[j + 1] - A[j])); }
+  };
+  for (let n = 0; n < landings * 0.6; n++) {
+    const ac = AIRCRAFT_MIX[Math.min(3, Math.floor(r() * 4))];
+    const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r(), I = ac[5] * Math.exp(0.4 * gauss());
+    const sd = r() < 0.65 ? 1 : -1;                                          // which side the entry taxiway is on
+    const Rt = 16 + 24 * r(), aE = Rt + 4 + 30 * r() * r(), off = gauss() * 0.45;
+    for (const g of [-1, 1]) for (let k = 0; k < ac[2]; k++) {
+      // gear on the inside of the turn (g = sd: nearer the turn centre) scrubs; the outer one only rolls
+      const Rr = Math.max(1.5, Rt - g * sd * (track / 2 + (k - (ac[2] - 1) / 2) * ac[3] * 0)), inner = g === sd;
+      const scrub = I * (inner ? 0.9 * Math.min(2.5, 14 / Rr) : 0.12);
+      const pts = [];
+      for (let th = -Math.PI / 2; th < 0; th += 0.25 / Rr) pts.push([aE + Rr * Math.sin(th), off + sd * Rt - sd * Rr * Math.cos(th)]);
+      path(acc, pts, ac[4], scrub * 0.35);
+      // lined up: a short run straight ahead, power up against the brakes, roll
+      const x = off + (Rt - Rr) * sd, a1 = aE + 2 + 25 * r();
+      for (let j = rowOf(aE); j < Math.min(nv, rowOf(a1 + 80)); j++) {
+        const a = 0.5 * (A[j] + A[j + 1]);
+        stamp(acc, j, x - ac[4] / 2, x + ac[4] / 2, I * (a < a1 ? 0.04 : 0.3 * Math.exp(-(a - a1) / 26)) * (0.4 + 1.2 * r() * r()));
+      }
     }
   }
   // normalise: the busiest texels saturate to near black
