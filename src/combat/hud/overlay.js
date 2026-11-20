@@ -117,7 +117,7 @@ export function createOverlay(H) {
         if (t && t.alive) {
           v1.copy(t.state.position).sub(m.state.position); const d = v1.length();
           const c = d > 1 ? -(v1.x * (t.state.velocity.x - m.state.velocity.x) + v1.y * (t.state.velocity.y - m.state.velocity.y) + v1.z * (t.state.velocity.z - m.state.velocity.z)) / d : 0;
-          const tti = timeToImpact(d, c);
+          const tti = m.tgo > 0 ? m.tgo : timeToImpact(d, c);
           if (tti < 99) text(TTI_STR(Math.ceil(tti)), x + 8, y, H.C.fg, H.fontXS);
         }
       } else {
@@ -204,7 +204,10 @@ export function createOverlay(H) {
     text(KFT_STR(dAlt), bx + 5 * H.cwXS + 6, ty + fs * 1.4, H.C.fg, H.fontXS);
     text(aspectWord(geo.aspect), bx, ty + fs * 2.55, H.C.amber, H.fontXS);
     // hits on this target
-    if (H.hit.count > 0 && H.hit.target === t && H.hit.tt > 0) text(HIT_STR(H.hit.count), tx, ty + s + fs * 1.1, H.C.hud, H.fontB, 'center');
+    if (H.hit.count > 0 && H.hit.target === t && H.hit.tt > 0) {
+      text(HIT_STR(H.hit.count), tx, ty + s + fs * 1.1, H.C.hud, H.fontB, 'center');
+      if (H.hit.part) text(upper(H.hit.part), tx, ty + s + fs * 2.3, H.C.hud, H.fontXS, 'center');
+    }
     // missile seeker: acquiring circle closes on the target
     if (acq) {
       const k = clamp(L.progress || 0, 0, 1), rr = s + 8 + (1 - k) * 34;
@@ -221,7 +224,7 @@ export function createOverlay(H) {
   // ---- gun sight --------------------------------------------------------------------------------------
   /** world point of the stream sample: a round fired `age` s ago from history entry h */
   function streamPoint(h, age, out) {
-    const W = H.combat.weapons, Vm = W.specs?.gun?.muzzleVelocity || 1030;
+    const W = H.combat.weapons, Vm = H.player.loadout?.gun?.spec?.muzzleVelocity || W.specs?.gun?.muzzleVelocity || 1030;
     if (H.trajFn) {
       H.trajFn(H.player, age, traj);
       out.copy(traj).applyQuaternion(h.q).add(h.p);
@@ -237,7 +240,7 @@ export function createOverlay(H) {
     const W = H.combat.weapons, t = p.target, ps = p.state.position;
     const gun = p.loadout?.gun, firing = !!(gun?.firing || p.trigger);
     const tr = t && t.alive ? t.state.position.distanceTo(ps) : Infinity;
-    const gunRange = W.specs?.gun?.range || 1800;
+    const gunRange = gun?.spec?.range || W.specs?.gun?.range || 1800;
     const show = firing || tr < gunRange * 1.5;
     // boresight (gun cross) at the target's range (or 1000 m), projected so it is right in every camera
     const bd = isFinite(tr) ? clamp(tr, 300, 3000) : 1000;
@@ -352,14 +355,17 @@ export function createOverlay(H) {
       if (mt && mt.alive) {
         v1.copy(mt.state.position).sub(m.state.position); const d = v1.length();
         const c = d > 1 ? -(v1.x * (mt.state.velocity.x - m.state.velocity.x) + v1.y * (mt.state.velocity.y - m.state.velocity.y) + v1.z * (mt.state.velocity.z - m.state.velocity.z)) / d : 0;
-        tti = timeToImpact(d, c);
+        tti = m.tgo > 0 ? m.tgo : timeToImpact(d, c);
       }
       g.strokeStyle = H.C.fg; g.lineWidth = 1.2; g.beginPath(); diamond(x, yy - 4, 4); g.stroke();
       text(tti < 99 ? TTI_STR(Math.ceil(tti)) : '--', x + 8, yy - 4, H.C.fg, H.fontXS);
       yy += 14; cnt++;
     }
-    if (st === 'locked' && inR && !H.cue) {
-      H.cue = 'SHOOT'; H.cueCol = LZ.ne >= 0 && !LZ.inNe ? H.C.amber : H.C.hud; H.cueGun = false;
+    // a launch needs a full lock: SHOOT whenever locked — green inside the no-escape range (or in range when none is
+    // known), amber when the shot is long / likely to be defeated
+    if (st === 'locked' && n > 0 && !H.cue) {
+      const strong = LZ.ne >= 0 ? LZ.inNe : inR;
+      H.cue = 'SHOOT'; H.cueCol = strong ? H.C.hud : H.C.amber; H.cueGun = false;
     }
   }
 
@@ -380,7 +386,7 @@ export function createOverlay(H) {
       const on = flashOn(3);
       const vrel = v1.copy(nearest.state.velocity).sub(p.state.velocity), los = v2.copy(ps).sub(nearest.state.position);
       const c = los.dot(vrel) / Math.max(1, nd);
-      const tti = timeToImpact(nd, c);
+      const tti = nearest.tgo > 0 ? nearest.tgo : timeToImpact(nd, c);
       // box
       const w = H.warnW, hh = H.fsWarn * 1.5;
       g.fillStyle = on ? 'rgba(120,10,0,0.55)' : 'rgba(20,4,0,0.45)'; g.fillRect(P.cx - w / 2, cy - hh / 2, w, hh);
@@ -394,7 +400,7 @@ export function createOverlay(H) {
       // prompt
       const fl = p.loadout?.flares ?? 0;
       const side = H.missileSide(p, nearest.state.position);
-      const prompt = nearest.spec?.seeker === 'radar' || nearest.type === 'radar'
+      const prompt = (nearest.seeker || nearest.spec?.seeker || nearest.type) === 'radar'
         ? (side > 0 ? 'BREAK RIGHT · NOTCH' : 'BREAK LEFT · NOTCH')
         : fl > 0 ? (side > 0 ? 'FLARES · BREAK RIGHT' : 'FLARES · BREAK LEFT') : (side > 0 ? 'BREAK RIGHT' : 'BREAK LEFT');
       text(prompt, P.cx, cy + hh / 2 + H.fs * 1.3, H.C.amber, H.fontB, 'center');

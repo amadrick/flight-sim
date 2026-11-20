@@ -60,7 +60,7 @@ export async function createCombatHud(combat) {
     fs: 13, fsWarn: 28, cw: 8, cwXS: 7, cwB: 8, fontXS: '', fontS: '', fontB: '', fontWarn: '', fontWarnS: '',
     geometry, gunHist, trajFn: null, trajHasVel: false,
     threats: [], lockers: [], six: null,
-    hit: { t: 0, tt: 0, count: 0, target: null, last: -9 },
+    hit: { t: 0, tt: 0, count: 0, target: null, last: -9, part: '' },
     near: { t: 0 }, msg: { t: 0, text: '', col: tok.fg },
     dmg: Array.from({ length: 4 }, () => ({ a: 0, t: 0, life: 0.9 })), dmgI: 0, vig: 0,
     splash: Array.from({ length: 4 }, () => ({ entity: null, t: 0, life: 1.8, x: NaN, y: NaN })), splashI: 0,
@@ -145,11 +145,11 @@ export async function createCombatHud(combat) {
       s.entity = victim; s.t = s.life; s.x = NaN; s.y = NaN;
     }
   });
-  ev.on('bullet:hit', ({ shooter, target } = {}) => {
+  ev.on('bullet:hit', ({ shooter, target, part } = {}) => {
     if (!isMe(shooter)) return;
     const now = H.t;
     H.hit.count = H.hit.target === target && now - H.hit.last < 1.5 ? H.hit.count + 1 : 1;
-    H.hit.target = target; H.hit.last = now; H.hit.t = 0.22; H.hit.tt = 1.6;
+    H.hit.target = target; H.hit.last = now; H.hit.t = 0.22; H.hit.tt = 1.6; H.hit.part = typeof part === 'string' ? part : '';
   });
   ev.on('bullet:near', ({ target } = {}) => { if (isMe(target)) H.near.t = 1.1; });
   ev.on('damage', ({ target, amount, source, position } = {}) => {
@@ -164,8 +164,15 @@ export async function createCombatHud(combat) {
   ev.on('lock:locked', ({ shooter } = {}) => { if (isMe(shooter)) H.lockSnap = 1; });
   ev.on('weapon:nolock', ({ entity } = {}) => { if (isMe(entity)) msg('NO LOCK', tok.accent); });
   ev.on('weapon:select', ({ entity, selected } = {}) => { if (isMe(entity)) msg((combat.weapons?.specs?.missiles?.[selected]?.short || String(selected || '').toUpperCase()) + ' SELECTED', tok.hud, 1.1); });
-  ev.on('missile:miss', ({ missile } = {}) => { if (isMe(missile?.owner)) msg('MISSILE MISSED', tok.accent, 1.6); });
-  ev.on('missile:decoyed', ({ missile } = {}) => { if (isMe(missile?.owner)) msg('DECOYED', tok.accent, 1.6); else if (isMe(missile?.target?.owner)) msg('MISSILE DECOYED', tok.hud, 1.6); });
+  const MISS = { timeout: 'MISSILE TIMED OUT', ground: 'MISSILE INTO GROUND', decoyed: 'MISSILE DECOYED', energy: 'MISSILE OUT OF ENERGY', lost: 'MISSILE LOST LOCK' };
+  ev.on('missile:miss', ({ missile, reason } = {}) => {
+    if (isMe(missile?.owner)) msg(MISS[reason] || 'MISSILE MISSED', tok.accent, 1.8);
+    else if (isMe(missile?.target) || isMe(missile?.origTarget)) msg('MISSILE DEFEATED', tok.hud, 1.6);
+  });
+  ev.on('missile:active', ({ missile } = {}) => { if (isMe(missile?.owner)) msg('PITBULL', tok.hud, 1.4); });
+  ev.on('fire:start', ({ target } = {}) => { if (isMe(target)) msg('ENGINE FIRE', tok.warn, 2.5); });
+  ev.on('engine:out', ({ target } = {}) => { if (isMe(target)) msg('ENGINE OUT', tok.warn, 2.5); });
+  ev.on('missile:decoyed', ({ missile, target } = {}) => { if (isMe(missile?.owner)) msg('DECOYED', tok.accent, 1.6); else if (isMe(target) || isMe(missile?.origTarget)) msg('FLARES WORKED', tok.hud, 1.6); });
   ev.on('rwr:lock', ({ source, target } = {}) => {
     if (!isMe(target) || !source) return;
     for (const r of rwrLocks) if (r.source === source) { r.t = 3; return; }
@@ -285,10 +292,6 @@ export async function createCombatHud(combat) {
       g.lineCap = 'butt'; g.lineJoin = 'miter';
       if (p.alive) {
         if (dt > 0) recordGun(p);
-        if (H.trajFn) {
-          const o = H.trajFn(p, 1, _v), Vm = combat.weapons.specs?.gun?.muzzleVelocity || 1030;
-          H.trajHasVel = Math.abs(o.z) > Vm + 0.5 * (p.state.tas || p.state.velocity.length());
-        }
         gatherThreats(p);
         overlay.draw(g, p);
       } else {

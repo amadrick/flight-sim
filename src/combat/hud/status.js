@@ -4,6 +4,9 @@
 //   caution chips: ENG FIRE · SMOKE · ENG OUT · BINGO · WINCHESTER · GUN LOW
 import { F } from '../../ui/hud/common.js';
 
+const PART_KEYS = ['fuselage', 'cockpit', 'wingL', 'wingR', 'tail'];
+const WING_L = [17, 16, 2, 26, 2, 29, 17, 26], WING_R = [23, 16, 38, 26, 38, 29, 23, 26], TAIL = [17, 31, 10, 36, 10, 38, 30, 38, 30, 36, 23, 31];
+
 export function createStatus(cv, tok, specs) {
   const g = cv.getContext('2d');
   let W = 1, Hh = 1, dpr = 1, sizeKey = '', last = '';
@@ -14,15 +17,45 @@ export function createStatus(cv, tok, specs) {
   function reset() { max.gun = 0; max.flares = 0; for (const k in max.m) delete max.m[k]; last = ''; }
 
   /** Height the panel needs for width w (CSS px). */
-  function heightFor(w, nChips) {
+  function heightFor(w, nChips, diag) {
     const fs = w < 170 ? 10 : 12, row = Math.round(fs * 1.75);
-    return Math.round(row * 3 + 12 + (nChips ? row : 0));
+    const extra = diag ? Math.max(Math.round(row * 2.1), nChips ? row * Math.ceil(nChips / (w < 170 ? 1 : 2)) : 0) : nChips ? row : 0;
+    return Math.round(row * 3 + 12 + extra);
+  }
+  /** worst part damage (0..1) and a quantised key of all parts */
+  function partsInfo(P) {
+    let worst = 0, key = 0;
+    if (!P) return 0;
+    for (const k of PART_KEYS) { const v = P[k] || 0; if (v > worst) worst = v; key = key * 5 + Math.min(4, Math.floor(v * 4.99)); }
+    const E = P.engines; if (E) for (let i = 0; i < E.length; i++) { const v = E[i] || 0; if (v > worst) worst = v; key = key * 5 + Math.min(4, Math.floor(v * 4.99)); }
+    partsInfo.key = key;
+    return worst;
+  }
+  const partCol = (v) => (v < 0.05 ? null : v < 0.4 ? C.amber : v < 0.8 ? '#ff7a3c' : C.red);
+  function drawDiagram(P, x, y, sz) {
+    const u = sz / 40;
+    const shape = (col, fill, path) => {
+      g.beginPath(); path();
+      if (col) { g.globalAlpha = 0.85; g.fillStyle = col; g.fill(); g.globalAlpha = 1; }
+      g.strokeStyle = col || C.dim; g.lineWidth = 1; g.stroke();
+    };
+    const R = (x0, y0, x1, y1) => () => g.rect(x + x0 * u, y + y0 * u, (x1 - x0) * u, (y1 - y0) * u);
+    const Poly = (pts) => () => { g.moveTo(x + pts[0] * u, y + pts[1] * u); for (let i = 2; i < pts.length; i += 2) g.lineTo(x + pts[i] * u, y + pts[i + 1] * u); g.closePath(); };
+    shape(partCol(P.wingL || 0), true, Poly(WING_L));
+    shape(partCol(P.wingR || 0), true, Poly(WING_R));
+    shape(partCol(P.tail || 0), true, Poly(TAIL));
+    shape(partCol(P.fuselage || 0), true, R(17, 3, 23, 34));
+    shape(partCol(P.cockpit || 0), true, R(18, 7, 22, 14));
+    const E = P.engines || [];
+    if (E.length >= 2) { shape(partCol(E[0] || 0), true, R(14, 30, 18, 39)); shape(partCol(E[1] || 0), true, R(22, 30, 26, 39)); }
+    else shape(partCol(E[0] || 0), true, R(18, 33, 22, 39));
   }
 
   function collectChips(p, out) {
     out.length = 0;
     const d = p.damage || {}, lo = p.loadout, s = p.state;
-    if (d.fire > 0.05) out.push('ENG FIRE', C.red);
+    if (d.fire > 0.05) out.push('FIRE', C.red);
+    if (d.leak > 0.05) out.push('FUEL LEAK', C.amber);
     if (Array.isArray(d.engineOut) ? d.engineOut.some(Boolean) : d.engineOut) out.push('ENG OUT', C.red);
     else if (d.smoke > 0.05) out.push('SMOKE', C.amber);
     if (s && s.fuelCapacity > 0 && s.fuel < s.fuelCapacity * 0.18) out.push(s.fuel < s.fuelCapacity * 0.08 ? 'FUEL LOW' : 'BINGO', C.amber);
@@ -42,15 +75,16 @@ export function createStatus(cv, tok, specs) {
     const lo = p?.loadout; if (!lo) return 0;
     const gun = lo.gun || {}, rounds = gun.rounds ?? 0;
     max.gun = Math.max(max.gun, gun.max || 0, rounds);
-    max.flares = Math.max(max.flares, lo.flares || 0);
-    for (const k in lo.missiles) max.m[k] = Math.max(max.m[k] || 0, lo.missiles[k] || 0);
+    max.flares = Math.max(max.flares, lo.flaresMax || 0, lo.flares || 0);
+    for (const k in lo.missiles) max.m[k] = Math.max(max.m[k] || 0, lo.missilesMax?.[k] || 0, lo.missiles[k] || 0);
     collectChips(p, chips);
     const hp = Math.max(0, Math.round(100 * (p.hp ?? 0) / (p.maxHp || 100)));
     // change key (strings built only when something changed would still allocate; numbers combined into one key)
     let k = rounds * 1e6 + (lo.flares || 0) * 1e3 + hp;
     let mk = 0; for (const t in lo.missiles) mk = mk * 13 + (lo.missiles[t] || 0);
-    const key2 = mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0);
-    const h = heightFor(w, chips.length / 2);
+    const key2 = (diag ? partsInfo.key * 1e4 : 0) + mk * 97 + (lo.selected === 'radar' ? 1 : lo.selected === 'ir' ? 2 : 3) + chips.length * 7919 + (gun.firing ? 0.5 : 0);
+    const worst = partsInfo(p.damage?.parts), diag = worst >= 0.05;
+    const h = heightFor(w, chips.length / 2, diag);
     if (k === draw.k && key2 === draw.k2 && sizeKey === w + ':' + h + ':' + d && chipKey() === last) return h;
     draw.k = k; draw.k2 = key2; last = chipKey();
     if (sizeKey !== w + ':' + h + ':' + d) { sizeKey = w + ':' + h + ':' + d; W = w; Hh = h; dpr = d; cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
@@ -98,13 +132,18 @@ export function createStatus(cv, tok, specs) {
     const hbX = hx + fs * 3.0, hbW = valX - hbX - fs * 2.6;
     if (hbW >= 16) bar(hbX, hbW, hp / 100, hp < 30 ? C.red : hp < 60 ? C.amber : C.hud);
     g.font = fV; g.textAlign = 'right'; g.fillStyle = hp < 30 ? C.red : C.fg; g.fillText(F.int(hp), valX, y + 0.5);
-    // chips
+    // damage diagram + chips
+    if (diag) {
+      const sz = Math.round(row * 2);
+      drawDiagram(p.damage.parts, padX, y + row * 0.55, sz);
+    }
     if (chips.length) {
-      y += row; x = padX;
+      y += row; x = diag ? padX + Math.round(row * 2) + 8 : padX;
+      const x0 = x;
       g.font = `700 ${fs - 1}px ${tok.display}`;
       for (let i = 0; i < chips.length; i += 2) {
         const txt = chips[i], col = chips[i + 1], cw = txt.length * (fs - 1) * 0.56 + 10;
-        if (x + cw > W - padX + 2) break;
+        if (x + cw > W - padX + 2) { if (diag && x > x0) { x = x0; y += row; } else break; }
         g.strokeStyle = col; g.lineWidth = 1.2; g.strokeRect(Math.round(x) + 0.5, Math.round(y - row * 0.38) + 0.5, Math.round(cw), Math.round(row * 0.76));
         g.fillStyle = col; g.textAlign = 'center'; g.fillText(txt, x + cw / 2, y + 0.5);
         x += cw + 6;
