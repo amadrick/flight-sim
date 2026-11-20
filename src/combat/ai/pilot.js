@@ -378,7 +378,7 @@ export function createPilot(combat, team, e, o = {}) {
     // hold it to the merge and fight (turn fighters, unsure pilots) or shoot (aces early, cautious pilots)
     if (mergeHoldTgt !== T) {
       mergeHoldTgt = T;
-      const pBase = skill > 0.75 ? 0.3 : skill > 0.4 ? 0.6 : 0.65;
+      const pBase = skill > 0.75 ? 0.5 : skill > 0.4 ? 0.65 : 0.7;
       const pPers = personality === 'turn' ? 0.25 : personality === 'cautious' ? -0.3 : personality === 'energy' ? -0.1 : 0;
       mergeHold = rng() < clamp(pBase + pPers, 0.05, 0.95) ? 1 : 0;
     }
@@ -389,6 +389,9 @@ export function createPilot(combat, team, e, o = {}) {
     if (!spec || !(e.loadout.missiles[type] > 0)) return;
     if (t - lastShot < sk.shotGap) return;
     const r = L.range || geo.range;
+    // aspect: angle off the target's tail (0 = from astern, 180° = head-on). (lock.aspect is not used: its value
+    // is the reverse of its comment, see INTEGRATION.md)
+    classify(e, T, tmpGeo); const asp = tmpGeo.aa;
     const seeker = spec.seeker || type;
     // launch zone from the weapon (rMin arming distance, rMax kinematic reach, rNe no-escape); never outside rMax.
     // Aces wait for the no-escape zone; others shoot at a skill fraction of rMax
@@ -398,14 +401,14 @@ export function createPilot(combat, team, e, o = {}) {
     let rShot = Math.max(rNe, rMax * sk.shotRange);
     if (rNe > rMin * 1.5 && skill > 0.5) rShot = lerp(rMax * sk.shotRange, rNe, (skill - 0.5) / 0.4);
     if (seeker === 'ir') {
-      if (L.aspect > 140 * DEG && r > 1500) return;           // head-on IR shots only very close (the seeker sees the hot nose badly)
+      if (asp > 140 * DEG && r > 1500) return;           // head-on IR shots only very close (the seeker sees the hot nose badly)
       if (geo.ata > 35 * DEG) return;
     } else if (geo.closure < -100 && r > rNe) return;          // running target: wait for the no-escape zone
     if (r < rMin || r > Math.min(rShot, rMax)) return;
     // holding to the merge: no shots in the forward hemisphere until the pass is over
-    if (mergeHold === 1) { if (L.aspect > 100 * DEG && geo.situation === 'head-on') return; if (geo.range < 2500 || geo.situation !== 'head-on') mergeHold = 0; }
+    if (mergeHold === 1) { if (tmpGeo.range < 2000 || tmpGeo.ata > 90 * DEG) mergeHold = 0; else if (asp > 100 * DEG) return; }
     // first exchange defeated: it becomes a turning fight; only a good rear-quarter shot for a while
-    if (t - missedT < lerp(35, 15, skill) && !(L.aspect < 70 * DEG && r < Math.max(rNe, rMin * 2))) return;
+    if (t - missedT < lerp(35, 15, skill) && !(asp < 70 * DEG && r < Math.max(rNe, rMin * 2))) return;
     // one missile at a time at the same target (aces fire a second after a while)
     if (inFlight > (skill > 0.75 && t - lastShot > 10 ? 1 : 0)) return;
     // do not shoot when a friendly is close to the target (IR seekers switch, radar fuzes)
@@ -467,7 +470,7 @@ export function createPilot(combat, team, e, o = {}) {
     }
     // missile reset: a long close-in stalemate with IR missiles left: separate, come back for a shot
     stalemateT = geo.situation === 'offensive' || geo.range > 2500 ? 0 : stalemateT + sk.think;
-    if (stalemateT > lerp(60, 25, skill) && (e.loadout?.missiles?.ir || 0) > 0 && geo.threatAta > 70 * DEG && V > corner * 0.7) {
+    if (stalemateT > lerp(60, 25, skill) && ((e.loadout?.missiles?.ir || 0) + (e.loadout?.missiles?.radar || 0)) > 0 && geo.threatAta > 70 * DEG && V > corner * 0.7) {
       stalemateT = 0; setMode('extend', 8); return;
     }
     // flat stalemate (an endless circle or scissors): break the symmetry. With the energy, go vertical and come down
@@ -476,7 +479,7 @@ export function createPilot(combat, team, e, o = {}) {
     if (neutralT > neutralLim) {
       neutralT = 0; neutralLim = lerp(45, 18, skill) * (0.7 + 0.6 * rng());
       const myE = energyHeight(s.position.y, s.tas), hisE = energyHeight(T.state.position.y, T.state.tas);
-      if (myE > hisE - 150 && agl > sk.deck + 1200 && V > corner * 0.8 && geo.threatAta > 30 * DEG) {
+      if (myE > hisE - 150 && agl > sk.deck + 2500 && V > corner * 0.8 && geo.threatAta > 30 * DEG) {
         setMode('vertical', 6); A.copy(T.state.position).sub(s.position); A.y = 0; if (A.lengthSq() > 1) manDir.copy(A.normalize()); return;
       }
     }
@@ -499,7 +502,7 @@ export function createPilot(combat, team, e, o = {}) {
       return;
     }
     // vertical re-attack: fast energy fighter with altitude to spare and the bandit low or far
-    if (V > corner + 50 && geo.range > 2500 && geo.range < 7000 && geo.situation !== 'defensive' && rng() < sk.verticalPref * 0.25 && s.position.y < 12000) {
+    if (V > corner + 50 && geo.range > 2500 && geo.range < 7000 && geo.situation !== 'defensive' && rng() < sk.verticalPref * 0.25 && s.position.y < 12000 && agl > sk.deck + 2500) {
       setMode('vertical', 5); return;
     }
     // 6. offensive / neutral pursuit
@@ -511,13 +514,7 @@ export function createPilot(combat, team, e, o = {}) {
       combat.weapons.gunSolution(e, T, SOL);
       A.copy(SOL.point).sub(s.position).normalize();
       const lead = Math.acos(clamp(A.dot(e.forward), -1, 1));
-      // skilled pilots close to the ideal gun range before pulling lead (lead bleeds the speed needed to close);
-      // poor ones start tracking (and spraying) as soon as the pipper is near
-      const far = skill > 0.35 && geo.range > sk.gunIdeal * (pilot.mode === 'guns' ? 2.1 : 1.6) && geo.closure < (pilot.mode === 'guns' ? -5 : 20);
-      // tracking needs a low aspect (or very close); at high angle-off keep flying the pursuit (snapshots only)
-      const aspectOk = geo.aa < lerp(75, 45, skill) * DEG * (pilot.mode === 'guns' ? 1.3 : 1) || geo.range < 350;
-      if (process.env.GATE ? !far && aspectOk && (pilot.mode === 'guns' ? gunErrS < GUN_EXIT || lead < 0.3 : lead < GUN_ENTER) : (pilot.mode === 'guns' ? gunErrS < GUN_EXIT || lead < 0.3 : lead < GUN_ENTER)) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
-      if (process.env.GATE && far && geo.aa < 60 * DEG) { setMode('pursuit', 0, 'pure'); return; }
+      if (pilot.mode === 'guns' ? gunErrS < GUN_EXIT || lead < 0.3 : lead < GUN_ENTER) { if (pilot.mode !== 'guns') gunErrS = lead; setMode('guns'); return; }
       if (geo.aa < 90 * DEG && !(geo.range < 600 && geo.closure > 60)) { setMode('pursuit', 0, 'lead'); return; }
     }
     // overshoot coming: closing fast with angle off and little time to go. Lag first (throttle and speedbrake solve
@@ -545,7 +542,8 @@ export function createPilot(combat, team, e, o = {}) {
       // far behind and not closing: lead cuts across the circle; close with closure or aspect: lag; else pure / lead
       // outside the control zone: fly to it (the bandit's trail); inside: pure to close, lead to shoot
       const inZone = geo.range < 950 && geo.aa < 45 * DEG;
-      const sub = process.env.OLDSUB ? (geo.range > 1200 && geo.closure < 30 ? 'lead' : (geo.range < 1200 && (geo.closure > 40 || geo.aa > 45 * DEG)) ? 'lag' : geo.range > 1000 ? 'pure' : 'lead') : !inZone ? (geo.ata > 60 * DEG ? 'pure' : 'zone') : geo.range > sk.gunIdeal * 1.6 && geo.closure < 20 ? 'pure' : 'lead';
+      const running = geo.aa < 50 * DEG && (geo.closure < 0 || (T.state.gLoad || 1) < 2.2);   // straight or running away: point at it
+      const sub = running ? (geo.range > 1500 ? 'lead' : 'pure') : !inZone ? (geo.ata > 60 * DEG ? 'pure' : 'zone') : geo.range > sk.gunIdeal * 1.6 && geo.closure < 20 ? 'pure' : 'lead';
       setMode('pursuit', 0, sub);
     }
     else if (geo.range < 900 && geo.closure > 25) setMode('pursuit', 0, 'lag');
@@ -639,7 +637,7 @@ export function createPilot(combat, team, e, o = {}) {
         if (pilot.sub === 'lost') { aimAt(lastKnown); want.g = gHard * 0.7; return; }
         if (pilot.sub === 'tail') {
           // aim at a point well behind the bandit on its flight path (its turn circle), toward its six
-          pursuitPoint(e, T, 'lag', aim, +(process.env.TAIL || 2.2));
+          pursuitPoint(e, T, 'lag', aim, 2.2);
           aimAt(aim); want.g = gHard; want.spd = prof.corner + sk.speedBias * 0.5;
           energyTilt(want.spd);
           return;
@@ -1166,6 +1164,11 @@ export function createPilot(combat, team, e, o = {}) {
         }
       }
     }
+    // ---- no transonic dashes near the ground: the stick runs out of authority (heavy, conventional jets) and the
+    // recovery needs more room than the look-ahead sees
+    if (FIGHT_MODES.has(pilot.mode) && p.y - floorAlt < sk.deck + 3000 && s.ias > prof.corner + 70 && s.velocity.y < 20) {
+      want.spd = Math.min(want.spd, prof.corner + 50); want.ab = false; want.brake = true;
+    }
     // ---- hard terrain recovery (predictive)
     safeT -= dt;
     if (safeT <= 0 || recovering) {
@@ -1178,7 +1181,7 @@ export function createPilot(combat, team, e, o = {}) {
       RP.nz = Math.max(1.2, Math.min(nzAvail, fc.nzFull * 0.9)); RP.rollRate = Math.min(prof.rollRate, 3) * 0.8 * auth; RP.climb = prof.heavy ? 0.15 : thr < 0.6 ? 0.15 : 0.35; RP.turn = 0;
       RP.horizon = clamp(V / 22, 8, 18); RP.dt = 0.35; RP.delay = 0.25; RP.nz *= 0.85;
       predictRecovery(ground, RS, RP, REC);
-      const margin = (100 + V * 0.65) * (1 + (1 - auth) * 1.5 + (1 - thr) * 0.5);
+      const margin = (100 + V * 0.9) * (1 + (1 - auth) * 1.5 + (1 - thr) * 0.5);
       if (REC.clear < margin) {
         if (!recovering) { recovering = true; recT = 0; escTurn = 0; }
         // can a turning escape do better? (mountain ahead)
@@ -1201,7 +1204,10 @@ export function createPilot(combat, team, e, o = {}) {
       want.direct = false; want.useFF = false; want.track = false;
       want.dir.set(Math.sin(h) * Math.cos(climb), Math.sin(climb), -Math.cos(h) * Math.cos(climb));
       want.g = prof.fbw ? prof.fcsNzMax : prof.gMax * 0.85; want.gain = 4;
-      want.spd = prof.vmo; want.ab = true; want.brake = false; want.fire = false;
+      // fast: power back and boards out (more speed only adds to the pull-out radius; heavy-stick jets lose authority)
+      if (s.ias > prof.corner + 60) { want.spd = prof.corner; want.ab = false; want.brake = true; }
+      else { want.spd = prof.vmo; want.ab = true; want.brake = false; }
+      want.fire = false;
       pilot.sub = 'terrain';
     }
     // ---- stall / departure

@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { clamp, G0 } from '../util.js';
 
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _l = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _g = new THREE.Vector3(), _t = new THREE.Vector3();
 
 /** Inverse of fcs.js shape(): stick deflection that produces normalised command s (|s| <= 1) with shaping factor k. */
 // nose-error roll loop gains for gun tracking (higher gains oscillate through the roll / pitch coupling)
@@ -108,8 +109,18 @@ export function createFlightController(e, prof) {
       _l.y += G0; _l.addScaledVector(_v, -_v.y * G0);
       let L = _l.length();
       if (L > aMax) {
-        // keep the gravity part, shorten the turn part so |lift| fits (prefer turning over holding altitude when it can't)
-        _l.multiplyScalar(aMax / L); L = aMax;
+        // keep the gravity part, shorten the turn part so |lift| fits: |g⊥ + k·t| = aMax (scaling both would let a
+        // hard turn drop the nose into a descending spiral)
+        _g.set(0, G0, 0).addScaledVector(_v, -_v.y * G0);
+        const gl = _g.length();
+        if (gl >= aMax * 0.95) _l.multiplyScalar(aMax / L);
+        else {
+          _t.copy(_l).sub(_g);
+          const tt = _t.lengthSq(), gt = _g.dot(_t);
+          const k = tt > 1e-6 ? (-gt + Math.sqrt(Math.max(gt * gt - tt * (gl * gl - aMax * aMax), 0))) / tt : 0;
+          _l.copy(_g).addScaledVector(_t, clamp(k, 0, 1));
+        }
+        L = aMax;
       }
       fc.liftWorld.copy(_l);
       fc.setLift(_l, L / G0, gLimit);
@@ -188,7 +199,7 @@ export function createFlightController(e, prof) {
       fc.yawCmd = 0;                                     // (rudder corrections made the lateral loop worse)
       return err;
     },
-    nzFull: prof.gMax, exPrev: 0, exDot: 0, exInt: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
+    nzFull: prof.gMax, nzFullV: 0, exPrev: 0, exDot: 0, exInt: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
 
     /** Speed hold: target IAS (m/s). opts: { ab: allow afterburner, brake: allow the speedbrake, min, max lever } */
     speed(ias, ab = true, brake = true, minLever = 0) {
@@ -251,7 +262,9 @@ export function createFlightController(e, prof) {
       if (!p.fbw && c.pitch > 0.25 && s.aoa > 0.01 && !s.stalled) {
         const est = 1 + Math.max(s.gLoad - 1, 0) / c.pitch;
         fc.nzFull += (Math.min(est, p.gMax) - fc.nzFull) * Math.min(1, dt / 0.8);
-      } else fc.nzFull += (p.gMax - fc.nzFull) * Math.min(1, dt / 15);
+        fc.nzFullV = Math.max(fc.nzFullV * (1 - Math.min(1, dt / 20)), s.ias);
+      } else if (s.ias < fc.nzFullV - 25) fc.nzFull += (p.gMax - fc.nzFull) * Math.min(1, dt / 15);   // slower than when it was learned
+      else fc.nzFullV = Math.max(fc.nzFullV, 0);
       // ---- roll: rate command from the roll error
       let pDes = 0;
       // roll-angle loop with lead on the current roll rate (conventional aircraft respond slower: more lead)
