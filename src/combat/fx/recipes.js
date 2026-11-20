@@ -152,7 +152,7 @@ export function airFireball(ps, smoke, pos, vel, scale, q, withVolume) {
   // 1. flash: a brief white-hot point (blooms) and a short orange glow — small, so it does not wash the frame
   _z.copy(vel).multiplyScalar(0.35);
   flash(ps, pos, _z, 9 * scale, 350, 1, 0.95, 0.85, 0.12);
-  flash(ps, pos, _z, 20 * scale, 16, 1, 0.6, 0.3, 0.4);
+  flash(ps, pos, _z, 11 * scale, 5, 1, 0.6, 0.3, 0.3);
   // 2. white-hot core: few, short-lived, very hot (fxFlame → white-yellow), cools to orange within ~0.2 s
   for (let i = 0, n = Math.round(10 * qq); i < n; i++) {
     randDir(_w, 0.1);
@@ -175,8 +175,8 @@ export function airFireball(ps, smoke, pos, vel, scale, q, withVolume) {
   const pp = ps.p;
   for (let i = 0, n = Math.round(60 * qq); i < n; i++) {
     randDir(_w, 0.1);
-    pp.kind = KIND.SPARK; pp.life = 0.5 + rnd() * 0.9; pp.size0 = pp.size1 = 0.09 + rnd() * 0.08; pp.drag = 0.6 + rnd() * 0.6; pp.buoy = -9.8;
-    pp.delay = rnd() * 0.05; pp.r = 1; pp.g = 0.75 + rnd() * 0.25; pp.b = 0.45 + rnd() * 0.3; pp.opacity = 1; pp.emissive = 60 + rnd() * 90; pp.aux = 0.05;
+    pp.kind = KIND.SPARK; pp.life = 0.5 + rnd() * 0.9; pp.size0 = pp.size1 = 0.16 + rnd() * 0.12; pp.drag = 0.6 + rnd() * 0.6; pp.buoy = -9.8;
+    pp.delay = rnd() * 0.05; pp.r = 1; pp.g = 0.7 + rnd() * 0.25; pp.b = 0.35 + rnd() * 0.3; pp.opacity = 1; pp.emissive = 150 + rnd() * 150; pp.aux = 0.04;
     ps.spawn(pos, _v.copy(_w).multiplyScalar(55 + rnd() * 70).addScaledVector(vel, 0.4));
   }
   for (let i = 0, n = Math.round(22 * qq); i < n; i++) {

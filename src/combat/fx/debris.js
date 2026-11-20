@@ -6,10 +6,11 @@ import * as THREE from 'three';
 import { KIND } from '../../effects/particles.js';
 import { createDebrisMesh } from './meshes.js';
 import { STYLE } from './ribbons.js';
+import { SPR } from './sprites.js';
 
 const rnd = Math.random, sgn = () => rnd() * 2 - 1;
 
-export function createDebris(ctx, ribbons, capacity = 128) {
+export function createDebris(ctx, ribbons, capacity = 128, sprites = null) {
   const mesh = createDebrisMesh(ctx, capacity);
   const heatAttr = mesh.userData.heat;
   const pieces = [];
@@ -109,12 +110,12 @@ export function createDebris(ctx, ribbons, capacity = 128) {
           }
         }
         if (burning && pc.heat > 0.25) {
-          pc.acc.f += 22 * dt * Math.max(0.5, q);
+          pc.acc.f += 30 * dt * Math.max(0.5, q);
           while (pc.acc.f >= 1) {
             pc.acc.f -= 1;
             const f = ps.p;
-            f.kind = KIND.FIRE; f.life = 0.3 + rnd() * 0.4; f.size0 = 0.3 + pc.size * 0.3; f.size1 = 1.2 + pc.size; f.drag = 2.5; f.buoy = 2;
-            f.delay = 0; f.r = 0.15; f.g = 0.12; f.b = 0.1; f.opacity = 0.8; f.emissive = 25 + rnd() * 25; f.aux = 0;
+            f.kind = KIND.FIRE; f.life = 0.2 + rnd() * 0.25; f.size0 = 0.2 + pc.size * 0.2; f.size1 = 0.6 + pc.size * 0.6; f.drag = 2.5; f.buoy = 2;
+            f.delay = 0; f.r = 0.1; f.g = 0.09; f.b = 0.08; f.opacity = 0.7; f.emissive = 8 + rnd() * 8; f.aux = 0;
             ps.spawn(v.copy(pc.p).addScaledVector(pc.v, -dt * rnd()), r.copy(pc.v).multiplyScalar(0.3));
           }
         }
@@ -129,6 +130,14 @@ export function createDebris(ctx, ribbons, capacity = 128) {
         m4.compose(v, pc.q, pc.s);
         mesh.setMatrixAt(n, m4);
         mesh.setColorAt(n, pc.c);
+        // burning piece: a continuous flame tongue streaming behind it (no beads of fire puffs)
+        if (sprites && pc.burn && pc.heat > 0.25 && pc.t < 14) {
+          const sp = pc.v.length();
+          if (sp > 3) {
+            const L = (1.5 + pc.size * 2.5) * Math.min(1.5, sp / 80), k = -L / sp, I = 6 * pc.heat;
+            sprites.add(SPR.FLAME, v.x, v.y, v.z, 0.25 + pc.size * 0.35, I, I * 0.6, I * 0.28, pc.v.x * k, pc.v.y * k, pc.v.z * k, pc.size * 13.7, 0.8, -1);
+          }
+        }
         heatAttr.array[n] = pc.heat;
         n++;
       }

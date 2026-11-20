@@ -48,7 +48,7 @@ export async function createCombatFx(combat) {
   const ribbons = createRibbons(ctx, U, S.header, S.anchor);
   const sprites = createSprites(ctx, U, S.header, 2048);
   const missileMesh = createMissileMesh(ctx, 48);
-  const debris = createDebris(ctx, ribbons, 128);
+  const debris = createDebris(ctx, ribbons, 128, sprites);
   let fireballs = null;
   try { fireballs = raw.cfxfb === '0' ? null : createFireballSystem(ctx, U, S.header, 3); } catch (err) { console.warn('[combat fx] neural fireball unavailable', err); fireballs = null; }
   let fbWarm = false;
