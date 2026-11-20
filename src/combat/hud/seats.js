@@ -15,6 +15,8 @@ export const SEATS = {
   subsNarrow: 'left',
   subsStripGap: 12,         // px between the subtitles and the top of the flight-data strip (wide)
   hintsWide: true, hintsNarrow: false,
+  bannerTopWide: '21%',     // mission-end banner centre (the simulator's crash card sits around 40 %)
+  bannerTopNarrow: '57%',   // phones: below the right column and the subtitle stack
 };
 
 export function seatMode(W, H, touch) { return touch || W <= SEATS.narrowMaxW || H <= SEATS.narrowMaxH ? 'narrow' : 'wide'; }
@@ -24,6 +26,7 @@ export function applySeats(panels, root, mode) {
   const narrow = mode === 'narrow';
   root.classList.toggle('cbt-hud-narrow', narrow);
   root.style.setProperty('--cbt-side-top', SEATS.sideTop + 'px');
+  root.style.setProperty('--cbt-banner-top', narrow ? SEATS.bannerTopNarrow : SEATS.bannerTopWide);
   const subsLeft = (narrow ? SEATS.subsNarrow : SEATS.subsWide) === 'left';
   const want = subsLeft ? panels.left : root;
   if (panels.subs.parentNode !== want) want.appendChild(panels.subs);

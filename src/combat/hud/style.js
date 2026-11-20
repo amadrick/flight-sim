@@ -69,7 +69,7 @@ export const CSS = `
 .cbt-hud-pop.cbt-hud-out{opacity:0;transform:translateY(-10px)}
 
 /* mission end banner */
-.cbt-hud-banner{--r:28px;position:absolute;left:50%;top:21%;transform:translate(-50%,-50%);width:min(520px,calc(100% - 32px));box-sizing:border-box;padding:18px 22px 16px;text-align:center;
+.cbt-hud-banner{--r:28px;position:absolute;left:50%;top:var(--cbt-banner-top,21%);transform:translate(-50%,-50%);width:min(520px,calc(100% - 32px));box-sizing:border-box;padding:18px 22px 16px;text-align:center;
   transition:opacity .4s,transform .5s var(--spring,cubic-bezier(.34,1.32,.5,1))}
 .cbt-hud-banner.cbt-hud-in{opacity:0;transform:translate(-50%,-50%) scale(.92)}
 .cbt-hud-banner h2{margin:0;font-family:var(--font-display,'Saira Condensed','Arial Narrow',Arial,sans-serif);font-weight:600;font-size:clamp(24px,4.2vw,38px);letter-spacing:.22em;padding-left:.22em;text-transform:uppercase}

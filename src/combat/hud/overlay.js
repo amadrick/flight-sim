@@ -173,8 +173,8 @@ export function createOverlay(H) {
       text(DEG_STR(Math.round(geo.ata * RAD)), P.cx + ca * (r1 + 24), P.cy + sa * (r1 + 24), H.C.fg, H.fontS, 'center');
       // range + call sign inside the edge cue
       const lx = ex - ca * 34, ly = ey - sa * 34;
-      text(t.callsign || 'TGT', lx, ly - 7, H.C.fg, H.fontXS, 'center');
-      text(F.tenth(Math.round(geo.range / NM * 10)), lx, ly + 7, col, H.fontS, 'center');
+      if (!H.compact) text(t.callsign || 'TGT', lx, ly - 7, H.C.fg, H.fontXS, 'center');
+      text(F.tenth(Math.round(geo.range / NM * 10)), lx, H.compact ? ly : ly + 7, col, H.fontS, 'center');
       return;
     }
     const x = P.x, y = P.y, depth = -P.vz;
