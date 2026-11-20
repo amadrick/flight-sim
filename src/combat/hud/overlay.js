@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { F, strCache } from '../../ui/hud/common.js';
 import { angleOff } from '../util.js';
+import { profileOf } from '../ai/fly.js';
 import { edgeClamp, outsideEllipse, launchZone, aspectWord, timeToImpact, clamp, NM, KT, FT, RAD, DEG } from './math.js';
 
 const TAU = Math.PI * 2;
@@ -36,7 +37,7 @@ export function createOverlay(H) {
   /** project, and report whether the point should be drawn as an edge cue instead */
   function onScreen(p, m) {
     if (!proj(p)) return false;
-    return !outsideEllipse(P.x, P.y, P.cx, P.cy, H.ax + m, H.ay + m) && P.x > 4 && P.y > 4 && P.x < H.W - 4 && P.y < H.H - 4;
+    return !outsideEllipse(P.x, P.y, H.ex, H.ey, H.ax + m, H.ay + m) && P.x > 4 && P.y > 4 && P.x < H.W - 4 && P.y < H.H - 4;
   }
 
   // ---- primitives -------------------------------------------------------------------------------------
@@ -60,7 +61,7 @@ export function createOverlay(H) {
 
   /** Off-screen cue on the ellipse toward the last projected point; returns its position in E. */
   function edgeCue(col, size, label, labelCol) {
-    edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E);
+    edgeClamp(P.dx, P.dy, H.ex, H.ey, H.ax, H.ay, E);
     g.strokeStyle = col; g.lineWidth = 2.2; g.beginPath(); chevron(E.x, E.y, E.a, size); chevron(E.x - Math.cos(E.a) * size * 0.75, E.y - Math.sin(E.a) * size * 0.75, E.a, size); g.stroke();
     if (label) {
       const lx = E.x - Math.cos(E.a) * size * 2.6, ly = E.y - Math.sin(E.a) * size * 2.6;
@@ -81,7 +82,7 @@ export function createOverlay(H) {
       if (!onScreen(e.state.position, 0)) {
         if (H.cine) continue;
         if (threat) edgeCue(H.C.red, 9, H.six === e ? 'SIX' : 'LOCK', H.C.amber);
-        else if (hostile && r < 4000) { edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E); g.fillStyle = col; g.beginPath(); diamond(E.x, E.y, 3.5); g.fill(); }
+        else if (hostile && r < 4000) { edgeClamp(P.dx, P.dy, H.ex, H.ey, H.ax, H.ay, E); g.fillStyle = col; g.beginPath(); diamond(E.x, E.y, 3.5); g.fill(); }
         continue;
       }
       const x = P.x, y = P.y;
@@ -136,7 +137,7 @@ export function createOverlay(H) {
       if (label) text(label, P.x, P.y - 14, col, H.fontXS, 'center', 'alphabetic');
       if (sub) text(sub, P.x, P.y + 22, col, H.fontXS, 'center', 'alphabetic');
     } else {
-      edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax * 0.96, H.ay * 0.96, E);
+      edgeClamp(P.dx, P.dy, H.ex, H.ey, H.ax * 0.96, H.ay * 0.96, E);
       g.strokeStyle = col; g.lineWidth = 1.8; g.beginPath(); diamond(E.x, E.y, 6); g.stroke();
       if (sub) text(sub, E.x - Math.cos(E.a) * 20, E.y - Math.sin(E.a) * 20, col, H.fontXS, 'center');
     }
@@ -338,7 +339,9 @@ export function createOverlay(H) {
     const stTxt = st === 'locked' ? 'LOCKED' : st === 'acquiring' ? 'SEEKING' : n ? 'NO LOCK' : 'EMPTY';
     const stCol = st === 'locked' ? H.C.red : st === 'acquiring' ? H.C.amber : H.C.dim;
     const short = spec?.short || upper(sel);
-    if (H.interior) {
+    // touch layout: the horizontal bar too (the vertical scale would sit in the clear area beside the target), and no
+    // lock word — the ring colour and the SHOOT cue say it
+    if (H.interior || H.tl) {
       if (!H.tgtOn) return;
       const len = 96, x0 = Math.round(H.tgtX - len / 2) + 0.5, y = Math.round(H.tgtY + H.tgtS + H.fs * 3.6) + 0.5;
       g.strokeStyle = H.C.hud; g.lineWidth = 1.4; g.beginPath();
@@ -352,7 +355,7 @@ export function createOverlay(H) {
       g.fillStyle = inR ? H.C.hud : H.C.dim; g.beginPath(); g.moveTo(cx, y - 2); g.lineTo(cx - 5, y - 10); g.lineTo(cx + 5, y - 10); g.closePath(); g.fill();
       text(short, x0, y + 18, H.C.hud, H.fontXS, 'left', 'alphabetic');
       text(F.int(n), x0 + short.length * H.cwXS + 4, y + 18, n ? H.C.fg : H.C.red, H.fontXS, 'left', 'alphabetic');
-      text(stTxt, x0 + len, y + 18, stCol, H.fontXS, 'right', 'alphabetic');
+      if (!H.tl) text(stTxt, x0 + len, y + 18, stCol, H.fontXS, 'right', 'alphabetic');
     } else {
       const x = Math.round(P.cx + H.lzOff) + 0.5, h = H.lzH, y0 = Math.round(P.cy + h / 2) + 0.5, y1 = y0 - h;
       const yMin = y0 - LZ.min * h, yMax = y0 - LZ.max * h;
@@ -375,7 +378,7 @@ export function createOverlay(H) {
     // my missiles in flight (fly-out list, outside the cockpit)
     const x = Math.round(P.cx + H.lzOff) + 0.5, y0 = Math.round(P.cy + H.lzH / 2) + 0.5;
     let yy = y0 + (L.tti > 0 ? 46 : 32), cnt = 0;
-    if (H.interior) cnt = 3;
+    if (H.interior || H.tl) cnt = 3;
     for (const m of H.combat.weapons.missiles) {
       if (m.owner !== p || !m.alive || cnt >= 3) continue;
       const mt = m.target;
@@ -398,11 +401,12 @@ export function createOverlay(H) {
   }
 
   // ---- threats ----------------------------------------------------------------------------------------
+  const lockTxt = { cs: null, s: '' };
   function drawThreats(p) {
     const ps = p.state.position;
-    const big = H.fontWarn, cy = H.warnY;
-    // warning column: screen centre, or just right of the touch layout's left stack when that reaches the middle
-    const wx = Math.max(P.cx, H.leftRight + H.fsWarn * 4.2);
+    const tl = !!H.tl, big = tl ? H.fontWarnS : H.fontWarn, cy = H.warnY;
+    // warning column: screen centre; touch layout: the slot above its clear area (H.warnX / H.warnY from the layout)
+    const wx = tl ? H.warnX : P.cx;
     let line = 0;
     // inbound missiles: a small cue for each, the nearest gets the big edge arrow + range / time, and the warning box
     let nearest = null, nd = Infinity;
@@ -421,7 +425,7 @@ export function createOverlay(H) {
       const c = los.dot(vrel) / Math.max(1, nd);
       const tti = nearest.tgo > 0 ? nearest.tgo : timeToImpact(nd, c);
       // steady box, flashing word
-      const w = H.warnW, hh = H.fsWarn * 1.5;
+      const w = tl ? H.fsWarn * 4.2 : H.warnW, hh = H.fsWarn * (tl ? 1.15 : 1.5);
       g.fillStyle = 'rgba(70,6,0,0.55)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
       g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
       if (on) text('MISSILE', wx, cy + 1, '#ffffff', big, 'center');
@@ -429,12 +433,12 @@ export function createOverlay(H) {
       if (tti < 60) text(TTI_STR(Math.ceil(tti)), wx + w / 2 + 8, cy, H.C.red, H.fontB, 'left');
       // the missile itself: on screen a ring (drawn with the markers), off screen a big arrow on the edge
       if (!H.cine && !onScreen(nearest.state.position, 0)) {
-        edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E);
+        edgeClamp(P.dx, P.dy, H.ex, H.ey, H.ax, H.ay, E);
         g.beginPath(); arrowHead(E.x, E.y, E.a, 30); g.fillStyle = H.C.red; g.fill();
         g.strokeStyle = '#ffffff'; g.lineWidth = 1.2; g.stroke();
         // label inward on the sides; beside the arrow at the top / bottom (clear of the centre cues)
         const sa = Math.sin(E.a), side = Math.abs(sa) > 0.7;
-        const lx = side ? E.x + (E.x < P.cx ? 44 : -44) : E.x - Math.cos(E.a) * 46, ly = side ? E.y : E.y - sa * 46;
+        const lx = side ? E.x + (E.x < H.ex ? 44 : -44) : E.x - Math.cos(E.a) * 46, ly = side ? E.y : E.y - sa * 46;
         text(F.tenth(Math.round(nd / NM * 10)), lx, ly - 7, H.C.red, H.fontB, 'center');
         if (tti < 60) text(TTI_STR(Math.ceil(tti)), lx, ly + 8, '#ffffff', H.fontXS, 'center');
       } else if (!H.cine && P.front) {
@@ -448,32 +452,41 @@ export function createOverlay(H) {
       if (H.combat.difficulty === 'rookie' && fl > 0 && !radar) prompt = H.touch ? 'FLARES!  ·  TURN HARD' : 'FLARES: V  ·  TURN HARD';
       else if (radar) prompt = side > 0 ? 'BREAK RIGHT · NOTCH' : 'BREAK LEFT · NOTCH';
       else prompt = fl > 0 ? (side > 0 ? 'FLARES · BREAK RIGHT' : 'FLARES · BREAK LEFT') : (side > 0 ? 'BREAK RIGHT' : 'BREAK LEFT');
-      text(prompt, wx, cy + hh / 2 + H.fs * 1.3, H.C.amber, H.fontB, 'center');
+      text(prompt, wx, cy + hh / 2 + H.fs * (tl ? 1.0 : 1.3), H.C.amber, tl ? H.fontS : H.fontB, 'center');
       line = 2;
     }
     // locked by (no missile yet)
     if (!nearest && H.lockers.length) {
+      // somebody's radar / seeker has me (my own lock state is the target ring's colour + the SHOOT cue)
       const e = H.lockers[0];
-      const w = H.fsWarn * 7.5, hh = H.fsWarn * 1.15;
-      g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
-      g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
-      text('LOCKED', wx, cy + 1, H.C.amber, H.fontWarnS, 'center');
-      if (e.callsign) text(e.callsign, wx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
+      if (tl) {
+        // touch: one short line in the warning slot, no box
+        if (lockTxt.cs !== (e.callsign || '')) { lockTxt.cs = e.callsign || ''; lockTxt.s = lockTxt.cs ? 'ENEMY LOCK · ' + lockTxt.cs : 'ENEMY LOCK'; }
+        text(lockTxt.s, wx, cy, H.C.amber, H.fontB, 'center');
+      } else {
+        const w = H.fsWarn * 7.5, hh = H.fsWarn * 1.15;
+        g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
+        g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+        text('ENEMY LOCK', wx, cy + 1, H.C.amber, H.fontWarnS, 'center');
+        if (e.callsign) text(e.callsign, wx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
+      }
       line = 1;
     }
     // bandit on the six
     if (H.six) {
-      const y = cy + (line ? H.fsWarn * (line === 2 ? 3.1 : 2.2) : 0);
+      const y = cy + (line ? (tl ? H.fsWarn * (line === 2 ? 1.8 : 1.0) + H.fs : H.fsWarn * (line === 2 ? 3.1 : 2.2)) : 0);
       const on = flashOn(2);
-      text('BANDIT SIX', wx, y, on ? H.C.red : H.C.redHi, H.fontWarnS, 'center');
+      text('BANDIT SIX', wx, y, on ? H.C.red : H.C.redHi, tl ? H.fontB : H.fontWarnS, 'center');
       // down chevrons at the bottom of the scope
       g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.beginPath();
-      const by = P.cy + H.ay; chevron(P.cx, by, Math.PI / 2, 12); chevron(P.cx, by - 10, Math.PI / 2, 12); g.stroke();
+      const by = H.ey + H.ay; chevron(H.ex, by, Math.PI / 2, 12); chevron(H.ex, by - 10, Math.PI / 2, 12); g.stroke();
     }
     // incoming gunfire
     if (H.near.t > 0) {
       // above the screen centre, mirroring the shoot cue below it (clear of the warning stack and score pops)
-      text('GUNS', P.cx, P.cy - H.cueOff, H.C.red, H.fontWarnS, 'center');
+      // (touch layout: kept right of its combat stack)
+      const cb = H.tl?.cbt, gx = cb && cb.x < H.W / 2 ? Math.max(P.cx, cb.x + cb.w + H.fsWarn * 1.6) : P.cx;
+      text('GUNS', gx, P.cy - H.cueOff, H.C.red, H.fontWarnS, 'center');
     }
   }
 
@@ -484,7 +497,7 @@ export function createOverlay(H) {
       const d = H.dmg[i]; if (d.t <= 0) continue;
       const a = d.a, k = d.t / d.life;
       g.strokeStyle = H.C.red; g.globalAlpha = H.reduced ? 0.8 : k; g.lineWidth = 7;
-      g.beginPath(); g.ellipse(P.cx, P.cy, H.ax * 0.9, H.ay * 0.9, 0, a - 0.28, a + 0.28); g.stroke();
+      g.beginPath(); g.ellipse(H.ex, H.ey, H.ax * 0.9, H.ay * 0.9, 0, a - 0.28, a + 0.28); g.stroke();
       g.globalAlpha = 1;
     }
   }
@@ -519,7 +532,7 @@ export function createOverlay(H) {
 
   function drawCue() {
     // central shoot / status cue under the screen centre
-    const y = P.cy + H.cueOff;
+    const y = H.cueY;
     if (H.cue) {
       const on = H.cueGun ? true : flashOn(2.5);
       const w = H.fsWarn * 3.9, hh = H.fsWarn * 1.2;
@@ -571,21 +584,52 @@ export function createOverlay(H) {
         }
       }
     } else if (!mouse) {
-      edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax * 0.86, H.ay * 0.86, E);
+      edgeClamp(P.dx, P.dy, H.ex, H.ey, H.ax * 0.86, H.ay * 0.86, E);
       rx = E.x - Math.cos(E.a) * 14; ry = E.y - Math.sin(E.a) * 14;
       g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(rx + 7, ry); g.arc(rx, ry, 7, 0, TAU); g.stroke();
       g.beginPath(); arrowHead(E.x + Math.cos(E.a) * 6, E.y + Math.sin(E.a) * 6, E.a, 12); g.fillStyle = col; g.fill();
     }
     if (lim.shown && !lim.pull) text(LIMIT_TXT[lim.shown] || '', rx, ry + 24, H.C.amber, H.fontXS, 'center', 'alphabetic');
+    drawEnergy(p, info);
     if (lim.pull > 0) {
       // in the shoot-cue slot below the centre (no SHOOT while the ground is coming): fixed, away from the target box
-      const on2 = flashOn(2.5), y = P.cy + H.cueOff, w = H.fsWarn * 5.2, hh = H.fsWarn * 1.45;
+      const on2 = flashOn(2.5), y = H.cueY, w = H.fsWarn * 5.2, hh = H.fsWarn * 1.45;
       H.pullShown = true;
       g.fillStyle = 'rgba(80,0,0,0.6)'; g.fillRect(P.cx - w / 2, y - hh / 2, w, hh);
       g.strokeStyle = H.C.red; g.lineWidth = 3; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));
       text('PULL UP', P.cx, y + 1, on2 ? '#ffffff' : H.C.red, H.fontWarn, 'center');
       g.beginPath(); arrowHead(P.cx, y - hh / 2 - 30, -Math.PI / 2, 24); g.fillStyle = H.C.red; g.fill();
     }
+  }
+
+  // ---- energy cue: where the speed sits against the jet's corner speed (best instantaneous turn) --------------
+  // A short tape left of the gun cross: the centre tick is corner speed, the green band the useful fight speeds, the
+  // caret the indicated airspeed (up = faster). Amber caret + SLOW when well below it — a slow jet turns badly.
+  // The fight speed and the SLOW flag come from the assist (info.fightSpeed / info.slow, the speed its auto-throttle
+  // holds); an older assist without them: the same corner speed from the jet's profile, SLOW below 0.8 of it.
+  const en = { ent: null, corner: 0 };
+  const EN_SPAN = 40, EN_H = 22, EN_LO = 12, EN_HI = 22;   // m/s (IAS): ± scale, green band below / above
+  function drawEnergy(p, info) {
+    if (!(H.boreX === H.boreX) || H.pullShown) return;
+    let vf = info.fightSpeed, slow = info.slow;
+    if (!(vf > 0)) {
+      if (en.ent !== p) { en.ent = p; const pr = p.def ? profileOf(p.def, p.sim) : null; en.corner = pr?.corner || 0; }
+      vf = en.corner; slow = p.state.ias < vf * 0.8;
+    }
+    const ias = p.state.ias;
+    if (!(vf > 0) || !(ias >= 0)) return;
+    const dv = ias - vf, x = Math.round(H.boreX - 30) + 0.5, y = Math.round(H.boreY);
+    const k = clamp(dv / EN_SPAN, -1, 1), cy = y - k * EN_H;
+    const col = slow || dv < -EN_LO ? H.C.amber : dv > EN_HI ? H.C.fg : H.C.hud;
+    g.globalAlpha = 0.75; g.strokeStyle = H.C.fg; g.lineWidth = 1; g.beginPath();
+    g.moveTo(x, y - EN_H); g.lineTo(x, y + EN_H); g.moveTo(x - 3, y - EN_H); g.lineTo(x + 3, y - EN_H); g.moveTo(x - 3, y + EN_H); g.lineTo(x + 3, y + EN_H);
+    g.stroke(); g.globalAlpha = 1;
+    g.strokeStyle = H.C.hud; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 2, y - EN_HI / EN_SPAN * EN_H); g.lineTo(x + 2, y + EN_LO / EN_SPAN * EN_H); g.stroke();
+    g.lineWidth = 1.4; g.beginPath(); g.moveTo(x - 5, y); g.lineTo(x + 5, y); g.stroke();
+    // caret on the left pointing at the tape; open (outline) when pinned at an end
+    g.beginPath(); g.moveTo(x - 2, cy); g.lineTo(x - 10, cy - 5); g.lineTo(x - 10, cy + 5); g.closePath();
+    if (Math.abs(k) >= 1) { g.strokeStyle = col; g.lineWidth = 1.4; g.stroke(); } else { g.fillStyle = col; g.fill(); }
+    if (slow) text('SLOW', x - 4, y + EN_H + 12, H.C.amber, H.fontXS, 'center');
   }
 
   // ---- combat cameras ---------------------------------------------------------------------------------
@@ -607,7 +651,7 @@ export function createOverlay(H) {
       g.moveTo(x + lx * 7, y + ly * 7); g.lineTo(x + lx * 26, y + ly * 26);
       g.stroke();
     } else {
-      edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax * 0.92, H.ay * 0.92, E);
+      edgeClamp(P.dx, P.dy, H.ex, H.ey, H.ax * 0.92, H.ay * 0.92, E);
       g.beginPath(); arrowHead(E.x, E.y, E.a, 18); g.fillStyle = col; g.fill();
       text('NOSE', E.x - Math.cos(E.a) * 30, E.y - Math.sin(E.a) * 30, col, H.fontXS, 'center');
     }
@@ -617,8 +661,8 @@ export function createOverlay(H) {
     const lab = CAM_LABEL[H.camMode]; if (!lab) return;
     const y = Math.round(H.camLabelY);
     const w = lab.length * H.cwB + 22, hh = H.fs * 1.8;
-    // centred, unless the touch layout's left stack reaches the middle: then just right of it
-    const cx = Math.max(P.cx, H.leftRight + w / 2 + 14);
+    // top centre; touch layout: the top band between the data strip and the top-right buttons
+    const cx = H.camX;
     g.fillStyle = 'rgba(6,10,15,0.55)'; g.fillRect(Math.round(cx - w / 2), y - hh / 2, Math.round(w), hh);
     g.strokeStyle = H.camMode === 'padlock' ? H.C.hud : H.C.fg; g.lineWidth = 1;
     g.strokeRect(Math.round(cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));

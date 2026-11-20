@@ -79,10 +79,26 @@ export async function createCombatHud(combat) {
   // ---- layout ---------------------------------------------------------------------------------------------
   let lastStat = -1;
   let layoutKey = '', vignette = null, radarW = 212, statW = 212, seat = '', seatCompact = false, subsLeft = false, touch = false;
+  let layoutGen = 0, stripY = -1, TL = null;
+  const lk = { W: 0, H: 0, dpr: 0, touch: false, gen: 0 };
+  // the touch layout's regions (ctx.input.touch.layout) while it runs a mission, else null
+  const touchRegions = () => {
+    const L = touch ? ctx.input?.touch?.layout : null;
+    return L && L.mission && L.clear && doc.documentElement.classList.contains('inp-mission') ? L : null;
+  };
+  // top of the simulator's flight-data strip when it sits in the lower half (desktop), else the screen bottom
+  const stripTopY = (Hh) => {
+    const hud = ctx.hud;
+    if (!hud || !('stripRect' in hud)) return stripTop(H.W, Hh);      // older simulator HUD: estimate
+    const r = hud.stripRect;
+    return r && r.y > Hh * 0.5 ? r.y : Hh;
+  };
   function layout(W, Hh, dpr) {
-    const k = W + 'x' + Hh + '@' + dpr + (touch ? 't' : '');
-    if (k === layoutKey) return;
-    layoutKey = k;
+    const sy = Math.round(stripTopY(Hh)), tl = touchRegions();
+    const K = lk;
+    if (layoutKey && K.W === W && K.H === Hh && K.dpr === dpr && K.touch === touch && K.gen === layoutGen && sy === stripY && tl === TL) return;
+    K.W = W; K.H = Hh; K.dpr = dpr; K.touch = touch; K.gen = layoutGen; stripY = sy; TL = tl;
+    layoutKey = 'y';
     H.compact = W < 640 || Hh < 520;
     const mode = seatMode(W, Hh, touch), cmp = isCompact(W, Hh);
     if (mode !== seat || cmp !== seatCompact) { seat = mode; seatCompact = cmp; subsLeft = applySeats(panels, root, mode, cmp).subsLeft; lastStat = -1; }
@@ -96,13 +112,56 @@ export async function createCombatHud(combat) {
     H.cw = H.fs * 0.6; H.cwXS = (H.fs - 1) * 0.6; H.cwB = (H.fs + 1) * 0.6;
     H.warnW = H.fsWarn * 5.4;
     const margin = H.compact ? 40 : 56;
-    // touch: the right edge belongs to the touch buttons, keep edge cues inside them
-    H.ax = W / 2 - margin - (touch ? Math.min(170, W * 0.2) : 0); H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
-    H.ayExt = Math.max(60, Math.min(H.ay, stripTop(W, Hh) - 36 - Hh / 2));   // outside views: stay above the data strip
-    H.ayInt = H.ay;
     H.lzOff = Math.min(W * 0.2, 250); H.lzH = clamp(Hh * 0.2, 90, 170);
-    H.warnY = Math.round(Hh * (H.compact ? 0.33 : 0.26));
     H.cueOff = Math.round(clamp(Hh * 0.17, 64, 140));
+    H.cueY = Math.round(Hh / 2 + H.cueOff);
+    H.warnX = Math.round(W / 2); H.warnY = Math.round(Hh * (H.compact ? 0.33 : 0.26));
+    H.camX = Math.round(W / 2); H.camLabelY = 30;   // top centre: clear of the cue, subtitles and strip
+    H.tl = tl;
+    if (tl) {
+      // edge-cue ellipse: between the strip and the bottom of the clear area, and between the screen edge / left
+      // block and the control clusters (dock, scope, fire buttons) — whichever side they are on
+      let x0 = 16, x1 = W - 16;
+      const side = (r) => { if (!r || !(r.w > 0)) return; if (r.x + r.w / 2 > W / 2) x1 = Math.min(x1, r.x - 14); else x0 = Math.max(x0, r.x + r.w + 14); };
+      side(tl.dock); side(tl.radar); side(tl.view);
+      if (tl.fire) for (const id in tl.fire) side(tl.fire[id]);
+      if (Array.isArray(tl.extra)) for (const r of tl.extra) side(r);
+      const hb = tl.hud ? tl.hud.y + tl.hud.h : 60, cl = tl.clear;
+      const y0 = hb + 14, y1 = cl.h > 40 ? cl.y + cl.h - 6 : Hh - 90;
+      H.ex = (x0 + x1) / 2; H.ey = (y0 + y1) / 2;
+      H.ax = Math.max(60, (x1 - x0) / 2); H.ay = Math.max(50, (y1 - y0) / 2);
+      H.ayExt = H.ayInt = H.ay;
+      // SHOOT / PULL UP slot: below the centre, above the radio line
+      const ph = H.fsWarn * 1.45;
+      if (tl.subs) H.cueY = Math.round(Math.max(Hh / 2 + 30, Math.min(H.cueY, tl.subs.y - ph / 2 - 6)));
+      // warnings (MISSILE / ENEMY LOCK / BANDIT SIX) and the camera label: the top band between the data strip and the
+      // top-right buttons — far from the target box in the middle; warnings at its top, the camera label at its bottom.
+      // No band (portrait / narrow): warnings just above the clear area, the label under the strip on the right.
+      const wh = H.fsWarn * 1.15, ht = tl.hud ? tl.hud.y : 10;
+      const hr = tl.hud ? tl.hud.x + tl.hud.w : 0;
+      let lim = W - 16;
+      for (const r of [tl.cam, tl.menu, tl.more, tl.view]) if (r && r.y < hb && r.x > hr) lim = Math.min(lim, r.x);
+      if (lim - hr > 170) {
+        H.warnX = H.camX = Math.round((hr + lim) / 2);
+        H.warnY = Math.round(ht + wh / 2 + 2);
+        H.camLabelY = Math.round(Math.max(ht + wh + H.fs * 3.2, hb - H.fs));
+      } else if (tl.cbt && tl.cbt.h >= 130) {
+        // the bottom of the combat region (under the objectives chip / hull line / kill feed): label last, warnings over it
+        const cb = tl.cbt;
+        H.camX = H.warnX = Math.round(cb.x + cb.w / 2);
+        H.camLabelY = Math.round(cb.y + cb.h - H.fs - 2);
+        H.warnY = Math.round(H.camLabelY - H.fs * 2.8 - wh / 2);
+      } else {
+        H.warnX = H.camX = Math.round(cl.x + cl.w / 2);
+        H.warnY = Math.round(cl.y - wh / 2 - 6 >= hb + wh / 2 + 4 ? cl.y - wh / 2 - 6 : cl.y + wh / 2 + 4);
+        H.camLabelY = Math.round(hb + H.fs + 4);
+      }
+    } else {
+      H.ex = W / 2; H.ey = Hh / 2;
+      H.ax = W / 2 - margin; H.ay = Math.min(Hh / 2 - margin, H.ax * 1.15);
+      H.ayExt = Math.max(60, Math.min(H.ay, sy - 36 - Hh / 2));   // outside views: stay above the data strip
+      H.ayInt = H.ay;
+    }
     // damage vignette, built once per size
     const vc = vignette || doc.createElement('canvas');
     const vw = 256, vh = Math.max(64, Math.round(256 * Hh / W));
@@ -114,10 +173,12 @@ export async function createCombatHud(combat) {
     vignette = vc;
     radarW = panels.radarBox.clientWidth || (H.compact ? 132 : 212);
     statW = panels.statBox.clientWidth || radarW;
-    H.leftRight = seat === 'touch' ? panels.left.offsetLeft + panels.left.offsetWidth : 0;
+    H.leftRight = 0;
+    if (tl) { panels.left.style.transform = ''; panels.left.style.visibility = ''; hintShift = -1; }
     cv.classList.toggle('cbt-hud-shadow', ctx.quality?.level !== 'low');
   }
   ctx.events.on('quality:change', () => { layoutKey = ''; });
+  ctx.events.on('touch:layout', () => { layoutGen++; });
 
   // ---- events ---------------------------------------------------------------------------------------------
   const ev = combat.events;
@@ -249,13 +310,14 @@ export async function createCombatHud(combat) {
   // the sim's own controls card (top left) — objectives step below it while it is up
   let simHint = null, hintShift = -1;
   function syncHintShift() {
+    if (TL) return;      // touch layout: the panels have their own region (and the keyboard card stays off in combat)
     if (!simHint) simHint = doc.querySelector('.hud-hint');
     const up = !!simHint && !simHint.hidden && !simHint.classList.contains('off');
     const want = up ? simHint.offsetHeight + 10 : 0;
     if (want !== hintShift) {
       hintShift = want;
       // step below the card; when that would run into the bottom of the screen, wait (hidden) until the card goes
-      const room = want && want + panels.left.offsetHeight + 16 > stripTop(H.W, H.H) - 8;
+      const room = want && want + panels.left.offsetHeight + 16 > stripY - 8;
       panels.left.style.transform = want && !room ? `translateY(${want}px)` : '';
       panels.left.style.visibility = room ? 'hidden' : '';
       panels.setHintsBlocked(up);
@@ -290,7 +352,6 @@ export async function createCombatHud(combat) {
       touch = coarse || !!ctx.input?.touchEnabled;
       layout(W, Hh, dpr);
       H.camMode = combat.camera?.mode || null; H.touch = touch;
-      H.camLabelY = 30;   // top centre: clear of the cue, subtitles and strip; the sim's toasts there are transient
       H.interior = ctx.cameraRig?.isInterior ?? mode === 'cockpit';
       H.ay = H.interior ? H.ayInt : H.ayExt;
       const live = !ctx.time?.paused;
@@ -330,13 +391,13 @@ export async function createCombatHud(combat) {
       }
       // ---- stores panel ----
       if (p.loadout) {
-        const sh = status.draw(p, statW, dpr, seatCompact || seat === 'touch');
+        const sh = status.draw(p, statW, dpr, TL ? 2 : seatCompact || seat === 'touch' ? 1 : 0);
         if (sh !== lastStat) { lastStat = sh; panels.statBox.style.height = sh + 'px'; }
       }
       // ---- DOM panels ----
       panels.setTimer(combat.director?.timer);
       if (combat.director?.stats?.score != null) panels.setScore(combat.director.stats.score);
-      if (!subsLeft) panels.setSubsBottom(H.interior ? Math.max(Hh * 0.05, 16) : Hh - stripTop(W, Hh) + SEATS.subsStripGap);
+      if (!subsLeft) panels.setSubsBottom(H.interior ? Math.max(Hh * 0.05, 16) : Hh - stripY + SEATS.subsStripGap);
       panels.tick(rdt, live);
       syncHintShift();
     },
