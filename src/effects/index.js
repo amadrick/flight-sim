@@ -20,6 +20,7 @@ import { createAircraftLights } from './lights.js';
 import { createVapor } from './vapor.js';
 import { createRain, createLightning, createCanopyRain } from './weatherfx.js';
 import * as E from './emitters.js';
+import { createCrashFx } from './crash/index.js';
 
 const DEG = Math.PI / 180;
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -51,6 +52,11 @@ export async function createEffects(ctx) {
   const lights = createAircraftLights(ctx, shared, header);
   const rain = createRain(ctx, shared, header);
   const lightning = createLightning(ctx, shared, header);
+  // crash sequence (neural fireball, debris, decals, ground effects); ?crash=classic keeps the previous particle crash
+  const crashClassic = raw.crash === 'classic';
+  const crashFx = crashClassic ? null : createCrashFx(ctx, { shared, header, anchor, ps, smoke });
+  const crashWarmMs = crashFx ? crashFx.warm() : 0;
+  const crashLight = { pos: new THREE.Vector3(), color: new THREE.Color(), intensity: 0, distance: 0 };
   const canopy = createCanopyRain(ctx, shared, header);
 
   // ---- per-session state ----
@@ -106,13 +112,14 @@ export async function createEffects(ctx) {
   }
 
   function clearAll() {
-    ps.clear(); smoke.clear(); wrecks.length = 0; flash.t = 1e9; lightning.clear(); fxLight.intensity = 0;
+    ps.clear(); smoke.clear(); wrecks.length = 0; flash.t = 1e9; lightning.clear(); fxLight.intensity = 0; crashFx?.clear();
   }
 
   offs.push(ctx.events.on('session:start', (pl) => { clearAll(); attach(pl || ctx.player); }));
   offs.push(ctx.events.on('session:end', () => { detach(); clearAll(); }));
   offs.push(ctx.events.on('touchdown', (e) => onTouchdown(e || {})));
   offs.push(ctx.events.on('crash', (e) => onCrash(e || {})));
+  offs.push(ctx.events.on('crash:impact', (e) => { if (P && crashFx) crashFx.onImpact(e || {}); }));
   offs.push(ctx.events.on('sonicBoom', () => onBoom()));
   offs.push(ctx.events.on('lightning', (e) => lightning.strike(e || {})));
   let displaySmoke = false;   // airshow smoke (cmd 'smokeToggle', not bound by default)
@@ -141,6 +148,7 @@ export async function createEffects(ctx) {
     ctx.world.groundAt(tmp.x, tmp.z, ground);
     const nearGround = tmp.y - ground.height < 40;
     if (nearGround) tmp.y = Math.max(ground.height + 1, tmp.y - (P.g.cgHeight || 1) * 0.5);
+    if (crashFx) { crashFx.onCrash(e, P.player); for (const en of P.engines) en.trail.stop(); return; }
     const water = ground.type === 'water' || /ditch/i.test(e.reason || '');
     if (water && nearGround) {
       tmp.y = (ctx.water?.heightAt?.(tmp.x, tmp.z) ?? 0) + 0.5;
@@ -375,6 +383,7 @@ export async function createEffects(ctx) {
       let abSum = 0;
       if (P && ctx.player === P.player) abSum = updatePlayer(dt);
       // wrecks (fire + smoke columns)
+      crashFx?.update(dt, P?.player || null);
       let fire = 0, firePos = null;
       for (const w of wrecks) { const f = E.wreckUpdate(ps, smoke, w, dt, q, w.scale); if (f > fire) { fire = f; firePos = w.pos; } }
       lights.update(dt, P?.player?.state || null, night);
@@ -382,9 +391,12 @@ export async function createEffects(ctx) {
       const lf = lightning.update(dt);
       flash.t += dt;
       const fl = flash.t < 3 ? Math.exp(-flash.t * 2.2) : 0;
+      const cl = crashFx?.active() ? crashFx.light(crashLight) : null;
       if (lf > 0.02) {
         ctx.world.toRender(lightning.flashPos, fxLight.position);
         fxLight.color.setRGB(0.8, 0.85, 1); fxLight.intensity = 4e6 * lf; fxLight.distance = 12000;
+      } else if (cl) {
+        fxLight.position.copy(cl.pos); fxLight.color.copy(cl.color); fxLight.intensity = cl.intensity; fxLight.distance = cl.distance;
       } else if (fl > 0.01) {
         ctx.world.toRender(flash.pos, fxLight.position); fxLight.position.y += 8;
         fxLight.color.setRGB(1, 0.6, 0.3); fxLight.intensity = 9e4 * fl * (P?.scale || 1); fxLight.distance = 900;
@@ -410,12 +422,13 @@ export async function createEffects(ctx) {
       if (P) { for (const e of P.engines) e.trail.flush(); for (const t of P.tips) t.flush(); P.smokeTrail.flush(); }
     },
     stats() {
-      return { particles: ps.capacity + smoke.capacity, trails: P ? P.engines.length + P.tips.length + 1 : 0, attached: !!P, wrecks: wrecks.length };
+      return { particles: ps.capacity + smoke.capacity, trails: P ? P.engines.length + P.tips.length + 1 : 0, attached: !!P, wrecks: wrecks.length,
+        crash: crashFx ? { warmMs: crashWarmMs, last: crashFx.last, active: crashFx.active() } : 'classic' };
     },
     dispose() {
       detach(); for (const o of offs) o();
       ps.dispose(); smoke.dispose(); plumeGeo.dispose(); ctx.scene.remove(fxLight);
-      lights.dispose(); rain.dispose(); lightning.dispose(); canopy.dispose(); tex.noise3D.dispose(); tex.puff.dispose();
+      crashFx?.dispose(); lights.dispose(); rain.dispose(); lightning.dispose(); canopy.dispose(); tex.noise3D.dispose(); tex.puff.dispose();
     },
   };
   return fx;
