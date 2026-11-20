@@ -632,7 +632,7 @@ export function createOverlay(H) {
 
   function draw(gg, p) {
     g = gg; o = H.ctx.world.origin;
-    H.cue = ''; H.cueGun = false;
+    H.cue = ''; H.cueGun = false; H.pullShown = false;
     // missile / kill / victory shots are not seen from the nose: nothing boresight-referenced, no "turn this way" cues
     H.cine = H.camMode === 'missile' || H.camMode === 'kill' || H.camMode === 'victory';
     if (!H.cine) drawDamage();
