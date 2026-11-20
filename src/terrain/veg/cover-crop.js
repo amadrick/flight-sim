@@ -112,9 +112,10 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         float phi = 6.2832 * hb.x + 2.1 * bi;
         vec2 dirA = vec2(cos(phi), sin(phi));
         float hh = ch * (0.85 + 0.25 * hb.y) * keep;
-        // toward the outer edge of the ring the plants sink into the ground's painted canopy: a gentle slope instead
-        // of the cliff where the 3-D crop stopped (seen from eye height as a hard line across the field)
-        hh *= mix(1.0, 0.25, smoothstep(uCrRing.y * 0.45, uCrRing.y, dc));
+        // toward the outer edge of the ring the plants thin out (above) at nearly their full height: beyond them the
+        // ground draws the same stalks as a grain (surface terrSward), standing just as high, so the crop top runs on
+        // level (sinking the plants made a dome with a hard rim across the field)
+        hh *= mix(1.0, 0.85, smoothstep(uCrRing.y * 0.5, uCrRing.y, dc));
         float bw = 0.004, H0 = 0.0, len = hh, incl0 = 0.05, incl1 = 0.12, prof = 1.0 - 0.3 * t;
         float isEar = 0.0, isLeaf = 0.0, isFlower = 0.0, sen = 0.0;
         vec2 dir = dirA;
@@ -177,7 +178,10 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         vec3 sv = vec3(sideD.x, 0.0, sideD.y);
         vec3 pn = normalize(cross(sv, tang));
         if (dot(pn.xz, cameraPosition.xz - base.xz) < 0.0) pn = -pn;
-        vec3 objectNormal = normalize(normalize(pn + sv * side * 0.4) + vec3(0.0, 0.6 + 1.5 * isFlower, 0.0));
+        // (pulled up: inside a closed crop a leaf's shaded side glows with light through and from its neighbours - into a
+        // low sun the stands read as dark silhouettes with lit rims, never black; a twist along the leaf varies it)
+        float tw = sin(t * 3.0 + 6.2832 * hb.z) * 0.5 * isLeaf;
+        vec3 objectNormal = normalize(normalize(pn + sv * (side * 0.4 + tw)) + vec3(0.0, 1.0 + 1.5 * isFlower, 0.0));
         // ---- colour (linear albedo; matched to terrFieldColor) -------------------------------------------------
         // every leaf its own green (yellow-green young to blue-green), the lowest, oldest leaves yellowing
         vec3 green = mix(vec3(0.088, 0.132, 0.040), vec3(0.046, 0.094, 0.050), hb.y) * (0.75 + 0.5 * hb.z);
@@ -191,7 +195,7 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         if (cls > 5.5 && isEar > 0.5 && t > 0.6) c = vec3(0.24, 0.20, 0.14);
         c *= 0.9 + 0.2 * h.x;
         float zrel = (tp.y - base.y) / max(ch, 0.05);
-        float occ = mix(0.40 + 0.25 * (1.0 - cov), 1.0, smoothstep(0.0, 0.95, zrel));
+        float occ = mix(0.32 + 0.25 * (1.0 - cov), 1.0, smoothstep(0.0, 0.95, zrel)) * (0.8 + 0.4 * hb.z);
         vCr = vec4(zrel, occ, (1.0 - sen * 0.7) * (isLeaf > 0.5 ? 1.0 : 0.5), 1.0 - sen * 0.5);
         vCrC = c; vCrW = tp;
         #if CR_DBG == 2
@@ -212,7 +216,7 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         {
           vec3 vW = normalize(cameraPosition - vCrW);
           float fwd = pow(max(dot(-vW, uSunDir), 0.0), 3.0);
-          totalEmissiveRadiance += vCrC * vec3(0.9, 1.0, 0.6) * uSunColor * ((0.2 + 0.8 * fwd) * 0.35 * vCr.z * vCr.y * smoothstep(0.0, 0.08, uSunDir.y) / PI);
+          totalEmissiveRadiance += vCrC * vec3(0.9, 1.0, 0.6) * uSunColor * ((0.2 + 0.8 * fwd) * 0.5 * vCr.z * vCr.y * smoothstep(0.0, 0.08, uSunDir.y) / PI);
         }`);
   };
   mat.customProgramCacheKey = () => `skyward-crops-${G0}-${G1}-${+(ctx.params?.raw?.cropDbg || 0)}`;

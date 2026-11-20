@@ -100,6 +100,7 @@ export async function createTerrain(ctx) {
     ...(turfBrdf ? turfBrdf.uniforms : {}),
     ...(cropBrdf ? cropBrdf.uniforms : {}),
     uTurfShell: { value: new THREE.Vector4() },     // near-field turf shells: x = on, y = radius (m)
+    uTerrNear: { value: new THREE.Vector4() },      // low-eye ground grain (surface terrSward): x = radians per pixel, y = crop plant radius, z = blade radius
   };
 
   // ---- geometry: one (P+1)^2 grid patch, instanced ---------------------------------------------------------
@@ -271,6 +272,12 @@ export async function createTerrain(ctx) {
       // (no farmland inside an airfield: skip the crop plants' draw when every plant in reach would be on its grass)
       const onAir = airfield.distanceAt(wx, wz)[0] < 110 + crops.stats.radius1;
       crops.update(wx, wz, org, Hd, !!(trees && trees.object3D.visible) && !onAir);
+    }
+    {
+      const vh = ctx.renderer?.domElement?.height || 720, fov = cam.fov || 60;
+      const ts = uniforms.uTurfShell.value;
+      uniforms.uTerrNear.value.set(raw.sward === '0' ? 0 : 2 * Math.tan(fov * Math.PI / 360) / vh / (cam.zoom || 1),
+        crops && crops.mesh.visible ? crops.stats.radius1 : 0, ts.z, 0);
     }
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
     stats.drawCalls = 1 + (trees && trees.object3D.visible ? trees.stats.drawCalls : 0);
