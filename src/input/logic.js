@@ -76,3 +76,39 @@ export function snapDetent(v, ab, width = 0.035) {
 }
 
 export const milLever = (ab) => (ab ? AB_DETENT : 1);
+
+// ---- touch stick / throttle shaping (touch.js) -----------------------------------------------------------------
+// The floating stick's raw deflection is the thumb offset from where it landed divided by the throw radius
+// (layout stickR / sensitivity), clamped to the unit circle. Shaping: radial dead zone 6 %, then expo 0.35
+// (out = 0.65·x + 0.35·x³ of the post-dead-zone magnitude), same curve on both axes. Auto-coordination (rudder slider
+// hidden, not disabled by the combat assist): yaw = 0.28 × shaped roll.
+export const TOUCH_STICK = Object.freeze({ dead: 0.06, expo: 0.35, coord: 0.28 });
+
+/** Raw unit-circle deflection {x, y} (+x right, +y down = nose down) from a thumb offset in px. */
+export function touchRaw(dx, dy, rad, sens, out) {
+  const k = (sens > 0 ? sens : 1) / Math.max(1, rad);
+  let x = dx * k, y = dy * k; const m = Math.hypot(x, y);
+  if (m > 1) { x /= m; y /= m; }
+  out.x = x; out.y = y; return out;
+}
+/** Shaped stick from a raw deflection (dead zone + expo, TOUCH_STICK). */
+export const touchShape = (raw, out, k = TOUCH_STICK) => shapeStick(raw.x, raw.y, out, k.dead, k.expo);
+/** Auto-coordinated rudder for a shaped roll input. */
+export const autoCoordYaw = (roll, k = TOUCH_STICK.coord) => clamp(roll * k, -1, 1);
+
+/**
+ * Throttle detents for a relative drag: idle (0), MIL (AB_DETENT when the aircraft has an afterburner; its zone is
+ * above it) and full. Returns the lever and which detent was crossed or reached since `prev` ('idle' | 'mil' | 'ab' |
+ * 'full' | null) — the caller vibrates on it.
+ */
+export function throttleDetent(prev, v, ab, width = 0.03) {
+  v = clamp(v, 0, 1);
+  if (v < 0.015) v = 0; else if (v > 0.99) v = 1;
+  v = snapDetent(v, ab, width);
+  let hit = null;
+  if (v === 0 && prev > 0) hit = 'idle';
+  else if (ab && prev <= AB_DETENT && v > AB_DETENT) hit = 'ab';
+  else if (ab && (v === AB_DETENT && prev !== AB_DETENT || prev > AB_DETENT && v < AB_DETENT)) hit = 'mil';
+  else if (!ab && v === 1 && prev < 1) hit = 'full';
+  return { v, hit };
+}

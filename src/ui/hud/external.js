@@ -188,7 +188,10 @@ export function createExternalOverlay(tok) {
     if (warn && flash(t, 0.7)) {
       g.font = L.fontV; g.textAlign = 'center'; g.textBaseline = 'middle';
       const w = warn.length * L.cw + L.fsV * 1.6, h = L.fsV * 1.7;
-      const x = L.box ? L.px : Math.round(W / 2 - w / 2), y = L.box ? Math.round(L.py + L.ph + L.fsV * 0.4) : Math.round(L.py - h - L.fsV * 0.5);
+      // touch missions: the chip goes to the layout's toast spot (the combat HUD sits right under the strip)
+      const ca = E.chipAt;
+      const x = ca ? Math.round(ca.x + (ca.w - w) / 2) : L.box ? L.px : Math.round(W / 2 - w / 2);
+      const y = ca ? Math.round(ca.y) : L.box ? Math.round(L.py + L.ph + L.fsV * 0.4) : Math.round(L.py - h - L.fsV * 0.5);
       g.fillStyle = 'rgba(8,10,14,0.72)'; g.beginPath(); rrect(g, x, y, w, h, 3); g.fill();
       g.strokeStyle = wc; g.lineWidth = 1.5; g.stroke();
       g.fillStyle = wc; g.fillText(warn, x + w / 2, y + h / 2 + 1);

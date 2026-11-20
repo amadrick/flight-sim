@@ -124,3 +124,49 @@ test('a zero-width fold (one continuous panel) is ignored', () => {
   const a = touchLayout(884, 1104, {}, {}), b = touchLayout(884, 1104, {}, { hinge: { x: 442, y: 0, w: 0, h: 1104 } });
   assert.deepEqual(a.zone, b.zone);
 });
+
+// in a mission (fire cluster, View, combat HUD region), with and without the rudder slider, mirrored for left-handers
+for (const [W, H] of SIZES) for (const ins of INSETS) for (const rudder of [false, true]) for (const lefty of [false, true]) {
+  if (ins.l && isPortrait(W, H) || ins.t && !isPortrait(W, H)) continue;     // insets as each orientation has them
+  test(`mission layout ${W}x${H} ${JSON.stringify(ins)} rudder ${rudder} lefty ${lefty}: own regions, ≥44 px`, () => {
+    const L = touchLayout(W, H, ins, { mission: true, rudder, lefty, extra: rudder ? 1 : 0 });
+    assert.ok(L.fire && L.view && L.cbt, 'mission parts placed');
+    assert.equal(!!L.rud, rudder);
+    const rects = layoutRects(L);
+    const sl = lefty ? 'r' : 'l', sr = lefty ? 'l' : 'r';
+    const l = Math.max(16, ins[sl] || 0), r = Math.max(16, ins[sr] || 0), t = Math.max(10, ins.t || 0), b = Math.max(12, ins.b || 0);
+    for (const [n, q] of rects) {
+      assert.ok(q.x >= l - 0.5 && q.y >= t - 0.5 && q.x + q.w <= W - r + 0.5 && q.y + q.h <= H - b + 0.5, `${n} inside the safe area: ${JSON.stringify(q)}`);
+      if (!['hud', 'zone', 'cbt'].includes(n)) assert.ok(Math.min(q.w, q.h) >= MIN_TARGET, `${n} ≥ 44: ${JSON.stringify(q)}`);
+    }
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++)
+      assert.ok(!overlaps(rects[i][1], rects[j][1]), `${rects[i][0]} overlaps ${rects[j][0]}: ${JSON.stringify(rects[i][1])} ${JSON.stringify(rects[j][1])}`);
+    assert.ok(L.zone.w >= 2 * L.stickR && L.zone.h >= 2 * L.stickR, `stick zone usable ${JSON.stringify(L.zone)}`);
+    // GUN sits next to the stick zone on the thumb's side, below MSL
+    const gun = L.fire.gun, zc = L.zone.x + L.zone.w / 2;
+    const besideZ = lefty ? gun.x + gun.w <= L.zone.x + 1 : gun.x >= L.zone.x + L.zone.w - 1;
+    assert.ok(besideZ || gun.y + gun.h <= L.zone.y + 1, 'gun beside (or on square screens right above) the zone');
+    assert.ok(gun.y > L.fire.msl.y, 'gun below msl');
+    const tc = L.thr.x + L.thr.w / 2;
+    assert.ok(lefty ? zc < tc : zc > tc, 'stick zone on the stick thumb side of the throttle');
+    if (!rudder && !ins.l && Math.min(W, H) >= 340 && Math.max(W, H) >= 640) assert.ok(L.cbt.h >= 60 && L.cbt.w >= 200, `combat HUD region usable ${JSON.stringify(L.cbt)}`);
+    for (const [n, q] of rects) if (n !== 'zone' && n !== 'hud' && L.clear.h > 0) assert.ok(!overlaps(L.clear, q), `clear overlaps ${n}`);
+  });
+}
+for (const [W, H, hinge] of SPANS) {
+  test(`mission spanned ${W}x${H}: nothing on the hinge`, () => {
+    const L = touchLayout(W, H, {}, { mission: true, rudder: false, hinge });
+    for (const [n, q] of layoutRects(L).concat([['clear', L.clear]])) if (q.w && q.h) assert.ok(!overlaps(q, hinge), `${n} on the hinge ${JSON.stringify(q)}`);
+  });
+}
+test('lefty mirrors the layout', () => {
+  const a = touchLayout(844, 390, {}, { mission: true }), b = touchLayout(844, 390, {}, { mission: true, lefty: true });
+  assert.equal(b.thr.x, 844 - a.thr.x - a.thr.w);
+  assert.equal(b.fire.gun.x, 844 - a.fire.gun.x - a.fire.gun.w);
+  assert.equal(b.home.x, 844 - a.home.x);
+});
+test('no rudder: the slider is gone, the zone reaches the bottom', () => {
+  const L = touchLayout(390, 844, {}, { rudder: false });
+  assert.equal(L.rud, null);
+  assert.equal(L.zone.y + L.zone.h, 844 - 12);
+});

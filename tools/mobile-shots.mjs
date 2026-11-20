@@ -139,45 +139,90 @@ async function touchTest() {
   const pts = new Map();
   const send = async (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [...pts.values()].map(p => ({ x: p.x, y: p.y, id: p.id, radiusX: 8, radiusY: 8, force: 1 })) });
   const down = async (id, x, y) => { pts.set(id, { id, x, y }); await send('touchStart'); };
-  const move = async (id, x, y, n = 4) => { const p = pts.get(id); const x0 = p.x, y0 = p.y; for (let i = 1; i <= n; i++) { p.x = x0 + (x - x0) * i / n; p.y = y0 + (y - y0) * i / n; await send('touchMove'); } };
+  // Chrome aligns pointermove to animation frames: wait one so the last move has been delivered before stepping
+  const raf = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))));
+  const move = async (id, x, y, n = 4) => { const p = pts.get(id); const x0 = p.x, y0 = p.y; for (let i = 1; i <= n; i++) { p.x = x0 + (x - x0) * i / n; p.y = y0 + (y - y0) * i / n; await send('touchMove'); } await raf(); };
   // CDP's touch emulation pairs points by list position, so single-finger releases are unreliable: lift all fingers
-  const upAll = async () => { pts.clear(); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+  const upAll = async () => { pts.clear(); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await raf(); };
   const results = [];
   const check = (name, ok, info) => { results.push([name, ok]); console.log((ok ? 'PASS ' : 'FAIL ') + name + (info ? '  ' + JSON.stringify(info) : '')); if (!ok) failed = true; };
   await step(2);
   const L = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+  const ctr = (q) => [q.x + q.w / 2, q.y + q.h / 2];
   check('touch UI shown with a layout', !!L, L && { W: L.W, H: L.H });
   if (L) {
     const cmds = [];
     await page.exposeFunction('__cmdSeen', (n) => cmds.push(n));
     await page.evaluate(() => window.__sim.ctx.events.on('cmd', (e) => window.__cmdSeen(e.name)));
     const c0 = await C();
-    const hx = L.home.x, hy = L.home.y, tx = L.thr.x + L.thr.w / 2, ty = L.thr.y + L.thr.h / 2;
+    const hx = L.home.x, hy = L.home.y, [tx, ty] = ctr(L.thr);
     await down(1, hx, hy); await down(2, tx, ty);
     await move(1, hx + L.stickR * 0.8, hy - L.stickR * 0.6); await move(2, tx, ty - 50);
     await step(2);
     const c1 = await C();
     check('stick right → roll right', c1.roll > 0.3, c1);
     check('stick forward → nose down (pitch < 0)', c1.pitch < -0.2, c1);
+    check('auto-coordinated rudder follows the roll (no slider by default)', !L.rud && Math.abs(c1.yaw - 0.28 * c1.roll) < 0.02, c1);
     check('throttle slid up while the stick is held', c1.throttle > c0.throttle + 0.15, { before: c0.throttle, after: c1.throttle });
-    // third finger: hold Brake while stick + throttle are held
-    const br = L.btn.brake;
-    await down(3, br.x + br.w / 2, br.y + br.h / 2); await step(3);
-    const c2 = await C();
-    check('brake button held with two other fingers down', c2.brakes > 0.2 && Math.abs(c2.roll) > 0.3 && c2.throttle > c0.throttle + 0.15, c2);
+    const raw = await page.evaluate(() => window.__sim.ctx.input.touch.raw);
+    check('raw (unshaped) stick exposed', raw.held && raw.x > c1.roll - 0.01 && raw.x <= 1, raw);
     await upAll(); await step(2);
     const c4 = await C();
-    check('release: stick centres, brakes off, throttle stays', Math.abs(c4.roll) < 0.05 && Math.abs(c4.pitch) < 0.05 && c4.brakes < 0.9 && Math.abs(c4.throttle - c1.throttle) < 0.02, c4);
-    const gr = L.btn.gear; await down(3, gr.x + gr.w / 2, gr.y + gr.h / 2); await upAll(); await step(1);
+    check('release: stick centres, throttle stays', Math.abs(c4.roll) < 0.05 && Math.abs(c4.pitch) < 0.05 && Math.abs(c4.yaw) < 0.05 && Math.abs(c4.throttle - c1.throttle) < 0.02, c4);
+    // systems drawer: airborne and clean → only [Sys]; it opens the drawer; brake held with two other fingers down
+    const vis0 = await page.evaluate(() => [...document.querySelectorAll('.inp-btn[data-id]')].filter(b => !b.closest('[hidden]') && !b.hidden).map(b => b.dataset.id));
+    check('airborne: systems buttons tucked away, Sys visible', !vis0.includes('gear') && vis0.includes('more'), vis0);
+    await down(3, ...ctr(L.more)); await upAll(); await step(2);
+    const vis1 = await page.evaluate(() => [...document.querySelectorAll('.inp-btn[data-id]')].filter(b => !b.hidden).map(b => b.dataset.id));
+    check('Sys opens the drawer', ['gear', 'ap', 'flapUp', 'flapDn', 'sb', 'brake'].every(id => vis1.includes(id)), vis1);
+    await down(1, hx, hy); await down(2, tx, ty); await move(1, hx + L.stickR * 0.8, hy);
+    await down(3, ...ctr(L.btn.brake)); await step(3);
+    const c2 = await C();
+    check('brake held with stick and throttle fingers down', c2.brakes > 0.2 && Math.abs(c2.roll) > 0.3, c2);
+    await upAll(); await step(2);
+    await down(3, ...ctr(L.btn.gear)); await upAll(); await step(1);
     check('gear button emits gearToggle', cmds.includes('gearToggle'), cmds);
-    const rd = L.rud; await down(3, rd.x + rd.w / 2, rd.y + rd.h / 2); await move(3, rd.x + rd.w / 2 + rd.w * 0.3, rd.y + rd.h / 2); await step(1);
+    const cm = L.cam; await down(4, ...ctr(cm)); await upAll(); await step(1);
+    check('camera button emits cameraNext', cmds.includes('cameraNext'), cmds);
+    // LOOK: drag on empty screen; double tap recentres
+    // empty screen = outside the stick zone and every control (landscape: the gap between the left block and the zone)
+    const lx = Math.round((L.thr.x + L.thr.w + L.zone.x) / 2), ly = Math.round(L.clear.y + 20);
+    await down(5, lx, ly); await move(5, lx + 60, ly - 30); await step(1);
+    const lk = await page.evaluate(() => ({ x: window.__sim.ctx.controls.lookX, y: window.__sim.ctx.controls.lookY }));
+    const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && (e.className || e.tagName) + ''; }, [lx, ly]);
+    check('drag on empty screen looks right / up', lk.x > 0.1 && lk.y > 0.05, { ...lk, hit, at: [lx, ly] });
+    await upAll(); await step(1);
+    const lk1 = await page.evaluate(() => window.__sim.ctx.controls.lookX);
+    check('look offset stays after the drag', lk1 > 0.1, { lookX: lk1 });
+    await down(5, lx, ly); await upAll(); await down(5, lx, ly); await upAll(); await step(1);
+    const lk2 = await page.evaluate(() => window.__sim.ctx.controls.lookX);
+    check('double tap recentres the view', Math.abs(lk2) < 0.01, { lookX: lk2 });
+    // rudder slider on demand (Settings → Touch controls)
+    await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ rudder: true })); await step(2);
+    const Lr = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+    const rd = Lr.rud; await down(3, ...ctr(rd)); await move(3, rd.x + rd.w / 2 + rd.w * 0.3, rd.y + rd.h / 2); await step(1);
     const c3 = await C();
-    check('rudder slider right → yaw right', c3.yaw > 0.3, c3);
+    const hitR = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && (e.className || e.tagName) + ''; }, ctr(rd));
+    check('rudder slider (when enabled) → yaw right', !!rd && c3.yaw > 0.3, { ...c3, hitR, rd });
     await upAll(); await step(1);
     const c5 = await C();
     check('rudder springs back to centre', Math.abs(c5.yaw) < 0.05, c5);
-    const cm = L.cam; await down(4, cm.x + cm.w / 2, cm.y + cm.h / 2); await upAll(); await step(1);
-    check('camera button emits cameraNext', cmds.includes('cameraNext'), cmds);
+    // sensitivity: at 200 % half the throw is full deflection
+    await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ rudder: false, sensitivity: 2 })); await step(2);
+    const Ls = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+    await down(1, Ls.home.x, Ls.home.y); await move(1, Ls.home.x + Ls.stickR * 0.5, Ls.home.y); await step(1);
+    const c6 = await C();
+    const rw6 = await page.evaluate(() => window.__sim.ctx.input.touch.raw);
+    check('sensitivity 200 %: half the throw is full roll', c6.roll > 0.97, { ...c6, rw6, R: Ls.stickR, home: Ls.home });
+    await upAll(); await step(1);
+    // left-handed: everything mirrored, stick under the left thumb
+    await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ sensitivity: 1, lefty: true })); await step(2);
+    const Ll = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+    check('left-handed: stick zone left, throttle right', Ll.zone.x + Ll.zone.w / 2 < Ll.W / 2 && Ll.thr.x > Ll.W / 2, { zone: Ll.zone, thr: Ll.thr });
+    await down(1, Ll.home.x, Ll.home.y); await move(1, Ll.home.x + Ll.stickR * 0.8, Ll.home.y); await step(1);
+    const c7 = await C();
+    check('left-handed stick flies', c7.roll > 0.3, c7);
+    await upAll(); await page.evaluate(() => window.__sim.ctx.input.touch.prefs.set({ lefty: false })); await step(2);
     // extra-button slot API
     const ex = await page.evaluate(() => {
       const t = window.__sim.ctx.input.touch; window.__fire = 0; window.__fireUp = 0;
@@ -196,35 +241,8 @@ async function touchTest() {
     const sc = await page.evaluate(() => ({ sx: scrollX, sy: scrollY, vv: window.visualViewport ? visualViewport.scale : 1 }));
     check('page did not scroll or zoom', sc.sx === 0 && sc.sy === 0 && sc.vv === 1, sc);
     await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test.png`) });
-    await page.evaluate(() => window.__sim.ctx.input.touch.removeButton('fire'));
-    // a docked block owned by another module (the combat fire grid is adopted by its class; addDock is the API)
-    const dk = await page.evaluate(async () => {
-      const ui = window.__sim.ctx.uiRoot, t = window.__sim.ctx.input.touch;
-      let g = ui.querySelector(':scope > .cbt-inp-touch'), fake = false;
-      if (!g) {
-        fake = true; g = document.createElement('div'); g.className = 'cbt-inp-touch';
-        g.style.cssText = 'position:absolute;right:16px;top:64px;width:116px;height:116px;display:grid;gap:8px;grid-template-columns:repeat(2,54px)';
-        for (const n of ['TGT', 'FLR', 'MSL', 'GUN']) { const b = document.createElement('div'); b.className = 'inp-btn'; b.textContent = n; b.style.cssText = 'height:54px;background:#333;color:#fff'; g.appendChild(b); }
-        ui.appendChild(g);
-      }
-      g.hidden = false;
-      await new Promise((r) => setTimeout(r, 50)); window.__sim.step(2);
-      const L = t.layout, r = g.getBoundingClientRect();
-      const out = { fake, dock: L.dock, el: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }, zone: L.zone };
-      return out;
-    });
-    check('a combat-style button block is docked at the right edge, clear of the stick zone', !!dk.dock && Math.abs(dk.dock.x - dk.el.x) < 2 && Math.abs(dk.dock.y - dk.el.y) < 2 && dk.dock.x >= dk.zone.x + dk.zone.w, dk);
-    const ov2 = await page.evaluate(AUDIT);
-    check('no overlaps with the dock', ov2.length === 0, ov2);
-    await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test-dock.png`) });
-    const dk2 = await page.evaluate(async (fake) => {
-      const g = window.__sim.ctx.uiRoot.querySelector(':scope > .cbt-inp-touch'); g.hidden = true;
-      await new Promise((r) => setTimeout(r, 50)); window.__sim.step(2);
-      const L = window.__sim.ctx.input.touch.layout; if (fake) { window.__sim.ctx.input.touch.removeDock(); g.remove(); }
-      return { dock: L.dock };
-    }, dk.fake);
-    check('a hidden dock reserves nothing', !dk2.dock, dk2);
-    // hybrid device (touch screen + keyboard): flight keys hide the touch UI, the next touch brings it back
+    await page.evaluate(() => { window.__sim.ctx.input.touch.removeButton('fire'); window.__sim.ctx.input.touch.removeButton('target'); });
+    // hybrid device (touch screen + keyboard): flight keys hide the touch controls, the next touch brings them back
     await page.keyboard.down('ArrowLeft'); await step(2); await page.keyboard.up('ArrowLeft'); await step(2);
     const k = await page.evaluate(() => ({ on: window.__sim.ctx.input.touchEnabled, vis: window.__sim.ctx.input.touch.visible }));
     check('a flight key hides the touch controls', !k.on && !k.vis, k);
@@ -233,12 +251,115 @@ async function touchTest() {
     check('the next touch shows them again', t2.on && t2.vis, t2);
     await upAll(); await step(1);
   }
+  // a mission: fire cluster beside the stick (combat.input.actions when present, else combat's own buttons seated there)
+  const mParam = ui ? 'mission=1' : 'mission=instant-1v1';
+  await page.goto(pathToFileURL(html).href + `?test=1&autostart=1&aircraft=${aircraft}&start=air&cam=chase&quality=low&hint=0&${mParam}`, { waitUntil: 'commit', timeout: 600000 });
+  await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+  await step(ui ? 4 : 40);
+  const M = await page.evaluate(() => window.__sim.ctx.input.touch.layout);
+  check('mission layout: fire cluster, view, combat HUD region', !!(M && M.mission && M.fire && M.view && M.cbt), M && { fire: M.fire, cbt: M.cbt });
+  if (M && M.fire) {
+    const own = await page.evaluate(() => !!window.__sim.ctx.combat?.input?.actions);
+    const gun = M.fire.gun;
+    await down(1, M.home.x, M.home.y); await move(1, M.home.x + M.stickR * 0.7, M.home.y);
+    await down(2, ...ctr(gun)); await step(2);
+    const g1 = await page.evaluate(() => ({ acts: (window.__acts || []).slice(), trig: !!window.__sim.ctx.combat?.input?.trigger, roll: window.__sim.ctx.controls.roll }));
+    check('GUN held while the stick is held (two right-side fingers)', g1.roll > 0.3 && (own ? g1.acts.includes('gun:true') : (g1.trig || g1.acts.includes('gun:true'))), g1);
+    await upAll(); await step(1);
+    for (const id of ['msl', 'tgt', 'flr']) { await down(3, ...ctr(M.fire[id])); await upAll(); await step(1); }
+    await down(3, ...ctr(M.view)); await upAll(); await step(1);
+    const g2 = await page.evaluate(() => (window.__acts || []).slice());
+    if (ui) check('MSL / TGT / FLR / VIEW reach combat', own ? ['missile', 'targetNext', 'flares', 'toggleView'].every(a => g2.includes(a)) && g2.includes('gun:false') : true, g2);
+    const ovm = await page.evaluate(COLLECT);
+    check('mission: no intersections between HUD, combat and touch elements', ovm.out.length === 0, ovm.out);
+    await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test-mission.png`) });
+  }
   if (errors.length) { failed = true; console.log('CONSOLE ERRORS:', errors.slice(0, 10).join('\n  ')); }
   console.log(`touch test: ${results.filter(r => r[1]).length}/${results.length} passed`);
   await bctx.close();
 }
 
+// ---- --overlap: bounding boxes of every visible HUD, combat and touch element must not intersect -----------------
+// Runs every size of the device matrix (both orientations, dual-screen folds) in free flight and in a mission, without
+// screenshots. Elements: touch controls (.inp-*), the HUD strip plate / toasts / cards, combat HUD panels (objectives,
+// scope, stores, kill feed, radio, pops, banner) and combat fire buttons. Clipped panels count only where they show.
+const COLLECT = () => {
+  const vw = innerWidth, vh = innerHeight;
+  const sel = ['.inp-touch .inp-region:not(.inp-zone)', '.inp-ring', '.hud-plate', '.hud-toast.on', '.hud-hint', '.hud-paused',
+    '.cbt-hud-obj', '.cbt-hud-radar', '.cbt-hud-stat', '.cbt-hud-kill', '.cbt-hud-sub', '.cbt-hud-pop', '.cbt-hud-banner', '.cbt-inp-btn', '.menu-corner > button'];
+  const vis = (el) => {
+    if (el.closest('[hidden]')) return false;
+    for (let e = el; e && e !== document.body; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05) return false; }
+    return true;
+  };
+  const name = (el) => (el.className && el.className.baseVal === undefined ? '.' + String(el.className).trim().split(/\s+/).slice(0, 2).join('.') : el.tagName) + (el.dataset.id ? `[${el.dataset.id}]` : el.dataset.act ? `[${el.dataset.act}]` : '');
+  const items = [];
+  for (const el of document.querySelectorAll(sel.join(','))) {
+    if (!vis(el)) continue;
+    let r = el.getBoundingClientRect(); let x0 = r.left, y0 = r.top, x1 = r.right, y1 = r.bottom;
+    // clipped by an overflow ancestor (the combat stack)
+    for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.overflow !== 'visible' && cs.position !== 'static') { const q = e.getBoundingClientRect(); x0 = Math.max(x0, q.left); y0 = Math.max(y0, q.top); x1 = Math.min(x1, q.right); y1 = Math.min(y1, q.bottom); }
+    }
+    if (x1 - x0 < 2 || y1 - y0 < 2) continue;
+    items.push({ el, n: name(el), x0, y0, x1, y1 });
+  }
+  const out = [];
+  for (const a of items) if (a.x0 < -1 || a.y0 < -1 || a.x1 > vw + 1 || a.y1 > vh + 1) out.push(`off-screen ${a.n} [${a.x0 | 0},${a.y0 | 0},${a.x1 | 0},${a.y1 | 0}]`);
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i], b = items[j];
+    if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+    const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+    if (ox > 1 && oy > 1) out.push(`overlap ${a.n} [${a.x0 | 0},${a.y0 | 0},${a.x1 | 0},${a.y1 | 0}] × ${b.n} [${b.x0 | 0},${b.y0 | 0},${b.x1 | 0},${b.y1 | 0}]`);
+  }
+  const segs = window.viewport && window.viewport.segments;
+  if (segs && segs.length === 2) {
+    const s0 = segs[0], s1 = segs[1];
+    const hg = Math.abs(s0.y - s1.y) < 1 ? { l: s0.x + s0.width, r: s1.x, t: 0, b: vh } : { l: 0, r: vw, t: s0.y + s0.height, b: s1.y };
+    for (const a of items) if (a.x0 < hg.r && a.x1 > hg.l && a.y0 < hg.b && a.y1 > hg.t) out.push(`on the hinge ${a.n}`);
+  }
+  return { n: items.length, out };
+};
+async function overlapRun() {
+  const all = flag('devices', Object.keys(D).filter(k => k !== 'desktop').join(',')).split(',');
+  const modes = [['free', ''], ['mission', ui ? 'mission=1' : 'mission=instant-1v1'], ...(ui ? [['mission-adopt', 'mission=adopt']] : [])];
+  let total = 0, bad = 0;
+  for (const [mode, extra] of modes) {
+    const bctx = await browser.newContext({ ...devices['Pixel 7'], viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+    const page = await bctx.newPage();
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto(pathToFileURL(html).href + `?test=1&autostart=1&aircraft=${aircraft}&start=air&cam=chase&quality=low&hint=0&${extra}`, { waitUntil: 'commit', timeout: 600000 });
+    await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });
+    const step = (n) => page.evaluate((n) => window.__sim.step(n, 1 / 30), n);
+    await step(ui ? 4 : 30);
+    let cdp = null;
+    for (const dn of all) {
+      const [, pv, lv, folds] = D[dn] || [];
+      for (const [on, vp] of [['portrait', pv], ['landscape', lv]]) {
+        if (!vp) continue;
+        if (cdp) { await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {}); cdp = null; }
+        await page.setViewportSize(vp);
+        if (folds && folds[on]) { cdp = await bctx.newCDPSession(page); await cdp.send('Emulation.setDeviceMetricsOverride', { width: vp.width, height: vp.height, deviceScaleFactor: 1, mobile: true, displayFeature: folds[on] }); }
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        await step(folds && folds[on] ? 31 : 12);
+        const res = await page.evaluate(COLLECT);
+        total++;
+        const tag = `${mode} ${dn}-${on} ${vp.width}x${vp.height}`;
+        if (res.out.length) { bad++; console.log(`FAIL ${tag} (${res.n} elements)\n   ` + res.out.slice(0, 12).join('\n   ')); for (const o of res.out) problems.push(tag + ': ' + o); }
+        else console.log(`ok   ${tag} (${res.n} elements)`);
+        if (has('shots')) await shoot(page, resolve(root, 'shots', `${prefix}${mode}-${dn}-${on}.png`), tag);
+      }
+    }
+    if (errors.length) { failed = true; console.log(mode, 'PAGE ERRORS', errors.slice(0, 5).join('\n  ')); }
+    await bctx.close();
+  }
+  console.log(`overlap check: ${total - bad}/${total} layouts with zero intersections`);
+  if (bad) failed = true;
+}
+
 try {
+  if (has('overlap')) { await overlapRun(); devList.length = 0; }
   if (has('touch-test')) { await touchTest(); devList.length = 0; }
   for (const dn of devList) {
     const [desc, pv, lv, folds] = D[dn] || [];

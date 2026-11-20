@@ -290,11 +290,35 @@ export async function createMenu(ctx) {
   const fsRowBtn = sw('menu-fs-setting', 'Fullscreen', toggleFullscreen);
   const glassBtn = sw('menu-glass', 'Glass effects', () => { sel.glassReduced = !sel.glassReduced; glass.setReduced(sel.glassReduced); save(); sync(); });
   const field = (t, d, ctl) => h('div', { class: 'menu-field' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: t }), d ? h('span', { class: 'menu-field-d', text: d }) : null), ctl);
+  // touch controls (prefs live in input: ctx.input.touch.prefs); shown on touch screens only
+  const tPrefs = ctx.input?.touch?.prefs || null;
+  const tSet = (patch) => { try { tPrefs && tPrefs.set(patch); } catch {} sync(); };
+  const sensRange = h('input', { class: 'menu-range menu-range-plain', type: 'range', id: 'menu-touch-sens', min: '50', max: '200', step: '5', 'aria-label': 'Stick sensitivity' });
+  const sensRead = h('span', { class: 'menu-vol-read' });
+  sensRange.addEventListener('input', () => { sensRead.textContent = sensRange.value + '%'; sensRange.style.setProperty('--v', ((+sensRange.value - 50) / 1.5) + '%'); });
+  sensRange.addEventListener('change', () => tSet({ sensitivity: +sensRange.value / 100 }));
+  const leftyBtn = sw('menu-touch-lefty', 'Left-handed', () => tSet({ lefty: !tPrefs?.get().lefty }));
+  const rudBtn = sw('menu-touch-rudder', 'Rudder slider', () => tSet({ rudder: !tPrefs?.get().rudder }));
+  const centreBtn = sw('menu-touch-centre', 'Stick auto-centre', () => tSet({ autoCentre: !tPrefs?.get().autoCentre }));
+  const hapBtn = sw('menu-touch-haptics', 'Vibration', () => tSet({ haptics: !tPrefs?.get().haptics }));
+  const sysBtn = sw('menu-touch-sys', 'All systems buttons', () => tSet({ drawer: tPrefs?.get().drawer === 'open' ? 'auto' : 'open' }));
+  const COARSE = (() => { try { return matchMedia('(pointer: coarse)').matches; } catch { return false; } })();
+  const canVibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+  const touchSec = tPrefs ? sec('Touch controls', null, h('div', { class: 'menu-group' },
+    h('div', { class: 'menu-field-l', style: 'padding-top:10px' }, h('span', { class: 'menu-field-t', text: 'Stick sensitivity' }), h('span', { class: 'menu-field-d', text: 'Higher: full deflection with less thumb travel (also the look drag)' })),
+    h('div', { class: 'menu-vol' }, sensRange, sensRead),
+    field('Left-handed', 'Stick under the left thumb, throttle under the right', leftyBtn),
+    field('Rudder slider', 'Off: the rudder follows the stick (coordinated turns)', rudBtn),
+    field('Stick auto-centre', 'Off: the stick holds its last position when you let go', centreBtn),
+    canVibrate ? field('Vibration', 'A light tick on buttons and throttle detents', hapBtn) : null,
+    field('All systems buttons', 'Off: gear, flaps and brakes appear near the ground; Sys opens the rest', sysBtn))) : null;
+  if (touchSec) touchSec.id = 'menu-touch-settings';
   const settingsBack = h('button', { class: 'menu-back', id: 'menu-settings-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
   const vSettings = h('section', { class: 'menu-view menu-dock menu-dock-r', 'data-view': 'settings', style: '--origin: top center' },
     h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Settings' },
       h('div', { class: 'menu-subhead' }, settingsBack, h('span', { class: 'menu-subtitle', text: 'Settings' })),
       h('div', { class: 'menu-scroll' },
+        touchSec,
         sec('Graphics quality', null, qGroup, h('p', { class: 'menu-note', text: 'Applies immediately. Resolution also scales down on its own to hold the frame rate.' })),
         sec('Sound', null, h('div', { class: 'menu-group' }, h('div', { class: 'menu-field-l', style: 'padding-top:10px' }, h('span', { class: 'menu-field-t', text: 'Master volume' })), h('div', { class: 'menu-vol' }, volRange, volRead))),
         sec('Display', null, h('div', { class: 'menu-group' },
@@ -471,6 +495,13 @@ export async function createMenu(ctx) {
     const fs = !!document.fullscreenElement;
     fsRowBtn.setAttribute('aria-pressed', String(fs)); fsRowBtn.setAttribute('aria-checked', String(fs));
     for (const b of document.querySelectorAll('.menu-fsbtn')) b.setAttribute('aria-pressed', String(fs));
+    if (touchSec) {
+      const tp = tPrefs.get();
+      touchSec.hidden = !(ctx.input?.touchEnabled || COARSE);
+      if (document.activeElement !== sensRange) sensRange.value = String(Math.round(tp.sensitivity * 100));
+      sensRange.style.setProperty('--v', ((tp.sensitivity * 100 - 50) / 1.5) + '%'); sensRead.textContent = Math.round(tp.sensitivity * 100) + '%';
+      for (const [b, on] of [[leftyBtn, tp.lefty], [rudBtn, tp.rudder], [centreBtn, tp.autoCentre], [hapBtn, tp.haptics], [sysBtn, tp.drawer === 'open']]) { b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-checked', String(on)); }
+    }
     // pause
     syncPause();
     syncClock();

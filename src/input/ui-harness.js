@@ -16,7 +16,10 @@ import { createInput } from './index.js';
 import { createHud } from '../ui/hud/index.js';
 import { createMenu } from '../ui/menu/index.js';
 import { installMenuHooks, HOOK_CSS } from '../combat/ui/hooks.js';
-import { COMBAT_BINDINGS } from '../combat/input/index.js';
+import { COMBAT_BINDINGS, createTouchButtons } from '../combat/input/index.js';
+import { createPanels } from '../combat/hud/panels.js';
+import { CSS as CBT_HUD_CSS } from '../combat/hud/style.js';
+import { applySeats, isCompact } from '../combat/hud/seats.js';
 
 const sim = (window.__sim = { ready: false, error: null, ctx: null, step: null });
 
@@ -105,6 +108,32 @@ async function boot() {
     }
     ctx.hud.update(ctx.time.dt);
     ctx.menu.update(ctx.time.dt);
+  }
+  // ?mission=1 → a fake running mission with the combat HUD's real panels (objectives, scope, stores, radio) seated for
+  // touch, and combat.input.actions (the dock owns GUN / MSL / TGT / FLR / VIEW); ?mission=adopt → no actions: the combat
+  // module's own fire buttons (createTouchButtons) are adopted and seated by the touch layout instead
+  if (params.raw.mission) {
+    const acts = (window.__acts = []);
+    const st = document.createElement('style'); st.textContent = CBT_HUD_CSS; document.head.appendChild(st);
+    const root = document.createElement('div'); root.className = 'cbt-hud-root'; ctx.uiRoot.appendChild(root);
+    const panels = createPanels(root, { reduced: () => true });
+    const seat = () => applySeats(panels, root, 'touch', isCompact(innerWidth, innerHeight));
+    seat(); addEventListener('resize', seat);
+    panels.renderObjectives([{ id: 'a', text: 'Shoot down the bandit', state: 'active', progress: '0 / 1' }]);
+    panels.setScore(0);
+    panels.statBox.style.height = '30px';
+    const sub = panels.subs.querySelector('.cbt-hud-sub'); sub.hidden = false; sub.innerHTML = '<b>Cathedral</b> One hostile, bearing 020, 5 miles.';
+    const combat = { active: true, events: new Events(), camera: { toggle: (m) => acts.push('view:' + m) } };
+    if (params.raw.mission !== 'adopt') {
+      combat.input = { setTouchButtons: (on) => acts.push('setTouchButtons:' + on), actions: {
+        gun: (on) => acts.push('gun:' + on), missile: () => acts.push('missile'), flares: () => acts.push('flares'),
+        targetNext: () => acts.push('targetNext'), targetNearest: () => acts.push('targetNearest'), toggleView: () => acts.push('toggleView'), switchMissile: () => {} } };
+    } else {
+      const box = document.createElement('div'); box.className = 'cbt-inp-touch';
+      createTouchButtons(box, (id) => acts.push(id), (on) => acts.push('gun:' + on));
+      ctx.uiRoot.appendChild(box);
+    }
+    ctx.combat = combat;
   }
   if (params.autostart) ctx.session.start({ start: params.start });
   sim.step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(dt); return ctx.time.frame; };

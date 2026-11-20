@@ -153,8 +153,9 @@ export async function createHud(ctx) {
       E.camPos = camPos;
       // touch screens: draw in the HUD region the touch layout reserves (clear of stick, throttle and buttons)
       const tl = ctx.input?.touch?.layout || null;
-      E.box = tl && tl.hud && tl.hud.w > 120 && tl.hud.h > 60 ? tl.hud : null;
+      E.box = tl && tl.hud && tl.hud.w > 120 && (tl.hud.h > 60 || (tl.mission && tl.hud.h > 20)) ? tl.hud : null;
       E.clear = tl ? tl.clear : null;
+      E.chipAt = tl && tl.toast ? tl.toast : null;
       if (!tl) {
         // keyboard / gamepad on a dual-screen device spanned side by side: keep the strip on the left screen (top) and
         // the conformal HUD off the hinge (it falls back to the strip when centred on it)
@@ -187,7 +188,8 @@ export async function createHud(ctx) {
         syncPlate(true);
         const r = ext.rect; if (E.box && r) below = r.y + r.h + 40;   // room for the warning chip under the strip
       }
-      notices.setToastTop(below, E.box ? E.box.x : null, E.box ? E.box.w : null);
+      if (E.chipAt) notices.setToastTop(E.chipAt.y + 34, E.chipAt.x, E.chipAt.w);      // under the warning chip spot
+      else notices.setToastTop(below, E.box ? E.box.x : null, E.box ? E.box.w : null);
     },
   };
   return hud;

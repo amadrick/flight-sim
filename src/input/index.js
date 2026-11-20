@@ -4,6 +4,7 @@
 import { clamp, approach, shapeAxis, shapeStick, stepKeyAxis, stepThrottle, snapDetent, milLever, AB_DETENT } from './logic.js';
 import { KEY_TABLE, CODE_MAP, BINDINGS, GAMEPAD_BINDINGS } from './bindings.js';
 import { createTouchControls } from './touch.js';
+import { createPrefs } from './prefs.js';
 import { viewportHinge } from './segments.js';
 
 const CSS = `
@@ -236,7 +237,8 @@ export async function createInput(ctx) {
   // ctx.input.touch exists even before (or without) the touch UI: extra buttons added early are kept and appear when
   // the touch UI is built (touch screens, or setTouch(true)). See INTEGRATION.md "Extra touch buttons".
   const pendingButtons = [];
-  let pendingDock = null;
+  const touchPrefs = createPrefs();
+  let pendingDock = null, autoCoordWanted = true;
   input.touch = {
     get visible() { return !!(touchUI && touchUI.api.visible); },
     get layout() { return touchUI ? touchUI.api.layout : null; },
@@ -255,6 +257,14 @@ export async function createInput(ctx) {
       };
     },
     removeButton(id) { return touchUI ? touchUI.api.removeButton(id) : false; },
+    /** Touch preferences (prefs.js): get(), set(patch), on(fn) — sensitivity, lefty, rudder, autoCentre, haptics, drawer. */
+    prefs: touchPrefs,
+    /** Stick before shaping { x, y, held } (unit circle, +x right, +y down); zero without the touch UI. */
+    get raw() { return touchUI ? touchUI.api.raw : { x: 0, y: 0, held: false }; },
+    /** Auto-coordinated rudder from the touch stick (default on). Set false while another layer coordinates (combat assist). */
+    get autoCoord() { return touchUI ? touchUI.api.autoCoord : autoCoordWanted; },
+    set autoCoord(v) { autoCoordWanted = !!v; if (touchUI) touchUI.api.autoCoord = !!v; },
+    recentreLook() { if (touchUI) touchUI.api.recentreLook(); },
     /** Dock a block of buttons another module owns (see touch.js addDock). Before the touch UI exists it is kept and docked
      *  when the UI is built. Returns { get rect(), remove() } or null. */
     addDock(spec) {
@@ -269,7 +279,8 @@ export async function createInput(ctx) {
     showHints(sec) { if (touchUI) touchUI.api.showHints(sec); },
   };
   function buildTouch() {
-    touchUI = createTouchControls(ctx, { setMode, command, toggleSpeedbrake, hasAB, controls: c });
+    touchUI = createTouchControls(ctx, { setMode, command, toggleSpeedbrake, hasAB, controls: c, prefs: touchPrefs });
+    touchUI.api.autoCoord = autoCoordWanted;
     if (pendingDock) pendingDock.real = touchUI.api.addDock(pendingDock.spec);
     for (const p of pendingButtons) {
       p.real = touchUI.api.addButton(p.spec);
@@ -370,10 +381,16 @@ export async function createInput(ctx) {
     let lx = clamp(mouse.accX / range, -1, 1), ly = clamp(mouse.accY / range, -1, 1);
     if (Math.abs(pad.lookX) > ANALOG_EPS) lx = pad.lookX;
     if (Math.abs(pad.lookY) > ANALOG_EPS) ly = pad.lookY;
-    if (open) { lx = 0; ly = 0; }
+    // touch LOOK area (drag on empty screen; the offset stays until a double tap)
+    let tpx = 0, tpy = 0;
+    if (touchVisible && ts.lookX !== undefined) {
+      if (Math.abs(ts.lookX) > ANALOG_EPS || Math.abs(ts.lookY) > ANALOG_EPS) { lx = ts.lookX; ly = -ts.lookY; }
+      tpx = ts.lookPX; tpy = ts.lookPY; ts.lookPX = ts.lookPY = 0;
+    }
+    if (open) { lx = 0; ly = 0; tpx = tpy = 0; }
     // Integrator: canonical convention (shared with the camera rig) is lookY/lookDelta.y > 0 = look UP, zoom/zoomDelta > 0 = zoom IN.
     c.lookX = lx; c.lookY = -ly;
-    input.lookDelta.x = mouse.pendX + pad.lookX * 700 * dt; input.lookDelta.y = -(mouse.pendY + pad.lookY * 700 * dt);
+    input.lookDelta.x = mouse.pendX + pad.lookX * 700 * dt + tpx; input.lookDelta.y = -(mouse.pendY + pad.lookY * 700 * dt) + tpy;
     mouse.pendX = mouse.pendY = 0;
 
     // zoom impulses
