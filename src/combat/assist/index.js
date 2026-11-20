@@ -43,10 +43,14 @@ export const ASSIST_TUNING = {
   gainSmall: 1.2,      // 1/s: flight-path steering gain for small errors (bank stays small)
   gainBig: 2.5,        // 1/s: … for large errors
   smallLo: 0.03, smallHi: 0.1,    // rad: path errors where the small gain hands over to the large one
-  releaseNose: 0.5,    // on a release from a hard turn the path aim keeps this share of the extra AoA ahead
+  releaseNose: 0.7,    // × the roll-out time constant V·(AoA per g)/g (1 = the nose stops where it was let go)
   settleHold: 0.7,     // s: a hard turn held this long gets the roll-out on release (taps do not)
-  settleMax: 1.5,      // s: longest roll-out after a release
-  settleRate: 0.035,   // rad/s: the roll-out ends once the flight path turns slower than this
+  settleMax: 4,        // s: longest roll-out after a release
+  settleEnd: 0.08,     // the roll-out ends once the extra lift has decayed to this share
+  settleBack: 0.08,    // rad: nose this far behind where it was let go = the extra lift is held (not shed)
+  settleFollow: 1,     // the hold point follows the nose while it still swings on after the release
+  settleDump: 0.45,    // share of the extra lift dropped at once on release
+  settleKa: 0,        // 1/(rad·s): extra shedding rate per rad the nose runs past where it was let go
   aoaShare: 0.8,       // share of the AoA taken off nose aims (the integral below trims the rest)
   noseKi: 1.0,         // 1/s: integral of the nose error near the aim
   liftTau: 0.2,        // s: smoothing of the lift direction used for the same
@@ -91,7 +95,7 @@ export function createAssist(combat) {
   const st = {
     ent: null, prof: null, fc: null, engaged: false, t: 0, blend: 0,
     A: new THREE.Vector3(0, 0, -1), P: new THREE.Vector3(0, 0, -1), R: new THREE.Vector3(1, 0, 0), U: new THREE.Vector3(0, 1, 0),
-    aoaS: 0, safeT: 0, clear: 1e9, mPrev: 0, mEff: 0, holdT: 0, holdHi: 0, settle: 0, Ps: new THREE.Vector3(), vPrev: new THREE.Vector3(), nAero: 9, nI: new THREE.Vector3(), Ld: new THREE.Vector3(0, 1, 0), recovering: false, recHdg: 0,
+    aoaS: 0, safeT: 0, clear: 1e9, mPrev: 0, mEff: 0, holdT: 0, holdHi: 0, settle: 0, Ps: new THREE.Vector3(), E: new THREE.Vector3(), eMag: 0, settleTau: 1, settleT: 0, vPrev: new THREE.Vector3(), nAero: 9, nI: new THREE.Vector3(), Ld: new THREE.Vector3(0, 1, 0), recovering: false, recHdg: 0,
     thrWritten: -1, thrTouchT: -1e9, thrTouched: false, auto: false,
     modeSet: false, aimSet: false,
   };
@@ -264,9 +268,14 @@ export function createAssist(combat) {
       if (m > 0.3) st.holdHi = st.holdT;
       // released after a real manoeuvre: roll out on the flight path first (below)
       if (m < 0.05 && st.holdHi > T.settleHold) {
+        // the turn's extra lift (beyond what holds a straight path), to be shed over tau = V·(AoA per g)/g: the AoA
+        // then dies away exactly as fast as the path catches up with the nose, so the nose stops where it was let go
         const n = Math.max(Math.abs(s.gLoad || 1), 1);
-        st.Ps.copy(F).sub(vh).multiplyScalar(T.releaseNose * (1 - 1 / n)).add(vh).normalize();
-        st.settle = T.settleMax;
+        st.E.copy(st.Ld).multiplyScalar(n * G0);
+        st.E.y -= G0; st.E.addScaledVector(vh, vh.y * G0 - vh.dot(st.E));
+        st.eMag = st.E.length();
+        st.settleTau = clamp(V * (Math.max(s.aoa || 0, 0) / n) / G0 * T.releaseNose, 0.2, 2.5);
+        st.Ps.copy(F); st.settle = 1 - T.settleDump; st.settleT = 0;
       }
     }
 
@@ -301,13 +310,25 @@ export function createAssist(combat) {
     // roll-out after a release: the path aim sits a little ahead of the flight path (part of the turn's extra AoA) and
     // is never left behind it (no reversal while the turn dies away); the nose command follows the nose. Ends when the
     // path has stopped turning; from then on N holds.
+    let decay = 0;
     if (st.settle > 0 && m < 0.05 && !info.aimPoint) {
-      st.settle -= dt;
-      _d.copy(vh).sub(st.vPrev);
-      const tl = _d.length();
-      if (tl > 1e-7) { _d.multiplyScalar(1 / tl); const behind = st.Ps.dot(_d) - vh.dot(_d); if (behind < 0) st.Ps.addScaledVector(_d, -behind).normalize(); }
-      if (st.settle < T.settleMax - 0.2 && tl / dt < T.settleRate) st.settle = 0;
-      pathToNose(N.copy(st.settle > 0 ? st.Ps : vh));     // the nose command that holds this path (no sideslip in it)
+      st.settleT += dt;
+      st.E.addScaledVector(vh, -vh.dot(st.E));
+      const el = st.E.length();
+      if (el > 1e-6) st.E.multiplyScalar(1 / el);
+      // closed on the nose: shed faster while the nose runs past where it was let go, hold the turn while it falls back
+      let ahead = F.dot(st.E) - st.Ps.dot(st.E);
+      // the nose still swinging on (the aircraft's own lag): the hold point goes with it — never pulled back
+      if (ahead > 0 && T.settleFollow) { st.Ps.addScaledVector(st.E, ahead).normalize(); ahead = 0; }
+      const rate = Math.max(0, 1 + ahead / T.settleBack) / st.settleTau + Math.max(0, ahead) * T.settleKa;
+      st.settle *= Math.exp(-rate * dt);
+      decay = st.settle;
+      if (decay < T.settleEnd || st.settleT > T.settleMax) { st.settle = 0; decay = 0; pathToNose(N.copy(vh)); }
+      else {
+        // shed the extra lift (kept ⟂ the path as it turns); the nose command stays where the nose was let go
+        _ff.addScaledVector(st.E, st.eMag * decay);
+        N.copy(st.Ps);
+      }
     } else st.settle = 0;
     st.vPrev.copy(vh);
 
@@ -331,7 +352,7 @@ export function createAssist(combat) {
     if (N.dot(F) > Math.cos(T.smallHi)) st.nI.addScaledVector(_d, T.noseKi * dt); else st.nI.multiplyScalar(Math.exp(-3 * dt));
     st.nI.addScaledVector(N, -st.nI.dot(N));
     if (st.nI.length() > 0.1) st.nI.setLength(0.1);
-    if (st.settle > 0) { P.copy(st.Ps); st.nI.set(0, 0, 0); } else noseToPath(P.copy(N).add(st.nI).normalize());
+    if (st.settle > 0) { P.copy(vh); st.nI.set(0, 0, 0); } else noseToPath(P.copy(N).add(st.nI).normalize());
     // ground: predict a max-performance recovery starting now (with reaction delay); cue on every difficulty, take over
     // at the last moment on rookie
     st.safeT -= dt;

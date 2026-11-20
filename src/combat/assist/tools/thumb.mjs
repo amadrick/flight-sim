@@ -38,7 +38,7 @@ const wrap = (a) => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
  * held until the nose has turned `deg`, then released. Returns t90 (s), overshoot (deg), and what the released stick
  * did over the next 3–8 s (heading drift deg/s, flight-path change deg, bank at the end).
  */
-export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 3000, stick = 'analog', seed = 1, axis = 'h', tune = null }) {
+export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 3000, stick = 'analog', seed = 1, axis = 'h', tune = null, hold = 0 }) {
   const b = await createSandbox({ seed, difficulty: 'veteran' });
   if (tune) Object.assign(ASSIST_TUNING, tune);
   const c = b.combat;
@@ -55,7 +55,7 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
   const ias0 = e.state.ias / KT, alt0 = e.state.position.y;
   noseAngles(e, na); const h0 = na.h, el0 = na.el;
   const ks = { v: 0, t: 0, dir: 0 };
-  let t = 0, phase = 'hold', tRel = null, t90 = null, peak = 0, h3 = 0, g3 = 0, h8 = 0, g8 = 0, maxG = 0, bankEnd = 0;
+  let hRel = 0, h4 = 0, t = 0, phase = 'hold', tRel = null, t90 = null, peak = 0, h3 = 0, g3 = 0, h8 = 0, g8 = 0, maxG = 0, bankEnd = 0;
   const target = deg * DEG;
   const dt = 1 / 60;
   const gam = () => Math.asin(Math.max(-1, Math.min(1, e.state.velocity.y / Math.max(e.state.velocity.length(), 1))));
@@ -64,7 +64,7 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
     noseAngles(e, na);
     const ch = axis === 'h' ? wrap(na.h - h0) : na.el - el0;
     if (t90 === null && ch >= 0.9 * target) t90 = t;
-    if (phase === 'hold' && ch >= target) { phase = 'rel'; tRel = t; }
+    if (phase === 'hold' && (hold > 0 ? t >= hold : ch >= target)) { phase = 'rel'; tRel = t; hRel = ch; }
     if (phase === 'rel') peak = Math.max(peak, ch);
     const want = phase === 'hold' ? 1 : 0;
     const v = stick === 'digital' ? stepKeyAxis(ks, want, dt) : want;
@@ -79,14 +79,15 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
     if (tRel !== null) {
       const dtR = t - tRel;
       if (dtR <= 3 && dtR + dt > 3) { h3 = na.h; g3 = gam(); }
+      if (dtR <= 4 && dtR + dt > 4) h4 = ch;
       if (dtR <= 8 && dtR + dt > 8) { h8 = na.h; g8 = gam(); bankEnd = e.state.roll; return true; }
     }
     return !e.alive;
   }, dt);
   return {
-    type, kt, ias0: Math.round(ias0), deg, stick, axis, t90, tRel, overshoot: tRel !== null ? (peak - target) / DEG : null, maxG,
+    type, kt, ias0: Math.round(ias0), deg, stick, axis, t90, tRel, overshoot: tRel !== null ? (peak - (hold > 0 ? hRel : target)) / DEG : null, maxG,
     driftDegS: tRel !== null ? wrap(h8 - h3) / DEG / 5 : null, gammaChange: tRel !== null ? (g8 - g3) / DEG : null,
-    bankEnd: bankEnd / DEG, settle3: tRel !== null ? (wrap(h3 - h0) - target) / DEG : null, altLoss: alt0 - e.state.position.y, alive: e.alive, limiting: c.assist.info.limiting,
+    bankEnd: bankEnd / DEG, giveBack: tRel !== null ? (hRel - h4) / DEG : null, turned: hRel / DEG, settle3: tRel !== null ? (wrap(h3 - h0) - target) / DEG : null, altLoss: alt0 - e.state.position.y, alive: e.alive, limiting: c.assist.info.limiting,
   };
 }
 
@@ -293,11 +294,12 @@ if (isMain) {
   if (cmd === 'steps') {
     const speeds = flag('speeds', '250,350,450').split(',').map(Number), sticks = flag('sticks', 'analog,digital').split(',');
     const degs = flag('degs', '30,120').split(',').map(Number), axis = flag('axis', 'h');
-    console.log('type  kt(ias)  stick    deg   t90 s  overshoot°  maxG  nose@+3s°  | released 3-8 s: drift°/s  Δγ°  bank°  | alt loss m');
-    for (const type of types) for (const kt of speeds) for (const stick of sticks) for (const deg of degs) {
-      const r = await stepResponse({ type, kt, deg, stick, axis, alt: +flag('alt', 3000), tune: process.env.TUNE ? JSON.parse(process.env.TUNE) : null });
+    const hold = +flag('hold', 0);
+    console.log(`type  kt(ias)  stick    ${hold ? 'hold s' : 'deg   '}t90 s  overshoot°  maxG  nose@+3s°  | released 3-8 s: drift°/s  Δγ°  bank°  | alt loss m | give-back° (+4 s)`);
+    for (const type of types) for (const kt of speeds) for (const stick of sticks) for (const deg of (hold ? [hold] : degs)) {
+      const r = await stepResponse({ type, kt, deg, stick, axis, hold, alt: +flag('alt', 3000), tune: process.env.TUNE ? JSON.parse(process.env.TUNE) : null });
       const f = (x, n = 1, w = 6) => (x === null || x === undefined ? '-' : x.toFixed(n)).padStart(w);
-      console.log(`${type.padEnd(5)} ${String(kt).padStart(3)}(${String(r.ias0).padStart(3)}) ${stick.padEnd(8)} ${String(deg).padStart(4)} ${f(r.t90, 2, 7)} ${f(r.overshoot, 1, 10)} ${f(r.maxG, 1, 5)} ${f(r.settle3, 1, 9)}   | ${f(r.driftDegS, 2, 15)} ${f(r.gammaChange, 1, 5)} ${f(r.bankEnd, 0, 6)}  | ${f(r.altLoss, 0, 6)}${r.alive ? '' : ' DEAD'}`);
+      console.log(`${type.padEnd(5)} ${String(kt).padStart(3)}(${String(r.ias0).padStart(3)}) ${stick.padEnd(8)} ${String(deg).padStart(4)} ${f(r.t90, 2, 7)} ${f(r.overshoot, 1, 10)} ${f(r.maxG, 1, 5)} ${f(r.settle3, 1, 9)}   | ${f(r.driftDegS, 2, 15)} ${f(r.gammaChange, 1, 5)} ${f(r.bankEnd, 0, 6)}  | ${f(r.altLoss, 0, 6)} | ${f(r.giveBack, 1, 6)} of ${f(r.turned, 0, 4)}${r.alive ? '' : ' DEAD'}`);
     }
   } else if (cmd === 'track') {
     const pats = flag('patterns', 'turn,weave').split(','), modes = flag('modes', 'assist,direct').split(','), sticks = flag('sticks', 'analog,digital').split(',');
