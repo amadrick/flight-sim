@@ -20,7 +20,7 @@ export const CSS = /* css */`
 .cbt-ui-iconcap svg { width: 18px; height: 18px; flex: none; }
 .cbt-ui-iconcap[aria-pressed="true"] { color: var(--amber-soft); }
 
-.cbt-ui-body { position: relative; min-height: 0; }
+.cbt-ui-body { position: relative; min-height: 0; grid-row: 2; grid-column: 1; }
 .cbt-ui-view { position: absolute; inset: 0; box-sizing: border-box; padding: 14px var(--gr) var(--gb) var(--gl); pointer-events: none; }
 .cbt-ui-view > * { pointer-events: auto; }
 .cbt-ui-view[hidden] { display: none !important; }

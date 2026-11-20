@@ -420,7 +420,6 @@ export async function createCombatUi(combat) {
     ui.isOpen = false; root.hidden = true; view = null;
     document.documentElement.classList.remove('cbt-ui-open');
     try { if (root.contains(document.activeElement)) document.activeElement.blur(); } catch {}
-    downOpen.clear();
   }
   /** Leave the screens: 'flight' resumes, 'main' / 'pause' hand over to the menu, 'debrief' goes back to the result. */
   function leaveTo(dest) {
@@ -511,7 +510,9 @@ export async function createCombatUi(combat) {
       if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); if (view === 'missions' && !flyBtn.disabled) fly(); else if (view === 'debrief') debPanel.querySelector('.cbt-ui-dacts .glass-tint')?.click(); }
     }
   }, true);
-  window.addEventListener('keyup', (e) => { if (ui.isOpen || downOpen.has(e.code)) { if (downOpen.delete(e.code) || ui.isOpen) e.stopPropagation(); } }, true);
+  // keyups of keys pressed while a screen was up stay with the screens (input's keyup would preventDefault a button's
+  // Space activation); keys pressed before it opened still reach input, so nothing stays held there
+  window.addEventListener('keyup', (e) => { if (downOpen.delete(e.code)) e.stopPropagation(); }, true);
   window.addEventListener('resize', () => { if (ui.isOpen && view === 'missions') { if (!narrow()) detail = false; syncDetail(); redrawMap(); } });
 
   // ---- gamepad navigation while a screen is up (src/input stands down: combat.input.padOwns) ------------------------
