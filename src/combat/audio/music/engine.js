@@ -10,7 +10,7 @@ import { createArranger } from './arranger.js';
 import { createStems, ORDER } from './render.js';
 import { G } from './synth.js';
 
-export const MUSIC_LEVEL = 0.17;        // music bus gain into the master (before the user's music volume)
+export const MUSIC_LEVEL = 0.2;         // music bus gain into the master (before the user's music volume)
 const XFADE = 0.03;                     // time constant of the fade on a cut section (s)
 const FADE_IN = 0.006;                  // ramp when a section starts mid-buffer (s)
 

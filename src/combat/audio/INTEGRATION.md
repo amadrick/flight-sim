@@ -49,6 +49,14 @@ The player's own death is left to the simulator's crash audio. A kill where the 
 
 Nothing is persisted, so the UI should store these settings if it wants them to survive a reload.
 
+## Music stems (round 2)
+
+- The score is pre-rendered per mission: when the AudioContext first exists, and again on `mission:start`, the mission's cue is rendered section by section in `OfflineAudioContext`s (32 kHz).
+  - Main-thread work comes in ≤ 3 ms slices.
+  - Memory: about 64 MB for Sweep and 75 MB for Nightfall, held until the cue changes.
+- If the first section the mood needs isn't rendered yet, the music waits for it (`info.waiting`). It starts on the next bar once the section is ready.
+- `music=0` skips the rendering altogether.
+
 ## Requests for other modules (optional)
 
 - Missions: set `mission.music = 'sweep' | 'nightfall'` to choose the cue. Otherwise night start times (before 06:30 or after 19:00) get Nightfall, and other missions are picked by a hash of the mission id. Put `voice` on `'radio'` events; without it the role is guessed from `team` / `from`.

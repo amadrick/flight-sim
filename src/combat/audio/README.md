@@ -37,7 +37,7 @@ All levels feed the simulator's master (compressor at -16 dB, 8:1, then a tanh l
 | explosions, other guns, other launches, fly-bys, engine presence | world `Dual` → `flightIn` | explosions `1/(1+d/400…500)`, guns `1.4/(1+d/180)`, delay `d/340` s (≤ 20 s), air absorption `distCutoff(d)`; interior path 0.55 at 800 Hz |
 | warnings | `flightIn` | 1.0 in the cockpit, 0.75 outside |
 | radio | `flightIn` | 0.5 × radio volume |
-| music | `master` | `MUSIC_LEVEL` 0.17 × music volume (0.8) × `MIX.music` 0.8; × 0.45 (−6.9 dB) while a radio line plays, × 0.6 (−4.4 dB) during a missile-launch warning, × 0.35 paused, × 0.5 menu |
+| music | `master` | `MUSIC_LEVEL` 0.2 × music volume (0.8) × `MIX.music` 0.8; × 0.45 (−6.9 dB) while a radio line plays, × 0.6 (−4.4 dB) during a missile-launch warning, × 0.35 paused, × 0.5 menu |
 
 Voice budget:
 
