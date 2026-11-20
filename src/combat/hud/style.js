@@ -1,7 +1,7 @@
 // Combat HUD stylesheet (injected once by createCombatHud). Panels use the simulator's .glass material; line work over the
 // world is drawn on the overlay canvas. Class names are prefixed cbt-hud-.
 export const CSS = `
-.cbt-hud-cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none!important;z-index:3;display:block}
+.cbt-hud-cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none!important;z-index:5;display:block}
 .cbt-hud-cv.cbt-hud-shadow{filter:drop-shadow(0 0 1px rgba(0,0,0,.95)) drop-shadow(0 1px 1.5px rgba(0,0,0,.5))}
 .cbt-hud-root{position:absolute;inset:0;pointer-events:none!important;z-index:4;overflow:hidden;
   --cbt-gl:max(16px,env(safe-area-inset-left,0px));--cbt-gr:max(16px,env(safe-area-inset-right,0px));--cbt-gt:max(16px,env(safe-area-inset-top,0px));
