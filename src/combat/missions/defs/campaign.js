@@ -178,12 +178,12 @@ export const CAMPAIGN = [
     script(s) {
       const base = s.places.redrock;
       const kiln = s.group('kiln', {
-        type: 'b2', count: s.n(2, 3, 3), callsign: 'Kiln', at: { from: base, brg: 30, dist: 82000, alt: 7800 }, heading: base, formation: 'line', spacing: 1600,
+        type: 'b2', count: s.n(2, 3, 3), callsign: 'Kiln', at: { from: base, brg: 30, dist: 74000, alt: 7000 }, heading: base, formation: 'line', spacing: 1600,
         passive: true, loadout: UNARMED, hp: s.n(100, 150, 200), points: 160, mark: 'BOMBER', role: 'bomber', speed: 220,
         order: () => s.orders.patrol([V(base.x, 7000, base.z), V(base.x - 30000, 7000, base.z + 30000)], { passive: true }),
       });
       const flint = s.group('flint', {
-        type: ['f16', 'f15', 'fa18'], count: s.n(1, 2, 3), callsign: 'Flint', at: { from: base, brg: 31, dist: 78000, alt: 8500 }, heading: base, spacing: 600,
+        type: ['f16', 'f15', 'fa18'], count: s.n(1, 2, 3), callsign: 'Flint', at: { from: base, brg: 31, dist: 70000, alt: 7800 }, heading: base, spacing: 600,
         engageWithin: 16000, order: (i) => s.orders.escort(kiln.members[i % kiln.members.length], { x: (i % 2 ? -1 : 1) * 500, y: 600, z: 400 }),
       });
       s.wingmen(s.n(2, 1, 1));
@@ -340,10 +340,10 @@ export const CAMPAIGN = [
     script(s) {
       const haven = s.places.haven;
       const wing = s.wingmen(1);
-      const ember = s.group('ember', { type: 'b2', count: 2, callsign: 'Ember', at: { from: haven, brg: 222, dist: 95000, alt: 8000 }, heading: haven, spacing: 1500, formation: 'line',
+      const ember = s.group('ember', { type: 'b2', count: 2, callsign: 'Ember', at: { from: haven, brg: 222, dist: 76000, alt: 7000 }, heading: haven, spacing: 1500, formation: 'line',
         passive: true, loadout: UNARMED, hp: s.n(110, 160, 200), points: 160, mark: 'BOMBER', speed: 220, role: 'bomber',
         order: () => s.orders.patrol([V(haven.x, 7000, haven.z)], { passive: true }) });
-      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 2, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 91000, alt: 9000 }, heading: haven,
+      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 2, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: 72000, alt: 8000 }, heading: haven,
         engageWithin: 15000, order: (i) => s.orders.escort(ember.members[i % 2], { x: 600, y: 800, z: 500 }) });
       const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 2, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: 52000, agl: 650 }, heading: haven,
         passive: true, loadout: { gun: 0, ir: 0, radar: 0 }, points: 150, mark: 'LOW RAIDER', role: 'raider', speed: 190, spacing: 800,
