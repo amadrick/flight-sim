@@ -174,18 +174,38 @@ export function createNoise2D(seed = 1337) {
  *   B = random id (coverage selects cells with id below a threshold)
  *   A = random life-cycle phase (growing / mature / decaying)
  * Options: size (texels), period (m), dMin, dMax (m), slope, fill (area fraction covered by the nominal disks).
+ *
+ * Round six options: slope2 / dBreak = a BROKEN power law (Neggers et al. 2003: N(l) ~ l^-1.7 up to a scale break at
+ * ~0.4-1.25 km, steeper beyond; research doc 4.3), cluster = how strongly cells gather in patches (0 = uniform darts;
+ * real fields are clustered: groups of clouds over the strongest thermals with clear gaps between them), taperK = slope
+ * of the border taper and taperTo = the scaled distance it reaches on the border (2 and 1.25 = round four; 1 and 1.6: a
+ * gentler and higher ramp, so a vigorous cell tapers off well before its border and is not cut there by a vertical
+ * cliff that no detail can move).
  */
-export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, fill = 0.55, borderTaper = true } = {}) {
+export function createCellField({ seed = 1337, size = 512, period = 20480, dMin = 240, dMax = 4200, slope = 2.5, slope2 = null, dBreak = 1000, fill = 0.55, borderTaper = true, cluster = 0, taperK = 2, taperTo = 1.25, satellite = 0 } = {}) {
   const rnd = mulberry(seed * 31 + 7);
   const S = size, texel = period / S;
-  // sizes: inverse CDF of D^-slope on [dMin, dMax], sorted descending, until the disk area reaches `fill`
-  const a = 1 - slope, lo = Math.pow(dMin, a), hi = Math.pow(dMax, a);
+  // sizes: inverse CDF of D^-slope on [dMin, dMax] (two segments with slope2 above dBreak), sorted descending, until
+  // the disk area reaches `fill`
+  const seg = (s1, d0, d1) => { const a = 1 - s1; return { a, lo: Math.pow(d0, a), hi: Math.pow(d1, a) }; };
+  const s1 = seg(slope, dMin, slope2 ? Math.min(dBreak, dMax) : dMax), s2 = slope2 ? seg(slope2, Math.min(dBreak, dMax), dMax) : null;
+  // probability mass of each segment (pdf continuous at the break)
+  const m1 = s2 ? Math.abs((s1.hi - s1.lo) / s1.a) : 1, m2 = s2 ? Math.abs((s2.hi - s2.lo) / s2.a) * Math.pow(dBreak, slope2 - slope) : 0;
   const want = [];
   let area = 0;
   while (area < fill * period * period && want.length < 20000) {
-    const D = Math.pow(lo + (hi - lo) * rnd(), 1 / a);
+    const sg = s2 && rnd() * (m1 + m2) > m1 ? s2 : s1;
+    const D = Math.pow(sg.lo + (sg.hi - sg.lo) * rnd(), 1 / sg.a);
     want.push(D); area += Math.PI * D * D / 4;
   }
+  // clustering: a smooth tiling field (a few km) modulates where darts may land
+  const ph = Array.from({ length: 12 }, () => rnd() * Math.PI * 2);
+  const clusterAt = (x, z) => {
+    const u = x / period * Math.PI * 2, v = z / period * Math.PI * 2;
+    const n = Math.sin(4 * u + ph[0]) * Math.sin(3 * v + ph[1]) + 0.7 * Math.sin(7 * u + 2 * v + ph[2]) + 0.6 * Math.sin(3 * u - 6 * v + ph[3])
+            + 0.4 * Math.sin(11 * u + 5 * v + ph[4]) * Math.sin(2 * u - 9 * v + ph[5]);
+    return n / 1.6;                                         // ~[-1, 1]
+  };
   want.sort((x, y) => y - x);
   // dart throwing with a coarse grid for neighbour queries (toroidal)
   const GC = 32, cellM = period / GC, grid = Array.from({ length: GC * GC }, () => []);
@@ -194,13 +214,26 @@ export function createCellField({ seed = 1337, size = 512, period = 20480, dMin 
   for (const D of want) {
     const r = D / 2;
     for (let tries = 0; tries < 30; tries++) {
-      const x = rnd() * period, z = rnd() * period;
+      let x = rnd() * period, z = rnd() * period, gap = 0.92;
+      // round six c: satellite thermals: a share of the smaller cells is placed against a bigger cloud (flanking turrets,
+      // families of clouds sharing one base) instead of anywhere
+      let sat = false;
+      if (satellite > 0 && placed.length > 8 && rnd() < satellite) {
+        for (let k = 0; k < 6; k++) {
+          const c = placed[Math.floor(rnd() * placed.length)];
+          if (c.r < 1.4 * r) continue;
+          const a = rnd() * Math.PI * 2, dd = (0.8 + 0.15 * rnd()) * (c.r + r);
+          x = ((c.x + Math.cos(a) * dd) % period + period) % period; z = ((c.z + Math.sin(a) * dd) % period + period) % period;
+          gap = 0.78; sat = true; break;
+        }
+      }
+      if (!sat && cluster > 0 && rnd() > Math.min(1, Math.max(0.03, 0.5 + cluster * clusterAt(x, z) * (r < 500 ? 1.3 : 0.8)))) continue;
       const gx = Math.floor(x / cellM), gz = Math.floor(z / cellM), reach = Math.ceil((r + dMax / 2) / cellM);
       let ok = true;
       for (let j = -reach; j <= reach && ok; j++) for (let i = -reach; i <= reach && ok; i++) {
         for (const c of grid[((gz + j + GC) % GC) * GC + ((gx + i + GC) % GC)]) {
           const dx = wrapD(c.x - x), dz = wrapD(c.z - z);
-          if (dx * dx + dz * dz < Math.pow(0.92 * (c.r + r), 2)) { ok = false; break; }
+          if (dx * dx + dz * dz < Math.pow(gap * (c.r + r), 2)) { ok = false; break; }
         }
       }
       if (!ok) continue;
@@ -236,7 +269,7 @@ export function createCellField({ seed = 1337, size = 512, period = 20480, dMin 
     // detail erosion could move: the featureless walls of big cumulus seen from close by. The stored distance now
     // rises toward the border (to 1.25 radii on it), so the cloud tapers into a clear slot and its flank stays a
     // noise surface.
-    const dEff = borderTaper ? Math.max(best[i], 1.25 - 2 * (best2[i] - best[i])) : best[i];
+    const dEff = borderTaper ? Math.max(best[i], taperTo - taperK * (best2[i] - best[i])) : best[i];
     data[i * 4] = Math.max(0, 0.5 + 0.5 * (1 - dEff));
     if (c) { data[i * 4 + 1] = c.g; data[i * 4 + 2] = c.id; data[i * 4 + 3] = c.ph; }
     else { data[i * 4 + 2] = 1; }
@@ -333,6 +366,49 @@ void main() {
   o = vec4(r, g, c, 0.5 + 0.5 * gnoise(p, 4, 34));
 }`;
 
+// Round six: "bubble" volume for the cauliflower detail of growing cumulus. Each channel is the signed distance field
+// of a UNION OF SPHERES (one sphere per Worley cell, jittered centre, random radius 0.5-0.95 cell), not a Worley fbm:
+//   S(p) = max_i (r_i - |p - c_i|)   (cell units; > 0 inside a bubble, < 0 in the gaps, sharp V-creases where spheres meet)
+// stored as 0.5 + 0.5 S. Five cells per axis in 64^3 (12.8 voxels per cell, so trilinear filtering keeps the creases
+// crisp; the round-four detail volume has 2.7 voxels per finest Worley cell and blurred every crease into fuzz).
+// R, G, B: three independent bubble sets (successive octaves alternate them), A: gradient noise (domain warp).
+const BUBBLE_FRAG = /* glsl */`
+${NOISE_LIB}
+in vec2 vUv; out vec4 o; uniform float uZ;
+uniform float uBubV;   // round six b: 1 = lumpy bubbles (warped, primary + satellite sphere per cell), 0 = round six spheres
+float bubbles(vec3 p, int n, int seed) {
+  if (uBubV > 0.5) {
+    // (round six b: domain-warped by two tiling octaves of gradient noise, ~0.25 cell: the bubbles are lumpy blobs, not
+    //  spheres, and a turret no longer prints a perfect circle where the cloud surface cuts it)
+    vec3 w = vec3(gnoise(p, n, seed + 10), gnoise(p, n, seed + 11), gnoise(p, n, seed + 12))
+           + 0.5 * vec3(gnoise(p, 2 * n, seed + 13), gnoise(p, 2 * n, seed + 14), gnoise(p, 2 * n, seed + 15));
+    p += w * (0.2 / float(n));
+  }
+  p *= float(n); ivec3 ip = ivec3(floor(p)); vec3 f = fract(p); float s = -9.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    ivec3 o = ivec3(x, y, z); vec3 h = hash33(wrapi(ip + o, n), seed);
+    vec3 r = vec3(o) + 0.1 + 0.8 * h - f;
+    float u = fract(h.x * 7.13 + h.y * 3.71 + h.z * 1.37);
+    if (uBubV > 0.5) {
+      // wide size range (0.32-0.95 cell, more small than large) and a smaller satellite bubble on the upper side of each
+      // (lumps nested on lumps inside one octave); centres stay within their cell so the 3x3x3 search sees every sphere
+      float rad = 0.32 + 0.63 * u * u;
+      s = max(s, rad - length(r));
+      vec3 h2 = hash33(wrapi(ip + o, n), seed + 77);
+      vec3 c2 = clamp(0.1 + 0.8 * h + rad * 0.75 * normalize(vec3(h2.x - 0.5, 0.25 + 0.5 * h2.y, h2.z - 0.5)), 0.1, 0.9);
+      s = max(s, rad * mix(0.35, 0.6, h2.y) - length(vec3(o) + c2 - f));
+    } else {
+      float rad = 0.5 + 0.45 * u;
+      s = max(s, rad - length(r));
+    }
+  }
+  return clamp(0.5 + 0.5 * s, 0.0, 1.0);
+}
+void main() {
+  vec3 p = vec3(vUv, uZ);
+  o = vec4(bubbles(p, 5, 51), bubbles(p, 5, 52), bubbles(p, 5, 53), 0.5 + 0.5 * gnoise(p, 4, 54));
+}`;
+
 // Copies the low mip of the base volume into a 2D atlas for a single CPU read-back (used by densityAt()).
 const ATLAS_FRAG = /* glsl */`
 precision highp float; precision highp sampler3D;
@@ -374,20 +450,22 @@ function slicePass(frag, uniforms = {}) {
 }
 
 /**
- * Build the 3D noise volumes. Returns { base, detail, lowRes: { data: Uint8Array (N^3 RGBA), n } }.
+ * Build the 3D noise volumes. Returns { base, detail, bubble, lowRes: { data: Uint8Array (N^3 RGBA), n } }.
  * `lowRes` is a CPU copy of the base volume's mip 2 (32^3) for CPU density queries.
  */
-export function createNoise3D(renderer) {
+export function createNoise3D(renderer, { bubbleV = 1 } = {}) {
   const prevTarget = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
   renderer.autoClear = false;
 
-  const blockRT = volumeTarget(64), baseRT = volumeTarget(128), detailRT = volumeTarget(32);
+  const blockRT = volumeTarget(64), baseRT = volumeTarget(128), detailRT = volumeTarget(32), bubbleRT = volumeTarget(64);
   const blockPass = slicePass(BLOCK_FRAG);
   renderSlices(renderer, blockRT, blockPass);
   const basePass = slicePass(BASE_FRAG, { tBlock: { value: blockRT.texture } });
   renderSlices(renderer, baseRT, basePass);
   const detailPass = slicePass(DETAIL_FRAG);
   renderSlices(renderer, detailRT, detailPass);
+  const bubblePass = slicePass(BUBBLE_FRAG, { uBubV: { value: bubbleV } });
+  renderSlices(renderer, bubbleRT, bubblePass);
 
   // CPU copy (32^3) via an 8x4 atlas of 32x32 tiles.
   const n = 32, gx = 8, gy = 4;
@@ -406,9 +484,9 @@ export function createNoise3D(renderer) {
   }
 
   renderer.setRenderTarget(prevTarget); renderer.autoClear = prevAuto;
-  blockPass.dispose(); basePass.dispose(); detailPass.dispose(); atlasPass.dispose();
+  blockPass.dispose(); basePass.dispose(); detailPass.dispose(); bubblePass.dispose(); atlasPass.dispose();
   blockRT.dispose(); atlasRT.dispose();
-  return { base: baseRT.texture, detail: detailRT.texture, baseRT, detailRT, lowRes: { data, n } };
+  return { base: baseRT.texture, detail: detailRT.texture, bubble: bubbleRT.texture, baseRT, detailRT, bubbleRT, lowRes: { data, n } };
 }
 
 /** Trilinear, wrapping sample of channel `c` of the CPU low-res volume at normalised coords. */

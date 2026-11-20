@@ -148,14 +148,46 @@ async function boot() {
     ctx.uniforms.frame.uAmbientSky.value.copy(ctx.env.ambientSky); ctx.uniforms.frame.uAmbientGround.value.copy(ctx.env.ambientGround);
     ctx.pipeline.render(dt);
     comp.material.uniforms.tClouds.value = ctx.clouds.texture; comp.render(ctx.renderer, null);
-    if (viewPass) {
+    if (view === 'slice') drawSlice();
+    else if (viewPass) {
       const d = ctx.clouds.debug;
       const t = view === 'cirrus' ? d.cirrusRT.texture : view === 'weather' ? d.weatherRT.texture : view === 'shadow' ? d.shadowRT.texture : view === 'march' ? d.marchRT.textures[0] : ctx.clouds.texture;
       viewPass.material.uniforms.tex.value = t;
-      viewPass.material.uniforms.uMode.value = (view === 'weather' || view === 'cirrus') ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail') ? 3 : 2;
-      viewPass.material.uniforms.tex3.value = view === 'detail' ? d.noise3.detail : d.noise3.base;
+      viewPass.material.uniforms.uMode.value = (view === 'weather' || view === 'cirrus') ? 0 : view === 'shadow' ? 1 : (view === 'base' || view === 'detail' || view === 'bubble') ? 3 : 2;
+      viewPass.material.uniforms.tex3.value = view === 'detail' ? d.noise3.detail : view === 'bubble' ? d.noise3.bubble : d.noise3.base;
       viewPass.render(ctx.renderer, null);
     }
+  }
+  // view=slice: vertical cross-section of the full density along the view direction (slT0 = start distance, slW = width,
+  // m), from the condensation level up; red = shape excess > 0 (un-eroded envelope), white = eroded density
+  let slicePass = null;
+  function drawSlice() {
+    const U = ctx.clouds.debug.U, L = U.uClLayer.value;
+    if (!slicePass) slicePass = new FullscreenPass(new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+      uniforms: { ...U, uSl: { value: new THREE.Vector4() }, uSl2: { value: new THREE.Vector4() } }, vertexShader: FULLSCREEN_VERT,
+      fragmentShader: `precision highp float; precision highp int; precision highp sampler3D; in vec2 vUv; out vec4 o;
+        ${raw.slDbg === '1' ? '#define SL_DBG 1' : ''}
+        ${CLOUD_DENSITY_GLSL}
+        uniform vec4 uSl, uSl2;
+        void main() {
+          float t = uSl2.x + vUv.x * uSl2.y, y = uSl2.z + vUv.y * uSl2.w;
+          vec3 pa = vec3(uSl.x + uSl.z * t, y, uSl.y + uSl.w * t); vec4 info;
+          float ex = clShape(pa, clWeather(pa.xz, 0.0), 0.0, info);
+          float d = ex > -0.6 ? clDensityFull(pa, ex, info, 2.0, 0.004) : 0.0;
+          o = vec4(mix(vec3(ex > 0.0 ? 0.35 : 0.0, 0.0, 0.08), vec3(1.0), d), 1.0);
+          #ifdef SL_DBG
+          float cv; float bd = clBubbles(pa, 3.0, cv);
+          o = vec4(clThermal / 2000.0, 0.5 + bd * 3.0, ex > 0.0 ? 1.0 : 0.0, 1.0);
+          #endif
+        }` }));
+    const dir = ctx.camera.getWorldDirection(new THREE.Vector3()); dir.y = 0; dir.normalize();
+    const ax = ctx.world.origin.x + ctx.camera.position.x - ctx.clouds.windOffset.x, az = ctx.world.origin.z + ctx.camera.position.z - ctx.clouds.windOffset.y;
+    // (in a tour only the top-left tile of the canvas is kept: scale the section so the tile shows slW x its aspect)
+    const tW = tw || window.innerWidth, tH = th || window.innerHeight;
+    const w = num('slW', 2400), hgt = w * tH / tW, sx = window.innerWidth / tW, sy = window.innerHeight / tH;
+    slicePass.material.uniforms.uSl.value.set(ax, az, dir.x, dir.z);
+    slicePass.material.uniforms.uSl2.value.set(num('slT0', 0), w * sx, L.x - 0.05 * hgt, hgt * sy);
+    slicePass.render(ctx.renderer, null);
   }
   sim.exportDensity = (opts) => exportDensity(ctx, opts);
   if (useAircraft) ctx.session.start({});

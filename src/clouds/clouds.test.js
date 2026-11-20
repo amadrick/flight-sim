@@ -110,3 +110,23 @@ test('life cycle (round five): clouds change over minutes, without jumps, and th
   assert.ok(Math.abs(a.f - b.f) + Math.abs(b.f - c2.f) > 0.002, 'the field evolves');
   assert.ok(p.dropletN >= 50 && p.dropletN <= 1000);
 });
+
+test('cell field (round six): broken power law and clustering', () => {
+  const opts = { seed: 1337, size: 256, period: 20480 };
+  const r6o = { slope: 1.7, slope2: 3.2, dBreak: 1100, taperK: 1, taperTo: 1.6 };
+  const old = createCellField(opts), r6 = createCellField({ ...opts, ...r6o, cluster: 0.7 }), r6u = createCellField({ ...opts, ...r6o, cluster: 0 });
+  const stats = (c) => {
+    let inside = 0, giant = 0; const blocks = new Array(64).fill(0);
+    for (let j = 0; j < c.size; j++) for (let i = 0; i < c.size; i++) {
+      const k = (j * c.size + i) * 4;
+      if (c.data[k] >= 0.5) { inside++; if (240 * Math.pow(4200 / 240, c.data[k + 1]) > 3000) giant++; blocks[(j >> 5) * 8 + (i >> 5)]++; }
+    }
+    const m = blocks.reduce((a, b) => a + b, 0) / 64, v = blocks.reduce((a, b) => a + (b - m) * (b - m), 0) / 64;
+    return { fill: inside / (c.size * c.size), giant: giant / inside, cv: Math.sqrt(v) / m };
+  };
+  const a = stats(old), b = stats(r6), u = stats(r6u);
+  assert.ok(b.fill > 0.3 && b.fill < 0.65, `fill ${b.fill}`);
+  assert.ok(b.giant < a.giant, `fewer giant cells above the scale break (${b.giant.toFixed(2)} vs ${a.giant.toFixed(2)})`);
+  assert.ok(b.cv > u.cv, `clustered: block-to-block variation ${b.cv.toFixed(2)} vs ${u.cv.toFixed(2)} unclustered`);
+  assert.ok(r6.count > 50);
+});

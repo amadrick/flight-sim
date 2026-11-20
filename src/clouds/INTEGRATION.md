@@ -19,6 +19,19 @@ Owner: clouds agent. Files: `src/clouds/**` only. Nothing outside this directory
 Events: listens to `quality:change`, `weather:change`, `camera:mode`, `session:start`; emits `lightning` with
 `{ worldPos: Vector3, intensity: 0..1 }` at the first stroke of each flash (audio can delay thunder by distance / 343 m/s).
 
+## Round six (cauliflower pass; details, numbers and switches in docs/clouds/SHAPE.md section 0)
+
+- No API change. New 3-D texture `tClBubble` (64^3 RGBA8, union-of-spheres distance fields, built at boot with the other
+  volumes, ~30 ms) drives a bubble cascade on growing cumulus and Cb towers; its largest octave is also in the cheap
+  density, so `cloudShadowTau()` / `cloudShadow()` see the big turrets (same signatures and units).
+- The cell field (`noise.js createCellField`) takes new options (broken power law, clustering, border taper); the module
+  uses them by default (`clField=0` = round five). `densityAt()` follows the new shape (aspect ratios, congestus cells,
+  envelope cap, owner-cell attributes); the bubble detail is not in the CPU mirror (it is within ~0.3 cell radii of it).
+- Cost: learned MS on the first 2 lit samples (was 4), rays stop at transmittance 0.01, far-field light from the shadow
+  map beyond 40 m pixels (25 m at `low`), bubble octaves 2 / 3 / 4 by quality. `clCount=2` writes texture fetches per ray
+  to the march's aux target (harness tours report it).
+- Harness: `view=slice` (vertical density section along the view, `slW`, `slT0`, `slDbg=1`), `view=bubble`.
+
 ## Round five (physics pass; details, numbers and switches in docs/clouds/SHAPE.md)
 
 - **Light model**: the learned multiple scattering of `src/neural/cloud-ms.js` (docs/clouds/NEURAL.md) is created by
