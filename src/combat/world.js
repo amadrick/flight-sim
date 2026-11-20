@@ -66,7 +66,8 @@ export function createWorld(combat) {
       const sim = createSim(simCtx, def, init);
       let visual = null;
       if (!combat.headless) {
-        visual = def.createVisual(ctx, { livery: o.livery, stores: o.stores });
+        // the adversary flies its own paint scheme where an aircraft has one (visuals fall back to their default livery)
+        visual = def.createVisual(ctx, { livery: o.livery ?? ((o.team || 'red') === 'red' ? 'aggressor' : undefined), stores: o.stores });
         visual.object3D.name = `combat-${o.team || 'red'}-${def.id}`;
         ctx.scene.add(visual.object3D);
       }

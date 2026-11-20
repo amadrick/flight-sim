@@ -83,6 +83,7 @@ async function boot() {
     ctx.session.update(dt);            // physics → origin → aircraft visual
     ctx.combat.step(dt);               // missions, AI aircraft, weapons, combat effects
     ctx.cameraRig.update(realDt);      // camera pose in render space
+    ctx.combat.cam(realDt);            // combat cameras (padlock, missile cam, kill cam) may override it
     updateFrameUniforms();
     for (const k of updatables) ctx[k]?.update?.(dt);
     ctx.combat.late(dt);               // combat HUD overlay, audio, mission screens
