@@ -93,15 +93,22 @@ export function createPaveLUT() {
   tex.format = THREE.RGBAFormat; tex.type = THREE.FloatType; tex.colorSpace = THREE.NoColorSpace;
   tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
-  let last = null;
+  let last = null, lastT = -1e9;
   return {
     texture: tex,
     /** sun: world direction toward the sun (y up); axis: unit runway axis in world xz [x, z]; wet 0..1 */
     update(sun, axis, wet) {
       const w = Math.min(wet, 0.3);                     // standing water stays with the classic model (glint)
       const key = [sun.x, sun.y, sun.z, axis[0], axis[1], w];
-      if (last && Math.abs(key[0] - last[0]) + Math.abs(key[1] - last[1]) + Math.abs(key[2] - last[2]) < 0.004 &&
-          key[3] === last[3] && key[4] === last[4] && Math.abs(w - last[5]) < 0.02) return false;
+      if (last) {
+        const ds = Math.abs(key[0] - last[0]) + Math.abs(key[1] - last[1]) + Math.abs(key[2] - last[2]);
+        const same = key[3] === last[3] && key[4] === last[4] && Math.abs(w - last[5]) < 0.02;
+        if (same && ds < 0.004) return false;
+        // (time acceleration: a ~20 ms bake at most every 2 s unless the sun jumped)
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (same && ds < 0.05 && now - lastT < 2000) return false;
+        lastT = now;
+      }
       last = key;
       // azimuth about the runway axis (x = along, y = across: across = axis rotated +90 deg in xz)
       const al = sun.x * axis[0] + sun.z * axis[1], ac = -sun.x * axis[1] + sun.z * axis[0];
