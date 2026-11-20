@@ -4,7 +4,7 @@
 // floodlight pools). Paint quads widen to a minimum on-screen footprint (with matching alpha) so markings never alias.
 import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../core/glsl.js';
-import { glyphUV } from './textures.js';
+import { glyphUV, makeAggregateTexture } from './textures.js';
 
 const DEG = Math.PI / 180;
 export const KIND_ID = { rwy: 0, rwyConcrete: 1, twy: 2, apron: 3, shoulder: 4, blast: 5, road: 6, lot: 7, apronA: 8 };
@@ -72,6 +72,7 @@ export function createPaveShared(ctx, noiseTex, atlasTex) {
   return {
     tNoise: { value: noiseTex },
     tAtlas: { value: atlasTex },
+    tAggr: { value: makeAggregateTexture(ctx) },
     uWet: { value: 0 },
     uNight: { value: 0 },
     uPixAngle: { value: 0.001 },
@@ -97,7 +98,7 @@ export function makePavementMaterial(ctx, shared, pools) {
         ${CURV_VERT}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform sampler2D tNoise; uniform float uWet; uniform float uNight;
+        uniform sampler2D tNoise; uniform sampler2D tAggr; uniform float uWet; uniform float uNight;
         varying vec2 vLocal; varying vec4 vInfo; varying vec2 vField;
         ${RUBBER_GLSL} ${POOLS_GLSL} ${BUMP_GLSL}
         float gWetMask; float gRough; float gHeight;`)
@@ -122,8 +123,8 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec2 cell = floor(sl / slab);
             vec2 inC = sl - cell * slab;
             float h1 = scnHash(cell + seed), h2 = scnHash(cell * 1.37 + seed + 5.1), h3 = scnHash(cell * 2.11 + 9.7);
-            float tone = 0.86 + 0.24 * h1;
-            vec3 base = kind < 1.5 ? vec3(0.25, 0.245, 0.232) : vec3(0.215, 0.21, 0.198);
+            float tone = 0.80 + 0.34 * h1;
+            vec3 base = kind < 1.5 ? vec3(0.225, 0.220, 0.208) : vec3(0.205, 0.20, 0.188);
             col = base * tone * (0.8 + 0.4 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
             col *= vec3(1.0, 0.99 + 0.02 * h2, 0.97 + 0.05 * h3);                         // cement batches differ
             // pour campaigns / later reconstruction: blocks of slabs with a different overall tone
@@ -132,7 +133,11 @@ export function makePavementMaterial(ctx, shared, pools) {
             float jx = scnLines(sl.x + 0.01, slab, 0.02), jy = scnLines(sl.y + 0.01, slab, 0.02);
             float ob = max(scnLines(sl.x + 0.06, slab, 0.14) * step(0.55, h2), scnLines(sl.y + 0.06, slab, 0.14) * step(0.6, h3));
             float j = max(jx, jy);
-            col *= 1.0 - 0.55 * j;
+            // sealed joints: a thin dark sealant line, its edges a little chipped; old joints weathered paler
+            col *= 1.0 - (0.42 - 0.2 * step(0.6, h3)) * j;
+            // broom finish (transverse texture) and mottled curing: visible only up close / as a mean tone
+            col *= 0.97 + 0.06 * texture(tNoise, vec2(sl.x / 0.9, sl.y / 23.0) + 0.29).r * (1.0 - smoothstep(0.01, 0.05, length(fwidth(sl))));
+            col *= 0.92 + 0.16 * smoothstep(0.3, 0.7, texture(tNoise, sl / 2.7 + 0.61).g);
             col = mix(col, vec3(0.05, 0.048, 0.045), 0.8 * ob * (0.7 + 0.3 * nD.r));
             // spalled corners and the odd shattered slab (dark crack lines)
             float corner = (1.0 - smoothstep(0.0, 0.9, min(inC.x, slab - inC.x))) * (1.0 - smoothstep(0.0, 0.9, min(inC.y, slab - inC.y)));
@@ -144,7 +149,7 @@ export function makePavementMaterial(ctx, shared, pools) {
             col *= 1.0 - 0.45 * stain;
             col *= 1.0 - 0.12 * smoothstep(0.5, 0.9, nD.b);
             hgt -= (j + ob * 0.3) * 0.008 + crk * 0.004;
-            rough = 0.84 + 0.1 * aggr - 0.3 * stain - 0.25 * ob;
+            rough = 0.80 + 0.1 * aggr - 0.3 * stain - 0.25 * ob;
           } else {
             // asphalt: aggregate, paving-lane seams, patches (fresh = dark, old = grey), tar-sealed crack network
             float base = kind < 0.5 ? 0.12 : kind < 2.5 ? 0.125 : kind < 4.5 ? 0.15 : kind < 5.5 ? 0.115 : kind < 6.5 ? 0.1 : kind < 7.5 ? 0.11 : 0.135;
@@ -173,13 +178,37 @@ export function makePavementMaterial(ctx, shared, pools) {
             col *= mix(1.0, mix(1.08 + 0.08 * nD.r, 0.74 + 0.08 * nD.r, fresh), patchK);
             col = mix(col, vec3(0.04), border * 0.5);
             // sealed cracks: black, glossy tar bands following the crack network
-            float crack = smoothstep(0.74, 0.93, crackNet) * smoothstep(0.55, 0.9, crackZone) * (1.0 - patchK);
+            float crack = smoothstep(0.70, 0.90, crackNet) * smoothstep(0.50, 0.85, crackZone) * (1.0 - patchK);
             col = mix(col, vec3(0.04, 0.039, 0.037), crack * 0.7);
             // transverse thermal cracks every few tens of metres on older surfaces
             float tcr = scnLines(sl.x + 3.0 * nB.g, 31.0, 0.05) * step(0.45, scnHash(vec2(floor(sl.x / 31.0), seed)));
             col = mix(col, vec3(0.035), tcr * 0.7 * (1.0 - patchK));
             hgt -= crack * 0.003 + seam * 0.002;
-            rough = 0.9 + 0.06 * aggr - 0.35 * crack - 0.3 * border - 0.08 * fresh * patchK;
+            rough = 0.80 + 0.08 * aggr - 0.40 * crack - 0.3 * border - 0.12 * fresh * patchK;
+            // runways: the trafficked keel (central third) is darker and newer, the edges paler and oxidised
+            if (kind < 0.5) { float keel = 1.0 - smoothstep(pwid * 0.16, pwid * 0.24, abs(vLocal.y) + 2.0 * (nB.r - 0.5)); col *= mix(1.08, 0.90, keel); }
+          }
+          // close-range aggregate: crushed stones in the binder (asphalt) / exposed fines (concrete) at two rotated
+          // scales (0.71 m and 0.29 m tiles, 2.8 / 1.1 mm texels); mip-filtered, so it converges to its mean (~1)
+          // instead of shimmering, and the bump fades with the footprint before the derivatives can alias
+          {
+            float fp = length(fwidth(F));
+            vec4 ag1 = texture(tAggr, F / 0.71);
+            vec4 ag2 = texture(tAggr, vec2(0.8 * F.x - 0.6 * F.y, 0.6 * F.x + 0.8 * F.y) / 0.29 + 0.37);
+            float agK = 1.0 - smoothstep(0.004, 0.02, fp);
+            float stoneA = concrete ? 0.45 : 1.0;          // concrete shows less of its aggregate (cement paste)
+            col *= mix(1.0, (0.62 + 0.76 * ag1.r) * (0.85 + 0.30 * ag2.r), stoneA);
+            hgt += ((ag1.g - 0.5) * 0.004 + (ag2.g - 0.5) * 0.0015) * agK * stoneA;
+            rough = rough - 0.10 * (ag1.g - 0.45) * stoneA;  // polished stone tops
+          }
+          // grooving: 6 mm saw cuts every 38 mm across the runway (not the outer 3 m); box-filtered, so near the
+          // camera they are crisp lines and further away a uniform ~4 % darker, rougher texture
+          if (kind < 1.5) {
+            float gK = step(abs(vLocal.y), pwid * 0.5 - 3.0);
+            float gr = scnLines(sl.x, 0.038, 0.006) * gK;
+            col *= 1.0 - (0.2 + 0.1 * nB.r) * gr;          // (0.38 read as woven fabric from eye height)
+            hgt -= 0.0025 * gr * (1.0 - smoothstep(0.004, 0.012, length(fwidth(F))));
+            rough += 0.06 * gr;
           }
           // runways: rubber deposits in both touchdown zones, streaked along the gear tracks; grooved surface is a
           // touch darker than the taxiways
@@ -190,12 +219,20 @@ export function makePavementMaterial(ctx, shared, pools) {
             rub = clamp(rub * (0.75 + 0.5 * streak2), 0.0, 1.0);
             col *= 0.94;
             col = mix(col, vec3(0.022, 0.021, 0.02), rub * (concrete ? 0.92 : 0.8));
-            rough = mix(rough, 0.55, rub);
+            rough = mix(rough, 0.48, rub);
             // centreline wear: a darker band where nose gears track, faint oil drips along it
             col *= 1.0 - 0.12 * exp(-pow(vLocal.y / 2.2, 2.0)) * (0.6 + 0.4 * nB.r);
           }
           // shoulders and blast pads: weathered, lighter, loose grit
-          if (kind > 3.5 && kind < 5.5) col *= 0.88 + 0.28 * nB.b;
+          if (kind > 3.5 && kind < 5.5) {
+            col *= 0.88 + 0.28 * nB.b;
+            // grit and soil washed onto the outer edge, weeds in the edge joint
+            float ed = min(pwid * 0.5 - abs(vLocal.y), plen * 0.5 - abs(vLocal.x));
+            float dirt = (1.0 - smoothstep(0.0, 0.5 + 0.6 * nD.g, ed)) * (0.6 + 0.4 * nA.g);
+            col = mix(col, vec3(0.16, 0.135, 0.10) * (0.8 + 0.4 * nA.b), dirt * 0.7);
+            col = mix(col, vec3(0.06, 0.09, 0.035), (1.0 - smoothstep(0.0, 0.12, ed)) * smoothstep(0.55, 0.75, nD.r) * 0.8);
+            rough = mix(rough, 0.95, dirt);
+          }
           // wetness: darker, smoother, puddles in low spots (and along the sealed cracks)
           float puddle = smoothstep(0.55, 0.72, nC.b * 0.7 + nB.g * 0.3);
           gWetMask = uWet * (0.55 + 0.45 * puddle);
@@ -265,7 +302,7 @@ export function buildPavementGeometry(L) {
 }
 
 // --- paint ------------------------------------------------------------------------------------------------------------
-const PAINT_COLORS = { w: [0.78, 0.78, 0.76], y: [0.8, 0.53, 0.05], r: [0.5, 0.05, 0.04], k: [0.02, 0.02, 0.02], s: [0.012, 0.011, 0.01] };
+const PAINT_COLORS = { w: [0.72, 0.72, 0.70], y: [0.8, 0.53, 0.05], r: [0.5, 0.05, 0.04], k: [0.02, 0.02, 0.02], s: [0.012, 0.011, 0.01] };
 
 export function buildPaintGeometry(L, quads) {
   const n = quads.length;
@@ -435,11 +472,13 @@ export function makeFringeMaterial(ctx, shared) {
         {
           vec4 n1 = texture(tNoise, vFField / 5.3 + 0.17), n2 = texture(tNoise, vFField / 41.0 + 0.63);
           float edge = vFade + (n1.g - 0.5) * 0.55 + (n2.b - 0.5) * 0.35;
-          float a = 1.0 - smoothstep(0.05, 0.85, edge);
+          // (the terrain draws the worn verge, mowing and thinning turf from the airfield distance map: this band only
+          // adds the grit and dust thrown off the pavement within the first metre or two)
+          float a = 1.0 - smoothstep(0.02, 0.45, edge);
           // trampled soil right at the edge, sun-bleached dead grass further out
           vec3 soil = vec3(0.12, 0.1, 0.075) * (0.8 + 0.4 * n1.r), dry = vec3(0.2, 0.18, 0.11) * (0.85 + 0.3 * n2.g);
           diffuseColor.rgb = mix(soil, dry, smoothstep(0.1, 0.6, vFade + 0.3 * n1.b)) * mix(1.0, 0.6, uWet);
-          diffuseColor.a = a * 0.85;
+          diffuseColor.a = a * 0.5;
         }`);
   };
   mat.customProgramCacheKey = () => 'scn-fringe';

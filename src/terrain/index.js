@@ -19,8 +19,10 @@ import { setGroundMode, setSettleMode } from './surface.glsl.js';
 import { createSettlements } from './settle.js';
 import { createBuildings } from './buildings.js';
 import { createGroundMicro } from '../neural/ground-micro.js';
+import { createGroundTurf } from '../neural/ground-turf.js';
 import { createGroundDetail } from './ground-detail.js';
 import { createTrees } from './trees.js';
+import { createAirfieldMap } from './airfield.js';
 
 export { heightAt };
 
@@ -63,12 +65,16 @@ export async function createTerrain(ctx) {
   const settle = setSettleMode(groundMode === 'neural' && (roadsOn || townsOn)) ? createSettlements(renderer, { roads: roadsOn, towns: townsOn }) : null;
   // learned micro-relief transfer for the far field (micro=0: plain Lambert as before)
   const micro = groundMode === 'neural' && rawP.micro !== '0' ? createGroundMicro() : null;
+  // learned turf / grass canopy reflectance (turfbrdf=0: Lambertian grass as before)
+  const turfBrdf = groundMode === 'neural' && rawP.turfbrdf !== '0' ? createGroundTurf() : null;
   const groundQ = () => ({ low: 0, medium: 1 }[ctx.quality.level] ?? 2);
   const detail = groundMode === 'neural' ? createGroundDetail(renderer, { size: ctx.quality.level === 'low' ? 256 : 512, anisotropy: ctx.quality.anisotropy ?? 4 }) : null;
   let cfg = configFor(ctx);
   let clip = createClipmap(renderer, { N: cfg.N, L, t0: cfg.t0 });
   let sel = createLodSelector({ P, s0: S0, L, k: cfg.k, maxInstances: 4096, heightAt });
   const noiseTex = createNoiseTextures(ctx.quality.anisotropy ?? 4);
+  // pavement distance field of the nearest airport (worn verges, mowing strips, where the near-field turf may grow)
+  const airfield = createAirfieldMap(ctx, { texel: ctx.quality.level === 'low' ? 4 : 2, maxSize: ['high', 'ultra'].includes(ctx.quality.level) ? 2048 : 1536 });
 
   // ---- uniforms (shared by reference with the public height hook) ------------------------------------------
   const F = ctx.uniforms.frame;
@@ -86,6 +92,9 @@ export async function createTerrain(ctx) {
     uOrigin: F.uOrigin, uSunDir: F.uSunDir,
     ...(settle ? settle.uniforms : {}),
     ...(micro ? micro.uniforms : {}),
+    ...airfield.uniforms,
+    ...(turfBrdf ? turfBrdf.uniforms : {}),
+    uTurfShell: { value: new THREE.Vector4() },     // near-field turf shells: x = on, y = radius (m)
   };
 
   // ---- geometry: one (P+1)^2 grid patch, instanced ---------------------------------------------------------
@@ -120,7 +129,7 @@ export async function createTerrain(ctx) {
   let trees = null;
   function makeTrees() {
     if (trees) { ctx.scene.remove(trees.object3D); trees.dispose(); trees = null; }
-    if (cfg.treeG > 0) { trees = createTrees(ctx, { L, uniforms }); ctx.scene.add(trees.object3D); }
+    if (cfg.treeG > 0) { trees = createTrees(ctx, { L, uniforms, airfield }); ctx.scene.add(trees.object3D); }
   }
   makeTrees();
   let buildings = null;
@@ -227,6 +236,8 @@ export async function createTerrain(ctx) {
       uniforms.uTerrTile.value[i].set(u - Math.floor(u), v - Math.floor(v));
     }
     for (let i = 0; i < 8; i++) { const r = RUNWAYS[i]; uniforms.uTerrRw.value[i].set(r.x - org.x, r.z - org.z, r.dx, r.dz); }
+    airfield.update(wx, wz, org);
+    if (turfBrdf) turfBrdf.update(F.uSunDir.value.y, !!ctx.params.test);
     if (raw.terrHideWater && ctx.water?.object3D) ctx.water.object3D.visible = false;
     uniforms.uTerrWin.value = (N / 2 - SNAP - EDGE - 1) * cfg.t0;
     uniforms.uTerrOrg.value.copy(org);
@@ -274,7 +285,7 @@ float terrainHeight(vec2 worldXZ) {
 
   // ---- debug helpers (tests / tooling) ------------------------------------------------------------------------
   const debug = {
-    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0, settleMs: settle ? settle.ms : 0, microMs: micro ? micro.ms : 0 }; },
+    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0, settleMs: settle ? settle.ms : 0, microMs: micro ? micro.ms : 0, airfield: airfield.stats, turfBrdf: turfBrdf ? { bootMs: turfBrdf.bootMs, lastBakeMs: turfBrdf.lastBakeMs } : null }; },
     /** Compare the GPU-generated heights of one clipmap level with the CPU function. Returns max/mean abs error (m). */
     parity(level = 0, step = 7) {
       const N = cfg.N, lv = clip.levels[level];
@@ -327,6 +338,6 @@ float terrainHeight(vec2 worldXZ) {
   };
 
   return {
-    object3D: mesh, heightAt, sample: sampleTerrain, update, heightGLSL, heightUniforms, stats, debug,
+    object3D: mesh, heightAt, sample: sampleTerrain, update, heightGLSL, heightUniforms, stats, debug, airfield,
   };
 }
