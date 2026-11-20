@@ -19,12 +19,13 @@ export const TRAINING = [
     loadout: GUNS_ONLY, noDamageBonus: true, quietKills: true,
     script(s) {
       const drone = (cs, extra) => ({ type: 'f16', callsign: cs, single: true, passive: true, loadout: UNARMED, hp: s.n(25, 35, 50),
-        skill: 'target', role: 'drone', points: 100, mark: cs, thrust: 0.55, speed: 190, ...extra });
-      const ring = s.at({ rel: 0, dist: 12000 });
-      const c1 = s.group('clay1', drone('Clay 1', { at: { rel: 10, dist: 7000 }, heading: { rel: 90 }, order: s.orders.orbit(ring, 6000, ring.y, { passive: true }) }));
+        skill: 'target', role: 'drone', points: 100, mark: cs, thrust: 0.55, speed: 190, fair: false, ...extra });
+      // Clay 1 starts dead ahead, flying away from you, then settles into a wide box: the first target is easy to find
+      const box = [[0, 7000], [3500, 11000], [7000, 7000], [3500, 3000]].map(([r, f]) => s.at({ from: s.at({ rel: 0, dist: f }), rel: 90, dist: r }));
+      const c1 = s.group('clay1', drone('Clay 1', { at: { rel: 0, dist: 2200 }, heading: { rel: 0 }, speed: 175, order: s.orders.patrol(s.route(box, { alt: s.anchor.y }), { passive: true }) }));
       const c2 = s.declare('clay2', drone('Clay 2', {
         at: () => s.at({ rel: s.pick([-35, 35]), dist: 8000 }), heading: { rel: 60 }, skill: s.skill('target', 0.3),
-        order: (i, p) => s.orders.patrol(s.route([0, 1, 2, 3, 4, 5].map((k) => ({ x: p.x + (k % 2 ? 2500 : -2500), z: p.z - 4000 * k })), { alt: p.y }), { passive: true }),
+        order: (i, p) => s.orders.patrol(s.route([0, 1, 2, 3, 4, 5].map((k) => ({ x: p.x + (k % 2 ? 1 : -1) * s.n(1200, 2500, 3200), z: p.z - 4000 * k })), { alt: p.y }), { passive: true }),
       }));
       s.destroy('clay1', 'Shoot down target drone Clay 1', c1);
       s.destroy('clay2', 'Shoot down Clay 2 (it jinks)', c2);
@@ -35,8 +36,18 @@ export const TRAINING = [
       s.countdown(s.n(420, 300, 240), 'Range time', () => s.lose('Range time expired', [[0.5, 'instructor', 'Range time\'s up, {cs}. We\'ll go again tomorrow. Same drones, same disappointment.']]));
       s.chat([
         [1, 'instructor', 'Morning, {cs}. Ridgeback, your instructor today. Nothing out here is armed, so the only thing at risk is your pride.'],
-        [6, 'instructor', 'Clay 1 is orbiting off your nose. Get behind it, settle the pipper, short bursts. Long bursts melt barrels and impress nobody.'],
+        [6, 'instructor', 'Clay 1 is dead ahead, just over a mile. Follow it, put the pipper on it and squeeze short bursts. Long bursts melt barrels and impress nobody.'],
+        [7, 'instructor', 'Controls refresher: Space fires the gun. Tab picks a target, O swings your view onto it.', { key: 'hint-keys' }],
       ]);
+      // range control reloads an empty gun: the lesson is about hitting, not about counting
+      s.every(2, () => {
+        const g = s.player?.loadout?.gun; if (!g || (c1.alive === 0 && c2.spawned && c2.alive === 0)) return;
+        const left = typeof g === 'number' ? g : g.rounds;
+        if (left > 0) return;
+        if (typeof g === 'number') s.player.loadout.gun = 510; else g.rounds = g.max ?? 510;
+        s.say('range', ['Range control: gun reloaded. Again, with feeling.', 'Fresh rounds loaded. Ridgeback says aim this time.'], { priority: 1 });
+      });
+      s.after(45, () => { if (c1.alive && s.combat.director.stats.shots === 0) s.say('instructor', 'Any time you like, {cs}. Space is the trigger. Close inside half a mile first.', { priority: 1 }); });
       s.on('kill', ({ victim }) => {
         if (victim.tags.group === 'clay1') {
           if (s.t < 60) quick.done();
@@ -87,7 +98,7 @@ export const TRAINING = [
       ]);
       const rearm = (n) => { const m = s.player?.loadout?.missiles; if (m) m.ir = Math.max(m.ir || 0, n); };
       s.every(2, () => {
-        if (c3.alive > 0 && s.player?.loadout?.missiles && (s.player.loadout.missiles.ir || 0) + (s.player.loadout.missiles.radar || 0) === 0) {
+        if ((c3.alive > 0 || phase === 3) && s.player?.loadout?.missiles && (s.player.loadout.missiles.ir || 0) + (s.player.loadout.missiles.radar || 0) === 0) {
           rearm(2); s.say('range', ['Range control: two more heaters on the rail. We bill by the round.', 'Rearmed. Try pointing them at the drone this time.'], { priority: 1 });
         }
       });
@@ -115,6 +126,8 @@ export const TRAINING = [
           const e = c4.leader; if (!e) return;
           e.team = 'red'; c4.team = 'red';
           if (e.loadout?.missiles) e.loadout.missiles.ir = 0;
+          // its shot is spent: Clay 4 goes back to being a drone and flies a wide, gently weaving circuit
+          if (e.pilot) { e.pilot.passive = true; e.pilot.setOrder(s.orders.orbit(s.at({ from: e, rel: 0, dist: 5000 }), s.n(4000, 3500, 3000), e.state.position.y, { passive: true })); }
           if (s.player) s.player.invulnerable = false;
           rearm(2);
           s.unmark(e); s.mark(e, 'CLAY 4', 'target');

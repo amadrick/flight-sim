@@ -225,6 +225,22 @@ export function createRuntime(combat, director, mission, options = {}) {
     /** Stay within `radius` of center; after a warning the player has o.grace seconds to come back. */
     boundary(center, radius, o = {}) { boundary = { zone: s.zone(center, radius), grace: o.grace ?? 30, out: -1, timer: null }; },
     failIf(cond, reason) { s.when(cond, () => s.lose(reason)); },
+    /**
+     * The mission clock for fights that could otherwise run forever: when it runs out the hostiles still flying
+     * disengage. o.decide(lost, total) says whether that is a win (default: at least o.fraction, 0.6, of the red aircraft
+     * that showed up are down). o: { label, fraction, decide, win, lose, winChat, loseChat }
+     */
+    bingo(seconds, o = {}) {
+      return s.countdown(seconds, o.label || 'Bingo fuel', () => {
+        let total = 0, lost = 0;
+        for (const g of groups) if (g.team === 'red' && !g.noCount && g.spawned) { total += g.size; lost += g.lost; }
+        const p = world.player;
+        for (const g of groups) if (g.team === 'red' && g.spawned && g.alive) g.order((e) => s.orders.flee(p ? bearing(p.state.position, e.state.position) : 0, e.state.position.y));
+        const ok = o.decide ? o.decide(lost, total) : total > 0 && lost / total >= (o.fraction ?? 0.6);
+        if (ok) s.win(o.win || 'Bandits disengaged', o.winChat || [[0.5, 'awacs', '@awacs.bugout'], [3, 'awacs', '@awacs.rtb']]);
+        else s.lose(o.lose || 'Bingo fuel: the bandits held the airspace', o.loseChat || [[0.5, 'awacs', '@awacs.bugout'], [3, 'awacs', '@awacs.bingoFail']]);
+      });
+    },
 
     // ---------------- HUD: steer point, markers ----------------
     /** Set the steer point: a point, an entity (followed) or null. */

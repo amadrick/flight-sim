@@ -71,6 +71,15 @@ export const LINES = {
     'Wrong way, {cs}. The fight is behind you.',
     '{cs}, return to the operating area.',
   ],
+  'awacs.bugout': [
+    'Cathedral: the bandits are bingo too. They\'re turning for home.',
+    'Cathedral shows the bandits running north. Fight\'s over, {cs}.',
+    'They\'ve had enough. Bandits extending away, {cs}. Let them go.',
+  ],
+  'awacs.bingoFail': [
+    'Not enough of them went down, {cs}. They\'ll be back tomorrow. So will we.',
+    'They still own the sky out here, {cs}. Bring the jet home and we\'ll try again.',
+  ],
   'awacs.oneMinute': ['{cs}, one minute remaining.', 'Sixty seconds, {cs}.', 'Clock says one minute. Hurry it up.'],
   'awacs.rtb': [
     '{cs}, mission complete. You\'re cleared to RTB.',
