@@ -100,7 +100,7 @@ void main() {
   // toward the fire (the emission centroid): self-shadowing of the fire light on its own smoke
   vec3 tf = uFbFireSim - p; float lf = length(tf), tauF = 0.0;
   for (int i = 0; i < 6; i++) tauF += soot(p + tf * ((float(i) + 0.5) / 6.0));
-  outColor = vec4(exp(-tauS * ds * uFbExt), exp(-tauU * du * uFbExt * 0.6), exp(-tauF * lf / 6.0 * uFbExt * 0.5), 1.0);
+  outColor = vec4(exp(-tauS * ds * uFbExt), exp(-tauU * du * uFbExt * 0.6), exp(-tauF * lf / 6.0 * uFbExt * 0.2), 1.0);
 }`,
   });
   const lightPass = new FullscreenPass(lightMat);
@@ -194,7 +194,7 @@ void main() {
         vec3 amb = mix(uFbAmbDn, uFbAmbUp, 0.35 + 0.65 * L.y) * (0.45 + 0.55 * L.y);
         vec3 pR = (uFbFromSim * vec4(p, 1.0)).xyz;
         vec3 dl = uFbFirePos - pR;
-        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.08 * uFbD * uFbD) * L.z * 1.0;
+        vec3 fire = uFbFireColor / (dot(dl, dl) + 0.25 * uFbD * uFbD) * L.z * 0.9;
         lit += T * a * albedo * (sun + amb + fire / FX_PI);
         dbgS += T * a * vec3(sun.g, amb.g, fire.g / FX_PI);
         emis += T * a * E;
@@ -254,11 +254,6 @@ void main() {
     fb.box4.set(fb.box.x0, fb.box.x1, fb.box.y1, fb.box.z1);
     bakeU.uFbBox.value.copy(fb.box4); bakeU.uFbTime.value = tEval; bakeU.uFbCond.value.set(fb.fw, fb.ui); bakeU.uFbMirror.value = fb.mirror ? 1 : 0;
     for (let k = 0; k < NZB; k++) { bakeU.uFbLayer.value = k; r.setRenderTarget(fb.rtA, k); r.render(bakePass.scene, bakeCam); }
-    lightU.tFbField.value = fb.rtA.texture;
-    lightU.uFbLightDir.value.copy(fb.lightDirBaked); lightU.uFbFireSim.value.copy(fb.centroid);
-    for (let k = 0; k < NZB; k++) { bakeU.uFbLayer.value = k; r.setRenderTarget(fb.rtB, k); r.render(lightPass.scene, bakeCam); }
-    r.setRenderTarget(prevRT, prevFace, prevMip);
-    fb.bakedT = tSim;
     // CPU probe of the same network (4 x 2 x 4 points): hottest gas temperature, burning and the emission centroid,
     // which drive the fx point light (smooth in time; the emitted power itself is too spiky to sample this coarsely)
     let th = [0, 0, 0, 0], burn = 0, cx = 0, cz = 0, cw = 0;
@@ -280,9 +275,15 @@ void main() {
     // once the fireball has lifted off, what lights the smoke from below is the pool fire on the ground: move the
     // fire light down to it and keep a floor on its power (the coarse probe misses the thin burning layer)
     const pk = fb.mirror ? 0 : clamp((tEval - 2) / 4, 0, 1);
-    if (pk > 0) { fb.centroid.lerp(_v2.set(0.1, 0, 0.12), pk); fb.power = Math.max(fb.power, 0.55 * pk); }
+    if (pk > 0) { fb.centroid.lerp(_v2.set(0.1, 0, 0.12), pk); fb.power = Math.max(fb.power, 0.45 * pk); }
     const mx = Math.max(_c[0], _c[1], _c[2], 1e-9); fb.color = [_c[0] / mx, Math.max(0.25, _c[1] / mx), Math.max(0.05, _c[2] / mx)];
     if (pk > 0) { const w = pk * 0.7; fb.color = [fb.color[0] * (1 - w) + w, fb.color[1] * (1 - w) + 0.45 * w, fb.color[2] * (1 - w) + 0.12 * w]; }
+    // light bake after the probe, so the fire-transmittance channel looks toward this bake's fire position
+    lightU.tFbField.value = fb.rtA.texture;
+    lightU.uFbLightDir.value.copy(fb.lightDirBaked); lightU.uFbFireSim.value.copy(fb.centroid);
+    for (let k = 0; k < NZB; k++) { bakeU.uFbLayer.value = k; r.setRenderTarget(fb.rtB, k); r.render(lightPass.scene, bakeCam); }
+    r.setRenderTarget(prevRT, prevFace, prevMip);
+    fb.bakedT = tSim;
   }
   const bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 

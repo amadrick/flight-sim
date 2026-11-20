@@ -58,7 +58,7 @@ try {
   const bootErr = await page.evaluate(() => window.__sim.error || null);
   if (bootErr) throw new Error('boot: ' + bootErr);
   // frames until the test crash fired (crashat=1 → the first frame), then note its sim time
-  const t0 = await page.evaluate(() => { const s = window.__sim; for (let i = 0; i < 40 && !window.__crashfx?.last; i++) s.step(1, 0.1); return s.ctx.time.now - 0.1; });
+  const t0 = await page.evaluate(() => { const s = window.__sim; for (let i = 0; i < 300 && !window.__crashfx?.last; i++) s.step(1, 0.1); return s.ctx.time.now - 0.1; });
   const wall = Date.now();
   for (const T of times) {
     // advance to t0 + T in steps of at most max(0.05, gap/12) s (≤ 1 s)
