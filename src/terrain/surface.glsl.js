@@ -686,7 +686,7 @@ TerrSurf terrSurface(vec3 rp) {
     float shellK = uTurfShell.x * (1.0 - ss(uTurfShell.y * 0.45, uTurfShell.y * 0.85, distance(rp.xz, uTerrCam.xz))) * (1.0 - bare);
     // inside the blade radius (veg/blades.js) the blades are the sward's top: the ground is the shaded thatch below
     float bladeK = uTurfShell.z > 0.0 ? 1.0 - ss(uTurfShell.z * 0.6, uTurfShell.z, distance(rp.xz, uTerrCam.xz)) : 0.0;
-    tc = mix(tc, vec3(0.040, 0.044, 0.024), shellK * (0.55 + 0.35 * bladeK));
+    tc = mix(tc, vec3(0.028, 0.036, 0.016), shellK * (0.55 + 0.45 * bladeK));
     col = mix(col, tc, turf * 0.95);
     rough = mix(rough, mix(0.95, 0.88, bare), turf);
     gTurfAmt = turf * (1.0 - bare);

@@ -38,6 +38,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
     uBlGrid0: { value: new THREE.Vector4() },   // xy = render-space xz of the low corner, zw = world cell index of it (mod HM)
     uBlGrid1: { value: new THREE.Vector4() },
     uBlRing: { value: new THREE.Vector4(R0, R1, s0, s1) },
+    uBlPix: { value: 0.001 },                   // radians per pixel (blade widening)
     tTerrNoise: uniforms.tTerrNoise, uTerrTile: uniforms.uTerrTile,
     tAirMap: uniforms.tAirMap, uAirMap: uniforms.uAirMap, uAirInfo: uniforms.uAirInfo,
   };
@@ -65,7 +66,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         ${vegVertexCommon(L)}
         ${AIRFIELD_GLSL}
         attribute vec2 aB;
-        uniform vec4 uBlGrid0, uBlGrid1, uBlRing;
+        uniform vec4 uBlGrid0, uBlGrid1, uBlRing; uniform float uBlPix;
         uniform sampler2D tTerrNoise; uniform vec2 uTerrTile[7];
         varying vec4 vBl;                    // x = height fraction, y = tint, z = dead, w = long-grass zone
         varying vec3 vBlW;                   // render-space position (translucency)
@@ -105,12 +106,18 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         // worn verge: thin, short turf along the pavement
         float verge = smoothstep(0.1, 2.6, am.x);
         float t = aB.x, side = aB.y;
-        float bh = T.H * (0.55 + 0.75 * h.z * h.z + 0.25 * clump) * (0.45 + 0.55 * verge) * 1.25 * keep;
-        float bw = (ring0 ? 0.0058 : 0.0105) * (0.7 + 0.6 * h2.x) * (1.0 + 0.6 * T.longG);
+        float bw = (ring0 ? 0.0082 : 0.013) * (0.7 + 0.6 * h2.x) * (1.0 + 0.6 * T.longG);
+        // a blade narrower than ~1.3 pixels aliases into speckle: widen it to that and drop blades (by hash, no
+        // popping) in proportion, so the area the blades cover - and the colour of the sward - stays the same
+        float bwMin = 1.3 * uBlPix * dc;
+        float widen = max(1.0, bwMin / bw);
+        keep *= step(h2.z * widen, 1.0 + 0.03 * (widen - 1.0));
+        bw *= widen;
+        float bh = T.H * (0.6 + 0.8 * h.z * h.z + 0.3 * clump) * (0.45 + 0.55 * verge) * 1.5 * keep;
         // habit: own facing and lean, then the lay of the mower pass and the wind, bending more toward the tip
         float phi = 6.2832 * h.w;
         vec2 own = vec2(cos(6.2832 * h2.y), sin(6.2832 * h2.y)) * (0.15 + 0.35 * h2.z);
-        vec2 lean = own + T.dir * (T.lay * 1.1 * (0.6 + 0.8 * h2.x));
+        vec2 lean = own + T.dir * (T.lay * 0.75 * (0.6 + 0.8 * h2.x));
         float ph = dot(w, uVegWind.xy) * 0.22 - uTime * 2.3;
         float gust = 0.55 + 0.45 * sin(ph) * sin(ph * 0.37 + 1.3) + 0.2 * sin(uTime * 6.3 + h.x * 40.0);
         lean += uVegWind.xy * (uVegWind.z * gust * 0.7);
@@ -131,7 +138,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         if (dot(pn.xz, cameraPosition.xz - rxz) < 0.0) pn = -pn;     // face the viewer (two-sided)
         // (half way to the ground normal: a sward lit from above reads by its lit tops, as the eye integrates the blades)
         vec3 objectNormal = normalize(normalize(pn + wv * side * 0.55) + vec3(0.0, 1.6, 0.0));
-        #if BL_DBG == 1
+        #if BL_DBG == 1 || BL_DBG == 4
         objectNormal = vec3(0.0, 1.0, 0.0);
         #endif
         vBl = vec4(t, h2.x * 0.6 + h.y * 0.4, step(0.955, h.y) + step(h2.z, 0.03) * T.longG, T.longG);
@@ -143,16 +150,18 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         uniform vec3 uSunDir; uniform vec3 uSunColor;
         varying vec4 vBl; varying vec3 vBlW;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-        normal *= faceDirection;               // (the vertex normal already faces the viewer)`)
+        // (the vertex normal already faces the viewer and leans up: undo any two-sided flip by keeping it in the upper
+        // hemisphere, whatever the face winding came out as)
+        if (inverseTransformDirection(normal, viewMatrix).y < 0.0) normal = -normal;`)
       .replace('#include <map_fragment>', /* glsl */`
         float bt = vBl.x;
         // turf colours (keep near TURF_REF so the blades sit in the ground and the shells): younger yellow-green
         // tips, darker older blades, the odd dead straw blade, browner in the long grass
-        vec3 c = vec3(0.13, 0.185, 0.064) * (0.72 + 0.56 * vBl.y);
-        c = mix(c, vec3(0.19, 0.215, 0.08), smoothstep(0.55, 1.0, bt) * 0.45);
+        vec3 c = vec3(0.105, 0.175, 0.052) * (0.75 + 0.5 * vBl.y);
+        c = mix(c, vec3(0.16, 0.21, 0.075), smoothstep(0.6, 1.0, bt) * 0.3);
         c = mix(c, vec3(0.26, 0.235, 0.13), clamp(vBl.z, 0.0, 1.0) * 0.85 + vBl.w * 0.15);
         // self shadowing / occlusion inside the sward: the base sees little sky or sun
-        c *= mix(0.5, 1.2, smoothstep(0.0, 0.9, bt));
+        c *= mix(0.55, 1.1, smoothstep(0.0, 0.85, bt));
         diffuseColor.rgb = c;`)
       .replace('#include <aomap_fragment>', /* glsl */`#include <aomap_fragment>
         // a blade mirrors little of the sky: most of the sky it would reflect at grazing angles is hidden by the
@@ -161,10 +170,19 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         #if BL_DBG == 2
         reflectedLight.directDiffuse = vec3(0.0); reflectedLight.indirectDiffuse = diffuseColor.rgb * 3.0; reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0);
         #endif
-        #if BL_DBG == 3
+        #if BL_DBG == 5
+        reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0); reflectedLight.directDiffuse = vec3(0.0);
+        #if NUM_SUN_LIGHTS > 0
+        reflectedLight.indirectDiffuse = vec3(0.0, 0.3, 0.0) * max(dot(normal, sunLights[0].direction), 0.0) + vec3(0.0, 0.0, 0.05) * length(sunLights[0].color) / 10.0;
+        #else
+        reflectedLight.indirectDiffuse = vec3(0.3, 0.0, 0.0);
+        #endif
+        #endif
+        #if BL_DBG == 3 || BL_DBG == 4
         reflectedLight.indirectDiffuse = vec3(0.0); reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0);
         #endif
-        reflectedLight.directSpecular *= 0.7;`)
+        // (a sub-pixel glossy tip turns into sparkle; the sheen is kept for the blades big enough to show it)
+        reflectedLight.directSpecular *= 0.2;`)
       .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
         {
           // light through the blade: sun behind it (leaf transmittance ~0.3 x reflectance, yellower), mostly the
@@ -172,7 +190,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
           vec3 nW = inverseTransformDirection(normal, viewMatrix);
           vec3 vW = normalize(cameraPosition - vBlW);
           float back = max(-dot(nW, uSunDir), 0.0) * 0.6 + 0.8 * pow(max(dot(-vW, uSunDir), 0.0), 4.0);
-          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * uSunColor * (back * 0.32 * smoothstep(0.15, 0.9, bt) * step(0.0, uSunDir.y) / PI);
+          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * uSunColor * (back * 0.22 * smoothstep(0.15, 0.9, bt) * step(0.0, uSunDir.y) / PI);
         }`);
   };
   mat.customProgramCacheKey = () => `skyward-blades-${G0}-${G1}`;
@@ -192,6 +210,8 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
       const on = agl < 25 && airfield.stats.airport != null;
       mesh.visible = on;
       if (!on) return;
+      const cam = ctx.camera, vh = ctx.renderer?.domElement?.height || 720;
+      if (cam?.fov) BU.uBlPix.value = 2 * Math.tan(cam.fov * Math.PI / 360) / vh / (cam.zoom || 1);
       setGrid(BU.uBlGrid0.value, camWX, camWZ, org, R0, s0, G0);
       setGrid(BU.uBlGrid1.value, camWX, camWZ, org, R1, s1, G1);
     },

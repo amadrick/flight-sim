@@ -156,6 +156,8 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         c = mix(c, vec3(0.165, 0.150, 0.080), longG * 0.30 * bl.g + 0.25 * tss(0.6, 0.85, vTP2.x));
         // inside the sward: lower parts see less sky and sun (bright tips, dark bases), blades of older passes dull
         c *= (0.35 + 0.75 * vTZ) * (1.0 - 0.15 * since);
+        // ... and under the 3-D blades the remaining lower shells are the shaded depth between them
+        if (uTurfShell.z > 0.0) c *= 1.0 - 0.55 * (1.0 - tss(uTurfShell.z * 0.6, uTurfShell.z, dc));
         diffuseColor.rgb = c;
         diffuseColor.a = a;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
