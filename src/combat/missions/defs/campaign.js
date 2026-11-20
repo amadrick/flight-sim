@@ -281,7 +281,7 @@ export const CAMPAIGN = [
       s.wingmen(2);
       const strike = (brg, extra = {}) => () => s.at({ from: boat, brg: brg + s.between(-12, 12), dist: 62000, agl: 900 });
       const toBoat = () => s.orders.patrol([V(boat.x, 900, boat.z)], { passive: true });
-      const sw = (name, brg, n, idx) => ({ type: ['fa18', 'f16'], count: n, callsign: name, startIndex: idx, at: strike(brg), heading: boat, passive: true, points: 120, role: 'striker', mark: 'STRIKER', order: toBoat, speed: 240, call: true });
+      const sw = (name, brg, n, idx) => ({ type: ['fa18', 'f16'], count: n, callsign: name, startIndex: idx, at: strike(brg), heading: boat, passive: true, points: 120, role: 'striker', mark: 'STRIKER', order: toBoat, speed: 210, thrust: 0.45, drag: 0.02, call: true });
       const esc = (name, brg, n, lead) => ({ type: ['f15', 'f14'], count: n, callsign: name, at: () => s.at({ from: s.byName(lead).leader || boat, brg: 180, dist: 2500, alt: 3500 }), heading: boat, engageWithin: 20000, order: () => s.orders.escort(s.byName(lead).leader, { x: 400, y: 1500, z: 800 }) });
       const w1 = s.group('cinder', sw('Cinder', 230, s.n(2, 2, 3), 1));
       const w2 = s.wave('slag', sw('Slag', 260, 2, 1), { or: [{ dead: w1 }, { after: 200 }] }, (g) => s.steer(g.leader, 'WAVE 2'));

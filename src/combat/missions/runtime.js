@@ -16,8 +16,6 @@ export const SKILLS = {
 /** The Cendrine Directorate flies a mixed bag. */
 /** Default missiles on Directorate fighters by difficulty. */
 export const ENEMY_LOADOUT = { rookie: { ir: 1, radar: 0 }, veteran: { ir: 2, radar: 0 }, ace: { ir: 2, radar: 2 } };
-/** Hit-point multiplier for the player's wingmen by difficulty. */
-export const WING_TOUGHNESS = { rookie: 1.6, veteran: 1.25, ace: 1 };
 export const ADVERSARY_MIX = ['f16', 'f15', 'fa18', 'f14', 'f16', 'f35'];
 
 export function createRuntime(combat, director, mission, options = {}) {
@@ -373,9 +371,19 @@ export function createRuntime(combat, director, mission, options = {}) {
     world.enemiesOf('red', blues, 'aircraft');
     if (blues.length < 2) return null;
     blues.sort((a, b) => (b.isPlayer ? 1 : 0) - (a.isPlayer ? 1 : 0) || a.id - b.id);
-    return blues[(i + sortSeq++) % blues.length];
+    return blues[sortSeq++ % blues.length];
   }
   let sortSeq = 0;
+  const reds = [];
+  /** the i-th nearest hostile to e within range (wingmen do not all pile onto one bandit) */
+  function spreadTarget(e, i, range) {
+    world.enemiesOf(e, reds, 'aircraft');
+    const p = e.state.position;
+    for (let k = reds.length - 1; k >= 0; k--) if (reds[k].state.position.distanceToSquared(p) > range * range) reds.splice(k, 1);
+    if (!reds.length) return null;
+    reds.sort((a, b) => a.state.position.distanceToSquared(p) - b.state.position.distanceToSquared(p));
+    return reds[(i + 1) % reds.length];
+  }
 
   function spawnGroup(g) {
     g.spawned = true;
@@ -426,9 +434,10 @@ export function createRuntime(combat, director, mission, options = {}) {
       const e = world.spawnAircraft(def);
       if (!e) continue;
       if (sp.invulnerable) e.invulnerable = true;
-      const tough = sp.toughness ?? (sp.role === 'wing' ? WING_TOUGHNESS[combat.difficulty] ?? 1 : 1);
+      const tough = sp.toughness ?? 1;
       if (tough !== 1 && e.maxHp > 0) { e.maxHp *= tough; e.hp = e.maxHp; }
-      if (sp.thrust != null && e.sim?.damage) e.sim.damage.thrust = sp.thrust;    // detuned engines (drones, slow movers)
+      if (sp.thrust != null && e.sim?.damage) e.sim.damage.thrust = sp.thrust;    // detuned engines (drones, laden strikers)
+      if (sp.drag != null && e.sim?.damage) e.sim.damage.drag = sp.drag;          // external stores
       if (sp.passive && e.pilot) e.pilot.passive = true;
       e.tags.spawnT = combat.clock;
       g.members.push(e);
@@ -449,7 +458,7 @@ export function createRuntime(combat, director, mission, options = {}) {
           const e = g.members[i]; if (!e.alive || !e.pilot) continue;
           const threat = world.nearestEnemy(e, sp.engageRange ?? 25000);
           const o = e.pilot.order;
-          if (threat && o?.type !== 'engage') e.pilot.setOrder(s.orders.engage());
+          if (threat && o?.type !== 'engage') e.pilot.setOrder(s.orders.engage(spreadTarget(e, i, sp.engageRange ?? 25000) || threat));
           else if (!threat && o?.type === 'engage' && pl && pl.alive) e.pilot.setOrder(s.orders.escort(pl, { x: (i % 2 ? -1 : 1) * 90, y: 0, z: 60 }));
         }
       } else if (sp.engageWithin) {
@@ -548,7 +557,8 @@ export function createRuntime(combat, director, mission, options = {}) {
     playerDown(killer, weapon) {
       if (ended) return;
       if (s.onPlayerDown) { s.onPlayerDown(killer, weapon); if (ended) return; }
-      const reason = killer ? 'Shot down' : weapon === 'terrain' ? 'Crashed' : 'Aircraft lost';
+      radio.flush(3);
+      const reason = killer ? 'Shot down' : weapon === 'terrain' ? 'Crashed' : weapon === 'collision' ? 'Mid-air collision' : 'Aircraft lost';
       finish('failure', reason, [[0.3, s.wingman() || 'awacs', s.wingman() ? '@wing.friendlyDown' : '@awacs.playerDown', { vars: { who: s.callsign } }]], 2.5);
     },
     finishNow(outcome, reason, chat, beat) { finish(outcome, reason, chat, beat); },

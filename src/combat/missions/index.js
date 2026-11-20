@@ -13,8 +13,6 @@ import { getAirport, runwayEnd } from '../../data/airports.js';
 
 export { MISSIONS };
 
-/** Multiplier on the player's hit points by difficulty (rookie must be winnable by a new player). */
-export const PLAYER_TOUGHNESS = { rookie: 1.6, veteran: 1.25, ace: 1 };
 
 export function createDirector(combat) {
   const ev = combat.events, world = combat.world;
@@ -73,8 +71,8 @@ export function createDirector(combat) {
       director.redKills = 0;
       const p = world.player;
       if (p) p.stats = director.stats;
-      // difficulty toughness: scales whatever hit points the weapons module gave the player (relative, so it fits any damage model)
-      const tough = m.toughness?.[combat.difficulty] ?? PLAYER_TOUGHNESS[combat.difficulty] ?? 1;
+      // optional per-mission toughness (difficulty already scales damage taken inside weapons: DAMAGE_TAKEN)
+      const tough = m.toughness?.[combat.difficulty] ?? 1;
       if (p && p.maxHp > 0 && tough !== 1 && p.maxHp < 1e4) { p.maxHp *= tough; p.hp = p.maxHp; }
       Object.assign(warned, { guns: false, missiles: false, winch: false, bingo: false, burning: false, hitT: -99, hadMissiles: missilesOf(p) > 0 });
       radioQ.reset(m.cast, director.anchor.callsign);
@@ -138,6 +136,19 @@ export function createDirector(combat) {
     } else if (source === p && target.team === p?.team && target.kind === 'aircraft') {
       radioQ.say(target, ['Check fire! Check fire! That\'s me, {cs}!', 'Hey! Friendly! Friendly!', '{cs}, you\'re shooting at me!'], { priority: 2, key: 'ff', window: 6 });
     }
+  });
+
+  ev.on('fire:start', ({ target } = {}) => {
+    if (!live() || rt.ended || !target || !target.alive || (target.hp != null && target.hp <= 0)) return;
+    const p = world.player, w = wingman();
+    if (target === p && w) radioQ.say(w, ['Lead, you\'re on fire! Get out of there!', '{cs}, fire on your jet! Extend and pray!'], { priority: 2, key: 'pfire', window: 15 });
+    else if (target.team === 'red' && combat.rng() < 0.15) radioQ.say(target, ['{me}, fire light! Fire light!', '{me}: I\'m burning, I\'m burning!'], { priority: 0, voice: 'enemy', team: 'red', key: `fire:${target.id}`, window: 20 });
+    else if (target.team === 'blue' && !target.isPlayer && target.tags?.role === 'wing') radioQ.say(target, ['{me}, I\'m on fire! Still flying!', '{me}, fire warning. This is getting warm.'], { priority: 1, key: `fire:${target.id}`, window: 20 });
+  });
+  ev.on('engine:out', ({ target } = {}) => {
+    if (!live() || rt.ended || !target || !target.alive || (target.hp != null && target.hp <= 0)) return;
+    if (target === world.player) radioQ.say('awacs', ['{cs}, Cathedral shows you lost an engine. Nurse it.', '{cs}, engine out. Keep your speed up.'], { priority: 1, key: 'peng', window: 20 });
+    else if (target.team === 'blue' && target.tags?.role === 'wing') radioQ.say(target, ['{me}, lost an engine. Still in it, sort of.', '{me}, engine out. Somebody cover me.'], { priority: 1, key: `eng:${target.id}`, window: 20 });
   });
 
   ev.on('missile:hit', ({ missile, target } = {}) => { if (live()) scoring.onMissileHit(missile, target); });
