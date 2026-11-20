@@ -16,6 +16,7 @@
 import { groundEcoGLSL } from '../neural/ground-cover.js';
 import { CLASSIC_COVER_GLSL, CLASSIC_SURFACE_GLSL } from './ground-classic.glsl.js';
 import { SETTLE_GLSL } from './settle.js';
+import { AIRFIELD_GLSL } from './airfield.js';
 
 /** GLSL for the vertex stage of the terrain (and anything else that wants the learned cover): TerrEco terrEco(rxz, h). */
 export const ECO_GLSL = groundEcoGLSL();
@@ -249,6 +250,11 @@ const float TERR_ANISO = 3.0;
 const float TERR_ANISO = 1.5;
 #endif
 uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
+${AIRFIELD_GLSL}
+// airfield turf (set by terrSurface, read by the turf reflectance): cover, lay direction (world xz), lay 0..1, sward height (m)
+float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
+// diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)
+const vec3 TURF_REF = vec3(0.060, 0.108, 0.034);
 
 struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
 
@@ -634,16 +640,53 @@ TerrSurf terrSurface(vec3 rp) {
     col = mix(col, c, disc * pivPot);
     if (disc * pivPot > 0.5) mat = M_GRASS;
   }
-  // airport turf: mown grass where the climate grows any (elsewhere the pad keeps its natural surface)
+  // ---- airfield grass -----------------------------------------------------------------------------------------
+  // Mown in long passes parallel to the runway (every other pass lays the blades the other way: the stripes are a
+  // view-dependent effect, see the turf reflectance below), short in the graded strip next to the pavement and left
+  // long further out (bird control), clumpy, with dry knolls, weedy patches and a worn, gritty verge at the pavement
+  // edge. Distances to the pavement come from the airfield map (airfield.js).
   float turf = pad * (1.0 - desertAmt) * (1.0 - ss(1.0, 3.0, 4.0 - h));
-  vec3 turfCol = vec3(0.070, 0.112, 0.036) * (0.86 + 0.28 * n3.r) * (0.9 + 0.2 * n4.g);
-  turfCol *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);      // mowing stripes
-  turfCol = mix(turfCol, grassDry * 0.9, ss(0.5, 0.75, n2.r * 0.6 + n4.g * 0.4) * 0.35);
-  // worn, thin patches showing soil close up
-  float thin = ss(0.66, 0.82, bk2) * 0.5 * near5;
-  turfCol = mix(turfCol, vec3(0.150, 0.115, 0.080), thin);
-  col = mix(col, turfCol, turf * 0.9);
-  if (turf > 0.5) mat = thin > 0.3 ? M_SOIL : M_GRASS;
+  gTurfAmt = 0.0;
+  if (turf > 0.001) {
+    vec2 am = airMap(rp.xz);
+    float dP = am.x;
+    vec2 ax = uAirInfo.z > 0.5 ? uAirInfo.xy : vec2(1.0, 0.0), axp = vec2(-ax.y, ax.x);
+    float acr = dot(w, axp) + 5.0 * (n2.g - 0.5) + 1.2 * (n3.r - 0.5), alg = dot(w, ax);
+    float passW = 6.4;
+    float pid = floor(acr / passW), pf = fract(acr / passW);
+    float laySign = mod(pid, 2.0) < 0.5 ? 1.0 : -1.0;
+    // the field is not all cut on one day: blocks of passes at different times since mowing
+    float since = terrHash2(vec2(floor(alg / 310.0 + 0.3 * n2.r), floor(acr / (passW * 7.0))) + 811.0).x;
+    float longG = ss(55.0, 120.0, dP + 50.0 * (n2.r - 0.5) + 20.0 * (n3.g - 0.5));
+    gTurfH = mix(0.04, 0.13, longG) * (0.8 + 0.45 * since);
+    gTurfLay = mix(0.70, 0.18, longG) * (1.0 - 0.55 * since);
+    gTurfDir = ax * laySign;
+    vec3 tc = TURF_REF;
+    // clumps and tussocks (0.3 - 4 m), patchy growth (20 - 100 m)
+    float clump = 0.55 * (n5.g - 0.5) * near5 + 0.6 * (n4.r - 0.5) * near4 + 0.5 * (n3.g - 0.5) + 0.35 * (C.mac.y - 0.5);
+    tc *= clamp(1.0 + 0.45 * clump, 0.6, 1.5);
+    // dry, straw-coloured knolls; seed heads in the long grass; dark clover and weeds in the short sward
+    float dryP = ss(0.56, 0.80, n2.r * 0.45 + n3.b * 0.35 + (near4 * (n4.g - 0.5) + 0.5) * 0.2) * (0.45 + 0.4 * longG) * (1.0 - 0.6 * lush * lush);
+    tc = mix(tc, grassDry * 0.8, dryP);
+    tc = mix(tc, vec3(0.150, 0.135, 0.078), longG * 0.28 * ss(0.35, 0.8, n4.b * near4 + 0.5 * (1.0 - near4)));
+    tc = mix(tc, vec3(0.036, 0.080, 0.028), (1.0 - longG) * ss(0.60, 0.82, n4.a * 0.6 * near4 + 0.3 * (1.0 - near4) + n3.a * 0.4) * 0.55);
+    // mower wheel tracks along the pass edges (flattened, a touch paler), only while resolved
+    float trk = terrLine(abs(pf - 0.5) * passW - (0.5 * passW - 0.45), 0.18, px) * ss(1.5, 0.4, px) * (1.0 - longG) * (1.0 - since);
+    tc *= 1.0 + 0.10 * trk;
+    // worn verge: thin turf over soil and grit washed off the pavement, then the shadowed drop at the edge itself
+    float edge = ss(2.6 + 1.6 * (n4.g - 0.5) * near4 + 1.0 * (n3.r - 0.5), 0.15, dP);
+    vec3 grit = mix(vec3(0.150, 0.128, 0.094), vec3(0.205, 0.195, 0.175), ss(0.3, 0.7, n5.r * near5 + 0.5 * (1.0 - near5))) * (0.85 + 0.3 * n4.b);
+    float bare = edge * (0.35 + 0.55 * ss(0.35, 0.75, n4.r * 0.5 * near4 + 0.25 + n5.b * 0.5 * near5 + 0.25 * (1.0 - near5)));
+    tc = mix(tc, grit, bare);
+    float lip = ss(0.40, 0.0, dP) * ss(-0.3, -0.05, dP);
+    tc *= 1.0 - 0.5 * lip;
+    // turf without an airfield map (other airports, classic fallback): the old diagonal stripe tint
+    if (uAirInfo.z < 0.5) tc *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);
+    col = mix(col, tc, turf * 0.95);
+    rough = mix(rough, mix(0.95, 0.88, bare), turf);
+    gTurfAmt = turf * (1.0 - bare);
+    if (turf > 0.5) mat = bare > 0.45 ? M_GRAVEL : M_GRASS;
+  }
 
   // ---- scree and bare rock: where the simulation strips the soil, plus anything too steep to hold it ------------
   // talus tongues run down the chutes; ribs of rock stand between them
