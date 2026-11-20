@@ -94,8 +94,10 @@ position / velocity (audio listener, HUD), and `rig.isInterior` is restored from
 - Camera up = world vertical leaning up to ~40 % toward the jet's up between 35° and 95° of bank (back to world up when
   inverted), so stick-right still reads as right.
 - FOV 60°, +11° when the target is far off the nose, and always widened enough to hold the target (≤ 88°).
-- No target: the view rests on the rig's own chase camera and swings in again when one is designated; target changes
-  ease to the new one. Releases on player death, on leaving chase/cockpit (e.g. `C` to orbit), on mission end/abort.
+- No target: the view rests on the fight view (or the rig's chase camera) and swings in again when targeting
+  auto-selects the next one (within 0.5 s); after 4 s without any target the padlock switches itself off. Target
+  changes ease to the new one. Releases on player death, on leaving chase/cockpit (e.g. `C` to orbit), on mission end/abort.
+- `peek(on)` / cmd `peekOn` / `peekOff`: the same view while held, back to the previous view (fight / cockpit) on release.
 - The player's look input is not used while the padlock holds (the rig's own look is back as soon as it is off).
 
 ### Padlock, cockpit
