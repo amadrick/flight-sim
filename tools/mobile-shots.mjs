@@ -2,6 +2,7 @@
 //
 //   node tools/mobile-shots.mjs --prefix mob-after- [--devices iphone14,pixel7,small,ipad,desktop]
 //        [--screens chase,cockpit,help,pause,settings,controls,main,main-end] [--aircraft f16] [--no-build]
+//        [--params "mission=instant-2v2"]   (extra URL parameters, e.g. a running combat mission)
 //        [--orient both|portrait|landscape] [--ui]   (--ui: WebGL-free harness, see src/input/ui-harness.js)
 //
 // One page boot per device (booting is the slow part); the orientation is switched with setViewportSize on the same
@@ -196,6 +197,33 @@ async function touchTest() {
     check('page did not scroll or zoom', sc.sx === 0 && sc.sy === 0 && sc.vv === 1, sc);
     await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test.png`) });
     await page.evaluate(() => window.__sim.ctx.input.touch.removeButton('fire'));
+    // a docked block owned by another module (the combat fire grid is adopted by its class; addDock is the API)
+    const dk = await page.evaluate(async () => {
+      const ui = window.__sim.ctx.uiRoot, t = window.__sim.ctx.input.touch;
+      let g = ui.querySelector(':scope > .cbt-inp-touch'), fake = false;
+      if (!g) {
+        fake = true; g = document.createElement('div'); g.className = 'cbt-inp-touch';
+        g.style.cssText = 'position:absolute;right:16px;top:64px;width:116px;height:116px;display:grid;gap:8px;grid-template-columns:repeat(2,54px)';
+        for (const n of ['TGT', 'FLR', 'MSL', 'GUN']) { const b = document.createElement('div'); b.className = 'inp-btn'; b.textContent = n; b.style.cssText = 'height:54px;background:#333;color:#fff'; g.appendChild(b); }
+        ui.appendChild(g);
+      }
+      g.hidden = false;
+      await new Promise((r) => setTimeout(r, 50)); window.__sim.step(2);
+      const L = t.layout, r = g.getBoundingClientRect();
+      const out = { fake, dock: L.dock, el: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }, zone: L.zone };
+      return out;
+    });
+    check('a combat-style button block is docked at the right edge, clear of the stick zone', !!dk.dock && Math.abs(dk.dock.x - dk.el.x) < 2 && Math.abs(dk.dock.y - dk.el.y) < 2 && dk.dock.x >= dk.zone.x + dk.zone.w, dk);
+    const ov2 = await page.evaluate(AUDIT);
+    check('no overlaps with the dock', ov2.length === 0, ov2);
+    await page.screenshot({ path: resolve(root, 'shots', `${prefix}touch-test-dock.png`) });
+    const dk2 = await page.evaluate(async (fake) => {
+      const g = window.__sim.ctx.uiRoot.querySelector(':scope > .cbt-inp-touch'); g.hidden = true;
+      await new Promise((r) => setTimeout(r, 50)); window.__sim.step(2);
+      const L = window.__sim.ctx.input.touch.layout; if (fake) { window.__sim.ctx.input.touch.removeDock(); g.remove(); }
+      return { dock: L.dock };
+    }, dk.fake);
+    check('a hidden dock reserves nothing', !dk2.dock, dk2);
     // hybrid device (touch screen + keyboard): flight keys hide the touch UI, the next touch brings it back
     await page.keyboard.down('ArrowLeft'); await step(2); await page.keyboard.up('ArrowLeft'); await step(2);
     const k = await page.evaluate(() => ({ on: window.__sim.ctx.input.touchEnabled, vis: window.__sim.ctx.input.touch.visible }));
@@ -226,7 +254,7 @@ try {
     const errors = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push('PAGEERROR ' + (e.stack || e.message)));
-    const params = `test=1&autostart=1&aircraft=${aircraft}&start=air&tod=10&weather=fair&cam=chase&quality=low&hint=0`;
+    const params = `test=1&autostart=1&aircraft=${aircraft}&start=air&tod=10&weather=fair&cam=chase&quality=low&hint=0` + (flag('params') ? '&' + flag('params') : '');
     const t0 = Date.now();
     await page.goto(pathToFileURL(html).href + '?' + params, { waitUntil: 'commit', timeout: 600000 });
     await page.waitForFunction(() => window.__sim && (window.__sim.ready || window.__sim.error), null, { timeout: 600000, polling: 500 });

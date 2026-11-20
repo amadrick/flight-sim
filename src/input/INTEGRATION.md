@@ -53,11 +53,25 @@ const h = ctx.input.touch.addButton({
   onDown() {}, onUp() {},          // pointer down / up (onUp also runs when the touch UI hides or the pointer is cancelled)
 });                                // → { el, setActive(on), setLabel(text), setSub(text), remove() }, null when the rail is full (4)
 ctx.input.touch.removeButton('fire');
-ctx.input.touch.showHints(6);      // coach marks for 6 s
+ctx.input.touch.showHints(6);      // coach card for 6 s
+const d = ctx.input.touch.addDock({  // a whole block of buttons another module builds and owns (e.g. the combat fire grid)
+  id: 'combat',
+  el,                              // absolutely positioned child of ctx.uiRoot; measured by offsetWidth / offsetHeight
+});                                // → { get rect(), remove() }, null when another dock is set (one at a time)
+ctx.input.touch.removeDock('combat');
 ```
+`addDock`: the layout reserves the measured block (landscape: right edge under Cam / Menu, centred beside the stick zone, the
+zone and rail step left of it; square-ish screens: top of the right column with the stick zone below; portrait: beside the
+stick zone above the rudder, or above the action row on very narrow phones) and sets the element's `left` / `top`. It is
+re-measured on every relayout and whenever the element's `hidden` / `class` / `style` change; a hidden element reserves
+nothing. Interim hook: a child of `ctx.uiRoot` with class `cbt-inp-touch` (the combat grid from `createTouchButtons`) or a
+`data-touch-dock` attribute is adopted automatically, so combat's GUN / MSL / FLR / TGT already sit in the dock without a
+combat change. Preferred combat-side call: `ctx.input?.touch?.addDock?.({ id: 'combat', el: touchEl })` right after it
+appends `touchEl` in `buildTouch()`.
+
 Events: `touch:layout` (payload: the layout) after every relayout (rotation, resize, inset change, buttons added/removed).
-The combat module would add `fire` (hold: onDown starts firing, onUp stops) and `target` (onDown cycles) buttons; the HUD's
-targeting elements should stay inside `layout.hud` / `layout.clear` on touch.
+`layout.dock` is the dock's rectangle (or null). Combat HUD targeting elements should stay inside `layout.hud` /
+`layout.clear` on touch.
 
 ## Dev harness
 `src/input/ui-harness.js` boots the real input, HUD and menu on a fake ctx without WebGL (seconds instead of minutes):

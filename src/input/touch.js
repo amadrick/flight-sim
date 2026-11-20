@@ -181,6 +181,13 @@ export function createTouchControls(ctx, h) {
   makeButton({ id: 'cam', label: 'Cam', aria: 'Next camera', icon: ICON.cam, onDown: cmd('cameraNext') });
   makeButton({ id: 'menu', label: 'Menu', aria: 'Pause and open the menu', icon: ICON.menu, onDown: cmd('menu') });
   const extras = [];              // ids in rail order
+  // one docked block of buttons owned by another module (api.addDock): the layout reserves its measured size and places it
+  let dock = null;                // { id, el, mo }
+  function dockSize() {
+    if (!dock || !dock.el.isConnected || dock.el.hidden) return null;
+    const w = dock.el.offsetWidth, hh = dock.el.offsetHeight;
+    return w > 0 && hh > 0 ? { w, h: hh } : null;
+  }
 
   // ---- layout ----
   const probe = document.createElement('div');
@@ -193,11 +200,12 @@ export function createTouchControls(ctx, h) {
   let layoutKey = '';
   function relayout(force) {
     const W = ctx.uiRoot.clientWidth || window.innerWidth, H = ctx.uiRoot.clientHeight || window.innerHeight;
-    const ins = insets(), hg = viewportHinge(W, H);
-    const key = [W, H, ins.t, ins.r, ins.b, ins.l, extras.length, hg ? [hg.x, hg.y, hg.w, hg.h].join(':') : ''].join(',');
+    const ins = insets(), hg = viewportHinge(W, H), ds = dockSize();
+    const key = [W, H, ins.t, ins.r, ins.b, ins.l, extras.length, hg ? [hg.x, hg.y, hg.w, hg.h].join(':') : '', ds ? ds.w + 'x' + ds.h : ''].join(',');
     if (!force && key === layoutKey) return;
     layoutKey = key;
-    L = touchLayout(W, H, ins, { extra: extras.length, hinge: hg });
+    L = touchLayout(W, H, ins, { extra: extras.length, hinge: hg, dock: ds });
+    if (dock && L.dock) Object.assign(dock.el.style, { left: L.dock.x + 'px', top: L.dock.y + 'px', right: 'auto', bottom: 'auto' });
     place(zone, L.zone); place(thr, L.thr); place(rud, L.rud);
     for (const id of BUTTON_IDS) place(buttons.get(id).el, L.btn[id]);
     place(buttons.get('cam').el, L.cam); place(buttons.get('menu').el, L.menu);
@@ -338,7 +346,37 @@ export function createTouchControls(ctx, h) {
     },
     /** Show the coach marks (labels that explain the stick and throttle) for `sec` seconds. */
     showHints(sec = 6) { coach(sec); },
+    /**
+     * Dock a whole block of buttons that another module builds and owns (e.g. a weapons grid). `el` must be absolutely
+     * positioned inside ctx.uiRoot; the layout measures it (offsetWidth / offsetHeight, re-measured on every relayout and
+     * when its `hidden` attribute, class or style changes), reserves that rectangle (landscape: right edge under Cam / Menu,
+     * centred beside the stick zone; portrait: beside the stick zone above the rudder) and sets its left / top. While `el`
+     * is hidden nothing is reserved. One dock at a time. Returns { get rect(), remove() }, or null when another dock is set.
+     */
+    addDock(spec) {
+      if (!spec || !spec.el) return null;
+      if (dock && dock.el !== spec.el) return null;
+      if (!dock) {
+        let mo = null;
+        try { mo = new MutationObserver(() => { if (shown) relayout(); }); mo.observe(spec.el, { attributes: true, attributeFilter: ['hidden', 'class', 'style'] }); } catch {}
+        dock = { id: spec.id || 'dock', el: spec.el, mo };
+        relayout(true);
+      }
+      return { get rect() { return L && L.dock ? { ...L.dock } : null; }, remove: () => api.removeDock(dock && dock.id) };
+    },
+    removeDock(id) {
+      if (!dock || (id && id !== dock.id)) return false;
+      try { dock.mo && dock.mo.disconnect(); } catch {}
+      dock = null; relayout(true);
+      return true;
+    },
   };
+  // Until the combat module docks its fire grid itself (api.addDock), adopt it when it appears in the UI root.
+  try {
+    const adopt = () => { const g = ctx.uiRoot.querySelector(':scope > .cbt-inp-touch, :scope > [data-touch-dock]'); if (g && !dock) api.addDock({ id: g.dataset.touchDock || 'combat', el: g }); };
+    new MutationObserver(adopt).observe(ctx.uiRoot, { childList: true });
+    adopt();
+  } catch {}
 
   ctx.events.on('cmd', (e) => { if (e && e.name === 'help' && shown) coach(8); });
   ctx.events.on('session:start', () => {

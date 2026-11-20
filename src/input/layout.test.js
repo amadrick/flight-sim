@@ -28,6 +28,36 @@ for (const [W, H] of SIZES) for (const ins of INSETS) {
   }
 }
 
+// a docked block of buttons from another module (the combat fire grid: 2×3 tall, 2×2 on short screens)
+for (const [W, H] of SIZES) for (const ins of INSETS) for (const extra of [0, 2, 4]) {
+  const dock = H <= 520 ? { w: 116, h: 116 } : { w: 116, h: 188 };
+  // insets as they come in that orientation (notch + home bar top / bottom in portrait, at the sides in landscape)
+  if (ins.l && isPortrait(W, H) || ins.t && !isPortrait(W, H)) continue;
+  test(`touch layout ${W}x${H} insets ${JSON.stringify(ins)} extra ${extra} + dock: no overlaps, in the safe area`, () => {
+    const L = touchLayout(W, H, ins, { extra, dock });
+    assert.ok(L.dock, 'dock placed');
+    const rects = layoutRects(L);
+    const l = Math.max(16, ins.l || 0), r = Math.max(16, ins.r || 0), t = Math.max(10, ins.t || 0), b = Math.max(12, ins.b || 0);
+    for (const [n, q] of rects) {
+      assert.ok(q.x >= l - 0.5 && q.y >= t - 0.5 && q.x + q.w <= W - r + 0.5 && q.y + q.h <= H - b + 0.5, `${n} inside the safe area: ${JSON.stringify(q)}`);
+      if (!['hud', 'zone', 'dock'].includes(n)) assert.ok(Math.min(q.w, q.h) >= MIN_TARGET, `${n} ≥ 44: ${JSON.stringify(q)}`);
+    }
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++)
+      assert.ok(!overlaps(rects[i][1], rects[j][1]), `${rects[i][0]} overlaps ${rects[j][0]}`);
+    assert.ok(L.dock.h >= dock.h - 0.5, 'dock full height');
+    assert.ok(L.dock.x + L.dock.w / 2 > W / 2, 'dock on the right');
+    assert.ok(L.zone.w >= 2 * L.stickR && L.zone.h >= 2 * L.stickR, `stick zone usable ${JSON.stringify(L.zone)}`);
+    if (Math.max(W, H) > 600) assert.ok(L.hud.w >= 180 && L.hud.h >= 70, `hud usable ${JSON.stringify(L.hud)}`);
+    for (const [n, q] of rects) if (n !== 'zone' && n !== 'hud') assert.ok(!overlaps(L.clear, q), `clear overlaps ${n}`);
+  });
+}
+for (const [W, H, hinge] of [[1114, 720, { x: 540, y: 0, w: 34, h: 720 }], [720, 1114, { x: 0, y: 540, w: 720, h: 34 }]]) {
+  test(`spanned ${W}x${H} + dock: nothing on the hinge`, () => {
+    const L = touchLayout(W, H, {}, { extra: 2, dock: { w: 116, h: 188 }, hinge });
+    for (const [n, q] of layoutRects(L).concat([['clear', L.clear]])) assert.ok(!overlaps(q, hinge), `${n} on the hinge`);
+  });
+}
+
 test('stick under the right thumb, throttle under the left', () => {
   for (const [W, H] of SIZES) {
     const L = touchLayout(W, H);

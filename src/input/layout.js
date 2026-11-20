@@ -28,7 +28,10 @@ export const isPortrait = (W, H) => H > W * 1.05;
 /**
  * @param {number} W viewport width (CSS px)   @param {number} H viewport height
  * @param {{t?:number,r?:number,b?:number,l?:number}} ins safe-area insets
- * @param {{extra?:number, hinge?:{x,y,w,h}}} opts extra: number of extra action buttons for the rail;
+ * @param {{extra?:number, dock?:{w,h}, hinge?:{x,y,w,h}}} opts extra: number of extra action buttons for the rail;
+ *   dock: size of one block of buttons owned by another module (ctx.input.touch.addDock, e.g. the combat fire grid):
+ *   landscape → right edge under Cam / Menu, vertically centred in the stick column, the stick zone and rail step left of it;
+ *   portrait → right-aligned above the action row (the extra row steps left of it);
  *   hinge: the gap between two viewport segments (dual-screen / foldable spanned), in viewport CSS px. A vertical hinge
  *   (side-by-side screens) puts the left-thumb controls and the HUD on the left screen and the stick zone, rail and
  *   Cam / Menu on the right one; a horizontal hinge (stacked screens) keeps the HUD on the top screen and every control
@@ -46,7 +49,8 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
   const hg = opts.hinge && (opts.hinge.w >= 2 || opts.hinge.h >= 2) ? opts.hinge : null;
   const vHinge = hg && hg.h >= H * 0.5 && hg.w < W * 0.5 ? hg : null;     // side-by-side screens
   const hHinge = hg && hg.w >= W * 0.5 && hg.h < H * 0.5 ? hg : null;     // stacked screens
-  const L = { W, H, portrait, b, g, stickR, safe: { l, r, t, b: bt }, btn: {}, extra: [], hinge: vHinge || hHinge || null };
+  const dk = opts.dock && opts.dock.w > 0 && opts.dock.h > 0 ? { w: Math.ceil(opts.dock.w), h: Math.ceil(opts.dock.h) } : null;
+  const L = { W, H, portrait, b, g, stickR, safe: { l, r, t, b: bt }, btn: {}, extra: [], dock: null, hinge: vHinge || hHinge || null };
 
   // top-right cluster: camera + menu (menu pauses the sim)
   const camW = Math.round(b * 1.2), menuW = Math.round(b * 1.55);
@@ -66,16 +70,36 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
     const gridR = gx + 2 * bw + g;
     // right thumb: stick zone (with the extra-button rail along the right edge)
     const zy = L.menu.y + L.menu.h + g;
-    const perCol = Math.max(1, Math.floor((H - bt - zy + g) / (b + g)));
-    const railCols = nExtra ? Math.ceil(nExtra / perCol) : 0;
-    const railW = railCols ? railCols * b + (railCols - 1) * g : 0;
+    const minZone = 2 * stickR + 2 * g;
     const zoneW = Math.round(clamp(W * 0.4, 4 * b, 440));
-    const zoneRight = W - r - (railW ? railW + g : 0);
-    let zx = Math.max(zoneRight - zoneW, gridR + g * 2);
-    if (vHinge && !portrait) zx = Math.max(vHinge.x + vHinge.w + g, gridR + g * 2);   // the whole right screen
-    L.zone = R(zx, zy, zoneRight - zx, H - bt - zy);
-    const leftEnd = vHinge && !portrait ? vHinge.x - g : L.zone.x - g;            // right edge of the left-thumb side
-    for (let i = 0; i < nExtra; i++) L.extra.push(R(W - r - b - Math.floor(i / perCol) * (b + g), zy + (i % perCol) * (b + g), b, b));
+    const zx0 = vHinge ? Math.max(vHinge.x + vHinge.w + g, gridR + g * 2) : gridR + g * 2;   // spanned: the whole right screen
+    const rail = (y0, x1) => {          // extra-button columns from the right edge x1, starting at y0
+      const perCol = Math.max(1, Math.floor((H - bt - y0 + g) / (b + g)));
+      const cols = nExtra ? Math.ceil(nExtra / perCol) : 0;
+      return { perCol, cols, w: cols ? cols * b + (cols - 1) * g : 0, y0, x1 };
+    };
+    let rl = rail(zy, W - r - (dk ? dk.w + g : 0));
+    let zoneTop = zy, zoneRight = rl.x1 - (rl.w ? rl.w + g : 0);
+    if (dk) {
+      const avail = H - bt - zy;
+      if (zoneRight - zx0 >= minZone) {
+        // dock beside the stick zone, at the right edge, centred in the column
+        L.dock = R(W - r - dk.w, zy + Math.max(0, (avail - dk.h) / 2), dk.w, Math.min(dk.h, avail));
+      } else {
+        // narrow (square-ish) screens: dock at the top of the right column, stick zone and rail below it
+        L.dock = R(W - r - dk.w, zy, dk.w, dk.h);
+        zoneTop = zy + dk.h + g;
+        rl = rail(zoneTop, W - r);
+        zoneRight = W - r - (rl.w ? rl.w + g : 0);
+      }
+    }
+    let zx = vHinge ? zx0 : Math.max(zoneRight - zoneW, zx0);
+    // with a dock, keep room for the rudder beside the grid when the stick zone can spare it
+    const rudX = zx0 - g * 2 + Math.round(g * 1.5) + Math.ceil(2.6 * b) + Math.round(g * 1.5);
+    if (dk && !vHinge && zx < rudX && zoneRight - rudX >= minZone) zx = rudX;
+    L.zone = R(zx, zoneTop, zoneRight - zx, H - bt - zoneTop);
+    const leftEnd = vHinge ? vHinge.x - g : L.zone.x - g;            // right edge of the left-thumb side
+    for (let i = 0; i < nExtra; i++) L.extra.push(R(rl.x1 - b - Math.floor(i / rl.perCol) * (b + g), rl.y0 + (i % rl.perCol) * (b + g), b, b));
     // rudder between the grid and the stick zone, or above the grid when that gap is too narrow
     let rx = gridR + Math.round(g * 1.5), rw = Math.min(L.zone.x - Math.round(g * 1.5), leftEnd) - rx;
     let hudBottom = Math.min(L.thr.y, gy) - g;
@@ -89,23 +113,32 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
     L.hud = R(l, t, leftEnd - l, hudBottom - t);
     // area free of visible controls, for a centred conformal HUD (the stick zone is invisible, so it counts as free)
     // (spanned across a vertical hinge: only the right screen, so a conformal HUD centred on the hinge falls back to the strip)
-    const cx0 = vHinge && !portrait ? L.zone.x : gridR + g, cx1 = W - r - (railW ? railW + g : 0);
+    const cx0 = vHinge ? L.zone.x : gridR + g, cx1 = Math.min(zoneRight, L.dock ? L.dock.x - g : W);
     const bottomRud = L.rud.y > gy - g;
     L.clear = R(cx0, zy, cx1 - cx0, (bottomRud ? L.rud.y : H - bt) - g - zy);
   } else {
     // bottom block: throttle left, stick zone right with the rudder below it
     let thrH = Math.round(clamp(H * 0.32, 3 * b + 2 * g, 300));
+    // the dock sits beside the stick zone (above the rudder), or right-aligned above the action row when that leaves the
+    // stick zone too narrow
+    const zx = l + thrW + Math.round(g * 1.5);
+    const dockBeside = dk && W - r - dk.w - g - zx >= 2 * stickR;
+    // dock above the action row: the extras go left of it, or in a row above it when they do not fit beside it
+    const exBeside = !dk || dockBeside || nExtra * (b + g) <= W - l - r - dk.w - g;
+    const topBlock = dk && !dockBeside ? dk.h + (exBeside || !nExtra ? 0 : g + b) : (nExtra ? b : 0);
+    if (dockBeside) thrH = Math.max(thrH, dk.h + g + rudH);
     if (hHinge) {
       // every control on the bottom screen: shrink the throttle column if the block would reach the hinge
       const avail0 = W - l - r, rows0 = Math.floor((avail0 - 5 * g) / 6) < MIN_TARGET ? 2 : 1;
-      const above = Math.round(g * 1.5) + rows0 * b + (rows0 - 1) * g + (nExtra ? g + b : 0);
+      const above = Math.round(g * 1.5) + rows0 * b + (rows0 - 1) * g + (topBlock ? g + topBlock : 0);
       const room = H - bt - (hHinge.y + hHinge.h + g) - above;
-      thrH = Math.max(3 * b + 2 * g, Math.min(thrH, room));
+      thrH = Math.max(3 * b + 2 * g, dockBeside ? dk.h + g + rudH : 0, Math.min(thrH, room));
     }
     L.thr = R(l, H - bt - thrH, thrW, thrH);
-    const zx = L.thr.x + thrW + Math.round(g * 1.5);
     L.rud = R(zx, H - bt - rudH, W - r - zx, rudH);
-    L.zone = R(zx, L.thr.y, W - r - zx, L.rud.y - g - L.thr.y);
+    const zR = dockBeside ? W - r - dk.w - g : W - r;
+    if (dockBeside) L.dock = R(W - r - dk.w, L.rud.y - g - dk.h, dk.w, dk.h);
+    L.zone = R(zx, L.thr.y, zR - zx, L.rud.y - g - L.thr.y);
     // action buttons: one row of six, or two rows of three on very narrow phones
     const avail = W - l - r;
     let per = Math.floor((avail - 5 * g) / 6), rows = 1, cols = 6;
@@ -116,7 +149,11 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
       L.btn[id] = R(l + ci * (per + g), rowY + ri * (b + g), per, b);
     });
     let top = rowY;
-    if (nExtra) { top = rowY - g - b; for (let i = 0; i < nExtra; i++) L.extra.push(R(W - r - b - i * (b + g), top, b, b)); }
+    if (dk && !dockBeside) L.dock = R(W - r - dk.w, rowY - g - dk.h, dk.w, dk.h);
+    const ex1 = W - r - (L.dock && !dockBeside && exBeside ? dk.w + g : 0);
+    const exY = exBeside ? rowY - g - b : L.dock.y - g - b;
+    if (nExtra) for (let i = 0; i < nExtra; i++) L.extra.push(R(ex1 - b - i * (b + g), exY, b, b));
+    if (topBlock) top = rowY - g - topBlock;
     const hy = L.menu.y + L.menu.h + g;
     const hb = hHinge ? Math.min(top, hHinge.y) : top;                            // HUD stays on the top screen
     L.hud = R(l, hy, W - l - r, hb - g - hy);
@@ -133,6 +170,7 @@ export function layoutRects(L) {
   const out = [['menu', L.menu], ['cam', L.cam], ['thr', L.thr], ['rud', L.rud], ['zone', L.zone], ['hud', L.hud]];
   for (const id of BUTTON_IDS) out.push([id, L.btn[id]]);
   L.extra.forEach((e, i) => out.push(['extra' + i, e]));
+  if (L.dock) out.push(['dock', L.dock]);
   return out;
 }
 

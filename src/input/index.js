@@ -236,6 +236,7 @@ export async function createInput(ctx) {
   // ctx.input.touch exists even before (or without) the touch UI: extra buttons added early are kept and appear when
   // the touch UI is built (touch screens, or setTouch(true)). See INTEGRATION.md "Extra touch buttons".
   const pendingButtons = [];
+  let pendingDock = null;
   input.touch = {
     get visible() { return !!(touchUI && touchUI.api.visible); },
     get layout() { return touchUI ? touchUI.api.layout : null; },
@@ -254,12 +255,22 @@ export async function createInput(ctx) {
       };
     },
     removeButton(id) { return touchUI ? touchUI.api.removeButton(id) : false; },
+    /** Dock a block of buttons another module owns (see touch.js addDock). Before the touch UI exists it is kept and docked
+     *  when the UI is built. Returns { get rect(), remove() } or null. */
+    addDock(spec) {
+      if (touchUI) return touchUI.api.addDock(spec);
+      if (!spec || !spec.el || (pendingDock && pendingDock.spec.el !== spec.el)) return null;
+      const p = pendingDock || (pendingDock = { spec, real: null });
+      return { get rect() { return p.real ? p.real.rect : null; }, remove: () => { if (pendingDock === p) pendingDock = null; return input.touch.removeDock(spec.id); } };
+    },
+    removeDock(id) { return touchUI ? touchUI.api.removeDock(id) : false; },
     /** Gap between two viewport segments (dual-screen spanned) in CSS px, or null. Works without the touch UI too. */
     get hinge() { return viewportHinge(ctx.uiRoot.clientWidth || window.innerWidth, ctx.uiRoot.clientHeight || window.innerHeight); },
     showHints(sec) { if (touchUI) touchUI.api.showHints(sec); },
   };
   function buildTouch() {
     touchUI = createTouchControls(ctx, { setMode, command, toggleSpeedbrake, hasAB, controls: c });
+    if (pendingDock) pendingDock.real = touchUI.api.addDock(pendingDock.spec);
     for (const p of pendingButtons) {
       p.real = touchUI.api.addButton(p.spec);
       if (p.real) { if (p.active) p.real.setActive(true); if (p.label != null) p.real.setLabel(p.label); if (p.sub != null) p.real.setSub(p.sub); }
