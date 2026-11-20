@@ -124,3 +124,35 @@ test('rearm and direct script writes keep state consistent', async () => {
   assert.equal(t.sim.damage.ctrl, 1); assert.equal(lo.gun.rounds, lo.gun.max);
   assert.equal(lo.missiles.ir, 9);
 });
+
+test('feedback events: bullet:near reaches the player, bullet:hit carries damage; credit expires after 30 s', async () => {
+  const { c, W, world, a, t } = await pair({ range: 400 });
+  t.isPlayer = true; world.player = t;            // the player is the one being shot at
+  const near = [], hits = [];
+  c.events.on('bullet:near', (p) => near.push(p));
+  c.events.on('bullet:hit', (p) => hits.push(p));
+  // aim 12 m to the side of the player: rounds pass close but miss
+  a.state.quaternion.setFromUnitVectors(V(0, 0, -1), V(14, 0, -400).normalize());
+  a.forward.set(0, 0, -1).applyQuaternion(a.state.quaternion); a.up.set(0, 1, 0).applyQuaternion(a.state.quaternion); a.right.set(1, 0, 0).applyQuaternion(a.state.quaternion);
+  a.trigger = true;
+  for (let i = 0; i < 60; i++) { c.clock += 1 / 60; W.update(1 / 60); }
+  a.trigger = false;
+  for (let i = 0; i < 60; i++) { c.clock += 1 / 60; W.update(1 / 60); }
+  assert.ok(near.some((p) => p.target === t && p.shooter === a && p.position), `near events ${near.length}`);
+  // now on target
+  W.gunSolution(a, t, {});
+  const sol = W.gunSolution(a, t, {});
+  a.state.quaternion.setFromUnitVectors(V(0, 0, -1), sol.dir);
+  a.forward.copy(sol.dir); a.up.set(0, 1, 0).applyQuaternion(a.state.quaternion); a.right.set(1, 0, 0).applyQuaternion(a.state.quaternion);
+  a.trigger = true;
+  for (let i = 0; i < 20 && !hits.length; i++) { c.clock += 1 / 60; W.update(1 / 60); }
+  a.trigger = false;
+  for (let i = 0; i < 30 && !hits.length; i++) { c.clock += 1 / 60; W.update(1 / 60); }
+  const h = hits[0];
+  assert.ok(h && h.target === t && h.shooter === a && h.position && h.damage > 0 && typeof h.hp === 'number');
+  assert.equal(t.lastHitBy, a); assert.equal(t.lastHitWeapon, 'gun');
+  // no fire, no new hits: credit expires
+  t.damage.fire = 0;
+  for (let i = 0; i < 60 * 31; i++) { c.clock += 1 / 60; t.damage.fire = 0; W.update(1 / 60); }
+  assert.equal(t.lastHitBy, null);
+});
