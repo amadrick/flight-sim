@@ -710,13 +710,24 @@ TerrSurf terrSurface(vec3 rp) {
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
     canopy = max(canopy, C.hedge * 0.8);               // a hedgerow is a continuous strip, not a row of dots
     // sunlit crown tops over the dark gaps between the trees; every crown its own shade of green
-    fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine) * mix(1.0, 0.86, conifer);
+    // (with the 3-D canopy (VEG_CANOPY) its painted crown relief carries this; two unaligned crown patterns multiplied)
+#ifndef VEG_CANOPY
+    fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine);
     canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine);
+#endif
+    fcol *= mix(1.0, 0.86, conifer);
     // from further off the canopy reads as an uneven, mottled surface (no cell pattern: it would show its grid)
     float fineF = ss(40.0, 8.0, pxt) * (1.0 - 0.7 * fine);
     fcol *= 1.0 + fineF * (0.9 * (n3.g - 0.5) + 0.5 * (n3.r - 0.5));
     canopyAO *= 1.0 + fineF * 0.8 * (n3.g - 0.5);
     fcol *= (0.84 + 0.32 * n2.g) * (0.80 + 0.40 * C.mac.y);   // stand-to-stand variety
+    // stands of different age and height (410 m / 110 m noise): taller, older stands darker and rougher, young
+    // plantations and thickets lighter; seen from far off a forest is a mosaic of stands, not one painted patch
+    float standH = ss(0.25, 0.80, n2.b * 0.6 + n3.b * 0.4);
+    fcol *= mix(1.10, 0.80, standH) * mix(vec3(1.0), vec3(1.06, 1.02, 0.90), (1.0 - standH) * 0.6);
+    canopyAO *= mix(1.0, 0.86 + 0.14 * (1.0 - standH), ss(2.0, 12.0, pxt));
+    // the stand edge: the outermost crowns stand in the open and the ground just outside is in their shade
+    canopyAO *= 1.0 - 0.22 * ss(0.15, 0.45, forest) * ss(0.85, 0.45, forest) * ss(2.0, 10.0, pxt);
   }
   float floorAmt = canopy * t3d;                       // forest floor under real trees
 #ifdef VEG_CANOPY
@@ -1193,7 +1204,7 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- ambient occlusion and self shadow -----------------------------------------------------------------------
   float ao = 1.0 - clamp(conc * 1.6 + concW * 2.2, -0.08, 0.62);
-  ao *= mix(1.0, canopyAO, paint) * mix(1.0, 0.5, floorAmt);   // canopy self-occlusion, shade under real trees
+  ao *= mix(1.0, canopyAO, paint) * mix(1.0, 0.7, floorAmt);   // canopy self-occlusion, shade under real trees (which also draw contact shadows)
   ao *= 1.0 - 0.3 * shrubAmt;
   ao *= clamp(1.0 + 0.5 * hgt * soft, 0.6, 1.15);              // cavities of the micro relief
   S.albedo = col; S.rough = rough; S.n = n; S.ao = ao;
