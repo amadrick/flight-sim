@@ -167,7 +167,7 @@ const _v = new THREE.Vector3(), _qi = new THREE.Quaternion(), _f = new THREE.Vec
  * True when an enemy aircraft is a gun threat: inside `range` and behind the player's wing line, or closer than
  * `noseRange` with its nose on the player (within `noseCone`). player / enemies: { state: { position, quaternion } }.
  */
-export function gunThreat(player, enemies, range = 1800, noseRange = 1200, noseCone = 25 * DEG) {
+export function gunThreat(player, enemies, range = 1800, noseRange = 1500, noseCone = 30 * DEG) {
   const ps = player.state;
   _qi.copy(ps.quaternion).invert();
   for (let i = 0; i < enemies.length; i++) {
@@ -187,7 +187,8 @@ export function gunThreat(player, enemies, range = 1800, noseRange = 1200, noseC
 /**
  * "Safe to cut away" from the player's own view (kill cam, keeping the missile cam).
  * i: { alive, onGround, agl (m), vs (m/s), missileThreats (count of missiles guiding on the player), gunThreat,
- *      hpFrac (0..1), recentHit (s since the player was last damaged) }
+ *      hpFrac (0..1), recentHit (s since the player was last damaged), shotAt (s since rounds passed close or a launch
+ *      warning against the player) }
  */
 export function safeToCutAway(i) {
   if (!i || !i.alive || i.onGround) return false;
@@ -195,6 +196,7 @@ export function safeToCutAway(i) {
   const agl = Number.isFinite(i.agl) ? i.agl : 0, vs = Number.isFinite(i.vs) ? i.vs : 0;
   if (agl < 450 || agl + Math.min(0, vs) * 6 < 350) return false;     // low, or sinking toward the ground
   if ((i.recentHit ?? 99) < 2) return false;
+  if ((i.shotAt ?? 99) < 2.5) return false;                         // rounds passing close / a launch warning just now
   if ((i.hpFrac ?? 1) < 0.15) return false;
   return true;
 }
@@ -243,3 +245,57 @@ export function finitePose(pos, quat, fov) {
   return Number.isFinite(pos.x + pos.y + pos.z + quat.x + quat.y + quat.z + quat.w + fov);
 }
 export { clamp, saturate, smoothstep, dampK };
+
+// ------------------------------------------------------------------------------------------------ fight chase view
+/**
+ * Fight-view defaults (see README "Fight chase view" for the reasoning). Distances are multiples of the aircraft size.
+ *  rollFollow   fraction of the jet's bank the camera takes (0 = horizon locked, 1 = rolls with the jet)
+ *  biasMax      most the view turns toward the target (deg); biasStart / biasFull: target angle off the view where the
+ *               bias starts / reaches full; biasUp / biasDown: vertical limits (the jet must stay in frame)
+ *  turnLead     fraction of the flight path's turn the view leads into; turnMax its limit (deg)
+ *  fovWide      extra FOV (deg) with the target far off the nose (30°→120°)
+ *  zoom         gun zoom: FOV shrinks by this fraction with the lead solution within zoomIn deg and in range (leaves at zoomOut)
+ *  pullG, pullAB pull-back fractions at 9 g / full afterburner
+ */
+export const FIGHT = {
+  dist: 1.55, rollFollow: 0.3, biasMax: 26, biasStart: 6, biasFull: 55, biasUp: 17, biasDown: 9,
+  turnLead: 0.5, turnMax: 7, fovBase: 56, fovWide: 8, zoom: 0.24, zoomIn: 4, zoomOut: 7, pullG: 0.12, pullAB: 0.08,
+};
+
+/**
+ * Bounded look bias toward a target seen at (yawT, pitchT) rad from the view axis (+ right / + up).
+ * Zero near the axis, full past biasFull, limited to biasMax overall, biasUp / biasDown vertically and maxYaw sideways.
+ * Writes out.yaw / out.pitch (rad).
+ */
+export function fightBias(out, yawT, pitchT, o = FIGHT, maxYaw = Infinity) {
+  const off = Math.hypot(yawT, pitchT);
+  if (!(off > 1e-6)) { out.yaw = 0; out.pitch = 0; return out; }
+  const k = smoothstep(o.biasStart * DEG, o.biasFull * DEG, off);
+  const mag = Math.min(off, o.biasMax * DEG) * k;
+  out.yaw = clamp(yawT / off * mag, -Math.min(o.biasMax * DEG, maxYaw), Math.min(o.biasMax * DEG, maxYaw));
+  out.pitch = clamp(pitchT / off * mag, -o.biasDown * DEG, o.biasUp * DEG);
+  return out;
+}
+
+/** Gun-zoom gate with hysteresis: in when the lead solution is within zoomIn deg and in range, out past zoomOut. */
+export function gunZoomGate(s, angRad, inRange, o = FIGHT) {
+  if (!inRange || !Number.isFinite(angRad)) { s.on = false; return false; }
+  if (s.on) { if (angRad > o.zoomOut * DEG) s.on = false; } else if (angRad < o.zoomIn * DEG) s.on = true;
+  return s.on;
+}
+
+/** Normalise a feel setting: boolean → 0 / 1, number → clamped 0..1, anything else → 1. */
+export function feelAmount(v) {
+  if (v === true) return 1; if (v === false || v == null) return v == null ? 1 : 0;
+  const n = +v; return Number.isFinite(n) ? clamp(n, 0, 1) : 1;
+}
+
+/**
+ * How long the kill cam may hold the view: 0 = not at all (not safe), `quick` (≤ 1.2 s) while any bandit is within
+ * `calmRange` or anything has a lock on the player, else `full`. i: safeToCutAway fields + nearestEnemy (m), locks (count).
+ */
+export function killCamDuration(i, full = 3.2, quick = 1.2, calmRange = 4000) {
+  if (!safeToCutAway(i)) return 0;
+  if ((i.locks || 0) > 0 || (i.nearestEnemy ?? Infinity) < calmRange) return quick;
+  return full;
+}
