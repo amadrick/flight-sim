@@ -3,7 +3,8 @@
 //   R = leaf brightness variation (0..1, 0.5 = species mean)   G = autumn / dry tint amount (0..1)
 //   B = cluster depth (1 = outer leaves, 0 = twig / inner)      A = coverage (alpha-tested at 0.5)
 // Tiles: 0 oak cluster, 1 beech / poplar cluster, 2 birch, 3 spruce / fir bough, 4 pine tufts, 5 palm frond (u along
-// the frond, v across), 6 tropical large leaves, 7 shrub, 8 desert shrub, 9 grass tuft, 10 reeds, 11 bark (tiling).
+// the frond, v across), 6 tropical large leaves, 7 shrub, 8 desert shrub, 9 grass tuft, 10 reeds, 11 bark (tiling),
+// 12 conifer shoot spray (second generation only).
 import * as THREE from 'three';
 import { rng32 } from './species.js';
 
@@ -79,7 +80,134 @@ function cluster(C, tile, r, { n, len, wid, prof, spread = 1.0, bright = 0.5, va
   }
 }
 
-export function createFoliageAtlas() {
+// ---- second-generation tiles (trees.js default; vegGen=classic keeps the originals) ------------------------------
+function clearTile(C, tile) {
+  const N = ATLAS_SIZE, ox = (tile % TILES) * TILE, oy = Math.floor(tile / TILES) * TILE;
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) { const k = (oy + y) * N + ox + x; C.R[k] = 0.5; C.G[k] = 0; C.B[k] = 0; C.A[k] = 0; }
+}
+// polyline of a curving twig: start, direction angle, length, curvature; returns points
+function twigPath(x, y, ang, len, curve, n = 10) {
+  const pts = [[x, y]];
+  for (let i = 1; i <= n; i++) { ang += curve / n; x += Math.cos(ang) * len / n; y += Math.sin(ang) * len / n; pts.push([x, y]); }
+  return pts;
+}
+function drawPath(C, tile, pts, w0, w1, bright, depth) {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const t = i / (pts.length - 1);
+    line(C, tile, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], w0 + (w1 - w0) * t, bright, depth);
+  }
+}
+// a leafy spray seen from outside the crown: a curving main twig with alternate side twigs (and their side twigs),
+// leaves alternate along every twig, inner leaves first so the outer ones overlap them. R carries the per-leaf
+// brightness (tilt toward / away from the light), B the depth in the spray (1 = outer leaves).
+function spray(C, tile, r, { len, wid, prof, leafEvery = 9, bright = 0.5, var: vr = 0.4, side = 7, spread = 0.95, mainLen = 215, sub = true }) {
+  const leaves = [];
+  const twigs = [];
+  const main = twigPath(128 + (r() - 0.5) * 10, 252, -Math.PI / 2 + (r() - 0.5) * 0.3, mainLen, (r() - 0.5) * 0.6);
+  twigs.push({ pts: main, w: 2.4, lvl: 0 });
+  for (let k = 0; k < side; k++) {
+    const t = 0.18 + 0.8 * (k / side) + 0.04 * (r() - 0.5);
+    const pi = Math.min(main.length - 2, Math.floor(t * (main.length - 1)));
+    const [px, py] = main[pi], [qx, qy] = main[pi + 1];
+    const ma = Math.atan2(qy - py, qx - px), sgn = k & 1 ? 1 : -1;
+    const a = ma + sgn * (0.55 + 0.35 * r()) * spread * 1.4;
+    const L = mainLen * (0.62 - 0.42 * t) * (0.8 + 0.4 * r());
+    const pts = twigPath(px, py, a, L, -sgn * (0.3 + 0.4 * r()), 8);
+    twigs.push({ pts, w: 1.6, lvl: 1 });
+    if (sub && L > 60) for (let j = 0; j < 2; j++) {
+      const tt = 0.35 + 0.35 * j, qi = Math.floor(tt * (pts.length - 1));
+      const [sx, sy] = pts[qi], [ux, uy] = pts[qi + 1];
+      const sa = Math.atan2(uy - sy, ux - sx) + (j ? 1 : -1) * (0.6 + 0.3 * r());
+      twigs.push({ pts: twigPath(sx, sy, sa, L * 0.45, (r() - 0.5) * 0.5, 5), w: 1.1, lvl: 2 });
+    }
+  }
+  for (const tw of twigs) {
+    drawPath(C, tile, tw.pts, tw.w, tw.w * 0.45, 0.16, 0.1);
+    // leaves along the twig (and one at its tip)
+    let acc = 0, alt = 1;
+    for (let i = 1; i < tw.pts.length; i++) {
+      const [x0, y0] = tw.pts[i - 1], [x1, y1] = tw.pts[i];
+      const seg = Math.hypot(x1 - x0, y1 - y0), a = Math.atan2(y1 - y0, x1 - x0);
+      acc += seg;
+      const t = i / (tw.pts.length - 1);
+      if (tw.lvl === 0 && t < 0.2) continue;
+      while (acc > leafEvery) {
+        acc -= leafEvery; alt = -alt;
+        const s = (0.7 + 0.5 * r()) * (0.75 + 0.35 * t);
+        leaves.push({ x: x1, y: y1, a: a + alt * (0.7 + 0.5 * r()), s, d: 0.35 + 0.65 * t * (tw.lvl ? 0.8 + 0.2 * tw.lvl : 1) });
+      }
+    }
+    const [ex, ey] = tw.pts[tw.pts.length - 1], [fx, fy] = tw.pts[tw.pts.length - 2];
+    leaves.push({ x: ex, y: ey, a: Math.atan2(ey - fy, ex - fx) + (r() - 0.5) * 0.4, s: 1.0, d: 1 });
+  }
+  leaves.sort((p, q) => p.d - q.d);
+  for (const l of leaves) {
+    const tilt = (r() - 0.5) * 2;                                         // leaf facing the light or turned away
+    stamp(C, tile, l.x, l.y, l.a, len * l.s, wid * l.s, prof, bright + vr * 0.5 * tilt + 0.12 * (l.d - 0.6), r() < 0.06 ? 0.55 + 0.4 * r() : 0.08 * r(), l.d);
+  }
+}
+// conifer shoot spray (spruce / fir) for the bough cards: a main axis with alternate side shoots, every axis densely
+// clad in short needles angled forward; the outline is the ovate shape of a real spray
+function coniferSpray(C, tile, r, { needle: nl = 9, dense = 2.2, fir = 0 }) {
+  const shoots = [];
+  const main = twigPath(128, 254, -Math.PI / 2 + (r() - 0.5) * 0.15, 238, (r() - 0.5) * 0.3, 14);
+  shoots.push({ pts: main, w: 2.2, d0: 0.4 });
+  for (let k = 0; k < 15; k++) {
+    const t = 0.06 + 0.9 * k / 15;
+    const pi = Math.min(main.length - 2, Math.floor(t * (main.length - 1)));
+    const [px, py] = main[pi], [qx, qy] = main[pi + 1], ma = Math.atan2(qy - py, qx - px), sgn = k & 1 ? 1 : -1;
+    const L = 108 * Math.pow(Math.sin(Math.PI * Math.min(1, 0.15 + t * 0.95)), 0.8) * (0.85 + 0.3 * r());
+    const pts = twigPath(px, py, ma + sgn * (0.85 + 0.2 * r()), L, -sgn * 0.35, 6);
+    shoots.push({ pts, w: 1.3, d0: 0.5 });
+    if (L > 45) for (const tt of [0.45, 0.7]) {
+      const qi = Math.floor(tt * (pts.length - 1)), [sx, sy] = pts[qi], [ux, uy] = pts[qi + 1];
+      for (const s2 of [-1, 1]) shoots.push({ pts: twigPath(sx, sy, Math.atan2(uy - sy, ux - sx) + s2 * 0.8, L * 0.32, 0, 3), w: 0.9, d0: 0.7 });
+    }
+  }
+  for (const sh of shoots) drawPath(C, tile, sh.pts, sh.w, sh.w * 0.5, 0.15, 0.1);
+  for (const sh of shoots) {
+    const P = sh.pts;
+    let total = 0; for (let i = 1; i < P.length; i++) total += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+    let run = 0;
+    for (let i = 1; i < P.length; i++) {
+      const [x0, y0] = P[i - 1], [x1, y1] = P[i], seg = Math.hypot(x1 - x0, y1 - y0), a = Math.atan2(y1 - y0, x1 - x0);
+      for (let s = 0; s < seg; s += dense) {
+        const f = s / seg, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f, u = (run + s) / total;
+        const tip = u > 0.8 ? (u - 0.8) * 5 : 0;                       // this year's shoot: lighter, yellower
+        for (const sg of [-1, 1]) {
+          const na = a + sg * (fir ? 1.25 : 0.75 + 0.35 * r());
+          stamp(C, tile, x, y, na, nl * (0.75 + 0.5 * r()) * (1 - 0.3 * tip), 1.15, needle, 0.32 + 0.3 * r() + 0.28 * tip, 0.15 * tip, sh.d0 + (1 - sh.d0) * u, 0);
+        }
+        if (!fir && r() < 0.5) stamp(C, tile, x, y, a + (r() - 0.5) * 0.6, nl * 0.7, 1.1, needle, 0.3 + 0.3 * r(), 0, sh.d0 + (1 - sh.d0) * u, 0);
+      }
+      run += seg;
+    }
+  }
+}
+// bark: furrowed ridges (anisotropic value noise, several octaves), plates and fine grain; tiles in u and v
+function barkTile(C, tile, r) {
+  const N = ATLAS_SIZE, ox = (tile % TILES) * TILE, oy = Math.floor(tile / TILES) * TILE;
+  const G = 64, lat = Float32Array.from({ length: G * G }, () => r());
+  const vn = (x, y) => {     // periodic value noise on a G x G lattice
+    const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const L = (i, j) => lat[(((j % G) + G) % G) * G + (((i % G) + G) % G)];
+    return (L(xi, yi) * (1 - sx) + L(xi + 1, yi) * sx) * (1 - sy) + (L(xi, yi + 1) * (1 - sx) + L(xi + 1, yi + 1) * sx) * sy;
+  };
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const u = x / TILE, v = y / TILE;
+    // ridges: noise stretched along the stem, warped
+    const w = vn(u * 8, v * 2) * 0.6;
+    const ridge = 1 - Math.abs(2 * vn(u * 14 + w, v * 2.5) - 1);
+    const plates = vn(u * 28 + w * 2, v * 8);
+    const grain = vn(u * 64, v * 64);
+    const f = 0.30 + 0.55 * Math.pow(ridge, 1.6) * (0.7 + 0.3 * plates) + 0.12 * (grain - 0.5);
+    const k = (oy + y) * N + ox + x;
+    C.R[k] = Math.min(Math.max(f, 0), 1); C.G[k] = 0.15 * plates; C.B[k] = 1; C.A[k] = 1;
+  }
+}
+
+export function createFoliageAtlas({ classic = false } = {}) {
   const C = makeCanvas();
   const r = rng32(1234567);
   cluster(C, 0, r, { n: 300, len: 19, wid: 6, prof: lobed });
@@ -167,6 +295,18 @@ export function createFoliageAtlas() {
       const k2 = (oy + y) * N + ox + x;
       C.R[k2] = 0.5 + 0.28 * Math.tanh(f * 1.4); C.G[k2] = 0; C.B[k2] = 1; C.A[k2] = 1;
     }
+  }
+  if (!classic) {
+    // own random streams (the grass tiles above keep their content)
+    const r2 = rng32(424242);
+    for (const t of [0, 1, 2, 6, 7, 11, 12]) clearTile(C, t);
+    spray(C, 0, r2, { len: 20, wid: 7.5, prof: lobed, leafEvery: 7.5 });                                  // oak
+    spray(C, 1, r2, { len: 18, wid: 8.5, prof: oval, leafEvery: 7.5, side: 8 });                          // beech / poplar
+    spray(C, 2, r2, { len: 13, wid: 6, prof: pointed, leafEvery: 6, bright: 0.56, side: 8, spread: 0.7, mainLen: 225 });   // birch
+    spray(C, 6, r2, { len: 42, wid: 16, prof: oval, leafEvery: 16, side: 6, bright: 0.48 });              // tropical
+    spray(C, 7, r2, { len: 15, wid: 6.5, prof: oval, leafEvery: 6.5, side: 9, spread: 1.15 });            // shrubs
+    barkTile(C, 11, r2);
+    coniferSpray(C, 12, r2, { needle: 11, dense: 1.6 });                                                    // spruce / fir
   }
   // pack
   const N = ATLAS_SIZE, data = new Uint8Array(N * N * 4);

@@ -2,21 +2,28 @@
 // Every species is built ONCE at unit height (y = 0 ground .. 1 top) and packed into a float texture that the
 // instanced vertex shaders read by gl_VertexID ("vertex pulling"), so one draw call renders any mix of species.
 //
-// Per vertex, 3 RGBA32F texels:
+// Per vertex, 4 RGBA32F texels:
 //   t0 = position.xyz (units of tree height), atlas u          t1 = shading normal.xyz, atlas v
 //   t2 = h_rel (crown-relative height; < 0 below the crown), d_rel (crown depth: 0 surface .. 1 axis),
 //        wind weight (bending), kind (0 = bark: uv wraps in the bark tile, 1 = leaf card)
+//   t3 = baked visibility through this tree's own leaves, L1 SH: V(w) ~ t3.x + t3.yzw . w (tree-local w)
+//
+// Broadleaf trees and pines grow a space-colonisation skeleton (tree-skeleton.js) with pipe-model limbs and leaf
+// cluster cards at the twig tips; spruce / fir are whorls of drooping boughs; palms and shrubs are rule-based.
+// URL vegGen=classic builds the previous generation (envelope-scattered cards, no skeleton, no light bake).
 import * as THREE from 'three';
 import { SPECIES, crownRadius, rng32 } from './species.js';
 import { tileRect } from './foliage.js';
+import { growSkeleton, chains, leafGrid, bakeVisibility } from './tree-skeleton.js';
 
-export const VMAX = 1152;               // vertices per species (384 triangles), non-indexed
+export const VMAX = 2560;               // vertices per species (853 triangles), non-indexed
 export const VTEX_W = 2048;
+export const VTEXELS = 4;               // texels per vertex
 
 const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
 class Builder {
-  constructor(sp) { this.sp = sp; this.f = []; this.n = 0; }
+  constructor(sp) { this.sp = sp; this.f = []; this.n = 0; this.cards = []; this.max = VMAX; }
   crownInfo(p) {
     const sp = this.sp;
     const t = (p.y - sp.base) / (1 - sp.base);
@@ -26,7 +33,7 @@ class Builder {
   }
   vert(p, n, u, v, kind, wind, hd) {
     const [h, d] = hd || this.crownInfo(p);
-    this.f.push(p.x, p.y, p.z, u, n.x, n.y, n.z, v, h, d, wind, kind);
+    this.f.push(p.x, p.y, p.z, u, n.x, n.y, n.z, v, h, d, wind, kind, 1, 0, 0.5, 0);
     this.n++;
   }
   tri(a, b, c) { for (const q of [a, b, c]) this.vert(...q); }
@@ -121,7 +128,7 @@ function buildBroadleaf(b, sp, r, o) {
   const shade = (p) => crownNormal(sp, p, o.upBias ?? 0.3);
   const leafWind = (p) => Math.pow(Math.max(p.y, 0), 1.5) * 0.8 + 0.2;
   const used = b.n + 0;
-  const nCards = Math.floor((VMAX - used) / 6);
+  const nCards = Math.floor((b.max - used) / 6);
   for (let i = 0; i < nCards; i++) {
     const t = Math.pow(r(), o.tPow ?? 0.85);
     const R = crownRadius(sp, t);
@@ -229,6 +236,183 @@ function buildDome(b, sp, r, o) {
   }
 }
 
+
+// ---- skeletal broadleaf / pine (space colonisation) ----------------------------------------------------------------
+function buildSkeletal(b, sp, r, o) {
+  const { nodes, tips } = growSkeleton(sp, r, o);
+  const P = (i) => v3(nodes[i].x, nodes[i].y, nodes[i].z);
+  const wind = (p) => Math.pow(Math.max(p.y, 0), 2) * 0.6;
+  const barkMax = Math.floor(b.max * (o.bark ?? 0.36));
+  const rMin = o.rMin ?? 0.0028;
+  // limbs, thickest first, until the bark budget is used; thin twigs live in the leaf-card texture
+  for (const ch of chains(nodes)) {
+    if (nodes[ch.idx[Math.min(1, ch.idx.length - 1)]].r < rMin) continue;
+    // resample the chain: segment length grows with thinness (few rings on twigs), stop below rMin
+    const pts = [], rs = [];
+    let acc = 1e9;
+    const segL = ch.order === 0 ? 0.07 : 0.055;
+    for (let k = 0; k < ch.idx.length; k++) {
+      const n = nodes[ch.idx[k]];
+      if (k > 0 && n.r < rMin * 0.7) break;
+      const p = P(ch.idx[k]);
+      if (k > 0) acc += p.distanceTo(P(ch.idx[k - 1]));
+      const last = k === ch.idx.length - 1 || nodes[ch.idx[k + 1]].r < rMin * 0.7;
+      if (k === 0 || acc >= segL || last) { pts.push(p); rs.push(Math.max(n.r, rMin * 0.5)); acc = 0; }
+    }
+    if (pts.length < 2) continue;
+    const S = rs[0] > 0.014 ? 7 : rs[0] > 0.006 ? 5 : 3;
+    if (b.n + (pts.length - 1) * S * 6 > barkMax) continue;
+    b.tube(pts, rs, S, wind);
+  }
+  // leaf cluster cards at the twig tips (and along the thinnest twigs when there are more cards than tips)
+  const env = (p) => crownNormal(sp, p, o.upBias ?? 0.3);
+  const leafWind = (p) => Math.pow(Math.max(p.y, 0), 1.5) * 0.8 + 0.2;
+  const nCards = Math.floor((b.max - b.n) / 6);
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const cand = shuffle(tips.slice());
+  {      // more cards than tips: along the thin twigs too (repeatedly if need be)
+    const extra = [];
+    nodes.forEach((n, i) => { if (n.kids.length && n.r < rMin * 1.8 && n.y > sp.base * 0.9) extra.push(i); });
+    shuffle(extra);
+    for (let k = 0; k < extra.length; k++) cand.push(extra[k]);
+    // still short (sparse skeletons such as pine): repeat tips with an offset (-1 - index marks a repeat)
+    for (let k = 0; k < tips.length * 3; k++) cand.push(-1 - tips[k % tips.length]);
+  }
+  const UP = v3(0, 1, 0);
+  // keep card centres apart (stacked cards make black knots in the crown and waste the budget)
+  const placed = [];
+  const minD2 = (o.card * (o.space ?? 0.42)) ** 2;
+  let made = 0;
+  for (let c = 0; c < cand.length && made < nCards; c++) {
+    const rep = cand[c] < 0, i = rep ? -1 - cand[c] : cand[c], n = nodes[i];
+    const p = P(i), q = n.parent >= 0 ? P(n.parent) : p.clone().sub(UP);
+    if (rep) p.add(v3(r() - 0.5, (r() - 0.5) * 0.6, r() - 0.5).multiplyScalar(o.card * 0.9));
+    if (placed.some((z) => z.distanceToSquared(p) < minD2)) continue;
+    placed.push(p.clone()); made++;
+    const twig = p.clone().sub(q).normalize();
+    const out = v3(p.x, 0, p.z); if (out.lengthSq() < 1e-6) out.set(1, 0, 0); out.normalize();
+    // cards hang off the twig: the cluster grows along the twig, lifted toward the light; it faces outward
+    const up = twig.clone().multiplyScalar(0.65).addScaledVector(UP, o.lift ?? 0.55).add(v3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.5)).normalize();
+    const tTop = (p.y - sp.base) / (1 - sp.base);
+    let nrm = out.clone().lerp(UP, Math.max(0, tTop - 0.55) * 1.2).add(v3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.9));
+    nrm.addScaledVector(up, -nrm.dot(up));
+    if (nrm.lengthSq() < 1e-4) nrm = new THREE.Vector3().crossVectors(up, v3(1, 0, 0));
+    nrm.normalize();
+    const s = o.card * (0.75 + 0.5 * r());
+    const cc = p.clone().addScaledVector(up, s * 0.38);
+    const nc = nrm.clone().multiplyScalar(nrm.dot(out) < 0 ? -0.35 : 0.35);
+    b.card(cc, nrm, up, s * (o.aspect ?? 1), s, sp.tile, null, (pp) => env(pp).add(nc).normalize(), leafWind);
+  }
+}
+
+// ---- spruce / fir: whorls of drooping, curved boughs with gaps; dead twigs below the crown ---------------------------
+function buildConifer(b, sp, r, o) {
+  const H0 = sp.base;
+  const wind = (p) => Math.pow(Math.max(p.y, 0), 2) * 0.5;
+  const tp = [], tr = [];
+  for (let i = 0; i <= 5; i++) { const t = i / 5; tp.push(v3((r() - 0.5) * 0.004, t * 0.97, (r() - 0.5) * 0.004)); tr.push(o.trunkR * Math.pow(1 - 0.92 * t, 1.1) * (i === 0 ? 1.35 : 1)); }
+  b.tube(tp, tr, 7, wind);
+  // dead lower branches: thin bare stubs up the bole
+  for (let i = 0; i < (o.dead ?? 10); i++) {
+    const y = H0 * (0.25 + 0.75 * r()), a = r() * 6.283, L = 0.03 + 0.05 * r();
+    b.tube([v3(0, y, 0), v3(Math.cos(a) * L, y - 0.01 - 0.02 * r(), Math.sin(a) * L)], [o.trunkR * 0.18, o.trunkR * 0.05], 3, wind);
+  }
+  const shade = (p) => crownNormal(sp, p, 0.5);
+  const leafWind = (p) => Math.pow(Math.max(p.y, 0), 1.5) * 0.7 + 0.15;
+  const nw = o.whorls, per = o.per;
+  const budget = b.max - 12;
+  const T = 12;                                        // conifer shoot-spray tile
+  for (let w = 0; w < nw; w++) {
+    const t = Math.pow((w + 0.3 * r()) / nw, 0.92);
+    const y = H0 + (1 - H0) * t;
+    const R = crownRadius(sp, t) * (0.95 + 0.15 * r()) + 0.012;
+    const droop = o.droop + 0.3 * (1 - t) * (o.droopLow ?? 0.6);
+    const nb = per - (t > 0.8 ? 2 : 0);
+    for (let i = 0; i < nb; i++) {
+      if (r() < (o.gap ?? 0.12) && t < 0.85) continue;                     // a missing bough: sky through the crown
+      const a = (i / nb) * Math.PI * 2 + w * 2.4 + (r() - 0.5) * 0.7;
+      const L = R * (0.75 + 0.35 * r());
+      const ca = Math.cos(a), sa = Math.sin(a);
+      // the bough rises a little, then its outer half droops (the spruce "skirt"); shoot sprays overlap along it
+      const at = (u) => v3(ca * L * u, Math.max(y + L * 0.12 * u - Math.sin(droop) * L * 0.95 * u * u, 0.02), sa * L * u);
+      const nc = L > 0.11 ? 3 : 2;
+      for (let k = 0; k < nc; k++) {
+        if (b.n + 6 > budget) break;
+        const u0 = 0.04 + 0.92 * k / nc, u1 = Math.min(1, u0 + 1.45 / nc);
+        const p0 = at(u0), p1 = at(u1);
+        const up = p1.clone().sub(p0); const len = up.length() * 1.1; up.normalize();
+        // spray plane: mostly horizontal (sprays spread flat), rolled so the side view still catches it
+        const side = new THREE.Vector3().crossVectors(up, v3(0, 1, 0)).normalize();
+        const flat = new THREE.Vector3().crossVectors(side, up).normalize();     // ~ up-facing normal
+        const roll = (r() - 0.5) * 1.6 + (k & 1 ? 0.35 : -0.35);
+        const nrm = flat.multiplyScalar(Math.cos(roll)).addScaledVector(side, Math.sin(roll)).normalize();
+        const c = p0.clone().lerp(p1, 0.5);
+        b.card(c, nrm, up, len * (0.8 + 0.25 * r()), len, T, null, shade, leafWind);
+      }
+    }
+  }
+  // leader: a vertical shoot spray, and a crossed one
+  for (let i = 0; i < 2; i++) {
+    const a = i * Math.PI / 2 + 0.3;
+    b.card(v3(0, 0.955, 0), v3(Math.cos(a), 0, Math.sin(a)), v3(0, 1, 0), 0.05, 0.09, T, null, shade, leafWind);
+  }
+}
+
+// per-tree light bake: leaf-area grid from the cards, visibility of every card (centre) and bark quad
+function bakeTreeLight(b, fill) {
+  const F = b.f, n = b.n - (b.n % 6), STR = 16;
+  let x0 = 1e9, y0 = 0, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+  for (let v = 0; v < n; v++) { const k = v * STR; x0 = Math.min(x0, F[k]); x1 = Math.max(x1, F[k]); y1 = Math.max(y1, F[k + 1]); z0 = Math.min(z0, F[k + 2]); z1 = Math.max(z1, F[k + 2]); }
+  const pad = 0.02;
+  const bounds = [x0 - pad, y0 - pad, z0 - pad, x1 + pad, y1 + pad, z1 + pad];
+  const cards = [];
+  const tri = (k0, k1, k2) => {
+    const ax = F[k1] - F[k0], ay = F[k1 + 1] - F[k0 + 1], az = F[k1 + 2] - F[k0 + 2];
+    const bx = F[k2] - F[k0], by = F[k2 + 1] - F[k0 + 1], bz = F[k2 + 2] - F[k0 + 2];
+    return 0.5 * Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx);
+  };
+  for (let v = 0; v < n; v += 6) {
+    const k = v * STR;
+    if (F[k + 11] < 0.5) continue;
+    let cx = 0, cy = 0, cz = 0;
+    for (let j = 0; j < 6; j++) { cx += F[k + j * STR]; cy += F[k + j * STR + 1]; cz += F[k + j * STR + 2]; }
+    cards.push({ c: [cx / 6, cy / 6, cz / 6], area: tri(k, k + STR, k + 2 * STR) + tri(k + 3 * STR, k + 4 * STR, k + 5 * STR) });
+  }
+  const g = leafGrid(cards, bounds, 22);
+  for (let v = 0; v < n; v += 6) {
+    const k = v * STR;
+    const leaf = F[k + 11] >= 0.5;
+    if (leaf) {
+      let cx = 0, cy = 0, cz = 0;
+      for (let j = 0; j < 6; j++) { cx += F[k + j * STR]; cy += F[k + j * STR + 1]; cz += F[k + j * STR + 2]; }
+      const sh = bakeVisibility(g, [cx / 6, cy / 6, cz / 6], null, fill, 0.8);
+      for (let j = 0; j < 6; j++) for (let c = 0; c < 4; c++) F[k + j * STR + 12 + c] = sh[c];
+    } else {
+      for (let j = 0; j < 6; j++) {
+        const q = k + j * STR;
+        const p = [F[q] + F[q + 4] * 0.01, F[q + 1] + F[q + 5] * 0.01, F[q + 2] + F[q + 6] * 0.01];
+        const sh = bakeVisibility(g, p, null, fill, 0.3); for (let c = 0; c < 4; c++) F[q + 12 + c] = sh[c];
+      }
+    }
+  }
+}
+
+// skeletal species (space colonisation): see growSkeleton for the parameters; card = leaf-cluster card size,
+// bark = share of the vertex budget for limbs
+const SKEL = {
+  oak:    { attract: 1400, shell: 0.5,  seg: 0.022, infl: 0.18, kill: 0.04,  trunkUp: 0.15, trop: -0.06, trunkR: 0.030, card: 0.11, holes: 4, lift: 0.45, lean: 0.04 },
+  beech:  { attract: 1400, shell: 0.45, seg: 0.022, infl: 0.17, kill: 0.04,  trunkUp: 0.30, trop: 0.08,  trunkR: 0.024, card: 0.105, holes: 3 },
+  birch:  { attract: 1000, shell: 0.5,  seg: 0.02,  infl: 0.15, kill: 0.038, trunkUp: 0.70, trop: -0.12, trunkR: 0.016, card: 0.08, holes: 3, lift: 0.2, aspect: 0.8 },
+  poplar: { attract: 1000, shell: 0.55, seg: 0.02,  infl: 0.14, kill: 0.036, trunkUp: 0.75, trop: 0.55,  trunkR: 0.018, card: 0.07, holes: 2, lift: 0.8, upBias: 0.15 },
+  pine:   { attract: 520,  shell: 0.6,  seg: 0.03,  infl: 0.22, kill: 0.06,  trunkUp: 0.60, trop: 0.10,  trunkR: 0.020, card: 0.10, holes: 4, lift: 0.9, upBias: 0.45, bark: 0.30 },
+  tropic: { attract: 1400, shell: 0.45, seg: 0.024, infl: 0.19, kill: 0.045, trunkUp: 0.25, trop: -0.02, trunkR: 0.028, card: 0.13, holes: 3, lift: 0.6, upBias: 0.5, tPow: 0.6 },
+};
+const CONIF = {
+  spruce: { trunkR: 0.017, whorls: 20, per: 8, droop: 0.45, droopLow: 0.8, gap: 0.10 },
+  fir:    { trunkR: 0.017, whorls: 20, per: 8, droop: 0.22, droopLow: 0.5, gap: 0.08 },
+};
+export const treeGen = { classic: false };
+
 const OPTS = {
   spruce: { kind: 'cone', trunkR: 0.016, whorls: 13, per: 6, droop: 0.35 },
   fir:    { kind: 'cone', trunkR: 0.016, whorls: 13, per: 6, droop: 0.22 },
@@ -246,31 +430,44 @@ const OPTS = {
 
 /** Build all species. Returns { texture (RGBA32F vertex data), vcount per species, bounds per species, triangles }. */
 export function buildTreeMeshes() {
-  const rows = Math.ceil(SPECIES.length * VMAX * 3 / VTEX_W);
+  const rows = Math.ceil(SPECIES.length * VMAX * VTEXELS / VTEX_W);
   const data = new Float32Array(VTEX_W * rows * 4);
   const info = [];
   SPECIES.forEach((sp, si) => {
     const r = rng32(9001 + si * 7919);
     const b = new Builder(sp);
     const o = OPTS[sp.id];
-    if (o.kind === 'cone') buildCone(b, sp, r, o);
-    else if (o.kind === 'palm') buildPalm(b, sp, r);
-    else if (o.kind === 'dome') buildDome(b, sp, r, o);
-    else buildBroadleaf(b, sp, r, o);
+    if (treeGen.classic) {
+      b.max = 1152;
+      if (o.kind === 'cone') buildCone(b, sp, r, o);
+      else if (o.kind === 'palm') buildPalm(b, sp, r);
+      else if (o.kind === 'dome') buildDome(b, sp, r, o);
+      else buildBroadleaf(b, sp, r, o);
+    } else {
+      if (CONIF[sp.id]) buildConifer(b, sp, r, CONIF[sp.id]);
+      else if (SKEL[sp.id]) buildSkeletal(b, sp, r, SKEL[sp.id]);
+      else if (o.kind === 'palm') buildPalm(b, sp, r);
+      else buildDome(b, sp, r, { ...o, maxV: Math.round(o.maxV * 1.6) });
+      bakeTreeLight(b, sp.group === 'conifer' ? 0.7 : 0.5);
+    }
     let n = Math.min(b.n, VMAX);
     n -= n % 3;
     let ymin = Infinity, ymax = -Infinity, rmax = 0;
+    const STR = 16;
+    let ytop = 0;
+    for (let v = 0; v < n; v++) ytop = Math.max(ytop, b.f[v * STR + 1]);
+    const ys = treeGen.classic ? 1 : 1 / ytop;          // the tree's top at exactly its placement height
     for (let v = 0; v < n; v++) {
-      const f = b.f.slice(v * 12, v * 12 + 12);
-      const base = (si * VMAX + v) * 3 * 4;
-      data.set(f.slice(0, 4), base); data.set(f.slice(4, 8), base + 4); data.set(f.slice(8, 12), base + 8);
+      const f = b.f.slice(v * STR, v * STR + STR);
+    f[0] *= ys; f[1] *= ys; f[2] *= ys;
+      data.set(f, (si * VMAX + v) * VTEXELS * 4);
       ymin = Math.min(ymin, f[1]); ymax = Math.max(ymax, f[1]);
       rmax = Math.max(rmax, Math.hypot(f[0], f[2]));
     }
     // unused vertices: degenerate (all zero = collapsed at the base)
     const cy = (ymin + ymax) / 2;
     let R = 0;
-    for (let v = 0; v < n; v++) { const k = v * 12; R = Math.max(R, Math.hypot(b.f[k], b.f[k + 1] - cy, b.f[k + 2])); }
+    for (let v = 0; v < n; v++) { const k = v * STR; R = Math.max(R, Math.hypot(b.f[k] * ys, b.f[k + 1] * ys - cy, b.f[k + 2] * ys)); }
     info.push({ id: sp.id, vcount: n, tris: n / 3, cy, radius: R * 1.02, rmax, ymax });
   });
   const tex = new THREE.DataTexture(data, VTEX_W, rows, THREE.RGBAFormat, THREE.FloatType);
@@ -284,9 +481,13 @@ export function buildTreeMeshes() {
 export const VERTEX_PULL_GLSL = /* glsl */`
 uniform highp sampler2D tVegVerts;
 void vegFetch(int s, int v, out vec4 t0, out vec4 t1, out vec4 t2) {
-  int i = (s * ${VMAX} + v) * 3;
+  int i = (s * ${VMAX} + v) * ${VTEXELS};
   t0 = texelFetch(tVegVerts, ivec2(i % ${VTEX_W}, i / ${VTEX_W}), 0); i++;
   t1 = texelFetch(tVegVerts, ivec2(i % ${VTEX_W}, i / ${VTEX_W}), 0); i++;
   t2 = texelFetch(tVegVerts, ivec2(i % ${VTEX_W}, i / ${VTEX_W}), 0);
+}
+vec4 vegFetchVis(int s, int v) {
+  int i = (s * ${VMAX} + v) * ${VTEXELS} + 3;
+  return texelFetch(tVegVerts, ivec2(i % ${VTEX_W}, i / ${VTEX_W}), 0);
 }
 `;

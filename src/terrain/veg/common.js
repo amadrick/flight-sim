@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { CURVATURE_GLSL } from '../../core/glsl.js';
 import { clipmapGLSL } from '../material.js';
 import { CELL_GLSL } from './placement.js';
-import { SPECIES, NSPECIES, LEAF_OPTICS, TREE_CELL } from './species.js';
+import { SPECIES, SPECIES_INDEX, NSPECIES, LEAF_OPTICS, TREE_CELL } from './species.js';
 
 export function vegVertexCommon(L) {
   return /* glsl */`
@@ -24,6 +24,26 @@ uniform float uTime;
 uniform vec3 uOrigin;
 vec2 vegCellRXZ(vec2 cell) { return (cell - uVegCellOrg) * ${TREE_CELL.toFixed(2)} + vegCellLocal(cell) - mod(uOrigin.xz, ${TREE_CELL.toFixed(2)}); }
 vec4 vegMapAt(vec2 cell) { return texelFetch(tVegMap, ivec2(mod(cell, uVegWin.z)), 0); }
+// Understory layer (VEG_UNDER): a shrub or young tree in the gap between the trees of a stand, more and bigger at the
+// stand's edge (the mantle of bushes and low growth that closes a real forest edge). Same hashes near and far, so
+// the mesh and impostor layers agree. Returns the size (m, 0 = none) and moves base / species.
+float vegUnder(vec2 cell, vec4 m, inout vec2 base, inout int s) {
+  if (m.r <= 0.0 || m.a < 0.2 || uVegSp[s].w > 0.5) return 0.0;
+  float occ = step(0.01, vegMapAt(cell + vec2(1.0, 0.0)).r) + step(0.01, vegMapAt(cell - vec2(1.0, 0.0)).r)
+            + step(0.01, vegMapAt(cell + vec2(0.0, 1.0)).r) + step(0.01, vegMapAt(cell - vec2(0.0, 1.0)).r);
+  float edge = 1.0 - 0.25 * occ;
+  vec2 uh = vegHash(cell + 130000.0), uh2 = vegHash(cell + 150000.0);
+  float p = (0.30 + 0.65 * edge) * smoothstep(0.2, 0.55, m.a);
+  if (uh.x >= p) return 0.0;
+  vec2 loc = vegCellLocal(cell);
+  base += mod(loc + ${(TREE_CELL / 2).toFixed(2)} + (uh2 - 0.5) * 2.4, ${TREE_CELL.toFixed(2)}) - loc;
+  bool conif = uVegSp[s].z > 0.5;
+  // young conifers under conifers (half the time), bushes otherwise; saplings of the stand's own species at the edge
+  s = conif && uh.y < 0.5 ? s : (uh.y < 0.8 ? ${SPECIES_INDEX.bush} : ${SPECIES_INDEX.scrub});
+  float sz = mix(1.1, 2.8, uh2.x * uh2.x) * (1.0 + 0.6 * edge);
+  if (s < ${SPECIES_INDEX.scrub}) sz = mix(2.0, 5.5, uh2.y) * (0.7 + 0.5 * edge);
+  return sz;
+}
 // height of the RENDERED terrain at render-space xz (the mesh's level blend; exact near the camera)
 float vegGround(vec2 rxz) {
   float d = terrLodDist(rxz);
@@ -62,7 +82,17 @@ vec3 vegWind(vec3 wp, float bend, float flutter, float size, float phase) {
  *  vVegHD (h_rel, d_rel, cosAz), vVegMisc (terrain shadow, cover, conifer, leaf 0..1), vVegTrans (leaf transmittance). */
 export const VEG_LIGHT_GLSL = /* glsl */`
   {
-    vec2 vTr = vegCrownTransfer(vVegHD.x, vVegHD.y, vVegHD.z, vVegMisc.y, vVegMisc.z);
+    #ifdef VEG_BAKED
+      // own crown: the per-tree visibility baked through its leaves (L1 SH, world-oriented); neighbours: the crown
+      // network's stand term (its transfer at the crown surface for this cover relative to an open-grown tree)
+      float vOwnSun = clamp(vVegVis.x + dot(vVegVis.yzw, uSunDir), 0.0, 1.0);
+      float vOwnSky = clamp(vVegVis.x + 0.6667 * vVegVis.z, 0.0, 1.0);
+      vec2 vNb = vegCrownTransfer(vVegHD.x, 0.0, vVegHD.z, vVegMisc.y, vVegMisc.z)
+               / max(vegCrownTransfer(vVegHD.x, 0.0, vVegHD.z, 0.1, vVegMisc.z), vec2(0.05));
+      vec2 vTr = vec2(vOwnSun, vOwnSky) * clamp(vNb, 0.0, 1.0);
+    #else
+      vec2 vTr = vegCrownTransfer(vVegHD.x, vVegHD.y, vVegHD.z, vVegMisc.y, vVegMisc.z);
+    #endif
     vegDbgHD = vec3(vVegHD.xy, vTr.x);
     #ifdef VEG_SM_COVER
       // where the sun shadow map covers this point it already shadows the leaves (the trees cast into it): the crown
@@ -71,8 +101,13 @@ export const VEG_LIGHT_GLSL = /* glsl */`
     #endif
     // + light diffused through the foliage (leaf single-scattering albedo ~0.3: a floor of a tenth of the open value)
     vTr += (1.0 - vTr) * vec2(0.08, 0.20);
-    float sunV = mix(1.0, vTr.x, vVegMisc.w * 0.9 + 0.1) * vVegMisc.x;
-    float skyV = mix(1.0, vTr.y, vVegMisc.w * 0.85 + 0.15);
+    #ifdef VEG_BAKED
+      float sunV = vTr.x * vVegMisc.x;       // the bake covers bark too (trunks inside the crown are in its shade)
+      float skyV = vTr.y;
+    #else
+      float sunV = mix(1.0, vTr.x, vVegMisc.w * 0.9 + 0.1) * vVegMisc.x;
+      float skyV = mix(1.0, vTr.y, vVegMisc.w * 0.85 + 0.15);
+    #endif
     vegDbgOut = vec4(sunV, skyV, dot(inverseTransformDirection(normal, viewMatrix), uSunDir), 0.0);
     reflectedLight.directDiffuse *= sunV;
     reflectedLight.directSpecular *= sunV * VEG_SPEC_DIRECT;
@@ -138,7 +173,7 @@ export const TRANS_RATIO = {
 export const FRAG_DECL_GLSL = /* glsl */`
 uniform vec3 uSunDir; uniform vec3 uSunColor;
 vec4 vegDbgOut; vec3 vegDbgHD;
-varying vec3 vVegHD; varying vec4 vVegMisc; varying vec3 vVegTrans; varying vec3 vVegWorld;
+varying vec3 vVegHD; varying vec4 vVegMisc; varying vec3 vVegTrans; varying vec3 vVegWorld; varying vec4 vVegVis;
 `;
 export function transGLSL() {
   const b = TRANS_RATIO.broad.map((v) => v.toFixed(3)).join(', '), c = TRANS_RATIO.conifer.map((v) => v.toFixed(3)).join(', ');

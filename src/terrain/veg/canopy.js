@@ -12,11 +12,12 @@
 //     .directK  multiplier for the DIRECT sun term             -> reflectedLight.directDiffuse *= mix(1, directK, w)
 //               (= BRF / albedo: hotspot > 1, toward the sun < 1)
 //     .gap      fraction of the floor visible from this view   (optional: blend toward floor colour)
-// Requires VEG_NEURAL_GLSL (src/neural/veg.js) and the uniforms tVegCanopyLUT, uVegCanopyAlb, uSunDir, plus
+// Requires VEG_NEURAL_GLSL (src/neural/veg.js) and the uniforms tVegCanopyLUT, uVegCanopyAlb, uVegLeafTint, uSunDir, plus
 // cameraPosition (built in for MeshStandardMaterial). All of them are merged into the terrain's shared `uniforms`
 // object by createTrees(), so the terrain material already receives them.
 export const VEG_CANOPY_GLSL = /* glsl */`
 struct VegCanopy { vec3 albedo; vec3 directK; float gap; };
+uniform vec3 uVegLeafTint[2];      // species.js LEAF_TINT (broadleaf, conifer): the 3-D trees' foliage darkening
 VegCanopy vegCanopy(vec3 rp, float cover, float conifer) {
   VegCanopy K;
   vec3 v = normalize(cameraPosition - rp);
@@ -26,6 +27,7 @@ VegCanopy vegCanopy(vec3 rp, float cover, float conifer) {
   vec4 brf = vegCanopyBRF(max(v.y, 0.03), cosAz, cover, conifer);
   K.albedo = vegCanopyAlbedo(cover, conifer);
   K.directK = brf.rgb / max(K.albedo, vec3(1e-4));
+  K.albedo *= mix(uVegLeafTint[0], uVegLeafTint[1], clamp(conifer, 0.0, 1.0));
   K.gap = brf.a;
   return K;
 }

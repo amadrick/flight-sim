@@ -3,7 +3,8 @@
 // the tree's bounding sphere. Two atlases, one draw call each for ALL species and frames (instanced by frame):
 //   atlas A (RGBA8): rgb = sqrt(linear albedo), a = coverage
 //   atlas B (RGBA8): rg = octahedral tree-local shading normal, b = crown-relative height h_rel, a = crown depth d_rel
-//   (both cleared to 0, i.e. premultiplied by coverage: divide by A.a after filtering)
+//   atlas C (RGBA8): baked per-tree visibility, L1 SH (r = c0, gba = c1 * 0.25 + 0.5), tree-local
+//   (all cleared to 0, i.e. premultiplied by coverage: divide by A.a after filtering)
 // At runtime the impostor fragment shader intersects the pixel's view ray with the planes of the 4 nearest frames
 // (proper per-frame parallax, no swimming near the zenith) and blends them.
 import * as THREE from 'three';
@@ -60,7 +61,7 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
     rt.texture.anisotropy = 4;
     return rt;
   };
-  const rtA = mkRT(), rtB = mkRT();
+  const rtA = mkRT(), rtB = mkRT(), rtC = mkRT();
   const info = meshes.info;
   const spData = new Float32Array(NSPECIES * 4);
   const spCol = [];
@@ -84,7 +85,7 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
       uniform vec4 uSp[${NSPECIES}];
       uniform vec4 uAtlas;
       uniform float uDepthReversed;
-      out vec2 vUv; out vec3 vN; out vec2 vHD; out float vKind; flat out int vS;
+      out vec2 vUv; out vec3 vN; out vec2 vHD; out float vKind; out vec4 vVis; flat out int vS;
       void main() {
         int N = int(uAtlas.x);
         int s = gl_InstanceID / (N * N), f = gl_InstanceID % (N * N);
@@ -103,7 +104,7 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
         vec2 ndc = px / uAtlas.zw * 2.0 - 1.0;
         gl_Position = vec4(ndc, uDepthReversed > 0.5 ? 0.5 + 0.2 * z : -0.4 * z, 1.0);   // |z| up to 2.5: leaves past the bounding radius are not clipped
         if (all(equal(t0, vec4(0.0)))) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // unused vertex
-        vUv = vec2(t0.w, t1.w); vN = t1.xyz; vHD = t2.xy; vKind = t2.w; vS = s;
+        vUv = vec2(t0.w, t1.w); vN = t1.xyz; vHD = t2.xy; vKind = t2.w; vS = s; vVis = vegFetchVis(s, gl_VertexID);
       }`,
     fragmentShader: /* glsl */`
       precision highp float; precision highp int;
@@ -112,7 +113,7 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
       uniform vec3 uCol[${NSPECIES * 2}];
       uniform float uPass;
       uniform vec4 uAtlas;
-      in vec2 vUv; in vec3 vN; in vec2 vHD; in float vKind; flat in int vS;
+      in vec2 vUv; in vec3 vN; in vec2 vHD; in float vKind; in vec4 vVis; flat in int vS;
       out vec4 outColor;
       void main() {
         vec4 fo;
@@ -132,7 +133,8 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
         }
         if (fo.a < 0.5) discard;
         if (uPass < 0.5) outColor = vec4(sqrt(clamp(alb, 0.0, 1.0)), 1.0);
-        else outColor = vec4(vegNrmEnc(normalize(vN)), clamp(vHD.x, 0.0, 1.0), clamp(vHD.y, 0.0, 1.0));
+        else if (uPass < 1.5) outColor = vec4(vegNrmEnc(normalize(vN)), clamp(vHD.x, 0.0, 1.0), clamp(vHD.y, 0.0, 1.0));
+        else outColor = vec4(clamp(vVis.x, 0.0, 1.0), clamp(vVis.yzw * 0.25 + 0.5, 0.0, 1.0));
       }`,
   });
   const mesh = new THREE.Mesh(geo, mat);
@@ -147,12 +149,13 @@ export function bakeImpostors(renderer, meshes, foliage, frameUniforms, { F = 72
   renderer.setClearColor(new THREE.Color(0, 0, 0), 0);
   mat.uniforms.uPass.value = 0; renderer.setRenderTarget(rtA); renderer.render(scene, cam);
   mat.uniforms.uPass.value = 1; renderer.setRenderTarget(rtB); renderer.render(scene, cam);
+  mat.uniforms.uPass.value = 2; renderer.setRenderTarget(rtC); renderer.render(scene, cam);
   renderer.setRenderTarget(prev); renderer.autoClear = prevAuto; renderer.setClearColor(prevCC, prevCA);
   geo.dispose(); mat.dispose();
   return {
-    atlasA: rtA.texture, atlasB: rtB.texture, F, W, H, N, rtA, rtB,
-    bytes: 2 * W * H * 4 * 4 / 3,
+    atlasA: rtA.texture, atlasB: rtB.texture, atlasC: rtC.texture, F, W, H, N, rtA, rtB, rtC,
+    bytes: 3 * W * H * 4 * 4 / 3,
     ms: performance.now() - t0,
-    dispose() { rtA.dispose(); rtB.dispose(); },
+    dispose() { rtA.dispose(); rtB.dispose(); rtC.dispose(); },
   };
 }

@@ -39,10 +39,21 @@ const TINT_REF = {
   conifer: ['spruce', 'fir', 'pine'],
 };
 const ATLAS_MOD = [0.93, 0.91, 0.87];    // mean of (0.45 + 1.1 R)(0.7 + 0.3 B)(dry tint) over covered atlas texels
-for (const g of Object.keys(TINT_REF)) {
-  const ref = [0, 1, 2].map((c) => TINT_REF[g].reduce((m, id) => m + SPECIES.find((s) => s.id === id).leaf[c], 0) / TINT_REF[g].length);
-  for (const s of SPECIES) if (s.group === g) s.leaf = s.leaf.map((v, c) => +(v / ref[c] * LEAF_OPTICS[g].rho[c] / ATLAS_MOD[c]).toFixed(4));
+// Rendered foliage is darker and less saturated than the path tracer's single-leaf reflectance: a crown seen from
+// outside shows leaves at all angles, their shaded undersides, twigs and dust (photographs of sunlit broadleaf crowns
+// average about (0.06, 0.10, 0.04) linear; conifers darker still). LEAF_TINT scales the leaf optics to that; the
+// painted distant canopy (canopy.js) applies the same factor so the hand-over keeps its brightness.
+export const LEAF_TINT = { broad: [0.72, 0.62, 0.78], conifer: [0.78, 0.70, 0.82] };
+export const leafTint = { on: true };
+export function applyLeafTint(on) {
+  leafTint.on = on;
+  for (const g of Object.keys(TINT_REF)) {
+    const ref = [0, 1, 2].map((c) => TINT_REF[g].reduce((m, id) => m + SPECIES.find((s) => s.id === id).leaf0[c], 0) / TINT_REF[g].length);
+    for (const s of SPECIES) if (s.group === g) s.leaf = s.leaf0.map((v, c) => +(v / ref[c] * LEAF_OPTICS[g].rho[c] / ATLAS_MOD[c] * (on ? LEAF_TINT[g][c] : 1)).toFixed(4));
+  }
 }
+for (const s of SPECIES) s.leaf0 = s.leaf.slice();
+applyLeafTint(true);
 export const TREE_CELL = 6.5;   // placement grid (m): at most one tree per cell, jittered inside it
 
 /** Envelope radius (fraction of H) at crown-relative height t in [0, 1]. Same as species.py:crown_radius. */
