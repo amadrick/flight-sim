@@ -20,6 +20,7 @@ function makeCanvas() {
 // Stamp a leaf-like shape. (cx, cy) base of the leaf in tile pixels, ang direction, len / wid in px.
 // prof(u) -> half width fraction (0..1) along the leaf; bright = brightness; tint = dry tint; depth = cluster depth.
 function stamp(C, tile, cx, cy, ang, len, wid, prof, bright, tint, depth, midrib = 0.25) {
+  if (C.skip && C.skip.has(tile)) return;          // tile replaced later (the random stream is still consumed)
   const N = ATLAS_SIZE, ox = (tile % TILES) * TILE, oy = Math.floor(tile / TILES) * TILE;
   const ca = Math.cos(ang), sa = Math.sin(ang);
   const ex = Math.abs(ca) * len * 0.5 + Math.abs(sa) * wid + 2, ey = Math.abs(sa) * len * 0.5 + Math.abs(ca) * wid + 2;
@@ -210,6 +211,7 @@ function barkTile(C, tile, r) {
 export function createFoliageAtlas({ classic = false } = {}) {
   const C = makeCanvas();
   const r = rng32(1234567);
+  if (!classic) C.skip = new Set([0, 1, 2, 6, 7, 11]);
   cluster(C, 0, r, { n: 300, len: 19, wid: 6, prof: lobed });
   cluster(C, 1, r, { n: 300, len: 17, wid: 7, prof: oval });
   cluster(C, 2, r, { n: 260, len: 12, wid: 5.5, prof: pointed, spread: 1.15, bright: 0.58, var: 0.45 });
@@ -288,7 +290,7 @@ export function createFoliageAtlas({ classic = false } = {}) {
   {
     const t = 11, N = ATLAS_SIZE, ox = (t % TILES) * TILE, oy = Math.floor(t / TILES) * TILE;
     const ph = Array.from({ length: 24 }, () => r() * 6.28);
-    for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    if (classic) for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
       const u = x / TILE * Math.PI * 2;
       let f = 0;
       for (let k = 0; k < 6; k++) f += Math.sin(u * (k + 3) + ph[k] + 0.6 * Math.sin(y / TILE * Math.PI * 2 * (1 + (k % 3)) + ph[k + 6])) / (k + 1);
@@ -299,6 +301,7 @@ export function createFoliageAtlas({ classic = false } = {}) {
   if (!classic) {
     // own random streams (the grass tiles above keep their content)
     const r2 = rng32(424242);
+    C.skip = null;
     for (const t of [0, 1, 2, 6, 7, 11, 12]) clearTile(C, t);
     spray(C, 0, r2, { len: 20, wid: 7.5, prof: lobed, leafEvery: 7.5 });                                  // oak
     spray(C, 1, r2, { len: 18, wid: 8.5, prof: oval, leafEvery: 7.5, side: 8 });                          // beech / poplar

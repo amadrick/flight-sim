@@ -347,7 +347,7 @@ function buildConifer(b, sp, r, o) {
         const roll = (r() - 0.5) * 1.6 + (k & 1 ? 0.35 : -0.35);
         const nrm = flat.multiplyScalar(Math.cos(roll)).addScaledVector(side, Math.sin(roll)).normalize();
         const c = p0.clone().lerp(p1, 0.5);
-        b.card(c, nrm, up, len * (0.8 + 0.25 * r()), len, T, null, shade, leafWind);
+        b.card(c, nrm, up, len * (0.85 + 0.3 * r()) * (1 + 0.5 * t), len * (1 + 0.25 * t), T, null, shade, leafWind);
       }
     }
   }
@@ -402,9 +402,11 @@ function bakeTreeLight(b, fill) {
 const SKEL = {
   oak:    { attract: 1400, shell: 0.5,  seg: 0.022, infl: 0.18, kill: 0.04,  trunkUp: 0.15, trop: -0.06, trunkR: 0.030, card: 0.11, holes: 4, lift: 0.45, lean: 0.04 },
   beech:  { attract: 1400, shell: 0.45, seg: 0.022, infl: 0.17, kill: 0.04,  trunkUp: 0.30, trop: 0.08,  trunkR: 0.024, card: 0.105, holes: 3 },
-  birch:  { attract: 1000, shell: 0.5,  seg: 0.02,  infl: 0.15, kill: 0.038, trunkUp: 0.70, trop: -0.12, trunkR: 0.016, card: 0.08, holes: 3, lift: 0.2, aspect: 0.8 },
+  birch:  { attract: 1700, shell: 0.5,  seg: 0.018, infl: 0.14, kill: 0.03, space: 0.35, trunkUp: 0.70, trop: -0.12, trunkR: 0.016, card: 0.08, holes: 3, lift: 0.2, aspect: 0.8 },
   poplar: { attract: 1000, shell: 0.55, seg: 0.02,  infl: 0.14, kill: 0.036, trunkUp: 0.75, trop: 0.55,  trunkR: 0.018, card: 0.07, holes: 2, lift: 0.8, upBias: 0.15 },
-  pine:   { attract: 520,  shell: 0.6,  seg: 0.03,  infl: 0.22, kill: 0.06,  trunkUp: 0.60, trop: 0.10,  trunkR: 0.020, card: 0.10, holes: 4, lift: 0.9, upBias: 0.45, bark: 0.30 },
+  pine:   { attract: 900,  shell: 0.6,  seg: 0.026, infl: 0.2,  kill: 0.045, trunkUp: 0.60, trop: 0.10,  trunkR: 0.020, card: 0.13, space: 0.3, holes: 4, lift: 0.9, upBias: 0.45, bark: 0.30 },
+  bush:   { attract: 900,  shell: 0.55, seg: 0.035, infl: 0.22, kill: 0.06,  trunkUp: 0.0,  trop: 0.15,  trunkR: 0.035, card: 0.26, holes: 2, lift: 0.5, bark: 0.22, rMin: 0.006, space: 0.38, yLo: 0.0 },
+  scrub:  { attract: 900,  shell: 0.55, seg: 0.035, infl: 0.22, kill: 0.06,  trunkUp: 0.05, trop: 0.05,  trunkR: 0.04,  card: 0.24, holes: 3, lift: 0.4, bark: 0.25, rMin: 0.006, space: 0.38, yLo: 0.0 },
   tropic: { attract: 1400, shell: 0.45, seg: 0.024, infl: 0.19, kill: 0.045, trunkUp: 0.25, trop: -0.02, trunkR: 0.028, card: 0.13, holes: 3, lift: 0.6, upBias: 0.5, tPow: 0.6 },
 };
 const CONIF = {

@@ -82,14 +82,14 @@ export function createForestShadows(ctx, { L, G, U, info }) {
         // cast shadow: soft ellipse
         vec2 q = vec2(vL.x / vE.z, (vL.y - vE.x) / vE.y);
         float d = length(q);
-        float cast = (1.0 - smoothstep(0.45, 1.0, d)) * vFade;
+        float castK = (1.0 - smoothstep(0.45, 1.0, d)) * vFade;
         #ifdef VEG_SM_COVER
-          cast *= 1.0 - vegShadowMapCover(vW);
+          castK *= 1.0 - vegShadowMapCover(vW);
         #endif
         // contact occlusion around the trunk (sky blocked by the crown overhead)
         float r = length(vL) / vE.w;
         float ao = (1.0 - smoothstep(0.1, 1.15, r)) * 0.38;
-        float k = 1.0 - max(cast * 0.62, ao);
+        float k = 1.0 - max(castK * 0.62, ao);
         outColor = vec4(vec3(k), 1.0);
       }`,
   });

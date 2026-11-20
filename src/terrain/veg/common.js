@@ -33,15 +33,15 @@ float vegUnder(vec2 cell, vec4 m, inout vec2 base, inout int s) {
             + step(0.01, vegMapAt(cell + vec2(0.0, 1.0)).r) + step(0.01, vegMapAt(cell - vec2(0.0, 1.0)).r);
   float edge = 1.0 - 0.25 * occ;
   vec2 uh = vegHash(cell + 130000.0), uh2 = vegHash(cell + 150000.0);
-  float p = (0.30 + 0.65 * edge) * smoothstep(0.2, 0.55, m.a);
+  float p = (0.45 + 0.55 * edge) * smoothstep(0.2, 0.5, m.a);
   if (uh.x >= p) return 0.0;
   vec2 loc = vegCellLocal(cell);
   base += mod(loc + ${(TREE_CELL / 2).toFixed(2)} + (uh2 - 0.5) * 2.4, ${TREE_CELL.toFixed(2)}) - loc;
-  bool conif = uVegSp[s].z > 0.5;
-  // young conifers under conifers (half the time), bushes otherwise; saplings of the stand's own species at the edge
-  s = conif && uh.y < 0.5 ? s : (uh.y < 0.8 ? ${SPECIES_INDEX.bush} : ${SPECIES_INDEX.scrub});
-  float sz = mix(1.1, 2.8, uh2.x * uh2.x) * (1.0 + 0.6 * edge);
-  if (s < ${SPECIES_INDEX.scrub}) sz = mix(2.0, 5.5, uh2.y) * (0.7 + 0.5 * edge);
+  // saplings of the stand's own species (more under conifers), bushes otherwise
+  bool sap = uh.y < (uVegSp[s].z > 0.5 ? 0.5 : 0.3);
+  s = sap ? s : (uh.y < 0.85 ? ${SPECIES_INDEX.bush} : ${SPECIES_INDEX.scrub});
+  float sz = mix(1.3, 3.2, uh2.x) * (1.0 + 0.5 * edge);
+  if (sap) sz = mix(2.5, 7.0, uh2.y * uh2.y) * (0.75 + 0.45 * edge);
   return sz;
 }
 // height of the RENDERED terrain at render-space xz (the mesh's level blend; exact near the camera)
@@ -97,7 +97,11 @@ export const VEG_LIGHT_GLSL = /* glsl */`
     #ifdef VEG_SM_COVER
       // where the sun shadow map covers this point it already shadows the leaves (the trees cast into it): the crown
       // network's sun term would count the same occluders a second time
-      vTr.x = mix(vTr.x, 1.0, vegShadowMapCover(vVegWorld));
+      #ifdef VEG_BAKED
+        vTr.x = mix(vTr.x, sqrt(vTr.x), vegShadowMapCover(vVegWorld));   // the bake resolves the leaf-scale self shade the map cannot
+      #else
+        vTr.x = mix(vTr.x, 1.0, vegShadowMapCover(vVegWorld));
+      #endif
     #endif
     // + light diffused through the foliage (leaf single-scattering albedo ~0.3: a floor of a tenth of the open value)
     vTr += (1.0 - vTr) * vec2(0.08, 0.20);
