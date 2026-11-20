@@ -167,7 +167,7 @@ void main() {
     float caps = exp(-dh * dh * 1.5);
     float alongK = mix(1.0, 0.2, clamp(sa, 0.0, 1.0)) * caps;
     float core = exp(-x * x * 4.0), glow = exp(-x * x * 0.7) * 0.22;
-    e = (vCol.rgb * glow + mix(vCol.rgb, vec3(dot(vCol.rgb, vec3(0.333))), 0.65) * core * 1.3) * alongK;
+    e = (vCol.rgb * glow + mix(vCol.rgb, vec3(dot(vCol.rgb, vec3(0.333))), 0.35) * core * 1.3) * alongK;
     if (dot(e, e) < 1e-10) discard;
   } else if (kind == 2.0) {
     // exhaust flame: white-hot core at the nozzle → yellow → orange → fading red tip; flicker; shock diamonds

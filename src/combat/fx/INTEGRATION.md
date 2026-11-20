@@ -1,0 +1,37 @@
+# Combat effects — integration notes / requests outside `src/combat/fx/`
+
+Everything below is optional: the module works without any of it (fallbacks in brackets).
+
+## Requests
+
+1. **`weapons.muzzleOf(entity, outVec3) → outVec3`** (weapons) — world position of the gun muzzle of `entity`
+   (per-aircraft gun ports: F-16 left wing root, A-10 nose, F-15 right wing root…).
+   [fallback: nose-forward point `position + forward · 0.4 · length`, same as the placeholder bullets]
+2. **`'bullet:ground' { position }`** (weapons) — shells striking the ground / sea. Handled: dust spout or water
+   spout by `world.groundAt().type`. [no ground strikes without it]
+3. **`missile.motor`** (bool) and optionally `missile.spec.burnTime` (s), `spec.length`, `spec.diameter` (m).
+   [motor assumed on for 4.5 s (IR) / 6 s (radar); body 2.87 m × 127 mm (IR), 3.66 m × 178 mm (radar)]
+4. **`entity.damage = { smoke 0..1, fire 0..1, engineOut[] }`** (weapons) — `engineOut[i]` truthy moves the smoke /
+   fire source to that engine's nozzle. [smoke/fire from the placeholder damage model; centre of the nozzles]
+5. **`'kill'` info `{ disintegrated }`** (weapons/core) — more and bigger debris; set `victim.hidden = true` at the
+   same time if the airframe should vanish (the core draws the wreck otherwise; we never touch `hidden`).
+6. **Per-aircraft gun data**: `entity.loadout.gun.name` containing `30 mm` / `GAU-8` (or aircraft id `a10`) gets
+   the bigger muzzle flash, smoke and hit sparks. Bullets may carry `big: true` or `caliber` (mm) for fatter tracers.
+7. **`ctx.effects.shared = { uniforms, header, anchor }`** (simulator effects, `src/effects/index.js`): expose the
+   shared uniform block, GLSL header and anchor so combat fx stops building a duplicate (two small noise textures
+   ≈ 20 ms at boot + one more anchor). [we build our own with the same helpers from `src/effects/*`; detected
+   automatically when present]
+8. **Simulator crash fx for a player shot down at altitude** (`src/effects/crash/`): `combat.kill` → `sim.destroy('Shot
+   down…')` → `'crash'` with the aircraft still kilometres up. `classifyCrash` only produces `airburst` for
+   `/structural/` reasons, so an in-air shoot-down may be classified as a ground crash and place its fireball on the
+   ground under the jet. Suggest treating `/shot down/i` with `agl > 25` as `airburst`. Combat fx deliberately
+   does not explode the player's jet (no double fireball); it does trail fire and black smoke behind the falling
+   player wreck until it reaches the ground.
+
+## Public additions on `combat.fx` (documented in README.md)
+`explode(worldPos, scale, { velocity, debris })`, `explodeAircraft(victim, weapon, info)`, `groundImpact(entity,
+position)`, `clear()`, `stats()`, `dispose()`.
+
+## Debug params (screenshots only)
+`cfxfb=0` disables the neural fireball (particles only); `cfxdmg=<0..1>` forces battle damage on every aircraft;
+`cfxcontrail=1` forces AI contrails; `cfxvapor=1` forces AI wingtip vapour.

@@ -149,7 +149,7 @@ export async function createCombatFx(combat) {
           // the hot nozzle / plume glow that gives the bandit away at range (energy-conserving minimum size)
           const G = 10 + 30 * ab * (0.9 + 0.1 * rnd());
           sprites.add(SPR.GLOW, rp2.x - fwd.x * en.r, rp2.y - fwd.y * en.r, rp2.z - fwd.z * en.r, en.r * 2.2, G, G * 0.55, G * 0.25, 0, 0, 0, 0, 1.6, 0.6 + night);
-          if (dCam < 400) considerLight(v.x, v.y, v.z, 40 * ab, 1, 0.55, 0.25);
+          if (dCam < 400) considerLight(v.x, v.y, v.z, 10 * ab, 1, 0.55, 0.25);
         } else if (night > 0.2) {
           const egt = clamp((st?.egt ?? 650) / 900, 0.3, 1) * clamp(st?.n1 ?? 0.8, 0.2, 1);
           const G = 1.6 * egt * night;
@@ -211,7 +211,7 @@ export async function createCombatFx(combat) {
         sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, (1.5 + 1.5 * fireK) * r.scale, I * 0.05, I * 0.025, I * 0.01, 0, 0, 0, 0, 1.2, 0.8);
         if (dt > 0) R.fireLicks(ps, v, s.velocity, back, (14 + 22 * fireK) * big, dt, q, r.fireAcc, (0.6 + 0.6 * fireK) * r.scale * big);
         if (dt > 0 && (isWreck || !alive)) { bodyPoint(s, [0, 0, 0], v2); R.fireLicks(ps, v2, s.velocity, back, 18, dt, q, r.fireAcc2, 1.1 * r.scale); }
-        considerLight(v.x, v.y, v.z, 2500 * fireK * big, 1, 0.5, 0.2);
+        considerLight(v.x, v.y, v.z, 120 * fireK * big, 1, 0.5, 0.2);
       }
     } else if (r.dmg) { r.dmg.stop(); }
 
@@ -228,7 +228,7 @@ export async function createCombatFx(combat) {
         sprites.add(SPR.GLOW, rp2.x, rp2.y, rp2.z, 1.6 * big, I * 0.1, I * 0.07, I * 0.04, 0, 0, 0, 0, 1.0, 1);
       }
       if (dt > 0) R.gunSmoke(ps, muzzleV, s.velocity, 70 * big, dt, q, r.gunAcc, big);
-      if (dCam < 300) considerLight(muzzleV.x, muzzleV.y, muzzleV.z, 120 * big, 1, 0.75, 0.45);
+      if (dCam < 300) considerLight(muzzleV.x, muzzleV.y, muzzleV.z, 30 * big, 1, 0.75, 0.45);
     }
 
     // ---------- far-aircraft glint impostor + navigation lights (AI) ----------
@@ -280,7 +280,7 @@ export async function createCombatFx(combat) {
         sprites.add(SPR.FLAME, rp2.x, rp2.y, rp2.z, rad * 2.6, I, I * 0.85, I * 0.65, -fwd.x * L, -fwd.y * L, -fwd.z * L, r.seed, 1.0, 0.3);
         sprites.add(SPR.GLOW, rp2.x - fwd.x * 0.5, rp2.y - fwd.y * 0.5, rp2.z - fwd.z * 0.5, 1.4, I * 0.35, I * 0.25, I * 0.14, 0, 0, 0, 0, 1.8, 1.0);
         ribbons.emit(r.rb, v, 1.0, radar ? 0.42 : 0.34, 1, 0, STYLE.MISSILE, 0);
-        considerLight(v.x, v.y, v.z, 300, 1, 0.7, 0.4);
+        considerLight(v.x, v.y, v.z, 80, 1, 0.7, 0.4);
       } else {
         // burnout: the trail thins to a faint wisp (residual smoke from the hot motor), then stops
         const tAfter = age - burn;
@@ -314,7 +314,7 @@ export async function createCombatFx(combat) {
       sprites.add(SPR.GLOW, rp.x, rp.y, rp.z, 0.45, I, I * 0.95, I * 0.86, 0, 0, 0, 0, 2.0, 1.5);
       sprites.add(SPR.GLOW, rp.x, rp.y, rp.z, 3.5, I * 0.02, I * 0.018, I * 0.014, 0, 0, 0, 0, 3.0, 1.0);
       ribbons.emit(r.rb, f.state.position, 1.1 * (1 - 0.4 * t), 0.35, burn, 0, STYLE.FLARE, 0);
-      considerLight(f.state.position.x, f.state.position.y, f.state.position.z, 600 * burn, 1, 0.95, 0.85);
+      considerLight(f.state.position.x, f.state.position.y, f.state.position.z, 150 * burn, 1, 0.95, 0.85);
     }
     for (const [f, r] of flareRecs) if (r.seen !== frame) { r.rb.release(ctx.time.now); flareRecs.delete(f); }
   }
