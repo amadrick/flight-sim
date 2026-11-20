@@ -79,6 +79,7 @@ export function createOverlay(H) {
       const r = e.state.position.distanceTo(ps);
       const threat = hostile && (H.lockers.indexOf(e) >= 0 || (H.six === e));
       if (!onScreen(e.state.position, 0)) {
+        if (H.cine) continue;
         if (threat) edgeCue(H.C.red, 9, H.six === e ? 'SIX' : 'LOCK', H.C.amber);
         else if (hostile && r < 4000) { edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E); g.fillStyle = col; g.beginPath(); diamond(E.x, E.y, 3.5); g.fill(); }
         continue;
@@ -158,12 +159,14 @@ export function createOverlay(H) {
 
   // ---- target designator ------------------------------------------------------------------------------
   function drawTarget(p) {
+    H.tgtOn = false;
     const t = p.target; if (!t || !t.alive) return;
     const L = p.lock || {};
     const locked = L.state === 'locked' && L.target === t, acq = L.state === 'acquiring' && L.target === t;
     H.geometry(p.state, t.state, geo);
     const col = H.C.red;
     if (!onScreen(t.state.position, 0)) {
+      if (H.cine) return;              // a cinematic view: "turn this way" cues would point the wrong way
       // off-screen: chevrons on the ellipse + target locator line from the centre
       const cue = edgeCue(locked ? H.C.red : H.C.redHi, 13, null);
       const ex = cue.x, ey = cue.y, a = cue.a, ca = Math.cos(a), sa = Math.sin(a);
@@ -193,23 +196,26 @@ export function createOverlay(H) {
     }
     // data block
     const bx = tx + s + 15, fs = H.fs;
-    text(t.callsign || 'TGT', bx, ty - s + fs * 0.5, H.C.fg, H.fontB, 'left');
-    text(upper(t.def?.id), bx, ty - s + fs * 1.7, H.C.dim, H.fontXS, 'left');
+    // four lines at fixed spacing (independent of the box size): call sign + type · range · closure + Δalt · aspect
+    const cs = t.callsign || 'TGT', y0 = ty - fs * 1.15;
+    text(cs, bx, y0, H.C.fg, H.fontB, 'left');
+    text(upper(t.def?.id), bx + cs.length * H.cwB + 6, y0, H.C.dim, H.fontXS, 'left');
     const rn = geo.range / NM;
-    text(rn < 10 ? F.tenth(Math.round(rn * 10)) : F.int(rn), bx, ty + fs * 0.25, col, H.fontS);
-    text('NM', bx + (rn < 10 ? 3 : 2) * H.cw + 4, ty + fs * 0.25, H.C.dim, H.fontXS);
+    text(rn < 10 ? F.tenth(Math.round(rn * 10)) : F.int(rn), bx, y0 + fs * 1.2, col, H.fontS);
+    text('NM', bx + (rn < 10 ? 3 : 2) * H.cw + 4, y0 + fs * 1.2, H.C.dim, H.fontXS);
     const vc = Math.round(geo.closure / KT / 10) * 10;
-    text(VC_STR(vc), bx, ty + fs * 1.4, H.C.fg, H.fontXS);
+    text(VC_STR(vc), bx, y0 + fs * 2.35, H.C.fg, H.fontXS);
     const dAlt = Math.round((t.state.position.y - p.state.position.y) / FT / 100);
-    text(KFT_STR(dAlt), bx + 5 * H.cwXS + 6, ty + fs * 1.4, H.C.fg, H.fontXS);
-    text(aspectWord(geo.aspect), bx, ty + fs * 2.55, H.C.amber, H.fontXS);
+    text(KFT_STR(dAlt), bx + 5 * H.cwXS + 6, y0 + fs * 2.35, H.C.fg, H.fontXS);
+    text(aspectWord(geo.aspect), bx, y0 + fs * 3.5, H.C.amber, H.fontXS);
     // hits on this target
     if (H.hit.count > 0 && H.hit.target === t && H.hit.tt > 0) {
       text(HIT_STR(H.hit.count), tx, ty + s + fs * 1.1, H.C.hud, H.fontB, 'center');
       if (H.hit.part) text(upper(H.hit.part), tx, ty + s + fs * 2.3, H.C.hud, H.fontXS, 'center');
     }
     // missile seeker: acquiring circle closes on the target
-    if (acq) {
+    if (H.cine) { /* no seeker / lock rings off the nose */ }
+    else if (acq) {
       const k = clamp(L.progress || 0, 0, 1), rr = s + 8 + (1 - k) * 34;
       g.strokeStyle = H.C.amber; g.lineWidth = 1.6;
       if (flashOn(5)) { g.setLineDash([4, 5]); g.beginPath(); g.arc(tx, ty, rr, 0, TAU); g.stroke(); g.setLineDash([]); }
@@ -218,7 +224,7 @@ export function createOverlay(H) {
       g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.arc(tx, ty, s + 8, 0, TAU); g.stroke();
       text('LOCK', tx, ty - s - 13, col, H.fontB, 'center', 'alphabetic');
     }
-    H.tgtX = tx; H.tgtY = ty; H.tgtS = s;
+    H.tgtX = tx; H.tgtY = ty; H.tgtS = s; H.tgtOn = true;
   }
 
   // ---- gun sight --------------------------------------------------------------------------------------
@@ -321,33 +327,54 @@ export function createOverlay(H) {
       g.strokeStyle = H.C.hud; g.globalAlpha = 0.6; g.lineWidth = 1.2; g.setLineDash([5, 6]);
       g.beginPath(); g.arc(H.boreX, H.boreY, 34, 0, TAU); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
     }
-    // launch-zone scale (right of centre)
+    // launch-zone scale: vertical right of centre; in the cockpit a horizontal bar under the target box (the fighter
+    // HUD's altitude tape owns the right of centre there)
     if (!tAlive) return;
     launchZone(L, LZ);
     const range = L.range || t.state.position.distanceTo(p.state.position);
     if (range > LZ.top * 1.8) return;
-    const x = Math.round(P.cx + H.lzOff) + 0.5, h = H.lzH, y0 = Math.round(P.cy + h / 2) + 0.5, y1 = y0 - h;
-    const Y = (f) => y0 - f * h;
-    g.strokeStyle = H.C.hud; g.lineWidth = 1.4; g.beginPath();
-    g.moveTo(x, y0); g.lineTo(x, y1);
-    g.moveTo(x, Y(LZ.min)); g.lineTo(x + 9, Y(LZ.min));
-    g.moveTo(x, Y(LZ.max)); g.lineTo(x + 9, Y(LZ.max));
-    g.moveTo(x - 4, y0); g.lineTo(x + 4, y0);
-    g.stroke();
-    if (LZ.ne >= 0) { g.lineWidth = 4; g.beginPath(); g.moveTo(x + 4, Y(LZ.min)); g.lineTo(x + 4, Y(LZ.ne)); g.stroke(); }
-    // range caret
-    const cy = Y(LZ.cur), inR = LZ.inRange;
-    g.fillStyle = inR ? H.C.hud : H.C.dim; g.beginPath(); g.moveTo(x - 2, cy); g.lineTo(x - 11, cy - 5); g.lineTo(x - 11, cy + 5); g.closePath(); g.fill();
-    if (range > LZ.top) { g.beginPath(); g.moveTo(x - 6, y1 - 10); g.lineTo(x - 1, y1 - 4); g.lineTo(x - 11, y1 - 4); g.closePath(); g.fill(); }
-    text(F.tenth(Math.round(range / NM * 10)), x - 14, cy, inR ? H.C.hud : H.C.fg, H.fontXS, 'right');
-    // weapon + state labels
-    text(spec?.short || (sel || '').toUpperCase(), x - 4, y1 - 18, H.C.hud, H.fontB, 'left', 'alphabetic');
-    text(F.int(n), x + (spec?.short?.length || 4) * H.cwB + 2, y1 - 18, n ? H.C.fg : H.C.red, H.fontB, 'left', 'alphabetic');
-    const st = L.target === t ? L.state : 'none';
-    text(st === 'locked' ? 'LOCKED' : st === 'acquiring' ? 'SEEKING' : n ? 'NO LOCK' : 'EMPTY', x - 4, y0 + 16, st === 'locked' ? H.C.red : st === 'acquiring' ? H.C.amber : H.C.dim, H.fontXS, 'left', 'alphabetic');
-    if (L.tti > 0) text(TTI_STR(Math.round(L.tti)), x - 4, y0 + 30, H.C.fg, H.fontXS, 'left', 'alphabetic');
-    // my missiles in flight (fly-out list)
+    const st = L.target === t ? L.state : 'none', inR = LZ.inRange;
+    const stTxt = st === 'locked' ? 'LOCKED' : st === 'acquiring' ? 'SEEKING' : n ? 'NO LOCK' : 'EMPTY';
+    const stCol = st === 'locked' ? H.C.red : st === 'acquiring' ? H.C.amber : H.C.dim;
+    const short = spec?.short || upper(sel);
+    if (H.interior) {
+      if (!H.tgtOn) return;
+      const len = 96, x0 = Math.round(H.tgtX - len / 2) + 0.5, y = Math.round(H.tgtY + H.tgtS + H.fs * 3.6) + 0.5;
+      g.strokeStyle = H.C.hud; g.lineWidth = 1.4; g.beginPath();
+      g.moveTo(x0, y); g.lineTo(x0 + len, y);
+      g.moveTo(x0, y - 3); g.lineTo(x0, y + 3);
+      g.moveTo(x0 + LZ.min * len, y); g.lineTo(x0 + LZ.min * len, y + 7);
+      g.moveTo(x0 + LZ.max * len, y); g.lineTo(x0 + LZ.max * len, y + 7);
+      g.stroke();
+      if (LZ.ne >= 0) { g.lineWidth = 4; g.beginPath(); g.moveTo(x0 + LZ.min * len, y + 3); g.lineTo(x0 + LZ.ne * len, y + 3); g.stroke(); }
+      const cx = x0 + LZ.cur * len;
+      g.fillStyle = inR ? H.C.hud : H.C.dim; g.beginPath(); g.moveTo(cx, y - 2); g.lineTo(cx - 5, y - 10); g.lineTo(cx + 5, y - 10); g.closePath(); g.fill();
+      text(short, x0, y + 18, H.C.hud, H.fontXS, 'left', 'alphabetic');
+      text(F.int(n), x0 + short.length * H.cwXS + 4, y + 18, n ? H.C.fg : H.C.red, H.fontXS, 'left', 'alphabetic');
+      text(stTxt, x0 + len, y + 18, stCol, H.fontXS, 'right', 'alphabetic');
+    } else {
+      const x = Math.round(P.cx + H.lzOff) + 0.5, h = H.lzH, y0 = Math.round(P.cy + h / 2) + 0.5, y1 = y0 - h;
+      const yMin = y0 - LZ.min * h, yMax = y0 - LZ.max * h;
+      g.strokeStyle = H.C.hud; g.lineWidth = 1.4; g.beginPath();
+      g.moveTo(x, y0); g.lineTo(x, y1);
+      g.moveTo(x, yMin); g.lineTo(x + 9, yMin);
+      g.moveTo(x, yMax); g.lineTo(x + 9, yMax);
+      g.moveTo(x - 4, y0); g.lineTo(x + 4, y0);
+      g.stroke();
+      if (LZ.ne >= 0) { g.lineWidth = 4; g.beginPath(); g.moveTo(x + 4, yMin); g.lineTo(x + 4, y0 - LZ.ne * h); g.stroke(); }
+      const cy = y0 - LZ.cur * h;
+      g.fillStyle = inR ? H.C.hud : H.C.dim; g.beginPath(); g.moveTo(x - 2, cy); g.lineTo(x - 11, cy - 5); g.lineTo(x - 11, cy + 5); g.closePath(); g.fill();
+      if (range > LZ.top) { g.beginPath(); g.moveTo(x - 6, y1 - 10); g.lineTo(x - 1, y1 - 4); g.lineTo(x - 11, y1 - 4); g.closePath(); g.fill(); }
+      text(F.tenth(Math.round(range / NM * 10)), x - 14, cy, inR ? H.C.hud : H.C.fg, H.fontXS, 'right');
+      text(short, x - 4, y1 - 18, H.C.hud, H.fontB, 'left', 'alphabetic');
+      text(F.int(n), x + short.length * H.cwB + 2, y1 - 18, n ? H.C.fg : H.C.red, H.fontB, 'left', 'alphabetic');
+      text(stTxt, x - 4, y0 + 16, stCol, H.fontXS, 'left', 'alphabetic');
+      if (L.tti > 0) text(TTI_STR(Math.round(L.tti)), x - 4, y0 + 30, H.C.fg, H.fontXS, 'left', 'alphabetic');
+    }
+    // my missiles in flight (fly-out list, outside the cockpit)
+    const x = Math.round(P.cx + H.lzOff) + 0.5, y0 = Math.round(P.cy + H.lzH / 2) + 0.5;
     let yy = y0 + (L.tti > 0 ? 46 : 32), cnt = 0;
+    if (H.interior) cnt = 3;
     for (const m of H.combat.weapons.missiles) {
       if (m.owner !== p || !m.alive || cnt >= 3) continue;
       const mt = m.target;
@@ -373,55 +400,71 @@ export function createOverlay(H) {
   function drawThreats(p) {
     const ps = p.state.position;
     const big = H.fontWarn, cy = H.warnY;
+    // warning column: screen centre, or just right of the touch layout's left stack when that reaches the middle
+    const wx = Math.max(P.cx, H.leftRight + H.fsWarn * 4.2);
     let line = 0;
-    // inbound missiles: edge cue for each, big warning for the nearest
+    // inbound missiles: a small cue for each, the nearest gets the big edge arrow + range / time, and the warning box
     let nearest = null, nd = Infinity;
     for (const th of H.threats) {
       if (th.type !== 'missile' || !th.missile?.state) continue;
-      const mp = th.missile.state.position, d = mp.distanceTo(ps);
+      const d = th.missile.state.position.distanceTo(ps);
       if (d < nd) { nd = d; nearest = th.missile; }
-      if (!onScreen(mp, 0)) edgeCue(H.C.red, 14, 'M', H.C.red);
+    }
+    for (const th of H.threats) {
+      if (th.type !== 'missile' || !th.missile?.state || th.missile === nearest || H.cine) continue;
+      if (!onScreen(th.missile.state.position, 0)) edgeCue(H.C.red, 10, null);
     }
     if (nearest) {
-      const on = flashOn(3);
+      const on = flashOn(2);
       const vrel = v1.copy(nearest.state.velocity).sub(p.state.velocity), los = v2.copy(ps).sub(nearest.state.position);
       const c = los.dot(vrel) / Math.max(1, nd);
       const tti = nearest.tgo > 0 ? nearest.tgo : timeToImpact(nd, c);
-      // box
+      // steady box, flashing word
       const w = H.warnW, hh = H.fsWarn * 1.5;
-      g.fillStyle = on ? 'rgba(120,10,0,0.55)' : 'rgba(20,4,0,0.45)'; g.fillRect(P.cx - w / 2, cy - hh / 2, w, hh);
-      g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
-      text('MISSILE', P.cx, cy + 1, on ? '#ffffff' : H.C.red, big, 'center');
-      // direction arrow toward the missile (screen direction, works behind the camera too)
-      proj(nearest.state.position);
-      const a = Math.atan2(P.dy, P.dx), ca = Math.cos(a), sa = Math.sin(a);
-      const ax = P.cx + ca * (w / 2 + 26) * (Math.abs(ca) > 0.3 ? 1 : 0.3), ay = cy + sa * (hh / 2 + 22);
-      g.beginPath(); arrowHead(ax + ca * 14, ay + sa * 14, a, 22); g.fillStyle = H.C.red; g.fill();
-      // prompt
+      g.fillStyle = 'rgba(70,6,0,0.55)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
+      g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+      if (on) text('MISSILE', wx, cy + 1, '#ffffff', big, 'center');
+      else text('MISSILE', wx, cy + 1, H.C.red, big, 'center');
+      if (tti < 60) text(TTI_STR(Math.ceil(tti)), wx + w / 2 + 8, cy, H.C.red, H.fontB, 'left');
+      // the missile itself: on screen a ring (drawn with the markers), off screen a big arrow on the edge
+      if (!H.cine && !onScreen(nearest.state.position, 0)) {
+        edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax, H.ay, E);
+        g.beginPath(); arrowHead(E.x, E.y, E.a, 30); g.fillStyle = H.C.red; g.fill();
+        g.strokeStyle = '#ffffff'; g.lineWidth = 1.2; g.stroke();
+        // label inward on the sides; beside the arrow at the top / bottom (clear of the centre cues)
+        const sa = Math.sin(E.a), side = Math.abs(sa) > 0.7;
+        const lx = side ? E.x + (E.x < P.cx ? 44 : -44) : E.x - Math.cos(E.a) * 46, ly = side ? E.y : E.y - sa * 46;
+        text(F.tenth(Math.round(nd / NM * 10)), lx, ly - 7, H.C.red, H.fontB, 'center');
+        if (tti < 60) text(TTI_STR(Math.ceil(tti)), lx, ly + 8, '#ffffff', H.fontXS, 'center');
+      } else if (!H.cine && P.front) {
+        text(F.tenth(Math.round(nd / NM * 10)), P.x + 16, P.y - 12, H.C.red, H.fontB, 'left');
+      }
+      // what to do
       const fl = p.loadout?.flares ?? 0;
       const side = H.missileSide(p, nearest.state.position);
-      const prompt = (nearest.seeker || nearest.spec?.seeker || nearest.type) === 'radar'
-        ? (side > 0 ? 'BREAK RIGHT · NOTCH' : 'BREAK LEFT · NOTCH')
-        : fl > 0 ? (side > 0 ? 'FLARES · BREAK RIGHT' : 'FLARES · BREAK LEFT') : (side > 0 ? 'BREAK RIGHT' : 'BREAK LEFT');
-      text(prompt, P.cx, cy + hh / 2 + H.fs * 1.3, H.C.amber, H.fontB, 'center');
-      if (tti < 60) text(TTI_STR(Math.ceil(tti)), P.cx + w / 2 + 8, cy - hh / 2 - 2, H.C.red, H.fontS, 'left', 'top');
+      const radar = (nearest.seeker || nearest.spec?.seeker || nearest.type) === 'radar';
+      let prompt;
+      if (H.combat.difficulty === 'rookie' && fl > 0 && !radar) prompt = H.touch ? 'FLARES!  ·  TURN HARD' : 'FLARES: V  ·  TURN HARD';
+      else if (radar) prompt = side > 0 ? 'BREAK RIGHT · NOTCH' : 'BREAK LEFT · NOTCH';
+      else prompt = fl > 0 ? (side > 0 ? 'FLARES · BREAK RIGHT' : 'FLARES · BREAK LEFT') : (side > 0 ? 'BREAK RIGHT' : 'BREAK LEFT');
+      text(prompt, wx, cy + hh / 2 + H.fs * 1.3, H.C.amber, H.fontB, 'center');
       line = 2;
     }
     // locked by (no missile yet)
     if (!nearest && H.lockers.length) {
       const e = H.lockers[0];
       const w = H.fsWarn * 7.5, hh = H.fsWarn * 1.15;
-      g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(P.cx - w / 2, cy - hh / 2, w, hh);
-      g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(P.cx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
-      text('LOCKED', P.cx, cy + 1, H.C.amber, H.fontWarnS, 'center');
-      if (e.callsign) text(e.callsign, P.cx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
+      g.fillStyle = 'rgba(30,18,0,0.5)'; g.fillRect(wx - w / 2, cy - hh / 2, w, hh);
+      g.strokeStyle = H.C.amber; g.lineWidth = 2; g.strokeRect(Math.round(wx - w / 2) + 0.5, Math.round(cy - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+      text('LOCKED', wx, cy + 1, H.C.amber, H.fontWarnS, 'center');
+      if (e.callsign) text(e.callsign, wx + w / 2 + 8, cy, H.C.amber, H.fontXS, 'left');
       line = 1;
     }
     // bandit on the six
     if (H.six) {
       const y = cy + (line ? H.fsWarn * (line === 2 ? 3.1 : 2.2) : 0);
       const on = flashOn(2);
-      text('BANDIT SIX', P.cx, y, on ? H.C.red : H.C.redHi, H.fontWarnS, 'center');
+      text('BANDIT SIX', wx, y, on ? H.C.red : H.C.redHi, H.fontWarnS, 'center');
       // down chevrons at the bottom of the scope
       g.strokeStyle = H.C.red; g.lineWidth = 2.5; g.beginPath();
       const by = P.cy + H.ay; chevron(P.cx, by, Math.PI / 2, 12); chevron(P.cx, by - 10, Math.PI / 2, 12); g.stroke();
@@ -487,19 +530,65 @@ export function createOverlay(H) {
     }
   }
 
+  // ---- combat cameras ---------------------------------------------------------------------------------
+  /** padlock: where my nose points (and which way is "up" for the jet), so I can fly while looking at the target */
+  function drawNose(p) {
+    const ps = p.state.position;
+    v1.copy(p.forward).multiplyScalar(1500).add(ps);
+    const col = H.C.hud;
+    if (onScreen(v1, 0)) {
+      const x = P.x, y = P.y;
+      v2.copy(p.up).multiplyScalar(160).add(v1);
+      let lx = 0, ly = -1;
+      if (proj(v2)) { const dx = P.x - x, dy = P.y - y, l = Math.hypot(dx, dy); if (l > 0.5) { lx = dx / l; ly = dy / l; } }
+      g.strokeStyle = col; g.lineWidth = 2; g.beginPath();
+      g.moveTo(x + 7, y); g.arc(x, y, 7, 0, TAU);
+      // wings perpendicular to the lift vector, lift line out of the top
+      g.moveTo(x - ly * 7, y + lx * 7); g.lineTo(x - ly * 18, y + lx * 18);
+      g.moveTo(x + ly * 7, y - lx * 7); g.lineTo(x + ly * 18, y - lx * 18);
+      g.moveTo(x + lx * 7, y + ly * 7); g.lineTo(x + lx * 26, y + ly * 26);
+      g.stroke();
+    } else {
+      edgeClamp(P.dx, P.dy, P.cx, P.cy, H.ax * 0.92, H.ay * 0.92, E);
+      g.beginPath(); arrowHead(E.x, E.y, E.a, 18); g.fillStyle = col; g.fill();
+      text('NOSE', E.x - Math.cos(E.a) * 30, E.y - Math.sin(E.a) * 30, col, H.fontXS, 'center');
+    }
+  }
+  const CAM_LABEL = { padlock: 'PADLOCK', missile: 'MISSILE CAM', kill: 'KILL CAM', victory: 'VICTORY' };
+  function drawCamLabel(p) {
+    const lab = CAM_LABEL[H.camMode]; if (!lab) return;
+    const y = Math.round(H.camLabelY);
+    const w = lab.length * H.cwB + 22, hh = H.fs * 1.8;
+    // centred, unless the touch layout's left stack reaches the middle: then just right of it
+    const cx = Math.max(P.cx, H.leftRight + w / 2 + 14);
+    g.fillStyle = 'rgba(6,10,15,0.55)'; g.fillRect(Math.round(cx - w / 2), y - hh / 2, Math.round(w), hh);
+    g.strokeStyle = H.camMode === 'padlock' ? H.C.hud : H.C.fg; g.lineWidth = 1;
+    g.strokeRect(Math.round(cx - w / 2) + 0.5, Math.round(y - hh / 2) + 0.5, Math.round(w), Math.round(hh));
+    text(lab, cx, y + 1, H.camMode === 'padlock' ? H.C.hud : H.C.fg, H.fontB, 'center');
+    if (H.camMode === 'missile') {
+      // time to go of my newest missile in flight
+      let m = null; for (const x of H.combat.weapons.missiles) if (x.owner === p && x.alive) m = x;
+      if (m && m.tgo > 0 && m.tgo < 99) text(TTI_STR(Math.ceil(m.tgo)), cx + w / 2 + 8, y + 1, H.C.fg, H.fontB, 'left');
+    }
+  }
+
   function draw(gg, p) {
     g = gg; o = H.ctx.world.origin;
     H.cue = ''; H.cueGun = false;
-    drawDamage();
+    // missile / kill / victory shots are not seen from the nose: nothing boresight-referenced, no "turn this way" cues
+    H.cine = H.camMode === 'missile' || H.camMode === 'kill' || H.camMode === 'victory';
+    if (!H.cine) drawDamage();
     drawMission(p);
     drawAircraft(p);
-    drawGun(p);
+    if (!H.cine) drawGun(p);
     drawTarget(p);
-    drawMissile(p);
+    if (!H.cine) drawMissile(p);
+    if (H.camMode === 'padlock') drawNose(p);
     drawHit();
     drawSplash();
     drawThreats(p);
-    drawCue();
+    if (!H.cine) drawCue();
+    drawCamLabel(p);
   }
   /** After the player is down: splash stamps / damage only. */
   function drawDead(gg) { g = gg; o = H.ctx.world.origin; drawSplash(); }

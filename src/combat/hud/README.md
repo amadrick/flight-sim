@@ -48,12 +48,22 @@
   score pops, mission-end banner (stays until the debrief screen opens), first-minute key hints (keyboard only;
   each fades when used).
 
+## Combat cameras
+Reads `combat.camera.mode`. In `missile` / `kill` / `victory` (not seen from the nose) the boresight-referenced layer is
+hidden (gun cross, funnel, pipper, seeker / lock rings, launch-zone scale, SHOOT cue, damage arcs) and so are the
+"turn this way" edge cues; world-projected markers, the target box and the warning box stay, plus a camera label at the
+top (`MISSILE CAM` with the missile's time to go, `KILL CAM`, `VICTORY`). In `padlock` everything stays and a nose /
+lift-vector cue is added (wings + lift line where the nose points, or a `NOSE` arrow on the screen edge).
+
 ## Layout
-All panel anchors live in `seats.js` (`SEATS` table + `seatMode` + `applySeats`). *wide* (desktop) and *narrow*
-(phone width, short screens or any touch device). Narrow keeps every panel out of the bottom corners and off the bottom
-edge: objectives with the radio subtitles stacked under them on the upper left, radar / stores / kills on the upper
-right (the combat touch fire buttons go on the right edge around mid-height). Re-seat panels there after the
-simulator's mobile pass.
+All panel anchors live in `seats.js` (`SEATS` table + `seatMode` + `isCompact` + `applySeats`): *wide* (desktop),
+*narrow* (small mouse/keyboard window) and *touch* (any touch-enabled screen: the right edge and bottom corners belong
+to the touch controls, so everything stacks on the upper left — [objectives | radar], a one-line stores strip, kill
+feed, subtitles). *compact* (height ≤ 440 px, e.g. phone landscape) shrinks the scope and collapses the stores panel
+to one line. In the cockpit the launch-zone scale becomes a short horizontal bar under the target box (the fighter
+HUD's altitude tape owns the right of centre). Edge cues ride an ellipse that stays above the data strip and, on touch,
+inside the right-edge buttons. Key hints (incl. `O` padlock) last 20 s of unblocked time or until each key is used;
+never on touch.
 
 Hidden when no mission is active, while `ctx.menu.isOpen`, `combat.ui.isOpen`, `ctx.params.hud === false`, in the
 showcase camera, or after `hudToggle`.
