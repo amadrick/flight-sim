@@ -274,6 +274,7 @@ float gGrassK = 0.0;             // natural grass share of the pixel (gets the l
 vec4 gCrop = vec4(-1.0, 0.0, 1.0, 0.0);   // farm field: x = crop canopy class (-1 none), y = canopy share, zw = row direction (world xz)
 float gCropAmt = 0.0;            // field share of the pixel
 float gCropH = 0.0;              // standing crop height (m), as the grass map gives the crop plants (veg/grass.js)
+float gViewMu = 1.0;             // cosine of the view zenith angle (set before terrFieldColor)
 float gCropEar = 0.0;            // 1 = cereal ears / seed heads on top (ripe or ripening grain, hay)
 
 struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; float specK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
@@ -322,7 +323,7 @@ vec4 terrSward(vec3 rp, float Hs, float cellPx, float hw0, float ear, float M, f
   float hc = -q.y, r = length(q.xz) + 1.0e-3, dist = length(q) + 1.0e-3;
   float pa = max(uTerrNear.x, 1.0e-5);
   float hpx = Hs * r / (dist * dist * pa);                       // on-screen height of an upright blade, px
-  float amp = ss(1.2, 3.5, hpx) * ss(0.05, 0.4, (hc - Hs) / max(Hs, 0.01)) * step(0.005, Hs);
+  float amp = ss(1.5, 5.0, hpx) * ss(0.05, 0.4, (hc - Hs) / max(Hs, 0.01)) * step(0.005, Hs);
   // a cell many plants wide averages them: the grain's contrast falls with range (spacing = plant spacing, m)
   amp *= clamp(pow(spacing / (r * cellPx * pa), 0.35), 0.3, 1.0);
   if (amp < 0.004) return vec4(1.0, 0.0, 0.0, 0.0);
@@ -399,6 +400,9 @@ const float CROP_NONE = -1.0;
 vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, vec4 n4, vec4 n5, float px, vec2 vxz, vec4 dd, out float rough, out vec2 fdn, out vec4 crop) {
   float t = terrFieldT(F, w, h);
   gCropH = 0.0; gCropEar = 0.0;
+  // a crop that covers 40 % of the ground seen from above hides all of it seen across the field: the gap fraction of
+  // a canopy goes as (gap from above)^(1 / cos view zenith), so the soil between the rows fades from a low eye
+  float muV = clamp(gViewMu, 0.04, 1.0);
   float stage = F.id.y;
   float id2 = fract(F.id.x * 13.13 + F.id.y * 7.71), id3 = fract(F.id.x * 3.37 + F.id.y * 17.9);
   bool wide = F.size.x > F.size.y;
@@ -432,8 +436,8 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   if (t < 0.22) {                 // winter cereal, green: from rows of thin seedlings over the soil to a closed blue-green crop
     cover = clamp(0.18 + 0.95 * stage + 0.45 * (vig - 0.5), 0.06, 1.0);
     vec3 g = mix(vec3(0.064, 0.098, 0.040), vec3(0.050, 0.086, 0.044), stage) * (0.84 + 0.32 * vig);
-    c = mix(soil, g, cover);
-    tram = 1.0; rowP = 0.125; rowA = 0.5 * (1.0 - cover) + 0.04; passA = 1.0;
+    c = mix(soil, g, 1.0 - pow(1.0 - cover, 1.0 / muV));
+    tram = 1.0; rowP = 0.125; rowA = 0.5 * pow(1.0 - cover, 1.0 / muV) + 0.04; passA = 1.0;
     preset = cover < 0.55 ? 0.0 : 1.0;
     gCropH = 0.10 + 0.75 * stage;
   } else if (t < 0.34) {          // ripening / ripe grain; the combine is in some (stubble behind a straight line)
@@ -489,8 +493,9 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
     cover = mix(0.22, 0.92, ss(0.1, 0.55, stage)) * (0.85 + 0.3 * vig);
     vec3 g = mix(vec3(0.050, 0.090, 0.032), vec3(0.040, 0.078, 0.030), vig);
     g = mix(g, vec3(0.200, 0.170, 0.095), ss(0.85, 0.97, stage));
-    c = mix(soil, g, clamp(cover, 0.0, 1.0));
-    rowP = 0.75; rowA = 0.55 * (1.0 - cover) + 0.10;
+    float gapV = pow(1.0 - clamp(cover, 0.0, 1.0), 1.0 / muV);
+    c = mix(soil, g, 1.0 - gapV);
+    rowP = 0.75; rowA = 0.55 * gapV + 0.10;
     preset = cover < 0.55 ? 7.0 : 4.0;
     gCropH = mix(0.35, 2.4, ss(0.05, 0.6, stage));
   } else if (t < 0.935) {         // oilseed rape: blue-green, then a sheet of yellow, then grey-green pods
@@ -503,8 +508,9 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
     gCropH = mix(0.3, 1.35, ss(0.0, 0.4, stage));
   } else if (t < 0.965) {         // sugar beet / potatoes: broad dark leaves in wide rows (potato ridges)
     cover = mix(0.18, 0.95, ss(0.05, 0.5, stage));
-    c = mix(soil * (0.9 + 0.1 * step(0.5, id2)), vec3(0.046, 0.090, 0.042) * (0.85 + 0.3 * vig), cover);
-    rowP = mix(0.5, 0.75, step(0.5, id2)); rowA = 0.6 * (1.0 - cover) + 0.12;
+    float gapB = pow(1.0 - cover, 1.0 / muV);
+    c = mix(soil * (0.9 + 0.1 * step(0.5, id2)), vec3(0.046, 0.090, 0.042) * (0.85 + 0.3 * vig), 1.0 - gapB);
+    rowP = mix(0.5, 0.75, step(0.5, id2)); rowA = 0.6 * gapB + 0.12;
     preset = cover < 0.55 ? 7.0 : 1.0;
     gCropH = mix(0.12, 0.45, ss(0.05, 0.5, stage));
   } else {                        // fallow: weeds over old stubble, thistles and docks
@@ -815,6 +821,7 @@ TerrSurf terrSurface(vec3 rp) {
   if (cropPot > 0.001) {
     float fr;
     vec2 fdn;
+    gViewMu = Vw.y;
     vec4 fc = terrFieldColor(C.fld, w, h, wet, n2, n3, n4, n5, px, Vw.xz, vec4(dxz, dyz), fr, fdn, gCrop);
     fieldDn = fdn * cropAmt;
     gCropAmt = cropAmt;

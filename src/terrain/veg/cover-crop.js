@@ -184,7 +184,7 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         vec3 objectNormal = normalize(normalize(pn + sv * (side * 0.4 + tw)) + vec3(0.0, 1.0 + 1.5 * isFlower, 0.0));
         // ---- colour (linear albedo; matched to terrFieldColor) -------------------------------------------------
         // every leaf its own green (yellow-green young to blue-green), the lowest, oldest leaves yellowing
-        vec3 green = mix(vec3(0.088, 0.132, 0.040), vec3(0.046, 0.094, 0.050), hb.y) * (0.75 + 0.5 * hb.z);
+        vec3 green = mix(vec3(0.076, 0.114, 0.040), vec3(0.044, 0.086, 0.046), hb.y) * (0.7 + 0.5 * hb.z);
         green = mix(green, vec3(0.150, 0.140, 0.060), isLeaf * step(0.7, hb.w) * (1.0 - smoothstep(0.0, 0.5, H0 / max(ch, 0.05))) * 0.6);
         vec3 ripe = mix(vec3(0.34, 0.27, 0.13), vec3(0.28, 0.21, 0.10), hb.y);
         vec3 c = mix(green, ripe, sen);
@@ -196,7 +196,7 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
         c *= 0.9 + 0.2 * h.x;
         float zrel = (tp.y - base.y) / max(ch, 0.05);
         float occ = mix(0.32 + 0.25 * (1.0 - cov), 1.0, smoothstep(0.0, 0.95, zrel)) * (0.8 + 0.4 * hb.z);
-        vCr = vec4(zrel, occ, (1.0 - sen * 0.7) * (isLeaf > 0.5 ? 1.0 : 0.5), 1.0 - sen * 0.5);
+        vCr = vec4(zrel, occ, (1.0 - sen * 0.4) * (isLeaf > 0.5 ? 1.0 : 0.7), 1.0 + sen * 0.6);   // (ripe straw: less light through, a waxy sheen)
         vCrC = c; vCrW = tp;
         #if CR_DBG == 2
         vCrC = vec3(gmD.g / 4.0, gmD.r, gmD.a) * 0.3;
