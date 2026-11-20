@@ -174,7 +174,7 @@ export function createVisual(ctx, opts = {}) {
     }
   }
   // front instrument panel (kit, A-10C: two MFCDs, up-front controller, standby, cautions) under a glareshield topping out at ≈ 1.0
-  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.6, drop: 0.6, height: 0.44, width: 0.86, mfd: 0.15, pages: ['mfdSA', 'mfdStores'], uv: U.bezel, uvPad: U.coaming }));
+  stat.add(K.instrumentPanel({ eye, kind: 'fighter', dist: 0.6, drop: 0.6, height: 0.44, width: 0.86, mfd: 0.15, pages: ['mfdTgp', 'mfdStores'], uv: U.bezel, uvPad: U.coaming }));
   const quadUV = (pts, uvs, nrm) => { const i0 = stat.vertexCount; pts.forEach((p, k) => stat.vert(p[0], p[1], p[2], nrm[0], nrm[1], nrm[2], uvs[k][0], uvs[k][1])); stat.quad(i0, i0 + 1, i0 + 2, i0 + 3); };
   // side consoles with panels on top (left: throttles, fuel, comms; right: lighting, oxygen, CDU)
   for (const sx of [-1, 1]) {

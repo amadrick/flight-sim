@@ -61,6 +61,53 @@ export function makePavementNoise(ctx, N = 256) {
   return finishData(tex, ctx);
 }
 
+/**
+ * Close-range aggregate, 256^2 tileable (one tile = 0.71 m of pavement in the shader, 2.8 mm per texel):
+ *  R stone / binder albedo factor (mean ~0.5), G height (stones domed above the binder), B stone tone id, A pores.
+ * Jittered-grid cellular stones of three sizes (crushed aggregate 4-14 mm) packed in a dark binder.
+ */
+export function makeAggregateTexture(ctx, N = 256) {
+  const data = new Uint8Array(N * N * 4);
+  const hb = new Float32Array(N * N), tn = new Float32Array(N * N);
+  // stones are stamped cell by cell (bounded footprint), keeping the highest at each texel
+  const layers = [[20, 0.50, 41, 1.0], [40, 0.48, 43, 0.8], [80, 0.45, 47, 0.6]];   // cells per tile, radius (cells), seed, height
+  for (const [P, rad, seed, hk] of layers) {
+    const cpx = N / P;
+    for (let cy = 0; cy < P; cy++) for (let cx = 0; cx < P; cx++) {
+      const jx = hash2(cx, cy, seed), jy = hash2(cx, cy, seed + 1), sz = hash2(cx, cy, seed + 2), tone = hash2(cx, cy, seed + 5);
+      if (hash2(cx, cy, seed + 7) < 0.18) continue;                 // gaps: binder shows between the stones
+      const ang = hash2(cx, cy, seed + 3) * 6.283, ca = Math.cos(ang), sa = Math.sin(ang);
+      const R = rad * (0.6 + 0.5 * sz) * cpx, mx = (cx + 0.15 + 0.7 * jx) * cpx, my = (cy + 0.15 + 0.7 * jy) * cpx;
+      const r0 = Math.ceil(R * 1.3);
+      for (let yy = Math.floor(my - r0); yy <= Math.ceil(my + r0); yy++) for (let xx = Math.floor(mx - r0); xx <= Math.ceil(mx + r0); xx++) {
+        const ox = xx + 0.5 - mx, oy = yy + 0.5 - my;
+        const ex = (ca * ox + sa * oy) * 1.25, ey = (-sa * ox + ca * oy) * 0.85;
+        const d = Math.max((Math.abs(ex) + Math.abs(ey)) * 0.7, Math.hypot(ex, ey)) / R;        // angular, crushed
+        if (d >= 1) continue;
+        const h = Math.sqrt(1 - d * d) * (0.55 + 0.45 * sz) * hk;
+        const i = (((yy % N) + N) % N) * N + (((xx % N) + N) % N);
+        if (h > hb[i]) { hb[i] = h; tn[i] = tone; }
+      }
+    }
+  }
+  let st = 0;
+  for (let i = 0; i < N * N; i++) {
+    const x = i % N, y = (i / N) | 0;
+    const stone = hb[i] > 0.02;
+    if (stone) st++;
+    const alb = stone ? 0.40 + 0.55 * tn[i] * tn[i] : 0.20 + 0.08 * hash2(x, y, 51);
+    const pore = !stone && hash2(x >> 1, y >> 1, 53) > 0.8 ? 1 : 0;
+    data[i * 4] = Math.min(255, alb * 255 * (pore ? 0.5 : 1));
+    data[i * 4 + 1] = Math.min(255, (0.25 + 0.75 * hb[i] - 0.2 * pore) * 255);
+    data[i * 4 + 2] = tn[i] * 255;
+    data[i * 4 + 3] = pore * 255;
+  }
+  data.stoneFraction = st / (N * N);
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  tex.colorSpace = THREE.NoColorSpace;
+  return finishData(tex, ctx);
+}
+
 // ---------- glyph atlas for painted markings ----------
 export const GLYPHS = '0123456789LRC-o';   // 'o' = soft blob (stains, tyre marks)
 export const ATLAS = { cellW: 80, cellH: 240, cols: GLYPHS.length + 1, rows: 2, w: 1280, h: 512 };

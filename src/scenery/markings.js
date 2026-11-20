@@ -200,6 +200,8 @@ function taxiMarkings(L, q) {
       if (solid) q(cx, cz, h.hdg + 90, W, 0.3, 'y');
       else dashedAlong({ x: cx - rx * W / 2, z: cz - rz * W / 2 }, { x: cx + rx * W / 2, z: cz + rz * W / 2 }, 0.9, 0.9, 0.3, 'y', q, 0.45);
     }
+    // oil and hydraulic drips where aircraft wait at the hold: heaviest under the nose and main gear and the engines
+    for (const [f, len, wid] of [[3.5, 5, 2.2], [9, 8, 3.2], [16, 11, 6.5], [27, 13, 4.2], [40, 10, 3]]) q(h.x + dx * f, h.z + dz * f, h.hdg, len, wid, 's', { glyph: 'o' });
     // enhanced taxiway centreline: dashed lines either side of the centreline for 45 m on the holding side
     for (const sgn of [-1, 1]) {
       const a = { x: h.x + dx * 2 + rx * sgn * 0.45, z: h.z + dz * 2 + rz * sgn * 0.45 };
