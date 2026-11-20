@@ -75,3 +75,5 @@ rebuilt only on resize / font load; numbers come from memoised string caches (no
 - Dual-screen devices spanned across a vertical hinge (viewport segments) without touch: the strip docks on the left screen;
   the conformal fighter HUD would sit on the hinge (the camera centre), so it falls back to the strip. Toasts, the paused tag,
   the crash card and the hint card stay on one screen (CSS `horizontal-/vertical-viewport-segments` + `env(viewport-segment-*)`).
+- `ctx.hud.stripRect` → `{x, y, w, h, r}` of the exterior flight-data strip while it is drawn (else null), and
+  `ctx.hud.hintVisible` (controls card up): for overlays that must sit around the strip (combat HUD request 1).

@@ -42,7 +42,9 @@ export async function createHud(ctx) {
       ext.setGlass(true);
     }
   } catch { plate = null; }
+  let stripOn = false;      // the flight-data strip was drawn this frame (hud.stripRect)
   function syncPlate(on) {
+    stripOn = !!on;
     if (!plate) return;
     if (!on) { if (!plate.hidden) plate.hidden = true; return; }
     const r = ext.rect; if (!r) return;
@@ -121,6 +123,10 @@ export async function createHud(ctx) {
       if (a) notices.toast('Destination ' + a.id, { key: 'dest', tone: 'info' });
     },
     setVisible(v) { userVisible = !!v; },
+    /** The exterior flight-data strip's rectangle {x, y, w, h, r} in CSS px while it is on screen, else null. */
+    get stripRect() { return stripOn ? ext.rect : null; },
+    /** The keyboard controls card is up. */
+    get hintVisible() { return !!notices.hintVisible; },
     toast(text, opts) { notices.toast(text, opts); },
     update(dt) {
       const realDt = num(ctx.time?.realDt, 1 / 60);
