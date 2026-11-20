@@ -166,11 +166,11 @@ export function makePavementMaterial(ctx, shared, pools) {
             // later reconstruction: the odd block of slabs replaced, a touch paler / cleaner
             vec2 zc = floor(sl / (slab * vec2(9.0, 2.0)));
             col *= 1.0 + 0.07 * step(0.82, scnHash(zc * 3.1 + seed + 11.0));
-            float jx = scnLines(sl.x + 0.01, slab.x, 0.012), jy = scnLines(sl.y + 0.01, slab.y, 0.016);
+            float jx = scnLines(sl.x + 0.01, slab.x, 0.022), jy = scnLines(sl.y + 0.01, slab.y, 0.028);
             float ob = max(scnLines(sl.x + 0.06, slab.x, 0.12) * step(0.8, h2), scnLines(sl.y + 0.06, slab.y, 0.12) * step(0.7, laneT));
             float j = max(jx, jy);
             // sealed joints: a thin dark sealant line, its edges a little chipped; old joints weathered paler
-            col *= 1.0 - (0.34 - 0.16 * step(0.6, h3)) * j;
+            col *= 1.0 - (0.5 - 0.18 * step(0.6, h3)) * j;
             // broom finish (transverse texture) and mottled curing: visible only up close / as a mean tone
             col *= 0.97 + 0.06 * texture(tNoise, vec2(sl.x / 0.9, sl.y / 23.0) + 0.29).r * (1.0 - smoothstep(0.01, 0.05, length(fwidth(sl))));
             col *= 0.92 + 0.16 * smoothstep(0.3, 0.7, texture(tNoise, sl / 2.7 + 0.61).g);

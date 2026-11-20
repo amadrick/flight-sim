@@ -180,9 +180,10 @@ export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span 
   const path = (buf, pts, tw, I) => {                                         // pts: [a, x] every ~0.25 m
     for (const [a, x] of pts) { const j = rowOf(a); if (a >= 0 && j < nv) stamp(buf, j, x - tw / 2, x + tw / 2, I * 0.25 / (A[j + 1] - A[j])); }
   };
-  for (let n = 0; n < landings * 0.6; n++) {
+  // (fewer departures than landings and each a little heavier: separate marks rather than a smooth grey band)
+  for (let n = 0; n < landings * 0.2; n++) {
     const ac = AIRCRAFT_MIX[Math.min(3, Math.floor(r() * 4))];
-    const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r(), I = ac[5] * Math.exp(0.4 * gauss());
+    const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r(), I = 2.2 * ac[5] * Math.exp(0.5 * gauss());
     const sd = r() < 0.65 ? 1 : -1;                                          // which side the entry taxiway is on
     const Rt = 16 + 24 * r(), aE = Rt + 4 + 30 * r() * r(), off = gauss() * 0.45;
     for (const g of [-1, 1]) for (let k = 0; k < ac[2]; k++) {
@@ -196,7 +197,7 @@ export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span 
       const x = off + (Rt - Rr) * sd, a1 = aE + 2 + 25 * r();
       for (let j = rowOf(aE); j < Math.min(nv, rowOf(a1 + 80)); j++) {
         const a = 0.5 * (A[j] + A[j + 1]);
-        stamp(acc, j, x - ac[4] / 2, x + ac[4] / 2, I * (a < a1 ? 0.04 : 0.3 * Math.exp(-(a - a1) / 26)) * (0.4 + 1.2 * r() * r()));
+        stamp(acc, j, x - ac[4] / 2, x + ac[4] / 2, I * (a < a1 ? 0.03 : 0.16 * Math.exp(-(a - a1) / 26)) * (0.3 + 1.4 * r() * r()));
       }
     }
   }
