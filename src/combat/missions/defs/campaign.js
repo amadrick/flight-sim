@@ -264,11 +264,11 @@ export const CAMPAIGN = [
     start: { at: { x: 40000, z: -92000 }, agl: 900, hdg: 0, spd: 250 },
     script(s) {
       const lineZ = s.places.lanternLine.z;
-      const z0 = s.anchor.z - s.n(14000, 22000, 26000);
+      const z0 = s.anchor.z - s.n(20000, 31500, 33000);
       const path = s.route([{ x: 40000, z: z0 }, { x: 46000, z: z0 - 14000 }, { x: 37000, z: z0 - 28000 }, { x: 43000, z: lineZ - 20000 }, { x: 40000, z: lineZ - 60000 }], { agl: 600 });
       const mule = s.group('mule', {
         type: 'c17', count: 1, callsign: 'Mule', single: true, at: path[0].clone(), heading: 0, passive: true, loadout: { ...UNARMED, flares: s.n(10, 45, 60) },
-        hp: s.n(160, 280, 320), points: 300, role: 'hva', mark: 'MULE', order: () => s.orders.patrol(path.slice(1), { passive: true, loop: false }),
+        hp: s.n(160, 460, 520), points: 300, role: 'hva', mark: 'MULE', order: () => s.orders.patrol(path.slice(1), { passive: true, loop: false }),
       });
       const M = () => mule.leader;
       const gravel = s.group('gravel', {
@@ -285,7 +285,7 @@ export const CAMPAIGN = [
       };
       s.on('missile:launch', ({ shooter }) => { if (shooter === s.player) s.after(s.n(4, 2, 1), () => wake('shot')); });
       s.on('damage', ({ target }) => { if (target === M() || gravel.members.includes(target)) wake('shot'); });
-      s.when(() => { const p = s.player, m = M(); return p && m && flat(p.state.position, m.state.position) < s.n(3000, 7000, 9000); }, () => wake('seen'));
+      s.when(() => { const p = s.player, m = M(); return p && m && flat(p.state.position, m.state.position) < s.n(3000, 12000, 15000); }, () => wake('seen'));
       const kill = s.destroy('mule', 'Shoot down Mule before the Lantern Line', mule);
       s.destroy('escorts', 'Destroy the escorts', gravel, { optional: true });
       const style = s.objective('gun', 'Bring Mule down with the gun', { hidden: true, points: 300 });
