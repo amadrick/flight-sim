@@ -247,6 +247,9 @@ player's except for the rookie auto-throttle. It never reads devices, so it work
   A dive / climb is kept; near level the wings come back level.
 - Keys (`device` 'auto' | 'analog' | 'keys'): tap = a 1.7° nose step, hold = a rate ramping to the full turn over 0.4 s, the
   opposite key within 0.4 s = stop. 'auto' picks keys when the simulator's input mode is keyboard, or mouse without the yoke.
+- Touch: while the touch UI is up the assist reads `ctx.input.touch.raw` (+x right, +y = drag down = nose up, the simulator's
+  stick convention), shapes it itself (dead zone 0.04, linear), sets `ctx.input.touch.autoCoord = false` while steering and
+  restores it on disengage, mission end, abort or player down. A lifted thumb is a release.
 - Gun help (`aimAssist` 0..1; defaults rookie 0.8, veteran 0.4, ace 0): only with a target, inside 1.4 km and gun range, with
   the solution within 0.1 rad of the nose; N is drawn to it × closeness × (1 − stick opposition). `info.gunAssist` while acting.
 - Pointer aim: `aim.active` → N = the camera ray through `aim.{x,y}` (offset from the screen centre, -1..1, +x right, +y up).
@@ -256,5 +259,5 @@ player's except for the rookie auto-throttle. It never reads devices, so it work
 - Stays out: on the ground, gear down below 200 ft AGL, autopilot engaged, player dead, mission ended, paused, mode 'off'.
 
 API: `mode`, `setMode('assist' | 'off' | null = difficulty default)`, `aim {x,y,active}`, `aimAssist`, `setAimAssist(v | null)`,
-`frame`, `device`, `info {mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint, keys}`, `command`, `path`, `frameRight`, `frameUp`,
+`frame`, `device`, `info {mode, active, gunAssist, limiting, pullUp, autoThrottle, aimPoint, keys, touch, fightSpeed (m/s IAS), slow}`, `command`, `path`, `frameRight`, `frameUp`,
 `reset()` (core calls it on mission start / restart), `update(dt)`. The HUD draws `command` as the "nose goes here" reticle.
