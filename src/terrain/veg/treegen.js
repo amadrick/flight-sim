@@ -388,11 +388,11 @@ function bakeTreeLight(b, fill) {
       const sh = bakeVisibility(g, [cx / 6, cy / 6, cz / 6], null, fill, 0.8);
       for (let j = 0; j < 6; j++) for (let c = 0; c < 4; c++) F[k + j * STR + 12 + c] = sh[c];
     } else {
-      for (let j = 0; j < 6; j++) {
-        const q = k + j * STR;
-        const p = [F[q] + F[q + 4] * 0.01, F[q + 1] + F[q + 5] * 0.01, F[q + 2] + F[q + 6] * 0.01];
-        const sh = bakeVisibility(g, p, null, fill, 0.3); for (let c = 0; c < 4; c++) F[q + 12 + c] = sh[c];
-      }
+      // bark: one bake per quad (pairs of triangles share their ring), a little off the surface
+      let cx = 0, cy = 0, cz = 0;
+      for (let j = 0; j < 6; j++) { const q = k + j * STR; cx += F[q] + F[q + 4] * 0.01; cy += F[q + 1] + F[q + 5] * 0.01; cz += F[q + 2] + F[q + 6] * 0.01; }
+      const sh = bakeVisibility(g, [cx / 6, cy / 6, cz / 6], null, fill, 0.3);
+      for (let j = 0; j < 6; j++) for (let c = 0; c < 4; c++) F[k + j * STR + 12 + c] = sh[c];
     }
   }
 }
