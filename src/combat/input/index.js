@@ -1,34 +1,39 @@
 // COMBAT INPUT — keyboard, mouse, gamepad and touch fire controls for a running mission.
 // API (COMBAT.md §9): createCombatInput(combat) -> { update(dt), trigger, bindings }
 //   plus (additive, see src/combat/ui/README.md): padBindings, padOwns(buttonIndex), touchVisible, release().
-// Emits combat.events 'cmd' { name }: missile, flare, targetNext, targetPrev, targetNearest, weaponNext.
+// Emits combat.events 'cmd' { name }: missile, flare, targetNext, targetPrev, targetNearest, weaponNext, padlock, missileCam.
 // `trigger` = gun held. Everything stands down while the menu or a combat screen is open, while paused, while the user
 // types in a field, and when no mission is live; the trigger is released on blur, tab switch, pause and menu.
-import { keyAction, padAction, PAD_OWNED, TOUCH_BUTTONS, COMBAT_BINDINGS, COMBAT_PAD_BINDINGS, PAD_FALLBACK_BINDINGS } from './map.js';
+import { keyAction, padStep, PAD_MAP, PAD_FREE, PAD_OWNED, TOUCH_BUTTONS, COMBAT_BINDINGS, COMBAT_PAD_BINDINGS, PAD_FALLBACK_BINDINGS } from './map.js';
 
 export { COMBAT_BINDINGS };
 
-// Touch fire controls: one container, placed by ONE CSS block (.cbt-inp-touch below) on the right edge above mid-height,
-// in thumb reach above wherever a bottom-right throttle sits and clear of a bottom-left stick and top-right buttons.
-// Buttons are created by createTouchButtons(parent) so they can be re-parented into a future touch "slot" API.
-const CSS = `
+// Touch fire controls. PLACEMENT IS ONE BLOCK: TOUCH_PLACE (CSS for the container) + mountTouch() (which parent the
+// container goes into). Today: own container on the right edge, upper half — thumb reach above any bottom-right
+// throttle, clear of a bottom-left stick, the top-right buttons and the centre of the view (camera-safe: nothing over
+// the gun sight / the padlock target area). When the base input exposes a touch "slot" for action buttons, change
+// mountTouch() to return it (and drop TOUCH_PLACE); createTouchButtons(parent) does not care where it lives.
+const TOUCH_PLACE = `
 .cbt-inp-touch{position:absolute;z-index:7;pointer-events:auto;touch-action:none;
-  right:max(16px,env(safe-area-inset-right,0px));top:clamp(calc(64px + env(safe-area-inset-top,0px)),28vh,280px)}
-@media (max-height:520px){.cbt-inp-touch{top:calc(64px + env(safe-area-inset-top,0px))}}
+  right:max(16px,env(safe-area-inset-right,0px));top:clamp(calc(64px + env(safe-area-inset-top,0px)),24vh,260px)}
+@media (max-height:520px){.cbt-inp-touch{top:calc(60px + env(safe-area-inset-top,0px))}}
+`;
+const CSS = TOUCH_PLACE + `
 .cbt-inp-touch[hidden]{display:none!important}
-.cbt-inp-grid{display:grid;grid-template-columns:repeat(2,54px);grid-template-areas:"tgt flr" "msl msl" "gun gun";gap:8px;font-family:var(--font-display,'Arial Narrow',Arial,sans-serif)}
-@media (max-height:520px){.cbt-inp-grid{grid-template-areas:"tgt flr" "msl gun"}.cbt-inp-grid .cbt-inp-gun{height:54px}}
+.cbt-inp-grid{display:grid;grid-template-columns:repeat(2,54px);grid-template-areas:"view tgt" "flr msl" "gun gun";gap:8px;font-family:var(--font-display,'Arial Narrow',Arial,sans-serif)}
+@media (max-height:520px){.cbt-inp-grid{grid-template-columns:repeat(3,52px);grid-template-areas:"view tgt flr" "msl gun gun"}.cbt-inp-grid .cbt-inp-gun{height:52px}}
 .cbt-inp-btn{height:52px;min-width:52px;box-sizing:border-box;display:grid;place-items:center;border-radius:18px;font-size:14px;font-weight:700;letter-spacing:.12em;
   color:var(--fg,#f2f6fa);background:rgba(12,18,24,.5);border:1px solid rgba(143,161,179,.45);user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;padding-left:.12em}
-.cbt-inp-btn[data-act="targetNext"]{grid-area:tgt}.cbt-inp-btn[data-act="flare"]{grid-area:flr}.cbt-inp-btn[data-act="missile"]{grid-area:msl}
-.cbt-inp-btn.cbt-inp-gun{grid-area:gun;height:68px;font-size:18px;letter-spacing:.3em;padding-left:.3em;color:#ffd9cf;box-shadow:inset 0 0 0 1.5px rgb(255 90 60 / .55),0 6px 18px rgb(0 0 0 / .2)!important}
+.cbt-inp-btn.cbt-inp-small{font-size:12.5px}
+.cbt-inp-btn.cbt-inp-gun{height:72px;font-size:19px;letter-spacing:.3em;padding-left:.3em;color:#ffd9cf;box-shadow:inset 0 0 0 1.5px rgb(255 90 60 / .55),0 6px 18px rgb(0 0 0 / .2)!important}
 .cbt-inp-btn.down{background:rgb(255 176 0 / .6)!important;color:var(--accent-ink,#1c1300)!important}
+.cbt-inp-btn.on{box-shadow:inset 0 0 0 1.5px rgb(255 176 0 / .8)!important;color:var(--amber-soft,#ffd27a)!important}
 .cbt-inp-btn.cbt-inp-gun.down{background:rgb(255 90 60 / .7)!important;color:#fff!important}
 @media (prefers-reduced-motion:reduce){.cbt-inp-btn{transition:none!important}}
 `;
 
 /**
- * Build the four fire buttons into `parent` (any element; a future touch-slot container works too).
+ * Build the fire buttons (TOUCH_BUTTONS) into `parent` (any element; a future touch-slot container works too).
  * onPress(id) for taps, onHold(on) for the gun. Returns { el, release() }.
  */
 export function createTouchButtons(parent, onPress, onHold) {
@@ -36,7 +41,8 @@ export function createTouchButtons(parent, onPress, onHold) {
   const releases = [];
   for (const t of TOUCH_BUTTONS) {
     const b = document.createElement('div');
-    b.className = 'cbt-inp-btn inp-btn' + (t.hold ? ' cbt-inp-gun' : ''); b.textContent = t.label;
+    b.className = 'cbt-inp-btn inp-btn' + (t.hold ? ' cbt-inp-gun' : t.label.length > 3 ? ' cbt-inp-small' : ''); b.textContent = t.label;
+    if (t.area) b.style.gridArea = t.area;
     b.setAttribute('role', 'button'); b.setAttribute('aria-label', t.aria); b.dataset.act = t.id;
     let pid = -1;
     b.addEventListener('pointerdown', (e) => {
@@ -52,7 +58,7 @@ export function createTouchButtons(parent, onPress, onHold) {
     grid.appendChild(b);
   }
   parent.appendChild(grid);
-  return { el: grid, release() { for (const r of releases) r(); } };
+  return { el: grid, release() { for (const r of releases) r(); }, button: (id) => grid.querySelector(`[data-act="${id}"]`) };
 }
 
 export async function createCombatInput(combat) {
@@ -119,40 +125,36 @@ export async function createCombatInput(combat) {
   combat.events.on('mission:abort', () => { release(); setTouchVisible(false); });
 
   // ---- gamepad -----------------------------------------------------------------------------------------------
-  // Full map (PAD_MAP: A gun, B flares, X missile, Y next target, R3 nearest, D-pad up switch missile, D-pad down
-  // speedbrake) only when the simulator's input honours padOwns() — it advertises that with ctx.input.combatPadHook
-  // (patch in src/combat/ui/INTEGRATION.md). Without it every face button still does its simulator job, so combat
-  // takes only the one free button: right stick click = gun (hold).
+  // Combat reads navigator.getGamepads() itself during a live mission (see map.js for why these buttons):
+  // default PAD_FREE (R3 gun hold, Home padlock: buttons the simulator does not map, so nothing double-fires);
+  // PAD_MAP (RT gun with dead zone, RB missile, B flares, X / Y targets, LB switch missile, R3 padlock) only when the
+  // simulator's input advertises ctx.input.combatPadHook and skips the buttons padOwns() claims.
   const hooked = () => !!ctx.input?.combatPadHook;
   /** True when combat (or a combat screen) owns standard-gamepad button i this frame (src/input should skip it). */
   function padOwns(i) {
     if (combat.ui?.isOpen) return true;                                  // screens navigate with the pad
-    return PAD_OWNED.has(i) && combat.active && !ctx.menu?.isOpen && airborne() && !!combat.world?.player?.alive;
+    return hooked() && PAD_OWNED.has(i) && combat.active && !ctx.menu?.isOpen && airborne() && !!combat.world?.player?.alive;
   }
   function pollPad() {
     let gp = null;
     try { const l = navigator.getGamepads?.() || []; for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } } catch { gp = null; }
     if (!gp || gp.mapping !== 'standard') { held.pad = false; pad.prev.length = 0; return; }
-    const bt = gp.buttons;
-    const ok = live() && airborne();
-    if (!hooked()) { held.pad = ok && !!bt[11]?.pressed; pad.prev.length = 0; return; }
-    held.pad = ok && !!bt[0]?.pressed;
-    for (let i = 1; i < 16; i++) {
-      const p = !!bt[i]?.pressed, was = !!pad.prev[i]; pad.prev[i] = p;
-      if (!p || was || !ok) continue;
-      const a = padAction(i); if (a && a !== 'gun') act(a);
-    }
+    const r = padStep(gp.buttons, pad.prev, hooked() ? PAD_MAP : PAD_FREE, live() && airborne(), held.pad);
+    held.pad = r.gun;
+    for (const c of r.cmds) act(c);
   }
   input.padHooked = hooked;
 
   // ---- touch ---------------------------------------------------------------------------------------------------
-  let touchEl = null, touchBtns = null;
+  let touchEl = null, touchBtns = null, padOn = false;
   function buildTouch() {
     const st = document.createElement('style'); st.id = 'cbt-inp-style'; st.textContent = CSS; document.head.appendChild(st);
     touchEl = document.createElement('div'); touchEl.className = 'cbt-inp-touch'; touchEl.hidden = true;
     touchBtns = createTouchButtons(touchEl, (id) => { if (live()) act(id); }, (on) => { held.touch = on; });
-    ctx.uiRoot.appendChild(touchEl);
+    mountTouch().appendChild(touchEl);
   }
+  /** The one place that decides where the touch buttons live (swap for the base input's touch slot when it exists). */
+  function mountTouch() { return ctx.uiRoot; }
   function setTouchVisible(v) {
     if (v && !touchEl) buildTouch();
     if (touchEl && touchEl.hidden === v) { touchEl.hidden = !v; if (!v) touchBtns?.release(); }
@@ -168,6 +170,7 @@ export async function createCombatInput(combat) {
     setTouchVisible(touchOn);
     if (!touchOn) held.touch = false;
     input.trigger = isLive && airborne() && (held.key || held.mouse || held.touch || held.pad);
+    if (touchBtns && input.touchVisible) { const on = combat.camera?.mode === 'padlock'; if (on !== padOn) { padOn = on; touchBtns.button('padlock')?.classList.toggle('on', on); } }
   }
   return input;
 }
