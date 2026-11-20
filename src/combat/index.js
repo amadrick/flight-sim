@@ -6,6 +6,7 @@ import { Events } from '../core/events.js';
 import { makeRng } from '../core/math.js';
 import { createWorld } from './world.js';
 import { createTargeting } from './targeting.js';
+import { createAssist } from './assist/index.js';
 import { createAi } from './ai/index.js';
 import { createWeapons } from './weapons/index.js';
 import { createDirector } from './missions/index.js';
@@ -30,7 +31,7 @@ export async function createCombat(ctx, opts = {}) {
     result: null,                  // null while the mission is undecided, else { outcome: 'success'|'failure', reason, stats }
     difficulty: DIFFICULTIES.includes(ctx.params?.raw?.difficulty) ? ctx.params.raw.difficulty : 'rookie',   // first-time players start easy; the briefing screen remembers their choice
     clock: 0,                      // mission time, simulated seconds
-    world: null, targeting: null, ai: null, weapons: null, director: null, fx: null, hud: null, input: null, audio: null, ui: null, camera: null,
+    world: null, targeting: null, ai: null, weapons: null, director: null, fx: null, hud: null, input: null, audio: null, ui: null, camera: null, assist: null,
     start, restart, abort, end, kill, pre, step, cam, late,
   };
   combat.world = createWorld(combat);
@@ -38,6 +39,7 @@ export async function createCombat(ctx, opts = {}) {
   combat.ai = createAi(combat);
   combat.director = createDirector(combat);
   combat.targeting = createTargeting(combat);
+  combat.assist = createAssist(combat);
   if (!headless) {
     combat.fx = await createCombatFx(combat);
     combat.audio = await createCombatAudio(combat);
@@ -126,6 +128,7 @@ export async function createCombat(ctx, opts = {}) {
     combat.input?.update?.(dt);
     const p = world.player;
     if (p && p.alive && p.pilot && !p.ownsSim && dt > 0) p.pilot.update(dt);
+    else if (p && p.alive && !p.pilot && dt > 0) combat.assist.update(dt);   // a human flies: the assist may rewrite ctx.controls
   }
   /** After the player's physics step: missions, AI aircraft, weapons, effects. */
   function step(dt) {
