@@ -928,7 +928,7 @@ export function createPilot(combat, team, e, o = {}) {
     }
     {
       const deck = prof.heavy ? 500 : sk.deck;
-      const nS = Math.max(2, Math.min(gFight * 0.7, prof.heavy ? 1.8 : 6));
+      const nS = Math.max(1.6, Math.min(gFight * 0.7, prof.heavy ? 1.8 : 6, fc.nzFull * 0.75));
       const R = (V * V) / (G0 * (nS - 1));
       const gamNow = Math.asin(clamp(s.velocity.y / V, -1, 1));
       const rollT = Math.abs(s.roll) > 1.2 ? Math.abs(s.roll) / Math.max(prof.rollRate * 0.7, 0.5) + 0.3 : 0.3;
@@ -989,10 +989,10 @@ export function createPilot(combat, team, e, o = {}) {
       const dm = e.sim?.damage, ctrl = dm ? clamp(dm.ctrl ?? 1, 0.12, 1) : 1, thr = dm ? clamp(dm.thrust ?? 1, 0, 1) : 1;
       const auth = Math.min(1, ctrl * 1.6);                    // the pilot's extra stick recovers some authority
       const nzAvail = Math.min((prof.fbw ? prof.fcsNzMax * 0.95 : prof.gMax * 0.85) * auth, Math.max(1.3, (s.ias / Math.max(prof.stall, 40)) ** 2 * 0.9));
-      RP.nz = Math.max(1.2, nzAvail); RP.rollRate = Math.min(prof.rollRate, 3) * 0.8 * auth; RP.climb = prof.heavy ? 0.15 : thr < 0.6 ? 0.15 : 0.35; RP.turn = 0;
+      RP.nz = Math.max(1.2, Math.min(nzAvail, fc.nzFull * 0.9)); RP.rollRate = Math.min(prof.rollRate, 3) * 0.8 * auth; RP.climb = prof.heavy ? 0.15 : thr < 0.6 ? 0.15 : 0.35; RP.turn = 0;
       RP.horizon = clamp(V / 22, 8, 18); RP.dt = 0.35; RP.delay = 0.25; RP.nz *= 0.85;
       predictRecovery(ground, RS, RP, REC);
-      const margin = (80 + V * 0.5) * (1 + (1 - auth) * 1.5 + (1 - thr) * 0.5);
+      const margin = (100 + V * 0.65) * (1 + (1 - auth) * 1.5 + (1 - thr) * 0.5);
       if (REC.clear < margin) {
         if (!recovering) { recovering = true; recT = 0; escTurn = 0; }
         // can a turning escape do better? (mountain ahead)

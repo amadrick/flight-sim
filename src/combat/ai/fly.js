@@ -131,7 +131,7 @@ export function createFlightController(e, prof) {
       // the G we can use right now is the part of the wanted lift along the current lift axis; pull only once the
       // lift vector is close, unload while rolling (rolls faster, as pilots do)
       const cr = Math.cos(re);
-      fc.nzCmd = cr > 0 ? nz * cr * cr : Math.max(nz * cr, -1) * 0.5;
+      fc.nzCmd = cr > 0 ? nz * cr * cr : 0.2;                  // unload (not push) while rolling the lift vector round
       if (Math.abs(re) > 0.6 && fc.nzCmd > 1.2) fc.nzCmd = Math.max(1.2, fc.nzCmd * 0.6);
     },
 
@@ -187,7 +187,7 @@ export function createFlightController(e, prof) {
       fc.yawCmd = err < 0.05 ? clamp(_n.dot(e.right) * 12, -0.4, 0.4) : 0;
       return err;
     },
-    exPrev: 0, exDot: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
+    nzFull: prof.gMax, exPrev: 0, exDot: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
 
     /** Speed hold: target IAS (m/s). opts: { ab: allow afterburner, brake: allow the speedbrake, min, max lever } */
     speed(ias, ab = true, brake = true, minLever = 0) {
@@ -238,10 +238,18 @@ export function createFlightController(e, prof) {
         const KI = 0.15, KP = 0.06, KQ = 0.6;
         if (prot === 0 || (prot < 0 && err < 0) || (prot > 0 && err > 0)) fc.integ = clamp(fc.integ + err * KI * k * dt, -1, 1);
         else fc.integ = clamp(fc.integ + prot * 0.5 * dt, -1, 1);
-        stick = clamp(fc.integ + err * KP * k - s.bodyRates.q * KQ + prot, -1, 1);
+        // feed-forward from the learned stick → G gain (full aft stick ≈ nzFull), the PI trims the rest
+        const ff = nz > 1 && !p.heavy ? 0.6 * (nz - 1) / Math.max(fc.nzFull - 1, 0.8) : 0;
+        stick = clamp(ff + fc.integ + err * KP * k - s.bodyRates.q * KQ + prot, -1, 1);
         if (s.stalled) fc.integ = Math.min(fc.integ, 0.0);
       }
       c.pitch = clamp(stick, -1, 1); fc.dbgNz = nz;
+      // learn the G that full aft stick gives right now (conventional aircraft run out of elevator at high speed, and
+      // battle damage takes authority away); the terrain look-ahead uses it
+      if (!p.fbw && c.pitch > 0.25 && s.aoa > 0.01 && !s.stalled) {
+        const est = 1 + Math.max(s.gLoad - 1, 0) / c.pitch;
+        fc.nzFull += (Math.min(est, p.gMax) - fc.nzFull) * Math.min(1, dt / 0.8);
+      } else fc.nzFull += (p.gMax - fc.nzFull) * Math.min(1, dt / 15);
       // ---- roll: rate command from the roll error
       let pDes = 0;
       // roll-angle loop with lead on the current roll rate (conventional aircraft respond slower: more lead)
