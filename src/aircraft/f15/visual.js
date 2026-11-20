@@ -750,7 +750,7 @@ function paint(atlas, o) {
   }
   const name = (s, txt) => P.textOn(txt, -6.85, 0.71, s, 0.042, { color: SC.camo === 'ghost' ? '#5c6267' : '#e1e2de', weight: 700 });
   if (SC.pilot) { name('L', SC.pilot); name('R', SC.chief); }
-  if (num) P.textOn(num, -8.35, 0.08, 'both', 0.44, AGG_NUM);                                                             // side number on the nose
+  if (num) P.textOn(num, -8.35, 0.33, 'both', 0.38, AGG_NUM);                                                             // side number on the nose
   if (isE) P.textOn(SC.wso, -5.6, 0.73, 'L', 0.04, { color: '#e1e2de', weight: 700 });
   P.textOn('NO STEP', -3.1, 0.5 + 0.14, 'R', 0.035, { color: mark });
   // refuelling receptacle (UARRSI) door on the left upper deck at the wing root, with guide lines

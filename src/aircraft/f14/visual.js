@@ -743,7 +743,7 @@ function paint(atlas, o) {
   });
   P.textOn('STEP', -5.55, 0.32, 'L', 0.025, { color: stc });
   // modex, crew names, rescue / ejection markings, stencils
-  if (num) P.textOn(num, -9.0, 0.08, 'both', 0.42, AGG_NUM);                                                                 // side number on the nose
+  if (num) P.textOn(num, -7.2, 0.05, 'both', 0.4, AGG_NUM);                                                                 // side number on the nose
   else P.textOn(SC.modex, -9.05, 0.08, 'both', 0.27, { color: mark, weight: 700, outline: hi ? '#f0f0ec' : undefined });
   if (SC.pilot) P.textOn(SC.pilot, -6.55, 0.64, 'both', 0.033, { color: hi || cag ? '#141518' : mark, weight: 700 });
   if (SC.rio) P.textOn(SC.rio, -5.25, 0.7, 'both', 0.033, { color: hi || cag ? '#141518' : mark, weight: 700 });

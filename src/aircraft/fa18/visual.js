@@ -748,7 +748,7 @@ function paint(atlas, o) {
     P.textOn('DANGER', -3.7, -0.62 + 0.2, s, 0.03, { color: '#a82228' });
   }
   // modex on the nose: big, slightly offset toward the radome joint
-  if (num) P.textOn(num, -7.6, 0.06, 'both', 0.42, AGG_NUM);                                                                // side number on the nose
+  if (num) P.textOn(num, -6.65, -0.12, 'both', 0.38, AGG_NUM);                                                                // side number on the nose
   else P.textOn(SC.modex, -7.75, 0.06, 'both', 0.34, { color: markCol, font: K.FONT.sans, weight: 700, outline: cag === 'storm' ? SC.finB : cag === 'jolly' ? SC.finC : null, outlineWidth: 9 });
   if (cag === 'storm') P.textOn('STORMRIDERS', 1.4, 0.4, 'both', 0.12, { color: SC.finB, italic: true, font: K.FONT.wide, outline: '#101318', outlineWidth: 10 });
   if (cag === 'jolly') P.textOn('JOLLY ROGERS', 1.4, 0.4, 'both', 0.12, { color: '#101215', font: K.FONT.wide, outline: SC.finC, outlineWidth: 8 });
