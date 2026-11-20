@@ -72,6 +72,7 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
     tTurfBlade: { value: blade.texture },
     uTurfGrid: { value: new THREE.Vector4(0, 0, cell, R) },      // xy = render-space xz of the grid's low corner
     uTurfOn: { value: 1 },
+    uTurfShell: uniforms.uTurfShell,
     tTerrNoise: uniforms.tTerrNoise, uTerrTile: uniforms.uTerrTile,
     tAirMap: uniforms.tAirMap, uAirMap: uniforms.uAirMap, uAirInfo: uniforms.uAirInfo,
   };
@@ -130,7 +131,7 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
       .replace('#include <begin_vertex>', 'vec3 transformed = tp;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform highp sampler2DArray tTurfBlade; uniform vec4 uTurfGrid; uniform float uTurfOn;
+        uniform highp sampler2DArray tTurfBlade; uniform vec4 uTurfGrid; uniform float uTurfOn; uniform vec4 uTurfShell; uniform vec3 uSunDir;
         varying vec3 vTW; varying vec3 vTV; varying vec4 vTP; varying vec4 vTP2; varying float vTZ;
         float tss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }`)
       .replace('#include <map_fragment>', /* glsl */`
@@ -147,15 +148,25 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         float fadeD = 1.0 - tss(uTurfGrid.w * 0.45, uTurfGrid.w * 0.85, dc);
         vec3 V = normalize(vTV);
         float graze = tss(0.08, 0.30, abs(V.y) + 1.5 / max(dc, 1.0));      // shells read as sheets at grazing angles far off
-        float a = bl.r * edge * fadeD * graze * uTurfOn;
+        // under the 3-D blades (veg/blades.js) the upper shells give way: they would read as fuzz over the blades
+        float underB = uTurfShell.z > 0.0 ? (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc)) * tss(0.2, 0.6, vTZ) : 0.0;
+        // low sun: the sheets' cross-section pattern turns into strokes drawn along the sun (the turf reflectance
+        // already carries the canopy's low-sun look), so they thin out and flatten their contrast
+        float lowSun = 1.0 - tss(0.08, 0.35, uSunDir.y);
+        float a = bl.r * edge * fadeD * graze * uTurfOn * (1.0 - 0.9 * underB) * (1.0 - 0.45 * lowSun);
         if (a < 0.02) discard;
-        vec3 c = vec3(0.072, 0.100, 0.042) * (0.75 + 0.5 * bl.g);
+        vec3 c = vec3(0.072, 0.100, 0.042) * (0.75 + 0.5 * mix(bl.g, 0.5, 0.6 * lowSun));
         c = mix(c, vec3(0.165, 0.150, 0.080), longG * 0.30 * bl.g + 0.25 * tss(0.6, 0.85, vTP2.x));
         // inside the sward: lower parts see less sky and sun (bright tips, dark bases), blades of older passes dull
         c *= (0.35 + 0.75 * vTZ) * (1.0 - 0.15 * since);
+        // ... and under the 3-D blades the remaining lower shells are the shaded depth between them
+        if (uTurfShell.z > 0.0) c *= 1.0 - 0.55 * (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc));
         diffuseColor.rgb = c;
         diffuseColor.a = a;`)
-      .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
+      .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);')
+      // the shells are a canopy of blades, matte at their scale: their sheen is in the turf reflectance of the ground
+      // below; a GGX lobe on alpha-speckled sheets glitters (grazing fire / lamp light at night, a low sun)
+      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n        reflectedLight.directSpecular *= 0.0; reflectedLight.indirectSpecular *= 0.3;');
   };
   mat.customProgramCacheKey = () => `skyward-turf-${N}`;
   const mesh = new THREE.Mesh(geo, mat);

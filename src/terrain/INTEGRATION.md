@@ -207,3 +207,91 @@ networks, 30 % of their chroma change, colour from the painted albedo.
 | turf reflectance | 2 trilinear fetches on grass pixels | 2 x 24 kB | ~45 ms (JS bake) |
 | turf shells | 1 draw, N x (grid cells off pavement) x 2 triangles (~3-20 k), 2 fetches per shell fragment | 1 MB blade array | ~45 ms (blade raster) |
 | pavement aggregate | 2 fetches per pavement pixel | 256 kB | ~80 ms (JS) |
+
+## Airfield ground (round 4): runway surface, near grass, low sun
+
+All inside the owned files (`src/terrain/**`, `src/scenery/pavement.js`, `textures.js`, `src/neural/ground-*`,
+`tools/neural/ground/**`). No hook elsewhere was needed.
+
+Runway (`scenery/pavement.js`, `textures.js`):
+- **Rubber map** (`simulateRubber`): a simulation, not noise. ~1 700 landings of a traffic mix (gear track, tyres per
+  side, tyre width, deposit strength) touch down lognormally past the threshold with lateral scatter and de-crab drift;
+  each tyre lays a short black spin-up skid and a long faint smear. ~340 departures enter from the threshold taxiway
+  (main gear arcs; the inner wheel scrubs hard in a tight turn), line up and spool up against the brakes. R = all
+  deposits (1 - exp), G = the last 10 % (crisp black marks over the grey). 512 x 512 RG8 x 2 layers (one per runway
+  end, picked by runway size), v stretched toward the threshold (0.75 m texels there, 5 m at 1.5 km). Paint reads the
+  same map (rubber over the markings).
+- **Defect map** (`makeDefectTexture`, canvas 1024 / 2048 px for 64 x 32 m): hand-poured sealant over-banding on
+  transverse / longitudinal / block cracks, fresh (black) and old (pale) patches with sealed borders, oil drips. Cut
+  into one strip per paving lane so cracks end at the lane joints; the paint shader reads the same strips so cracks
+  run on through the markings.
+- Paving lanes with tar-sealed longitudinal joints and ravelled edges, the odd transverse construction joint, keel
+  darkened and polished, edges oxidised pale, nose-gear line with oil drips, crazed / streaky paint, shoulders with a
+  crumbling margin, soil wash, edge-light bases and a sealed cable slot (`aEdge` attribute), new close-range
+  aggregate (512^2 convex stones of several rock types, 0.62 m tile).
+- Concrete (KRDR): slabs one lane wide x 6 m, tone continuous along each slip-formed lane (per-slab random tone read
+  as floor tiles), thinner joints, keel staining.
+- Rubber is black and matte to the sky (its sheen is the sun's); asphalt gets its lighting factors from the learned
+  pavement reflectance (next section); `pavebrdf=0` = classic shading with a fixed grazing sky occlusion.
+- Debug: `pavedbg=1` no rubber, `2..5` defect channels off, `6` patch map, `7` rubber map (grey), `8` no sky
+  reflection.
+
+## Pavement reflectance network
+
+Reference: `tools/neural/ground/pave/trace.py` (numpy). 114 mm periodic tiles, 256^2 height texels (0.45 mm):
+crushed stones 2-14 mm (convex polygons, worn tops, three rock types) in a binder of sand fines whose level sets the
+exposure; 6 x 6 mm saw grooves every 38 mm (60 % of tiles); rubber filling the texture (albedo -> 0.022, smoother);
+wetness (porous darkening and a facet film, then free water filling from the bottom: a flat water plane). Facets:
+Lambert + GGX / Smith / Schlick. Macro: exact cast shadows and masking from 24-azimuth horizon maps; sky: one
+importance-sampled direction per texel and lobe with horizon visibility. Single scattering. 72 tiles x 2 688
+(sun, view) configurations + 96 views under a unit sky; `train.py` (numpy MLPs, Adam): SUN net 11-32-32-2
+(ln Kd, ln Ks), SKY net 6-8-8-2 (ln Hd, ln Hs), 1 584 + 154 parameters; 12 whole tiles held out.
+
+| held-out tiles, ln RMSE of the total reflectance | sun (BRF) | unit sky |
+|---|---|---|
+| classic (three.js Lambert + GGX at the shader's roughness 0.6) | 0.626 | 0.289 |
+| classic fitted per held-out tile (roughness, F0, diffuse scale; oracle) | 0.484 | 0.095 |
+| **network** (knows only groove / exposure / rubber / wetness) | **0.115** | **0.071** |
+| network, grazing views (mu_v < 0.2) vs classic | 0.149 vs 0.850 | 0.103 vs 0.373 |
+| Monte Carlo noise of the reference (noise.py; the sun term is deterministic) | 0 | 0.003 |
+
+What it learned: at grazing view the eye sees the stone tops, so the visible albedo is higher than the tile mean and
+the surface brightens down-sun (Kd up to ~1.7) and darkens looking into the sun; the stones and grooves hide about half
+the sky's mirror image that a flat GGX surface shows (Hs / DFG ~0.5 at grazing), more looking across the grooves
+than along them; seen from above the shadows between the stones make it ~10-15 % darker than Lambert. Limits: single
+scattering (the missing second bounce is a few per cent in the grooves), horizon maps quantised to 24 azimuths, one
+synthetic aggregate gradation. Runtime (`src/neural/ground-pave.js`): per airport a 32 (view azimuth about the first
+runway's axis) x 16 (mu_v) x 4 (groove x rubber) RGBA32F LUT of the factors the pavement shader multiplies three.js'
+four lighting terms by; baked for the current sun and wetness (capped at damp: standing water keeps the classic
+glint, which a 32 x 16 LUT cannot hold), ~2 k evaluations / ~10-20 ms, only when the sun moves > 0.25 deg (at most
+every 2 s unless it jumps). Off on low quality.
+
+Near grass (`veg/blades.js`, `veg/turf.js`, `surface.glsl.js`):
+- Instanced blade geometry (one draw, 7 vertices / 5 triangles per blade, two world-anchored jittered rings: medium
+  2.8 m / 7.5 m, high 3.8 / 10, ultra 5 / 13; off on low; `blades=0`). Blades narrower than 1.3 px are widened to it
+  and thinned in proportion (dithered, no popping), so the covered area and colour stay right with distance. Rounded
+  cross-section normal, dark base / lit tip, waxy sheen (weak: sub-pixel tips sparkle), translucency toward the sun.
+  Fixed: the two-sided normal handling left most blades facing away from the sun (black); the normal is now kept in
+  the upper hemisphere. The shells' upper layers
+  give way and the sward floor darkens under the blades, ramped over 0.35-1 x R1 so there is no ring.
+- Low sun: on vegetation the detail normal and the one-tap micro shadow are reduced (they doubled the self-shadowing
+  the turf reflectance already has and drew streaks along the sun azimuth); the 20-100 m clump terms are gentler.
+
+## Costs added in round 4
+
+| item | per frame | memory | boot |
+|---|---|---|---|
+| rubber map | +1 fetch per runway and paint pixel (replaces 2 noise fetches on runways) | 1 MB | ~150-300 ms (JS sim, 2 layers) |
+| defect map | +1 fetch per asphalt pixel, +1 per paint pixel | 8 / 2 MB (high / medium) | canvas raster, ~50 ms |
+| pavement reflectance | +2 bilinear fetches per asphalt pixel | 4 x 8 kB per airport | ~10-20 ms per rebake |
+| other pavement detail | +1-2 noise fetches (drips / striations / crumbled edge), +2 on paint (crazing, film) | - | - |
+| aggregate 512^2 | same 2 fetches | 1 MB (was 256 kB) | ~0.3-0.6 s (JS; was ~80 ms) |
+| grass blades | +1 draw within 25 m AGL at an airport; medium 156 k instances (~70 % culled in the vertex shader), 5 fetches per vertex, no textures in the fragment | - | - |
+
+Night / lamp and fire light on grass (round 4 fix): the turf reflectance's sun factor (`canopyK`) and its reduced
+specular (`specK`) were applied to every direct light, so with the sun down a low fire or lamp got the "sheen into a
+low sun" and the detail normals turned it into glitter. Now the sun factor fades out below the horizon, the canopy
+is fully matte to direct light at night, the shells have no specular, and the blades' sheen is the sun's only.
+Hook for `src/effects/decals.js` (not owned here): the crash fire-light sheen decal uses a GGX lobe (roughness 0.3)
+with a normal from depth derivatives on every surface; on turf it should be skipped or made diffuse (e.g. only where
+`ctx.terrain.airfield.distanceAt(x, z)[0] < 0`, i.e. on pavement).

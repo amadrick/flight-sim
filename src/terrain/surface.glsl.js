@@ -260,7 +260,7 @@ uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
 float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
 // diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)
 const vec3 TURF_REF = vec3(0.072, 0.100, 0.042);
-uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m)
+uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m); z = grass blade radius (veg/blades.js)
 float gGrassK = 0.0;             // natural grass share of the pixel (gets the long-sward reflectance)
 
 struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; float specK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
@@ -662,13 +662,14 @@ TerrSurf terrSurface(vec3 rp) {
     gTurfH = TP.H; gTurfLay = TP.lay; gTurfDir = TP.dir;
     vec3 tc = TURF_REF;
     // clumps and tussocks (0.3 - 4 m), patchy growth (20 - 100 m)
-    float clump = 0.55 * (n5.g - 0.5) * near5 + 0.6 * (n4.r - 0.5) * near4 + 0.5 * (n3.g - 0.5) + 0.35 * (C.mac.y - 0.5);
-    tc *= clamp(1.0 + 0.45 * clump, 0.6, 1.5);
+    // (the 20-100 m terms are kept gentle: strong, they read as blotchy noise from the ground)
+    float clump = 0.6 * (n5.g - 0.5) * near5 + 0.55 * (n4.r - 0.5) * near4 + 0.22 * (n3.g - 0.5) + 0.2 * (C.mac.y - 0.5);
+    tc *= clamp(1.0 + 0.42 * clump, 0.6, 1.5);
     // dry, straw-coloured knolls; seed heads in the long grass; dark clover and weeds in the short sward
     float dryP = ss(0.56, 0.80, n2.r * 0.45 + n3.b * 0.35 + (near4 * (n4.g - 0.5) + 0.5) * 0.2) * (0.45 + 0.4 * longG) * (1.0 - 0.6 * lush * lush);
     tc = mix(tc, grassDry * 0.8, dryP);
     tc = mix(tc, vec3(0.150, 0.135, 0.078), longG * 0.28 * ss(0.35, 0.8, n4.b * near4 + 0.5 * (1.0 - near4)));
-    tc = mix(tc, vec3(0.036, 0.080, 0.028), (1.0 - longG) * ss(0.60, 0.82, n4.a * 0.6 * near4 + 0.3 * (1.0 - near4) + n3.a * 0.4) * 0.55);
+    tc = mix(tc, vec3(0.036, 0.080, 0.028), (1.0 - longG) * ss(0.60, 0.82, n4.a * 0.6 * near4 + 0.3 * (1.0 - near4) + n3.a * 0.4) * 0.35);
     // mower wheel tracks along the pass edges (flattened, a touch paler), only while resolved
     float trk = terrLine(abs(pf - 0.5) * passW - (0.5 * passW - 0.45), 0.18, px) * ss(1.5, 0.4, px) * (1.0 - longG) * (1.0 - since);
     tc *= 1.0 + 0.10 * trk;
@@ -683,7 +684,9 @@ TerrSurf terrSurface(vec3 rp) {
     if (uAirInfo.z < 0.5) tc *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);
     // under the 3-D shells (near the camera) the ground between the blades is thatch and shade
     float shellK = uTurfShell.x * (1.0 - ss(uTurfShell.y * 0.45, uTurfShell.y * 0.85, distance(rp.xz, uTerrCam.xz))) * (1.0 - bare);
-    tc = mix(tc, vec3(0.050, 0.052, 0.030), shellK * 0.55);
+    // inside the blade radius (veg/blades.js) the blades are the sward's top: the ground is the shaded thatch below
+    float bladeK = uTurfShell.z > 0.0 ? 1.0 - ss(uTurfShell.z * 0.35, uTurfShell.z, distance(rp.xz, uTerrCam.xz)) : 0.0;
+    tc = mix(tc, vec3(0.028, 0.036, 0.016), shellK * (0.55 + 0.45 * bladeK));
     col = mix(col, tc, turf * 0.95);
     rough = mix(rough, mix(0.95, 0.88, bare), turf);
     gTurfAmt = turf * (1.0 - bare);
@@ -1026,9 +1029,15 @@ TerrSurf terrSurface(vec3 rp) {
   }
 #endif
   float soft = 1.0 - 0.75 * snow;                     // snow smooths everything
+  // grass is a canopy, not a solid surface: its self-shadowing and directional behaviour are in the turf reflectance.
+  // A detail normal and the one-tap micro shadow on top of that count them twice, and with a low sun (long, grazing
+  // light) both turn the detail textures into streaks drawn along the sun azimuth (brush strokes at dusk)
+  float vegC = clamp(gTurfAmt + gGrassK, 0.0, 1.0);
+  microSh = mix(microSh, 1.0, vegC);
+  float vegDn = 1.0 - vegC * mix(0.45, 0.9, ss(0.50, 0.12, uSunDir.y));
   col *= clamp(1.0 + (mp.x * tint + mp.y * hgt) * soft, 0.35, 1.7);
   rough = clamp(rough + (mp.w - 0.9) * 0.6 - 0.10 * hgt * soft, 0.3, 1.0);
-  dn = dn * mp.z * soft + crownG * 2.4 * paint + fieldDn * (1.0 - snow);
+  dn = dn * mp.z * soft * vegDn + crownG * 2.4 * paint + fieldDn * (1.0 - snow);
   // loose stones on bare, dry or frost-shattered ground (one per cell of the fine cellular noise, in drifts)
   float stoneP = max(max(desertAmt * (1.0 - dune) * (1.0 - playa), alpine), 0.5 * screeAmt) * (1.0 - snow) * (1.0 - paint) * (1.0 - cropPot) * (1.0 - wsurf0) * near5;
   if (stoneP > 0.01) {
@@ -1096,9 +1105,13 @@ TerrSurf terrSurface(vec3 rp) {
     vec3 skyR = skyK / ref, sunR = sunK / max(skyK, vec3(1.0e-4));
     skyR = mix(vec3(dot(skyR, LUM)), skyR, 0.3);
     sunR = mix(vec3(dot(sunK, LUM) / max(dot(skyK, LUM), 1.0e-4)), sunR, 0.3);
+    // (the sun factor is the SUN's: with the sun down the direct light is the moon or fire / lamp light from other
+    // directions, which it must not shape - and the canopy is matte to it: no glitter at night)
+    float dayT = ss(-0.02, 0.10, uSunDir.y);
+    sunR = mix(vec3(1.0), sunR, dayT);
     S.albedo = mix(S.albedo, S.albedo * skyR, bK);
     S.canopyK *= mix(vec3(1.0), sunR, bK);
-    S.specK = 1.0 - 0.85 * bK;                         // the cuticle sheen is part of the learned BRF
+    S.specK = 1.0 - bK * (1.0 - 0.15 * dayT);          // the cuticle sheen is part of the learned BRF
   }
 #endif
 #ifdef TERR_MICRO

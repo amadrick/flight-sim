@@ -22,6 +22,7 @@ import { createNearTrees } from './veg/near.js';
 import { createFarTrees } from './veg/far.js';
 import { createGrass } from './veg/grass.js';
 import { createTurf, TURF_TIERS } from './veg/turf.js';
+import { createBlades, BLADE_TIERS } from './veg/blades.js';
 import { TREE_CELL } from './veg/species.js';
 import { createVegNeural } from '../neural/veg.js';
 
@@ -83,6 +84,11 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
   const turf = turfTier ? createTurf(ctx, { L, tier: turfTier, uniforms, U, airfield }) : null;
   uniforms.uTurfShell.value.set(turf ? 1 : 0, turfTier ? turfTier.R : 0, 0, 0);
   if (turf) group.add(turf.mesh);
+  // near-field grass blades (real geometry within a few metres); blades=0 turns them off
+  const bladeTier = raw.blades === '0' || !airfield ? null : BLADE_TIERS[ctx.quality.level] || null;
+  const blades = bladeTier ? createBlades(ctx, { L, tier: bladeTier, uniforms, U }) : null;
+  if (blades) group.add(blades.mesh);
+  uniforms.uTurfShell.value.z = blades ? bladeTier.R1 : 0;
   if (near) group.add(near.mesh);
   group.add(far.mesh);
   if (grass) group.add(grass.mesh);
@@ -138,12 +144,15 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
       if (near) { near.update(camWX, camWZ); near.mesh.castShadow = shadowsOn(); }
       if (grass) grass.update(camWX, camWZ, org, Hd);
       if (turf) { turf.update(camWX, camWZ, org, Hd); uniforms.uTurfShell.value.x = turf.mesh.visible ? 1 : 0; }
-      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0);
-      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0) + (turf && turf.mesh.visible ? turf.stats.triangles : 0);
+      if (blades) { blades.update(camWX, camWZ, org, Hd, airfield); uniforms.uTurfShell.value.z = blades.mesh.visible ? bladeTier.R1 : 0; }
+      const bladesOn = blades && blades.mesh.visible;
+      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0) + (bladesOn ? 1 : 0);
+      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0) + (turf && turf.mesh.visible ? turf.stats.triangles : 0) + (bladesOn ? blades.stats.triangles : 0);
       stats.turf = turf ? turf.stats : null;
+      stats.blades = blades ? blades.stats : null;
     },
     dispose() {
-      placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose(); turf?.dispose();
+      placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose(); turf?.dispose(); blades?.dispose();
       uniforms.uTurfShell.value.x = 0;
       uniforms.uTerrTree.value.x = 0;
     },

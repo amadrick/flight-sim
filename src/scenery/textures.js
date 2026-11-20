@@ -62,31 +62,38 @@ export function makePavementNoise(ctx, N = 256) {
 }
 
 /**
- * Close-range aggregate, 256^2 tileable (one tile = 0.71 m of pavement in the shader, 2.8 mm per texel):
- *  R stone / binder albedo factor (mean ~0.5), G height (stones domed above the binder), B stone tone id, A pores.
- * Jittered-grid cellular stones of three sizes (crushed aggregate 4-14 mm) packed in a dark binder.
+ * Close-range aggregate, AGGR_N^2 tileable (one tile = AGGR_TILE m of pavement in the shader, ~2 mm per texel):
+ *  R albedo factor (mean ~0.5), G height (stones domed above the binder), B stone tone id, A pores / voids.
+ * Crushed stone (2-20 mm; angular: every stone is a random convex polygon) of a few rock types - dark basalt /
+ * greywacke, mid grey limestone, the odd pale quartz or brownish chip - packed into a dark binder with sand fines.
+ * Traffic and weather strip the binder off the stone tops, so the stones show their own colour.
  */
-export function makeAggregateTexture(ctx, N = 256) {
+export const AGGR_TILE = 0.62;
+export function makeAggregateTexture(ctx, N = 512) {
   const data = new Uint8Array(N * N * 4);
-  const hb = new Float32Array(N * N), tn = new Float32Array(N * N);
-  // stones are stamped cell by cell (bounded footprint), keeping the highest at each texel
-  const layers = [[20, 0.50, 41, 1.0], [40, 0.48, 43, 0.8], [80, 0.45, 47, 0.6]];   // cells per tile, radius (cells), seed, height
+  const hb = new Float32Array(N * N), tn = new Float32Array(N * N), al = new Float32Array(N * N);
+  const layers = [[22, 0.55, 41, 1.0], [44, 0.52, 43, 0.75], [88, 0.50, 47, 0.5], [176, 0.45, 49, 0.3]];   // cells per tile, radius (cells), seed, height
   for (const [P, rad, seed, hk] of layers) {
     const cpx = N / P;
     for (let cy = 0; cy < P; cy++) for (let cx = 0; cx < P; cx++) {
+      if (hash2(cx, cy, seed + 7) < (P > 100 ? 0.5 : 0.3)) continue;   // gaps: binder shows between the stones
       const jx = hash2(cx, cy, seed), jy = hash2(cx, cy, seed + 1), sz = hash2(cx, cy, seed + 2), tone = hash2(cx, cy, seed + 5);
-      if (hash2(cx, cy, seed + 7) < 0.18) continue;                 // gaps: binder shows between the stones
-      const ang = hash2(cx, cy, seed + 3) * 6.283, ca = Math.cos(ang), sa = Math.sin(ang);
-      const R = rad * (0.6 + 0.5 * sz) * cpx, mx = (cx + 0.15 + 0.7 * jx) * cpx, my = (cy + 0.15 + 0.7 * jy) * cpx;
-      const r0 = Math.ceil(R * 1.3);
+      // rock type -> albedo
+      const rt = hash2(cx, cy, seed + 9);
+      const alb = rt < 0.55 ? 0.26 + 0.14 * tone : rt < 0.85 ? 0.42 + 0.14 * tone : rt < 0.95 ? 0.62 + 0.2 * tone : 0.40 + 0.1 * tone;
+      const R = rad * (0.55 + 0.6 * sz) * cpx, mx = (cx + 0.2 + 0.6 * jx) * cpx, my = (cy + 0.2 + 0.6 * jy) * cpx;
+      // convex polygon: 5-7 half planes at random angles and distances
+      const ns = 5 + Math.floor(hash2(cx, cy, seed + 11) * 3), nrm = [];
+      const a0 = hash2(cx, cy, seed + 3) * 6.283;
+      for (let k = 0; k < ns; k++) { const a = a0 + (k + 0.5 * hash2(cx + k, cy, seed + 13)) * 6.283 / ns; nrm.push([Math.cos(a), Math.sin(a), 0.75 + 0.45 * hash2(cx, cy + k, seed + 17)]); }
+      const r0 = Math.ceil(R * 1.25);
       for (let yy = Math.floor(my - r0); yy <= Math.ceil(my + r0); yy++) for (let xx = Math.floor(mx - r0); xx <= Math.ceil(mx + r0); xx++) {
         const ox = xx + 0.5 - mx, oy = yy + 0.5 - my;
-        const ex = (ca * ox + sa * oy) * 1.25, ey = (-sa * ox + ca * oy) * 0.85;
-        const d = Math.max((Math.abs(ex) + Math.abs(ey)) * 0.7, Math.hypot(ex, ey)) / R;        // angular, crushed
+        let d = 0; for (const [nx, ny, nd] of nrm) d = Math.max(d, (nx * ox + ny * oy) / (R * nd));
         if (d >= 1) continue;
-        const h = Math.sqrt(1 - d * d) * (0.55 + 0.45 * sz) * hk;
+        const h = Math.pow(1 - d * d, 0.35) * (0.55 + 0.45 * sz) * hk;        // flat-topped (worn) stones
         const i = (((yy % N) + N) % N) * N + (((xx % N) + N) % N);
-        if (h > hb[i]) { hb[i] = h; tn[i] = tone; }
+        if (h > hb[i]) { hb[i] = h; tn[i] = tone; al[i] = alb * (0.92 + 0.16 * hash2(xx, yy, seed + 19)) * (0.8 + 0.25 * Math.min(1, h / hk + 0.2)); }
       }
     }
   }
@@ -95,15 +102,197 @@ export function makeAggregateTexture(ctx, N = 256) {
     const x = i % N, y = (i / N) | 0;
     const stone = hb[i] > 0.02;
     if (stone) st++;
-    const alb = stone ? 0.40 + 0.55 * tn[i] * tn[i] : 0.20 + 0.08 * hash2(x, y, 51);
-    const pore = !stone && hash2(x >> 1, y >> 1, 53) > 0.8 ? 1 : 0;
-    data[i * 4] = Math.min(255, alb * 255 * (pore ? 0.5 : 1));
-    data[i * 4 + 1] = Math.min(255, (0.25 + 0.75 * hb[i] - 0.2 * pore) * 255);
+    const fines = hash2(x, y, 51), pore = !stone && hash2(x >> 1, y >> 1, 53) > 0.82 ? 1 : 0;
+    const alb = stone ? al[i] : 0.13 + 0.10 * fines * fines;            // binder with sand fines
+    data[i * 4] = Math.min(255, alb * 1.25 * 255 * (pore ? 0.45 : 1));
+    data[i * 4 + 1] = Math.min(255, (0.22 + 0.78 * hb[i] - 0.18 * pore) * 255);
     data[i * 4 + 2] = tn[i] * 255;
     data[i * 4 + 3] = pore * 255;
   }
-  data.stoneFraction = st / (N * N);
+  let mr = 0; for (let i = 0; i < N * N; i++) mr += data[i * 4];
   const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.userData.stoneFraction = st / (N * N);
+  tex.userData.meanR = mr / (N * N * 255);
+  return finishData(tex, ctx);
+}
+
+// ---------- runway rubber: simulated tyre deposits in the touchdown zone ----------
+// One layer = one runway end. u = across (RUBBER.span m centred on the centre line), v = along from the threshold
+// (RUBBER.len m). Thousands of landings of a traffic mix (gear track, tyres per side, tyre width), each touching down
+// at a lognormally distributed distance past the aiming point, laterally scattered about the centre line, slightly
+// crabbed; every tyre lays a short, very dark spin-up skid and a long faint smear. R = accumulated deposit
+// (1 - exp(-k acc)), G = the most recent few hundred landings only (crisp black marks over the grey smear).
+// v is stretched toward the threshold (0.75 m texels there, 2.4 m at 300 m, 5 m at the far end) so the line-up arcs
+// and the first touchdown marks under the default view stay sharp: a = len * (0.25 v + 0.75 v^2).
+export const RUBBER = { nu: 512, nv: 512, span: 64, len: 1536, layers: 2 };
+export const rubberA = (v, len = RUBBER.len) => len * (0.25 * v + 0.75 * v * v);
+export const rubberV = (a, len = RUBBER.len) => (Math.sqrt(0.0625 + 3 * Math.max(0, a) / len) - 0.25) / 1.5;
+const AIRCRAFT_MIX = [
+  // share, gear track (m) [min, max], tyres per side, tyre spacing (m), tyre width (m), deposit strength
+  [0.46, [5.7, 7.6], 2, 0.86, 0.36, 1.0],     // narrow bodies
+  [0.18, [9.4, 12.6], 2, 1.40, 0.46, 1.6],    // wide bodies (bogies: tandem wheels on the same line)
+  [0.22, [3.6, 8.5], 2, 0.48, 0.26, 0.55],    // regional jets / turboprops
+  [0.14, [2.3, 3.6], 1, 0, 0.20, 0.35],       // fighters / business jets
+];
+export function simulateRubber(seed = 1, { nu = RUBBER.nu, nv = RUBBER.nv, span = RUBBER.span, len = RUBBER.len, landings = 1700, recent = 170 } = {}) {
+  const r = rngA(seed * 7919 + 13);
+  const gauss = () => { let s = 0; for (let k = 0; k < 6; k++) s += r(); return (s - 3) * 1.414; };
+  const acc = new Float32Array(nu * nv), rec = new Float32Array(nu * nv);
+  const du = span / nu;
+  const A = new Float32Array(nv + 1); for (let j = 0; j <= nv; j++) A[j] = rubberA(j / nv, len);
+  const rowOf = (a) => Math.floor(rubberV(a, len) * nv);
+  // box-filtered stripe [x0, x1] (m across) added to row j with weight w
+  const stamp = (buf, j, x0, x1, w) => {
+    const u0 = (x0 + span / 2) / du, u1 = (x1 + span / 2) / du;
+    const i0 = Math.max(0, Math.floor(u0)), i1 = Math.min(nu - 1, Math.floor(u1));
+    for (let i = i0; i <= i1; i++) buf[j * nu + i] += w * (Math.min(u1, i + 1) - Math.max(u0, i));
+  };
+  for (let n = 0; n < landings; n++) {
+    let t = r(), ac = AIRCRAFT_MIX[0];
+    for (const m of AIRCRAFT_MIX) { if (t < m[0]) { ac = m; break; } t -= m[0]; }
+    const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r();
+    const off = gauss() * 1.5 + (r() < 0.12 ? gauss() * 3.5 : 0);           // lateral scatter about the centre line
+    const td = 60 + Math.exp(Math.log(240) + 0.5 * gauss());               // touchdown, m past the threshold
+    const crab = gauss() * 0.005;                                            // de-crab drift (m per m)
+    const I = ac[5] * Math.exp(0.5 * gauss());                               // hard / soft landing
+    const l0 = 6 + 18 * r(), l1 = 50 + 110 * r();                             // skid, smear lengths
+    const isRecent = n >= landings - recent;
+    for (const sd of [-1, 1]) for (let k = 0; k < ac[2]; k++) {
+      const x0 = off + sd * track / 2 + (k - (ac[2] - 1) / 2) * ac[3];
+      const tw = ac[4] * (0.85 + 0.3 * r());
+      const aEnd = Math.min(len, td + l0 * 4 + l1 * 2.5);
+      for (let j = Math.max(0, rowOf(td)); j < nv; j++) {
+        const a0 = A[j], a1 = A[j + 1];
+        if (a0 > aEnd) break;
+        const lo = Math.max(a0, td), cover = (a1 - lo) / (a1 - a0);        // first row only partly covered
+        if (cover <= 0) continue;
+        const s = (lo + a1) / 2 - td;
+        const w = I * cover * (Math.exp(-s / l0) + 0.13 * Math.exp(-s / l1));
+        const x = x0 + crab * Math.min(s, 60);
+        stamp(acc, j, x - tw / 2, x + tw / 2, w);
+        if (isRecent) stamp(rec, j, x - tw / 2, x + tw / 2, w);
+      }
+    }
+  }
+  // departures: lining up from the entry taxiway at the threshold (main gear arcs, the inner wheel scrubbing hard
+  // through a tight turn), then brake release / spool-up scuffs on the centre line
+  const path = (buf, pts, tw, I) => {                                         // pts: [a, x] every ~0.25 m
+    for (const [a, x] of pts) { const j = rowOf(a); if (a >= 0 && j < nv) stamp(buf, j, x - tw / 2, x + tw / 2, I * 0.25 / (A[j + 1] - A[j])); }
+  };
+  // (fewer departures than landings and each a little heavier: separate marks rather than a smooth grey band)
+  for (let n = 0; n < landings * 0.2; n++) {
+    const ac = AIRCRAFT_MIX[Math.min(3, Math.floor(r() * 4))];
+    const track = ac[1][0] + (ac[1][1] - ac[1][0]) * r(), I = 2.2 * ac[5] * Math.exp(0.5 * gauss());
+    const sd = r() < 0.65 ? 1 : -1;                                          // which side the entry taxiway is on
+    const Rt = 16 + 24 * r(), aE = Rt + 4 + 30 * r() * r(), off = gauss() * 0.45;
+    for (const g of [-1, 1]) for (let k = 0; k < ac[2]; k++) {
+      // gear on the inside of the turn (g = sd: nearer the turn centre) scrubs; the outer one only rolls
+      const Rr = Math.max(1.5, Rt - g * sd * (track / 2 + (k - (ac[2] - 1) / 2) * ac[3] * 0)), inner = g === sd;
+      const scrub = I * (inner ? 0.9 * Math.min(2.5, 14 / Rr) : 0.12);
+      const pts = [];
+      for (let th = -Math.PI / 2; th < 0; th += 0.25 / Rr) pts.push([aE + Rr * Math.sin(th), off + sd * Rt - sd * Rr * Math.cos(th)]);
+      path(acc, pts, ac[4], scrub * 0.35);
+      // lined up: a short run straight ahead, power up against the brakes, roll
+      const x = off + (Rt - Rr) * sd, a1 = aE + 2 + 25 * r();
+      for (let j = rowOf(aE); j < Math.min(nv, rowOf(a1 + 80)); j++) {
+        const a = 0.5 * (A[j] + A[j + 1]);
+        stamp(acc, j, x - ac[4] / 2, x + ac[4] / 2, I * (a < a1 ? 0.03 : 0.16 * Math.exp(-(a - a1) / 26)) * (0.3 + 1.4 * r() * r()));
+      }
+    }
+  }
+  // normalise: the busiest texels saturate to near black
+  const sorted = Float32Array.from(acc).sort();
+  const p = sorted[Math.floor(sorted.length * 0.997)] || 1;
+  const kA = 2.6 / p, kR = 1.6 / Math.max(1e-6, p * recent / landings);
+  const R = new Float32Array(nu * nv), G = new Float32Array(nu * nv);
+  for (let i = 0; i < acc.length; i++) { R[i] = 1 - Math.exp(-kA * acc[i]); G[i] = 1 - Math.exp(-kR * rec[i]); }
+  return { R, G, nu, nv };
+}
+export function makeRubberTexture(ctx) {
+  const { nu, nv, layers } = RUBBER;
+  const data = new Uint8Array(nu * nv * layers * 2);
+  for (let l = 0; l < layers; l++) {
+    const s = simulateRubber(l + 1);
+    const o = l * nu * nv * 2;
+    for (let i = 0; i < nu * nv; i++) { data[o + i * 2] = Math.round(s.R[i] * 255); data[o + i * 2 + 1] = Math.round(s.G[i] * 255); }
+  }
+  const tex = new THREE.DataArrayTexture(data, nu, nv, layers);
+  tex.format = THREE.RGFormat; tex.type = THREE.UnsignedByteType; tex.colorSpace = THREE.NoColorSpace;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
+  tex.anisotropy = Math.min(ctx.quality?.anisotropy || 4, ctx.renderer.capabilities.getMaxAnisotropy?.() || 1);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------- asphalt defects: sealed cracks, patches, stains (one paving lane wide strips are cut from it) ----------
+// DEFECT.len x DEFECT.wid metres per tile. R = crack sealant (hand-poured overbanding: wavy, varying width, over the
+// crack), G = patch tone (0.5 = none, lower = fresh dark patch, higher = old pale patch), B = stains (oil / fuel drips).
+export const DEFECT = { len: 64, wid: 32 };
+export function makeDefectTexture(ctx) {
+  const hi = ['high', 'ultra'].includes(ctx.quality?.level);
+  const W = hi ? 2048 : 1024, H = W / 2, sx = W / DEFECT.len;           // px per metre
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });       // (software canvas: an accelerated one may dither)
+  const r = rngA(911);
+  g.fillStyle = 'rgb(0,128,0)'; g.fillRect(0, 0, W, H);
+  // wrap-around drawing: every primitive is drawn at the 9 periodic copies that can touch the tile
+  const wrap = (fn) => { for (const ox of [-W, 0, W]) for (const oy of [-H, 0, H]) { g.save(); g.translate(ox, oy); fn(); g.restore(); } };
+  // patches (source-over: tone in G), then their sealed borders
+  const patches = [];
+  for (let k = 0; k < 6; k++) {
+    const x = r() * W, y = r() * H, pw = (2 + 22 * r() * r()) * sx, ph = (r() < 0.6 ? 7.5 : 1 + 3 * r()) * sx;
+    const tone = r() < 0.4 ? 55 + 30 * r() : 150 + 35 * r();
+    patches.push([x, y, pw, ph]);
+    wrap(() => { g.fillStyle = `rgb(0,${tone | 0},0)`; g.fillRect(x, y, pw, ph); });
+  }
+  g.globalCompositeOperation = 'lighter';
+  for (const [x, y, pw, ph] of patches) wrap(() => { g.strokeStyle = 'rgba(200,0,0,1)'; g.lineWidth = 0.09 * sx; g.strokeRect(x, y, pw, ph); });
+  // cracks: wandering polylines, sealed with a wider, wavier band
+  const crack = (x, y, ang, length, wid, branch) => {
+    const pts = [[x, y]]; let a = ang;
+    const step = 0.25 * sx;
+    for (let s = 0; s < length; s += step) {
+      a += (r() - 0.5) * 0.55 + (ang - a) * 0.08;
+      x += Math.cos(a) * step; y += Math.sin(a) * step; pts.push([x, y]);
+      if (branch > 0 && r() < 0.012) crack(x, y, a + (r() < 0.5 ? 1 : -1) * (0.6 + 0.6 * r()), length * (0.15 + 0.3 * r()), wid * 0.8, branch - 1);
+    }
+    const sealed = r() < 0.85;
+    wrap(() => {
+      if (sealed) {
+        // overband: drawn as overlapping strokes of varying width, offset a little from the crack (hand-poured)
+        for (let p = 0; p < 2; p++) {
+          g.beginPath(); g.lineCap = 'round'; g.lineJoin = 'round';
+          const o = (r() - 0.5) * 0.03 * sx;
+          pts.forEach(([px, py], i) => (i ? g.lineTo(px + o, py - o) : g.moveTo(px + o, py - o)));
+          g.strokeStyle = `rgba(${p ? 110 : 150},0,0,1)`; g.lineWidth = wid * sx * (p ? 1.6 : 1.0); g.stroke();
+        }
+      } else {
+        g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+        g.strokeStyle = 'rgba(90,0,0,1)'; g.lineWidth = Math.max(1, 0.015 * sx); g.stroke();
+      }
+    });
+  };
+  // transverse (thermal) cracks every 6-25 m, longitudinal cracks, a block-cracked area
+  for (let x = r() * 6 * sx; x < W; x += (6 + 19 * r()) * sx) crack(x, r() * H, Math.PI / 2 + (r() - 0.5) * 0.3, (6 + 20 * r()) * sx, 0.05 + 0.04 * r(), 2);
+  for (let k = 0; k < 14; k++) crack(r() * W, r() * H, (r() < 0.5 ? 0 : Math.PI) + (r() - 0.5) * 0.2, (4 + 26 * r()) * sx, 0.045 + 0.035 * r(), 2);
+  for (let k = 0; k < 3; k++) {
+    const bx = r() * W, by = r() * H, bw = (8 + 10 * r()) * sx, bh = (5 + 5 * r()) * sx;
+    for (let s = 0; s < 6; s++) crack(bx + r() * bw, by + r() * bh, r() * 6.283, (1.5 + 3 * r()) * sx, 0.035, 1);
+  }
+  // stains: drips and blots (B)
+  for (let k = 0; k < 220; k++) {
+    const x = r() * W, y = r() * H, rr = (0.08 + 0.5 * r() * r() * r()) * sx, a = 40 + 120 * r();
+    wrap(() => {
+      const gr = g.createRadialGradient(x, y, 0, x, y, rr);
+      gr.addColorStop(0, `rgba(0,0,${a | 0},1)`); gr.addColorStop(0.7, `rgba(0,0,${(a * 0.6) | 0},1)`); gr.addColorStop(1, 'rgba(0,0,0,1)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, rr * (1 + r()), rr, r() * 3, 0, 6.283); g.fill();
+    });
+  }
+  g.globalCompositeOperation = 'source-over';
+  const data = new Uint8Array(g.getImageData(0, 0, W, H).data.buffer);
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
   tex.colorSpace = THREE.NoColorSpace;
   return finishData(tex, ctx);
 }
