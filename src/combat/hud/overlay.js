@@ -196,16 +196,18 @@ export function createOverlay(H) {
     }
     // data block
     const bx = tx + s + 15, fs = H.fs;
-    text(t.callsign || 'TGT', bx, ty - s + fs * 0.5, H.C.fg, H.fontB, 'left');
-    text(upper(t.def?.id), bx, ty - s + fs * 1.7, H.C.dim, H.fontXS, 'left');
+    // four lines at fixed spacing (independent of the box size): call sign + type · range · closure + Δalt · aspect
+    const cs = t.callsign || 'TGT', y0 = ty - fs * 1.15;
+    text(cs, bx, y0, H.C.fg, H.fontB, 'left');
+    text(upper(t.def?.id), bx + cs.length * H.cwB + 6, y0, H.C.dim, H.fontXS, 'left');
     const rn = geo.range / NM;
-    text(rn < 10 ? F.tenth(Math.round(rn * 10)) : F.int(rn), bx, ty + fs * 0.25, col, H.fontS);
-    text('NM', bx + (rn < 10 ? 3 : 2) * H.cw + 4, ty + fs * 0.25, H.C.dim, H.fontXS);
+    text(rn < 10 ? F.tenth(Math.round(rn * 10)) : F.int(rn), bx, y0 + fs * 1.2, col, H.fontS);
+    text('NM', bx + (rn < 10 ? 3 : 2) * H.cw + 4, y0 + fs * 1.2, H.C.dim, H.fontXS);
     const vc = Math.round(geo.closure / KT / 10) * 10;
-    text(VC_STR(vc), bx, ty + fs * 1.4, H.C.fg, H.fontXS);
+    text(VC_STR(vc), bx, y0 + fs * 2.35, H.C.fg, H.fontXS);
     const dAlt = Math.round((t.state.position.y - p.state.position.y) / FT / 100);
-    text(KFT_STR(dAlt), bx + 5 * H.cwXS + 6, ty + fs * 1.4, H.C.fg, H.fontXS);
-    text(aspectWord(geo.aspect), bx, ty + fs * 2.55, H.C.amber, H.fontXS);
+    text(KFT_STR(dAlt), bx + 5 * H.cwXS + 6, y0 + fs * 2.35, H.C.fg, H.fontXS);
+    text(aspectWord(geo.aspect), bx, y0 + fs * 3.5, H.C.amber, H.fontXS);
     // hits on this target
     if (H.hit.count > 0 && H.hit.target === t && H.hit.tt > 0) {
       text(HIT_STR(H.hit.count), tx, ty + s + fs * 1.1, H.C.hud, H.fontB, 'center');
