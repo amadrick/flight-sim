@@ -404,7 +404,11 @@ export function createPilot(combat, team, e, o = {}) {
     if (rNe > rMin * 1.5 && skill > 0.5) rShot = lerp(rMax * sk.shotRange, rNe, (skill - 0.5) / 0.4);
     if (seeker === 'ir') {
       if (asp > 140 * DEG && r > 1500) return;           // head-on IR shots only very close (the seeker sees the hot nose badly)
-      if (geo.ata > 35 * DEG) return;
+      if (geo.ata > lerp(35, 18, clamp((skill - 0.2) / 0.7, 0, 1)) * DEG) return;
+      // a bandit in a hard turn out-turns the seeker: skilled pilots wait for it to ease off or for a tail-on shot
+      if (skill > 0.4 && (T.state.gLoad || 1) > 5.5 && asp > 45 * DEG && r > rMin * 1.6) return;
+      // in the turning fight, skilled pilots wait for a rear-quarter shot (the beam / front shots get flared or out-turned)
+      if (r < 4000 && asp > lerp(150, 75, clamp((skill - 0.2) / 0.7, 0, 1)) * DEG && r > rMin * 1.6) return;
     } else if (geo.closure < -100 && r > rNe) return;          // running target: wait for the no-escape zone
     if (r < rMin || r > Math.min(rShot, rMax)) return;
     // holding to the merge: no shots in the forward hemisphere until the pass is over
