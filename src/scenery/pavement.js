@@ -123,8 +123,8 @@ export function makePavementMaterial(ctx, shared, pools) {
             vec2 cell = floor(sl / slab);
             vec2 inC = sl - cell * slab;
             float h1 = scnHash(cell + seed), h2 = scnHash(cell * 1.37 + seed + 5.1), h3 = scnHash(cell * 2.11 + 9.7);
-            float tone = 0.86 + 0.24 * h1;
-            vec3 base = kind < 1.5 ? vec3(0.25, 0.245, 0.232) : vec3(0.215, 0.21, 0.198);
+            float tone = 0.80 + 0.34 * h1;
+            vec3 base = kind < 1.5 ? vec3(0.225, 0.220, 0.208) : vec3(0.205, 0.20, 0.188);
             col = base * tone * (0.8 + 0.4 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
             col *= vec3(1.0, 0.99 + 0.02 * h2, 0.97 + 0.05 * h3);                         // cement batches differ
             // pour campaigns / later reconstruction: blocks of slabs with a different overall tone
@@ -133,7 +133,11 @@ export function makePavementMaterial(ctx, shared, pools) {
             float jx = scnLines(sl.x + 0.01, slab, 0.02), jy = scnLines(sl.y + 0.01, slab, 0.02);
             float ob = max(scnLines(sl.x + 0.06, slab, 0.14) * step(0.55, h2), scnLines(sl.y + 0.06, slab, 0.14) * step(0.6, h3));
             float j = max(jx, jy);
-            col *= 1.0 - 0.55 * j;
+            // sealed joints: a thin dark sealant line, its edges a little chipped; old joints weathered paler
+            col *= 1.0 - (0.42 - 0.2 * step(0.6, h3)) * j;
+            // broom finish (transverse texture) and mottled curing: visible only up close / as a mean tone
+            col *= 0.97 + 0.06 * texture(tNoise, vec2(sl.x / 0.9, sl.y / 23.0) + 0.29).r * (1.0 - smoothstep(0.01, 0.05, length(fwidth(sl))));
+            col *= 0.92 + 0.16 * smoothstep(0.3, 0.7, texture(tNoise, sl / 2.7 + 0.61).g);
             col = mix(col, vec3(0.05, 0.048, 0.045), 0.8 * ob * (0.7 + 0.3 * nD.r));
             // spalled corners and the odd shattered slab (dark crack lines)
             float corner = (1.0 - smoothstep(0.0, 0.9, min(inC.x, slab - inC.x))) * (1.0 - smoothstep(0.0, 0.9, min(inC.y, slab - inC.y)));

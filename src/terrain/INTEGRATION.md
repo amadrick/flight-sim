@@ -149,3 +149,61 @@ give `quality=high` screenshots at least 4 frames).
 - up to 3 `textureGrad` on slopes steeper than ~12 degrees (rills).
 - micro self-shadow: +1 fetch on medium, +2 on high, near field only; micro LUT: 1 trilinear 3-D fetch.
 - Boot: settlement decode 47 ms, micro LUT bake 13 ms (software GL box under load).
+
+## Airfield ground (round 3)
+
+What the player sees from the runway: pavement (scenery/pavement.js), the turf around it, the fence line and the land
+beyond. New pieces, all inside `src/terrain/**` plus the owned scenery/neural files; no integrator change needed.
+
+- `airfield.js` — **airfield map**: signed distance field of the pavement of the airport nearest the camera, baked on
+  the GPU from `ctx.scenery.airports[].layout` (read lazily, rebuilt when the nearest airport changes) into one
+  RGBA16F texture: r = distance to any pavement (runway, taxiway, apron, shoulder, blast pad, fillet, road, car park),
+  g = to runway pavement, b = to the airside perimeter fence (layout's `perimeter` box; 230 m iso-line of r without
+  one). 2 m texels capped at 1536^2 (medium / low: 4 m) or 2048^2 (high / ultra): ~10-18 MB, ~5 ms. Exposed as
+  `ctx.terrain.airfield` (`stats`, `distanceAt(x, z)` CPU twin). GLSL `airMap(rxz)`, `airSide(rxz)`, `turfPlan(...)`.
+- Land cover: around the mapped airport the airside now ends at the perimeter fence (fields, hedges, woods and 3-D
+  trees come up to it) instead of a 760-1000 m ring of featureless turf; approach corridors (runway ends + 1.1 km,
+  +-150 m) stay open. Other airports keep the old ring.
+- Turf (surface.glsl.js): mown in 6.4 m passes parallel to the primary runway with alternate lay, blocks of passes at
+  different times since mowing, short sward in the graded strip and long grass beyond ~55-120 m from pavement,
+  clumps, dry knolls, seed heads, clover, mower wheel tracks, a worn gritty verge and the shadowed drop at the pavement
+  edge. The stripes are not painted: they come out of the learned turf reflectance (below).
+- `veg/turf.js` — **near-field 3-D turf**: N alpha-blended shells (one instanced draw) over the turf within R
+  (medium 6 x 40 m, high 8 x 60 m, ultra 12 x 84 m, off on low), blade cross-sections from a baked mip-mapped
+  RG8 array (256^2 x 8, two lookups), leaning with the pass lay and swaying in travelling gusts (`uVegWind`), fading
+  out with distance and at grazing angles into the ground (which darkens under the shells to thatch). Cells entirely
+  on pavement are dropped from the index buffer on recentre; the fragment stops at the pavement edge. `turf=0` off.
+- `veg/grass.js` tufts on the airfield only in the long-grass zone (seed heads), sparse; the mown sward is the shells'.
+- `src/neural/ground-turf.js` — **learned turf reflectance**, see the next section. `turfbrdf=0` = Lambertian grass.
+
+## Turf reflectance network
+
+Reference: `tools/neural/ground/turf/trace.py`, a blade-level Monte Carlo path tracer of mown turf (0.24 m periodic
+tiles, ~25 000 tapered two-segment blades per m^2 in clumps, lay 0-1, sward 2.5-14 cm; Lambertian reflection +
+transmission, GGX cuticle sheen, thatch / soil floor; sun next-event estimation, sky escape, 6 bounces). 44 swards,
+12 400 (sun, view) configurations at 1536-2048 rays. `train.py`: SUN net 9-32-32-3 (ln BRF) and SKY net 4-16-16-3
+(ln HDRF), 1 878 parameters; 6 swards held out.
+
+| held-out swards | ln RMSE | rel. luminance RMSE |
+|---|---|---|
+| Lambert, oracle albedo per sward | 0.582 | 0.524 |
+| RPV (standard vegetation BRDF, fitted per channel, linear in lay / height) | 0.304 | 0.266 |
+| **network** | **0.124** | **0.100** |
+| Monte Carlo noise of one sample (noise.py) | 0.062 | 0.051 |
+
+What it learned: the hot spot (upright long grass ~2x brighter looking down-sun than into the sun), the dark nadir of
+upright grass (soil between the blades), the waxy sheen toward a low sun, and lay-dependent brightness: a mown,
+laid sward is ~1.5x brighter viewed along the lay than against it (mowing stripes that flip as you look the other
+way). RPV cannot know the lay direction, which is most of its error. Runtime: only the sun elevation is baked
+(12 x 16 x 16 RGBA16F per corner, mown A / long B; ~45 ms at boot, then a few slices per frame as the sun moves);
+terrain cost 2 trilinear fetches on grass pixels. Applied to airfield turf and natural grass: brightness from the
+networks, 30 % of their chroma change, colour from the painted albedo.
+
+## Costs added in round 3
+
+| item | per frame | memory | boot |
+|---|---|---|---|
+| airfield map | 1 bilinear fetch per ground pixel near the airport | 10-18 MB (1 airport) | ~5 ms GPU pass on change |
+| turf reflectance | 2 trilinear fetches on grass pixels | 2 x 24 kB | ~45 ms (JS bake) |
+| turf shells | 1 draw, N x (grid cells off pavement) x 2 triangles (~3-20 k), 2 fetches per shell fragment | 1 MB blade array | ~45 ms (blade raster) |
+| pavement aggregate | 2 fetches per pavement pixel | 256 kB | ~80 ms (JS) |
