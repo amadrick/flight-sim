@@ -3,6 +3,9 @@
 //   node tools/shot.mjs --out shots/a.png --params "aircraft=f16&start=air&tod=10&weather=scattered&cam=chase"
 //        [--size 640x360] [--frames 20] [--dt 0.0333] [--eval "JS expression"] [--no-build] [--dev]
 //        [--entry src/main.js] [--html dist/index.html] [--timeout 180] [--keys "KeyG,KeyF"] [--wait-ms 0]
+//        [--skip 20] [--until "JS expression"] [--pre "JS statement(s)"]
+// --skip S fast-forwards S simulated seconds WITHOUT rendering (cheap) before the rendered frames; --until stops the
+// fast-forward early when the expression (with `ctx`) turns true; --pre runs JS in the page (with `sim`, `ctx`) after the skip.
 //
 // It builds, opens dist/index.html with ?test=1&autostart=1&<params>, waits for window.__sim.ready,
 // steps the sim deterministically with __sim.step(frames, dt), saves a PNG, prints console errors,
@@ -73,6 +76,23 @@ try {
   else {
     const keys = flag('keys', '');
     if (keys) for (const k of keys.split(',')) await page.keyboard.press(k);
+    const skip = Number(flag('skip', 0));
+    if (skip > 0) {
+      const until = flag('until', '');
+      let left = skip, tsim = 0;
+      while (left > 0) {       // in slices, so one call cannot trip protocol timeouts
+        const part = Math.min(5, left);
+        const r = await page.evaluate(([part, until]) => {
+          const sim = window.__sim; let hit = false;
+          const fn = until ? (ctx) => { try { hit = !!eval(until); } catch { hit = false; } return hit; } : null;
+          const t = sim.skip(part, 1 / 30, fn); return { t, hit };
+        }, [part, until]);
+        tsim += r.t; left -= part; if (r.hit) break;
+      }
+      console.log(`fast-forwarded ${tsim.toFixed(1)} s without rendering`);
+    }
+    const pre = flag('pre', '');
+    if (pre) await page.evaluate((code) => { const sim = window.__sim, ctx = sim.ctx; eval(code); }, pre);
     const t0 = Date.now();
     // step in small batches so a slow software-GL frame can't trip protocol timeouts
     for (let done = 0; done < frames;) {

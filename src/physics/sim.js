@@ -62,6 +62,8 @@ export function createSim(ctx, def, init) {
   let quiet = false, wreckGround = false, arrested = false, catTravel = -1, settleBrake = false, stoppedWreck = false;
   let lastInit = init, trimInfo = null, tailScrape = false;
   let accX = 0, accY = 0, accZ = 0;
+  // battle damage (combat module): multipliers / biases applied on top of the healthy aircraft; see `damage` in the returned API
+  const dmg = { thrust: 1, ctrl: 1, drag: 0, rollBias: 0, pitchBias: 0, engineOut: [] };
   // snapshot for NaN recovery
   const snap = { px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, qx: 0, qy: 0, qz: 0, qw: 1 };
 
@@ -448,10 +450,10 @@ export function createSim(ctx, def, init) {
     for (let i = 0; i < nE; i++) {
       const E = model.engines[i], e = eng[i];
       e.revCmd = reverse;
-      if (e.running && !(fuel > 0)) { e.running = false; e.starting = false; }
+      if (e.running && (!(fuel > 0) || dmg.engineOut[i])) { e.running = false; e.starting = false; }
       stepEngine(E, e, h, lever, tamb, ao.mach, E.vectoring ? fcs.tvec * clamp(1 - ao.qbar / E.vectoring.qFade, 0, 1) : 0);
       if (i === 0 || E !== model.engines[0]) thrustLapse(E, ao.mach, theta, delta, pos.y, lap);
-      const T = engineOutput(E, e, lap, ao.mach, theta, delta, ao.qbar);
+      const T = engineOutput(E, e, lap, ao.mach, theta, delta, ao.qbar) * dmg.thrust;
       ff += e.ff;
       const ang = E.cant + e.vec;                           // + = nozzle deflected to give a nose-up moment
       const fx = ang !== 0 ? T * Math.cos(ang) : T, fz = ang !== 0 ? T * Math.sin(ang) : 0;
@@ -470,7 +472,7 @@ export function createSim(ctx, def, init) {
     computeAero(A, ai, ao);
 
     // ---- body forces/moments (aero axes), contacts in world axes
-    const bX = ao.X + Tx, bY = ao.Y, bZ = ao.Z + Tz;
+    const bX = ao.X + Tx - dmg.drag * ao.qbar * A.S, bY = ao.Y, bZ = ao.Z + Tz;
     let Lm = ao.L + TL, Mm = ao.M + TM, Nm = ao.N + TN;
     nzAero = -bZ / (mass * G0);
     FwX = FwY = FwZ = TwX = TwY = TwZ = 0;
@@ -524,6 +526,9 @@ export function createSim(ctx, def, init) {
   function readControls(c) {
     const f = (x, lo, hi) => (x === x ? (x < lo ? lo : x > hi ? hi : x) : 0);
     stick.pitch = f(c.pitch, -1, 1); stick.roll = f(c.roll, -1, 1); stick.yaw = f(c.yaw, -1, 1);
+    if (dmg.ctrl !== 1 || dmg.rollBias !== 0 || dmg.pitchBias !== 0) {
+      stick.pitch = f(stick.pitch * dmg.ctrl + dmg.pitchBias, -1, 1); stick.roll = f(stick.roll * dmg.ctrl + dmg.rollBias, -1, 1); stick.yaw *= dmg.ctrl;
+    }
     brakeCmd = f(c.brakes, 0, 1);
     // speedbrake: the Controls field wins when it changes, otherwise the toggle command flips the latch
     const cs = f(c.speedbrake, 0, 1);
@@ -788,6 +793,15 @@ export function createSim(ctx, def, init) {
 
   return {
     state: s, step, reset, command,
+    /**
+     * Battle damage, written by the combat module (healthy = { thrust: 1, ctrl: 1, drag: 0, rollBias: 0, pitchBias: 0, engineOut: [] }):
+     * thrust  multiplier on every engine's thrust;  engineOut[i] = true shuts engine i down for good
+     * ctrl    multiplier on stick authority (pitch/roll/yaw);  rollBias / pitchBias  stick offsets (-1..1) from asymmetric damage
+     * drag    extra drag coefficient (referenced to the wing area).  reset() does NOT clear it — the owner does.
+     */
+    damage: dmg,
+    /** Destroy the aircraft now (shot down): same path as a crash — engines out, ballistic wreck, 'crash' event. */
+    destroy(reason) { crash(reason || 'Shot down'); flushEvents(); },
     dispose() { if (off) off(); },
     /** Read-only handles for tools/tests (flight-test, HUD debug). Not part of the cross-module contract. */
     model,

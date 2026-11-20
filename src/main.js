@@ -14,6 +14,7 @@ import { createEffects } from './effects/index.js';
 import { createAudio } from './audio/index.js';
 import { createHud } from './ui/hud/index.js';
 import { createMenu } from './ui/menu/index.js';
+import { createCombat } from './combat/index.js';
 
 const sim = (window.__sim = { ready: false, error: null, ctx: null, step: null });
 
@@ -55,6 +56,8 @@ async function boot() {
   ctx.audio = await createAudio(ctx);
   ctx.hud = await createHud(ctx);
   ctx.menu = await createMenu(ctx);
+  // combat mode (missions, AI aircraft, weapons): dormant until a mission starts — see src/combat/COMBAT.md
+  setLoading('Combat'); ctx.combat = await createCombat(ctx);
 
   const resize = () => {
     const w = Math.max(2, window.innerWidth), h = Math.max(2, window.innerHeight);
@@ -69,24 +72,34 @@ async function boot() {
   });
 
   const updatables = ['terrain', 'water', 'scenery', 'clouds', 'effects', 'audio', 'hud', 'menu'];
-  function frame(realDt) {
+  function frame(realDt, noRender) {
     realDt = Math.min(Math.max(realDt, 0), 0.1);
     ctx.renderer.info.reset();
     ctx.time.advance(realDt);
     const dt = ctx.time.dt;
     ctx.input.update(realDt);
     ctx.weather.update(dt);
+    ctx.combat.pre(dt);                // combat input, bot pilot (before the player's physics)
     ctx.session.update(dt);            // physics → origin → aircraft visual
+    ctx.combat.step(dt);               // missions, AI aircraft, weapons, combat effects
     ctx.cameraRig.update(realDt);      // camera pose in render space
     updateFrameUniforms();
     for (const k of updatables) ctx[k]?.update?.(dt);
-    ctx.pipeline.render(dt);
+    ctx.combat.late(dt);               // combat HUD overlay, audio, mission screens
+    if (!noRender) ctx.pipeline.render(dt);
   }
 
-  if (params.autostart) ctx.session.start({});
+  if (params.autostart && params.raw.mission) ctx.combat.start(params.raw.mission) || ctx.session.start({});
+  else if (params.autostart) ctx.session.start({});
   if (params.cam) ctx.cameraRig.setMode?.(params.cam);
 
   sim.step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(dt); return ctx.time.frame; };
+  // fast-forward without drawing (tests): simulate `seconds` in steps of dt; `until()` returning true stops early. Returns the simulated time.
+  sim.skip = (seconds = 1, dt = 1 / 30, until = null) => {
+    let t = 0;
+    while (t < seconds) { frame(dt, true); t += dt; if (until && until(ctx)) break; }
+    return t;
+  };
   frame(0);
   document.getElementById('boot')?.remove();
   sim.ready = true;
