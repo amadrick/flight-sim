@@ -202,11 +202,11 @@ export function makePavementMaterial(ctx, shared, pools) {
             rough = rough - 0.10 * (ag1.g - 0.45) * stoneA;  // polished stone tops
           }
           // grooving: 6 mm saw cuts every 38 mm across the runway (not the outer 3 m); box-filtered, so near the
-          // camera they are crisp lines and further away a uniform 16 % darker, rougher texture
+          // camera they are crisp lines and further away a uniform ~4 % darker, rougher texture
           if (kind < 1.5) {
             float gK = step(abs(vLocal.y), pwid * 0.5 - 3.0);
             float gr = scnLines(sl.x, 0.038, 0.006) * gK;
-            col *= 1.0 - 0.38 * gr;
+            col *= 1.0 - (0.2 + 0.1 * nB.r) * gr;          // (0.38 read as woven fabric from eye height)
             hgt -= 0.0025 * gr * (1.0 - smoothstep(0.004, 0.012, length(fwidth(F))));
             rough += 0.06 * gr;
           }
