@@ -63,7 +63,7 @@ export function createSim(ctx, def, init) {
   let lastInit = init, trimInfo = null, tailScrape = false;
   let accX = 0, accY = 0, accZ = 0;
   // battle damage (combat module): multipliers / biases applied on top of the healthy aircraft; see `damage` in the returned API
-  const dmg = { thrust: 1, ctrl: 1, drag: 0, rollBias: 0, pitchBias: 0, engineOut: [] };
+  const dmg = { thrust: 1, ctrl: 1, drag: 0, rollBias: 0, pitchBias: 0, engineOut: [], fuelLeak: 0 };
   // snapshot for NaN recovery
   const snap = { px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, qx: 0, qy: 0, qz: 0, qw: 1 };
 
@@ -460,6 +460,7 @@ export function createSim(ctx, def, init) {
       Tx += fx; Tz += fz;
       TL += E.y * fz; TM += E.z * fx - E.x * fz; TN += -E.y * fx;
     }
+    if (dmg.fuelLeak > 0) ff += dmg.fuelLeak;               // battle damage: fuel lost overboard, kg/s
     if (ff > 0) { fuel -= ff * h; if (fuel < 0) fuel = 0; updateMass(); }
 
     // ---- aerodynamics
@@ -794,10 +795,11 @@ export function createSim(ctx, def, init) {
   return {
     state: s, step, reset, command,
     /**
-     * Battle damage, written by the combat module (healthy = { thrust: 1, ctrl: 1, drag: 0, rollBias: 0, pitchBias: 0, engineOut: [] }):
+     * Battle damage, written by the combat module (healthy = { thrust: 1, ctrl: 1, drag: 0, rollBias: 0, pitchBias: 0, engineOut: [], fuelLeak: 0 }):
      * thrust  multiplier on every engine's thrust;  engineOut[i] = true shuts engine i down for good
      * ctrl    multiplier on stick authority (pitch/roll/yaw);  rollBias / pitchBias  stick offsets (-1..1) from asymmetric damage
-     * drag    extra drag coefficient (referenced to the wing area).  reset() does NOT clear it — the owner does.
+     * drag    extra drag coefficient (referenced to the wing area).  fuelLeak  fuel lost overboard, kg/s.
+     *         reset() does NOT clear any of it — the owner does.
      */
     damage: dmg,
     /** Destroy the aircraft now (shot down): same path as a crash — engines out, ballistic wreck, 'crash' event. */

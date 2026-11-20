@@ -1,6 +1,7 @@
 // Headless combat bench: runs a mission in node with every aircraft flown by the AI (flat ground at 0 m, calm ISA).
 //
 //   node tools/combat-bench.mjs [missionId] [--seconds 180] [--difficulty veteran] [--seed 1] [--runs 1] [--log] [--trace N]
+//        [--bot-skill 0.7] [--aircraft f16]
 //
 // Prints what happened (kills, shots, hits, missiles, how the mission ended). No rendering — runs ~100× real time.
 // `--log` prints every combat event; `--trace N` prints one line per aircraft every N seconds.
@@ -49,7 +50,7 @@ if (isMain) {
   for (let r = 0; r < runs; r++) {
     const b = await createBench({ seed: seed0 + r, difficulty: flag('difficulty', 'veteran') });
     const t0 = performance.now();
-    if (!b.combat.start(id, { bot: true })) { console.log('unknown mission', id, '— known:', b.combat.director.missions.map((m) => m.id).join(', ')); process.exit(2); }
+    if (!b.combat.start(id, { bot: true, botSkill: +flag('bot-skill', 0.7), aircraft: flag('aircraft', undefined) })) { console.log('unknown mission', id, '— known:', b.combat.director.missions.map((m) => m.id).join(', ')); process.exit(2); }
     let nextTrace = 0;
     const ended = b.run(seconds, (t) => {
       if (trace && t >= nextTrace) {
