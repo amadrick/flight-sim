@@ -307,7 +307,7 @@ float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px +
 // pixel and far above the ground) and the factor is normalised to mean 1, so the colour the distance converges to
 // does not change. The grain sits in the camera's frame: it does not swim with rotation, only with travel.
 uniform vec4 uTerrNear;          // low-eye ground: x = radians per pixel, y = 3-D crop plant radius (m), z = 3-D blade radius (m)
-float gSwAmp = 0.0;              // strength of the grain at this pixel (terrSward)
+float gSwAmp = 0.0;              // how far the blades stand out at this pixel (terrSward, before the contrast falloff)
 vec4 terrSwHash(vec2 c) {
   uvec2 q = uvec2(ivec2(c) + 1048576);
   uint h = q.x * 0x8da6b343u + q.y * 0xd8163841u + 0x9e3779b9u;
@@ -325,9 +325,9 @@ vec4 terrSward(vec3 rp, float Hs, float cellPx, float hw0, float ear, float M, f
   float pa = max(uTerrNear.x, 1.0e-5);
   float hpx = Hs * r / (dist * dist * pa);                       // on-screen height of an upright blade, px
   float amp = ss(1.5, 5.0, hpx) * ss(0.05, 0.4, (hc - Hs) / max(Hs, 0.01)) * step(0.005, Hs);
+  gSwAmp = amp;
   // a cell many plants wide averages them: the grain's contrast falls with range (spacing = plant spacing, m)
   amp *= clamp(pow(spacing / (r * cellPx * pa), 0.35), 0.3, 1.0);
-  gSwAmp = amp;
   if (amp < 0.004) return vec4(1.0, 0.0, 0.0, 0.0);
   float Lg = log(hc / max(hc - Hs, 0.01));
   float N = floor(6.2831853 / (cellPx * pa));
@@ -543,7 +543,11 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   if (swA != 0.0) {
     float sx = fract(cr / swP + 0.25), sline = terrLine(abs(sx - 0.5) * swP, 0.75, px);
     c *= 1.0 - swA * sline * ss(swP * 1.4, swP * 0.25, px);
-    float bale = step(0.6, id2) * terrLine(length(vec2((sx - 0.5) * swP, (fract(along / 31.0 + 0.37 * floor(cr / swP)) - 0.5) * 31.0)), 0.8, px);
+    // (dropped where the baler happened to fill: irregular, sparse along each swath - a regular lattice of bales read
+    // as a stipple pattern from altitude)
+    float bA = along / 31.0 + 0.37 * floor(cr / swP);
+    vec2 bh = terrHash2(vec2(floor(bA), floor(cr / swP)) + F.id * 17.0);
+    float bale = step(0.6, id2) * step(0.55, bh.x) * terrLine(length(vec2((sx - 0.5) * swP, (fract(bA) - 0.2 - 0.6 * bh.y) * 31.0)), 0.8, px);
     c = mix(c, vec3(0.30, 0.26, 0.17) * 1.1, bale * step(stage, 0.85) * (1.0 - head));
   }
   // tramlines: two wheel tracks 1.9 m apart every 18-30 m, and one round the headland; bare soil in a green crop,
@@ -961,7 +965,7 @@ TerrSurf terrSurface(vec3 rp) {
       // crop's grain goes darker toward the sun, the sheen of the far field (crop reflectance) stays
       vec2 vh = -Vw.xz / max(length(Vw.xz), 1.0e-3), sh2 = uSunDir.xz / max(length(uSunDir.xz), 1.0e-3);
       float back = max(dot(vh, sh2), 0.0) * ss(0.7, 0.1, uSunDir.y) * ss(-0.02, 0.08, uSunDir.y);
-      col *= 1.0 - 0.45 * back * back * gSwAmp * cW * min(gCropH / 0.5, 1.0);
+      col *= 1.0 - 0.55 * back * gSwAmp * cW * min(gCropH / 0.5, 1.0);
     }
   }
 
