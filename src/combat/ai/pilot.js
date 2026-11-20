@@ -60,10 +60,12 @@ export function createPilot(combat, team, e, o = {}) {
   let targetSince = 0, lastTarget = null, lastTally = null, fighting = false, wasFighting = false;
   let fineTrack = false, aimNX = 0, aimNY = 0, aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
   let prevGunErr = 1, gunErrS = 0, lockSince = -1, flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
-  let extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1;
+  let stalemateT = 0, holdSet = false, extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1;
 
   const pilot = {
     entity: e, skill, personality, mode: 'cruise', sub: '', profile: prof, tuning: sk, _fc: fc,
+    /** true = never attacks, flies its order and evades (missions may set this directly, as well as order.passive) */
+    passive: !!o.passive,
     /** debugging / tools: current steering request and safety state */
     debug: { want, get recovering() { return recovering; }, get activity() { return activity; }, get attacker() { return attacker; }, get missile() { return missile; } },
     setOrder(ord) {
@@ -85,6 +87,7 @@ export function createPilot(combat, team, e, o = {}) {
   };
   pilot.setOrder(order);
 
+  function fuelFrac() { const s = e.state; return s.fuelCapacity > 0 ? s.fuel / s.fuelCapacity : 1; }
   function hpFrac() { return e.maxHp ? clamp((e.hp ?? e.maxHp) / e.maxHp, 0, 1) : 1; }
   function call(name, target = null, force = false) {
     const t = combat.clock, gap = CALL_GAP[name] ?? 10;
@@ -108,6 +111,8 @@ export function createPilot(combat, team, e, o = {}) {
     want.direct = false; want.useFF = false; want.fire = false; want.ab = true; want.brake = true; want.minLever = 0; want.track = false; want.bias = 0;
     want.g = 3; want.gain = 1.3;
     act(dt);
+    // fuel discipline: afterburner only to survive once the fuel runs low (it burns 3–4× the fuel)
+    if (want.ab && fuelFrac() < 0.3 && !recovering && pilot.mode !== 'break' && pilot.mode !== 'defend-missile' && pilot.mode !== 'jink' && s.ias > prof.stall * 1.5) want.ab = false;
     if (mistake === 'relax' && (pilot.mode === 'break' || pilot.mode === 'jink')) { want.g = Math.min(want.g, Math.max(2.5, want.g * 0.5)); want.nz = Math.min(want.nz, 2.5); }
     guard(dt);
     // ---- AoA discipline (energy): offensive manoeuvring at the best sustained-turn AoA, the full fight AoA only to
@@ -213,11 +218,12 @@ export function createPilot(combat, team, e, o = {}) {
     const W = combat.weapons;
     const hp = hpFrac();
     const dmg = e.sim?.damage;
-    bugout = order.type !== 'flee' && order.type !== 'rtb' && (hp < sk.bugout || (dmg && (dmg.thrust < 0.55 || dmg.ctrl < 0.55)));
+    const fuel = fuelFrac();
+    bugout = order.type !== 'flee' && order.type !== 'rtb' && (hp < sk.bugout || fuel < 0.08 || (dmg && (dmg.thrust < 0.55 || dmg.ctrl < 0.55)));
     // ---- what are we doing overall
     const ot = order.type;
     let wantFight = false, autoTarget = true;
-    if (order.passive) activity = 'passive';
+    if (order.passive || pilot.passive || (e.team === 'neutral' && !(order.target && isHostile(order.target)))) activity = 'passive';
     else if (ot === 'flee' || ot === 'rtb') activity = 'flee';
     else {
       if (ot === 'engage') { wantFight = true; activity = 'fight'; }
@@ -248,10 +254,12 @@ export function createPilot(combat, team, e, o = {}) {
     if (bugout && activity === 'fight') activity = 'bugout';
     // ---- target
     if (wantFight) {
-      const forced = (ot === 'engage' || ot === 'intercept') && order.target && order.target.alive ? order.target : null;
+      const forced = (ot === 'engage' || ot === 'intercept') && order.target && order.target.alive && isHostile(order.target) ? order.target : null;
       e.target = forced || selectTarget();
-      if (!e.target) { wantFight = false; activity = ot === 'escort' && order.leader?.alive ? 'formation' : 'cruise'; }
+      if (!e.target) { wantFight = false; activity = ot === 'escort' && order.leader?.alive ? 'formation' : ot === 'engage' ? 'hold' : 'cruise'; }
+      else holdSet = false;
     } else if (activity !== 'passive' && activity !== 'flee' && activity !== 'bugout') e.target = null;
+    if (e.target && !isHostile(e.target)) e.target = null;      // teams can change at runtime (neutral → red)
     void autoTarget;
     fighting = activity === 'fight';
     const T = e.target && e.target.alive ? e.target : null;
@@ -278,7 +286,37 @@ export function createPilot(combat, team, e, o = {}) {
     decide(T);
   }
 
+  /** Hostility is re-read every time (teams change at runtime); neutrals are never attacked and never attack. */
+  function isHostile(x) {
+    if (!x || x.team === e.team || x.team === 'neutral') return false;
+    // a neutral attacks only what its order names explicitly (a mission's scripted surprise)
+    return e.team !== 'neutral' || ((order.type === 'engage' || order.type === 'intercept') && order.target === x);
+  }
+
+  /** A target that does not fight back (drone, transport, bomber, passive): flown at without BFM. */
+  function isEasy(x) {
+    if (x.pilot?.passive || x.pilot?.order?.passive) return true;
+    const cat = x.def?.category;
+    if (cat === 'transport' || cat === 'bomber' || cat === 'airliner') return true;
+    const lo = x.loadout;
+    return !!lo && !(lo.gun?.rounds > 0) && !((lo.missiles?.ir || 0) + (lo.missiles?.radar || 0) > 0);
+  }
+
+  /** 0..1.5: how much the mission wants `x` dead (marked target, bomber / striker / transport role or category). */
+  function priorityOf(x) {
+    let p = 0;
+    const mk = combat.director?.markers;
+    if (mk) for (let i = 0; i < mk.length; i++) if (mk[i].kind === 'target' && mk[i].entity === x) { p = 1.5; break; }
+    const role = x.tags?.role;
+    if (role === 'bomber' || role === 'striker' || role === 'raider' || role === 'hva') p = Math.max(p, 1.2);
+    const cat = x.def?.category;
+    if (cat === 'bomber' || cat === 'transport' || cat === 'attack') p = Math.max(p, 1);
+    if (x.pilot?.passive || x.pilot?.order?.passive) p = Math.max(p, 0.5);
+    return p;
+  }
+
   function selectTarget() {
+    if (e.team === 'neutral') return null;
     combat.world.enemiesOf(e, enemies);
     const L = order.type === 'escort' ? order.leader : null;
     let best = null, bs = Infinity;
@@ -292,7 +330,7 @@ export function createPilot(combat, team, e, o = {}) {
       if (x.target === e) sc -= 3 + (tmpGeo.range < 4000 ? 4 : 0);      // whoever is attacking me
       if (L && L.alive && x.target === L) sc -= 6;                       // whoever is attacking my leader
       if (L && L.alive && L.target === x) sc -= 1;                       // support the leader's attack a little
-      if (x.pilot?.order?.passive) sc -= 2;                             // mission targets are what we came for
+      sc -= 4 * priorityOf(x);                                           // mission objectives: bombers, strikers, marked targets
       sc += 3.5 * team.countTargeting(x, e);                             // spread over the enemies
       if (x === cur) sc -= 2.5;                                          // hysteresis
       if (sc < bs) { bs = sc; best = x; }
@@ -372,7 +410,7 @@ export function createPilot(combat, team, e, o = {}) {
       if (attacker && t > attackerOnset && ageo.range < 3500 && ageo.ata > 100 * DEG) { setMode('break'); return; }
       setMode(activity === 'flee' ? 'flee' : 'bugout'); return;
     }
-    if (!T) { setMode('cruise'); return; }
+    if (!T) { setMode(order.type === 'engage' ? 'hold' : 'cruise'); return; }
     classify(e, T, geo);
     const V = s.ias, corner = prof.corner, agl = aglAt();
     // locked manoeuvres finish unless something above interrupts
@@ -387,6 +425,17 @@ export function createPilot(combat, team, e, o = {}) {
       }
       setMode('break');
       return;
+    }
+    // easy target (transport, bomber, drone, passive): no BFM, just get behind it and shoot
+    if (isEasy(T)) {
+      if (geo.range < Math.max(sk.gunMax * 1.5, 1200) && geo.ata < 40 * DEG) { setMode('guns'); return; }
+      setMode('pursuit', 0, geo.range < 900 && geo.closure > 40 ? 'lag' : geo.range > 3000 ? 'lead' : 'pure');
+      return;
+    }
+    // missile reset: a long close-in stalemate with IR missiles left: separate, come back for a shot
+    stalemateT = geo.situation === 'offensive' || geo.range > 2500 ? 0 : stalemateT + sk.think;
+    if (stalemateT > lerp(60, 25, skill) && (e.loadout?.missiles?.ir || 0) > 0 && geo.threatAta > 70 * DEG && V > corner * 0.7) {
+      stalemateT = 0; setMode('extend', 8); return;
     }
     // 4. out of energy and not winning: extend, then come back
     const slow = V < corner * 0.55 - sk.slack * 0.3;
@@ -490,6 +539,7 @@ export function createPilot(combat, team, e, o = {}) {
       case 'orbit': doOrbit(); break;
       case 'patrol': doPatrol(); break;
       case 'intercept': doIntercept(); break;
+      case 'hold': doHold(); break;
       default: cruise();
     }
     // flares against a close IR missile even outside the defensive manoeuvre (and by passive aircraft)
@@ -825,7 +875,7 @@ export function createPilot(combat, team, e, o = {}) {
   }
   function cruise() {
     const s = e.state;
-    const hdg = order.type === 'cruise' && order.heading != null ? order.heading : null;
+    const hdg = order.heading != null ? order.heading : null;
     if (hdg != null) headingVec(hdg, A); else A.set(e.forward.x, 0, e.forward.z).normalize();
     holdAlt(A, order.alt ?? Math.max(s.position.y, ground(s.position.x, s.position.z) + 1000));
     want.spd = order.speed ?? (prof.heavy ? Math.min(prof.vmo * 0.8, (e.def?.specs?.cruiseSpeed || 200) * 0.75) : prof.corner + 20);
@@ -842,6 +892,26 @@ export function createPilot(combat, team, e, o = {}) {
     holdAlt(A, order.alt ?? (wp.y > 50 ? wp.y : s.position.y));
     want.spd = order.speed ?? (prof.heavy ? Math.min(prof.vmo * 0.8, (e.def?.specs?.cruiseSpeed || 200) * 0.75) : prof.corner + 10);
     want.ab = false;
+  }
+  /** Nothing to fight on an engage order: the player bot flies to the mission steer point, everybody else holds an
+   *  orbit over the start of the fight instead of flying off the map. */
+  function doHold() {
+    const w = e.isPlayer ? combat.director?.waypoint : null;
+    if (w && w.position) {
+      A.copy(w.position).sub(e.state.position); A.y = 0;
+      if (A.lengthSq() > 2500 * 2500) {
+        holdAlt(A.normalize(), Math.max(w.position.y > 100 ? w.position.y : e.state.position.y, ground(e.state.position.x, e.state.position.z) + 1500));
+        want.spd = prof.corner + 40; want.ab = false; pilot.sub = 'steer';
+        return;
+      }
+    }
+    if (!holdSet) { holdSet = true; orbitC.copy(e.isPlayer ? home : e.state.position); }
+    const c = orbitC, R = 5000;
+    A.copy(e.state.position).sub(c); A.y = 0;
+    const d = Math.max(A.length(), 1); A.multiplyScalar(1 / d);
+    B.set(-A.z, 0, A.x).addScaledVector(A, -clamp((d - R) / R, -1, 1) * 1.2).normalize();
+    holdAlt(B, Math.max(e.state.position.y, ground(e.state.position.x, e.state.position.z) + 1500));
+    want.spd = prof.corner; want.ab = false; pilot.sub = 'orbit';
   }
   function doPatrol() { if (order.waypoints?.length) routeStep(); else doOrbit(); }
   function doOrbit() {
@@ -905,10 +975,12 @@ export function createPilot(combat, team, e, o = {}) {
       const x = air[i];
       if (x === e || !x.state) continue;
       const d2 = x.state.position.distanceToSquared(p);
-      if (d2 > 600 * 600) continue;
+      if (d2 > 1200 * 1200) continue;
       closestApproach(p, s.velocity, x.state.position, x.state.velocity, CA);
-      const sep = (e.radius || 5) + (x.radius || 5) + (x.team === e.team ? 45 : 35);
-      if (CA.t < 2.5 && CA.miss < sep) {
+      const mate = x.team === e.team, station = pilot.mode === 'formation' && pilot.sub === 'on-station';
+      const sep = (e.radius || 5) + (x.radius || 5) + (station ? 20 : mate ? 70 : 35);
+      const dNow = Math.sqrt(d2);
+      if ((CA.t > 0 && CA.t < (mate ? 3.5 : 2.5) && CA.miss < sep && dNow - CA.miss > 8) || dNow < sep * 0.5) {
         // turn away from the other aircraft's position at closest approach, preferring up
         A.copy(x.state.position).addScaledVector(x.state.velocity, CA.t).sub(B.copy(p).addScaledVector(s.velocity, CA.t));
         A.multiplyScalar(-1);
