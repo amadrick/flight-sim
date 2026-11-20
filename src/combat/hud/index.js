@@ -39,7 +39,7 @@ export async function createCombatHud(combat) {
 
   const panels = createPanels(root, { reduced: () => reducedMotion });
   const radar = createRadar(panels.radarCv, tok);
-  const status = createStatus(panels.statCv, tok, combat.weapons?.specs);
+  const status = createStatus(panels.statCv, tok, combat.weapons?.specs, () => combat.assist?.info);
   let radarMini = false;
   panels.radarBox.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -64,7 +64,7 @@ export async function createCombatHud(combat) {
     near: { t: 0 }, msg: { t: 0, text: '', col: tok.fg },
     dmg: Array.from({ length: 4 }, () => ({ a: 0, t: 0, life: 0.9 })), dmgI: 0, vig: 0,
     splash: Array.from({ length: 4 }, () => ({ entity: null, t: 0, life: 1.8, x: NaN, y: NaN })), splashI: 0,
-    camMode: null, cine: false, touch: false, camLabelY: 0, leftRight: 0, ayExt: 100, ayInt: 100, tgtOn: false, seat: 'wide', seatCompact: false,
+    camMode: null, cine: false, touch: false, camLabelY: 0, leftRight: 0, rdt: 0, boreD: 1000, ayExt: 100, ayInt: 100, tgtOn: false, seat: 'wide', seatCompact: false,
     lockSnap: 0, cue: '', cueCol: tok.hud, cueGun: false, boreX: NaN, boreY: NaN, tgtX: 0, tgtY: 0, tgtS: 0, alwaysCross: true,
     missileSide(p, pos) { return toBody(p.state, pos, _v).x >= 0 ? 1 : -1; },
   };
@@ -276,7 +276,7 @@ export async function createCombatHud(combat) {
     radar, subtitles: panels.subQ,
     update(dt) {
       const rdt = ctx.time?.realDt ?? 1 / 60;
-      H.t += rdt; H.time = combat.clock;
+      H.t += rdt; H.time = combat.clock; H.rdt = rdt;
       const p = combat.world?.player;
       const mode = ctx.cameraRig?.mode || 'chase';
       const show = combat.active && !!p && userVisible && ctx.params?.hud !== false && !ctx.menu?.isOpen && !combat.ui?.isOpen && mode !== 'showcase';

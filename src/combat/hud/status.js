@@ -7,7 +7,7 @@ import { F } from '../../ui/hud/common.js';
 const PART_KEYS = ['fuselage', 'cockpit', 'wingL', 'wingR', 'tail'];
 const WING_L = [17, 16, 2, 26, 2, 29, 17, 26], WING_R = [23, 16, 38, 26, 38, 29, 23, 26], TAIL = [17, 31, 10, 36, 10, 38, 30, 38, 30, 36, 23, 31];
 
-export function createStatus(cv, tok, specs) {
+export function createStatus(cv, tok, specs, assistInfo) {
   const g = cv.getContext('2d');
   let W = 1, Hh = 1, dpr = 1, sizeKey = '', last = '';
   const max = { gun: 0, flares: 0, m: Object.create(null) };
@@ -54,6 +54,8 @@ export function createStatus(cv, tok, specs) {
   function collectChips(p, out) {
     out.length = 0;
     const d = p.damage || {}, lo = p.loadout, s = p.state;
+    const ai = assistInfo?.();
+    if (ai?.active && ai.autoThrottle) out.push('A/THR', tok.ok);
     if (d.fire > 0.05) out.push('FIRE', C.red);
     if (d.leak > 0.05) out.push('FUEL LEAK', C.amber);
     if (Array.isArray(d.engineOut) ? d.engineOut.some(Boolean) : d.engineOut) out.push('ENG OUT', C.red);
