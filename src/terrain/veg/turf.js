@@ -10,8 +10,8 @@
 // the same colours and lay. Cells of the grid that lie entirely on pavement are left out of the index buffer
 // (CPU, on recentre); the fragment shader stops the blades at the pavement edge (airfield distance map).
 //
-// Cost: medium 6 shells x 64^2 grid within 40 m, high 8 x 80^2 within 60 m, ultra 12 x 96^2 within 84 m; one draw
-// call; per shell fragment 2 texture fetches (airfield map, blade array) + 2 noise fetches in the vertex shader.
+// Cost (2 blade fetches): medium 6 shells x 64^2 grid within 40 m, high 8 x 80^2 within 60 m, ultra 12 x 96^2 within 84 m; one draw
+// call; per shell fragment 2 blade-array fetches + 2 noise fetches in the vertex shader.
 import * as THREE from 'three';
 import { AIRFIELD_GLSL } from '../airfield.js';
 import { vegVertexCommon } from './common.js';
@@ -137,16 +137,19 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         // keep in step with the ground shader's turf: worn verge, short / long zones, colours relative to TURF_REF
         float dP = vTP.x, longG = vTP.y, since = vTP.z, dc = vTP.w;
         float layer = floor(vTZ * ${BL.toFixed(1)});
+        // two lookups at different scales and orientations (a single 0.32 m tile shows its lattice at grazing angles)
         vec2 bl = texture(tTurfBlade, vec3(vTW.xz * ${(1 / BLADE_TILE).toFixed(4)}, layer)).rg;
-        bl.r *= 0.7 + 0.6 * vTP2.y;                       // clumpier and thinner patches (breaks the 0.32 m repeat)
+        vec2 bl2 = texture(tTurfBlade, vec3(vec2(0.6 * vTW.x - 0.8 * vTW.z, 0.8 * vTW.x + 0.6 * vTW.z) * ${(1 / (BLADE_TILE * 0.71)).toFixed(4)} + 0.37, layer)).rg;
+        bl = vec2(clamp(0.62 * (bl.r + bl2.r), 0.0, 1.0), max(bl.g, bl2.g));
+        bl.r *= 0.7 + 0.6 * vTP2.y;                       // clumpier and thinner patches
         // thin, worn turf along the pavement, none on it
         float edge = tss(0.05, 2.4 + 0.8 * (vTP2.y - 0.5), dP);
         float fadeD = 1.0 - tss(uTurfGrid.w * 0.45, uTurfGrid.w * 0.85, dc);
         vec3 V = normalize(vTV);
-        float graze = tss(0.03, 0.22, abs(V.y) + 4.0 / max(dc, 1.0));      // shells read as sheets at grazing angles far off
+        float graze = tss(0.08, 0.30, abs(V.y) + 1.5 / max(dc, 1.0));      // shells read as sheets at grazing angles far off
         float a = bl.r * edge * fadeD * graze * uTurfOn;
         if (a < 0.02) discard;
-        vec3 c = vec3(0.060, 0.108, 0.034) * (0.75 + 0.5 * bl.g);
+        vec3 c = vec3(0.072, 0.100, 0.042) * (0.75 + 0.5 * bl.g);
         c = mix(c, vec3(0.165, 0.150, 0.080), longG * 0.30 * bl.g + 0.25 * tss(0.6, 0.85, vTP2.x));
         // inside the sward: lower parts see less sky and sun (bright tips, dark bases), blades of older passes dull
         c *= (0.35 + 0.75 * vTZ) * (1.0 - 0.15 * since);

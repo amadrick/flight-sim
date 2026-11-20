@@ -259,7 +259,7 @@ uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
 // airfield turf (set by terrSurface, read by the turf reflectance): cover, lay direction (world xz), lay 0..1, sward height (m)
 float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
 // diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)
-const vec3 TURF_REF = vec3(0.066, 0.104, 0.040);
+const vec3 TURF_REF = vec3(0.072, 0.100, 0.042);
 uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m)
 float gGrassK = 0.0;             // natural grass share of the pixel (gets the long-sward reflectance)
 
@@ -1085,7 +1085,8 @@ TerrSurf terrSurface(vec3 rp) {
   turfK *= (1.0 - snow) * (1.0 - wsurf); grassK *= (1.0 - snow) * (1.0 - wsurf);
   float bK = turfK + grassK;
   if (bK > 0.002 && uTurfSky.w > 0.5) {
-    float tL = (turfK * clamp((gTurfH - 0.045) / 0.085, 0.0, 1.0) + grassK) / bK;
+    // corner A = freshly mown and laid (lay 0.5, 4.5 cm), B = long, nearly upright (lay 0.12, 13 cm)
+    float tL = (turfK * clamp((0.50 - gTurfLay) / 0.38, 0.0, 1.0) + grassK) / bK;
     vec4 TR = turfReflectance(ng, Vw, uSunDir, turfK > grassK ? gTurfDir : vec2(1.0, 0.0), tL);
     vec3 skyK = TR.a * uTurfSky.rgb, sunK = TR.rgb;
     vec3 ref = mix(uTurfRefA, uTurfRefB, tL);

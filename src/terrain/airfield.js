@@ -44,7 +44,7 @@ TurfP turfPlan(vec2 w, float dP, float nA, float nB, float nC) {
   TurfP T;
   vec2 ax = uAirInfo.z > 0.5 ? uAirInfo.xy : vec2(1.0, 0.0), axp = vec2(-ax.y, ax.x);
   T.passW = 6.4;
-  float acr = dot(w, axp) + 5.0 * (nB - 0.5) + 1.2 * (nC - 0.5), alg = dot(w, ax);
+  float acr = dot(w, axp) + 5.0 * (nB - 0.5) + 2.2 * (nC - 0.5), alg = dot(w, ax);
   float pid = floor(acr / T.passW);
   T.pf = fract(acr / T.passW);
   // the field is not all cut on one day: blocks of passes at different times since mowing
@@ -56,7 +56,8 @@ TurfP turfPlan(vec2 w, float dP, float nA, float nB, float nC) {
   T.longG = clamp((dP + 50.0 * (nA - 0.5) + 20.0 * (nC - 0.5) - 55.0) / 65.0, 0.0, 1.0);
   T.longG = T.longG * T.longG * (3.0 - 2.0 * T.longG);
   T.H = mix(0.04, 0.13, T.longG) * (0.8 + 0.45 * T.since);
-  T.lay = mix(0.70, 0.18, T.longG) * (1.0 - 0.55 * T.since);
+  // (rotary gang mowers without rollers lay the grass only a little: stripes are subtle and fade as it regrows)
+  T.lay = mix(0.48, 0.18, T.longG) * (1.0 - 0.6 * T.since);
   T.dir = ax * (mod(pid, 2.0) < 0.5 ? 1.0 : -1.0);
   return T;
 }

@@ -15,7 +15,7 @@
 //
 // Runtime: only the sun ELEVATION is baked (azimuths are taken relative to the sun in the shader), so the LUT is
 // rebuilt only as the sun climbs or sinks, a few slices per frame. Two corner swards are baked: A = mown
-// (lay 0.65, 4.5 cm) and B = long (lay 0.18, 13 cm); the terrain blends them. One 3-D texture per corner,
+// (lay 0.50, 4.5 cm) and B = long (lay 0.12, 13 cm); the terrain blends them. One 3-D texture per corner,
 // 12 (mu_v) x 16 (view azimuth - sun azimuth) x 16 (lay azimuth - sun azimuth), RGBA16F:
 // rgb = BRF for the sun, a = sky HDRF (green). Cost in the terrain shader: 2 trilinear fetches on turf pixels.
 //
@@ -24,7 +24,7 @@ import * as THREE from 'three';
 import { TURF_SUN_NET, TURF_SKY_NET, TURF_EVAL, TURF_META } from './ground-turf-weights.js';
 
 export { TURF_EVAL, TURF_META };
-export const TURF_CORNERS = [{ lean: 0.65, H: 0.045 }, { lean: 0.18, H: 0.13 }];
+export const TURF_CORNERS = [{ lean: 0.50, H: 0.045 }, { lean: 0.12, H: 0.13 }];
 export const NV = 12, NA = 16, MUV0 = 0.04;
 
 function b64ToF32(b64) {
