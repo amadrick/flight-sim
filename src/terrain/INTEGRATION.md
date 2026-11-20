@@ -287,3 +287,11 @@ Near grass (`veg/blades.js`, `veg/turf.js`, `surface.glsl.js`):
 | other pavement detail | +1-2 noise fetches (drips / striations / crumbled edge), +2 on paint (crazing, film) | - | - |
 | aggregate 512^2 | same 2 fetches | 1 MB (was 256 kB) | ~0.3-0.6 s (JS; was ~80 ms) |
 | grass blades | +1 draw within 25 m AGL at an airport; medium 156 k instances (~70 % culled in the vertex shader), 5 fetches per vertex, no textures in the fragment | - | - |
+
+Night / lamp and fire light on grass (round 4 fix): the turf reflectance's sun factor (`canopyK`) and its reduced
+specular (`specK`) were applied to every direct light, so with the sun down a low fire or lamp got the "sheen into a
+low sun" and the detail normals turned it into glitter. Now the sun factor fades out below the horizon, the canopy
+is fully matte to direct light at night, the shells have no specular, and the blades' sheen is the sun's only.
+Hook for `src/effects/decals.js` (not owned here): the crash fire-light sheen decal uses a GGX lobe (roughness 0.3)
+with a normal from depth derivatives on every surface; on turf it should be skipped or made diffuse (e.g. only where
+`ctx.terrain.airfield.distanceAt(x, z)[0] < 0`, i.e. on pavement).
