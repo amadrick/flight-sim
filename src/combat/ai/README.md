@@ -12,7 +12,7 @@ The AI pilots fly the real flight model through `entity.controls`: stick, pedals
 | `skill.js` | skill 0..1 and personality turned into numbers (reaction, aim, G use, flare timing, deck, …) |
 | `radio.js` | `ai:call` names and their minimum gaps |
 | `duel.mjs` | 1v1 bench across a matrix of skills and types: `node src/combat/ai/duel.mjs --runs 8 [--guns] [--terrain mountains] [--types f16,f15,…] [--skills rookie:ace,…] [--modes] [--verbose]` |
-| `tools/` | `sandbox.mjs` (a bench without the director), `fc-test.mjs` (controller sweep over 10 types), `track-test.mjs` (gun tracking against a scripted target) |
+| `tools/` | `sandbox.mjs` (a bench without the director), `fc-test.mjs` (controller sweep over 10 types), `track-test.mjs` (gun tracking against a scripted target), `bfm-stats.mjs` (guns duels: time with angular advantage, in the control zone, nose-on, tracking; `MODES=1` adds the mode mix), `duel-trace.mjs` (one duel, one line per N s), `fight-log.mjs` (per-duel result, missile launches and the fight-length quartiles), `terrain-check.mjs` (duels over the mountain range; every ground loss with its last second of flight, damaged aircraft counted) |
 | `*.test.js` | `node --test src/combat/ai` |
 
 ## API
@@ -65,14 +65,17 @@ Escort `offset` is a preset name (`'wing'`, `'spread'`, `'trail'`, `'echelon'`, 
 
 - **Sense** (5 Hz): missiles guiding on it. Radar shots are seen via the RWR; IR shots are seen with a skill-scaled chance, or late from the smoke. It also senses attackers in the rear quarter (check six, with a spotting delay for poor pilots) and guns threats.
 - **BFM:**
-  - lead / pure / lag pursuit, plus "tail" pursuit (to the bandit's turn circle when in front of its 3–9 line; skilled pilots only);
+  - in front of the bandit's 3–9 line: nose to it; behind it: fly to its control zone (its position ~1–4 s ago on its curving path), pure to close, lead only to shoot; a straight or running bandit is pointed at;
+  - overshoot management by time to go and closure: lag first (throttle and speedbrake), high yo-yo / lag roll only when the closure is more than the throttle can kill;
+  - a flat stalemate (long neutral circle) is broken by the pilot with the energy going vertical;
   - merge with offset passes and one- or two-circle choice by energy and personality;
   - high and low yo-yo, lag roll, scissors, vertical re-attack;
   - extend and re-attack, a missile reset after a long close-in stalemate;
   - against targets that do not fight back, no BFM at all: just pursuit and guns.
 - **Energy:**
   - fights near corner speed;
-  - offensive manoeuvring at the sustained-turn AoA when slow (rookies pull to the limit and bleed);
+  - the AoA envelope a pilot dares to use grows with skill (rookies stay far from the limit, fearing a departure, and are out-turned);
+  - when fast the turn is flattened (no nose-low spiral to the floor), when slow the pilot does not chase the bandit uphill; the flight controller keeps the gravity part of a saturated lift request, so hard turns stay level instead of dropping the nose;
   - stops climbing and eases the pull when slow;
   - afterburner and speedbrake by speed error, no afterburner below 30 % fuel except to survive, bugout at bingo.
 - **Defence:**
@@ -84,17 +87,21 @@ Escort `offset` is a preset name (`'wing'`, `'spread'`, `'trail'`, `'echelon'`, 
     - every missile: a last-ditch break above 6 g inside about 2.2 s time-to-go.
   - Every reaction waits a human reaction time scaled by skill.
 - **Offence:**
-  - guns via `weapons.gunSolution`, with correlated aim wander that grows with line-of-sight rate;
-  - fires on settle plus short bursts, or snapshots when the pipper sweeps through;
+  - guns via `weapons.gunSolution`, with correlated aim wander that grows with line-of-sight rate; the nose tracker trims the steady lateral error with an integral term;
+  - fire tolerance is the target's angular size plus a small skill term (aces 7 mrad, rookies 22); tracking bursts only once the bandit's manoeuvre plane has been steady for a moment (aces wait ~0.6 s, rookies not at all), snapshots as the pipper sweeps through, also from a pursuit;
   - closes to 340–560 m by skill (aces close in); never fires with a friendly in the line;
-  - missiles only on a lock, after a skill-scaled hesitation, never outside `lock.rMax` and never inside `rMin`; aces wait for `rNe`; one missile in flight per target (aces may add a second after 10 s).
+  - missiles only on a lock, after a skill-scaled hesitation, never outside `lock.rMax` and never inside `rMin`; aces wait for `rNe`; one missile in flight per target (aces may add a second after 10 s);
+  - the merge: decided once per bandit, many pilots hold the head-on radar shot to the merge (rookies and veterans ~65–70 %, aces ~60 %; turn fighters more, cautious and energy pilots less);
+  - after a missile of theirs misses, only a good rear-quarter shot for 15–35 s: the fight becomes a turning fight; in the turning fight skilled pilots wait for a rear-quarter IR shot with the seeker near the nose and the bandit not in a hard break;
+  - a refused launch (the player-warning hold of `weapons`) is simply retried on the next think.
 - **Safety guard:**
   - mid-air avoidance (wider for team-mates; formation station-keeping allowed);
   - soft floor (a dive-angle limit against the terrain ahead plus the deck) and a comfort floor that keeps fights 2–3.5 km above the deck;
-  - predictive terrain recovery along the velocity and along ±turning escapes (3 km mountains), using the G that full aft stick actually gives right now (learned online) and battle damage (`sim.damage.ctrl`/`thrust`);
+  - predictive terrain recovery along the velocity and along ±turning escapes (3 km mountains), using the G that full aft stick actually gives right now (learned online, kept for the speed it was learned at) and battle damage (`sim.damage.ctrl`/`thrust`); a fast recovery pulls power back and uses the speedbrake; no transonic dashes within 3 km of the deck;
   - stall recovery, overspeed (vmo / mmo), ceiling.
   - The flight controller trims out `sim.damage` roll and pitch offsets and scales the stick by `1/ctrl`.
-- **Skill and mistakes:** besides the numbers in `skill.js`, poor pilots make mistakes:
+- **Skill and mistakes:** besides the numbers in `skill.js`, poor pilots make mistakes (more of them under pressure and as G fatigue builds in a long hard fight):
+  - lose the bandit in the rear quarter for a few seconds and fly straight on, predictable (poor lookout);
   - lose sight;
   - get slow;
   - overshoot;

@@ -10,10 +10,11 @@ import * as THREE from 'three';
 import { clamp, G0 } from '../util.js';
 
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _l = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _g = new THREE.Vector3(), _t = new THREE.Vector3();
 
 /** Inverse of fcs.js shape(): stick deflection that produces normalised command s (|s| <= 1) with shaping factor k. */
 // nose-error roll loop gains for gun tracking (higher gains oscillate through the roll / pitch coupling)
-const LAT_KP = 0.5, LAT_KD = 0;
+const LAT_KP = 0.7, LAT_KD = 0, LAT_W = 0.2, LAT_KI = 0.5;
 export function invShape(s, k) {
   const a = Math.abs(s) > 1 ? Math.sign(s) : s;
   if (k <= 1e-6) return a;
@@ -108,8 +109,18 @@ export function createFlightController(e, prof) {
       _l.y += G0; _l.addScaledVector(_v, -_v.y * G0);
       let L = _l.length();
       if (L > aMax) {
-        // keep the gravity part, shorten the turn part so |lift| fits (prefer turning over holding altitude when it can't)
-        _l.multiplyScalar(aMax / L); L = aMax;
+        // keep the gravity part, shorten the turn part so |lift| fits: |g⊥ + k·t| = aMax (scaling both would let a
+        // hard turn drop the nose into a descending spiral)
+        _g.set(0, G0, 0).addScaledVector(_v, -_v.y * G0);
+        const gl = _g.length();
+        if (gl >= aMax * 0.95) _l.multiplyScalar(aMax / L);
+        else {
+          _t.copy(_l).sub(_g);
+          const tt = _t.lengthSq(), gt = _g.dot(_t);
+          const k = tt > 1e-6 ? (-gt + Math.sqrt(Math.max(gt * gt - tt * (gl * gl - aMax * aMax), 0))) / tt : 0;
+          _l.copy(_g).addScaledVector(_t, clamp(k, 0, 1));
+        }
+        L = aMax;
       }
       fc.liftWorld.copy(_l);
       fc.setLift(_l, L / G0, gLimit);
@@ -157,7 +168,7 @@ export function createFlightController(e, prof) {
       // nose answers the stick long before the velocity vector does)
       const c = clamp(f.dot(aimDir), -1, 1);
       const err = Math.acos(c);
-      if (!fc.trackValid) { fc.exValid = false; fc.exDot = 0; fc.trackPrev.copy(aimDir); if (w0) fc.trackRate.copy(w0); else fc.trackRate.set(0, 0, 0); fc.trackValid = true; fc.trackInt = 0; }
+      if (!fc.trackValid) { fc.exValid = false; fc.exDot = 0; fc.trackPrev.copy(aimDir); if (w0) fc.trackRate.copy(w0); else fc.trackRate.set(0, 0, 0); fc.trackValid = true; fc.trackInt = 0; fc.exInt = 0; }
       _v.crossVectors(fc.trackPrev, aimDir).multiplyScalar(1 / Math.max(dt, 1e-3));
       fc.trackRate.lerp(_v, Math.min(1, dt / 0.12));
       fc.trackPrev.copy(aimDir);
@@ -174,20 +185,21 @@ export function createFlightController(e, prof) {
       // close in, roll the lift plane through the aim point using the NOSE error (the velocity-based roll above keeps
       // a lateral offset of ~AoA·sin(roll error) that only decays slowly)
       let re = rollErr, rv = rollValid;
-      if (err < 0.2 && c > 0) {
+      if (err < LAT_W && c > 0) {
         const ex = _n.dot(e.right);
         const exd = fc.exValid ? (ex - fc.exPrev) / Math.max(dt, 1e-3) : 0;
         fc.exDot += (exd - fc.exDot) * Math.min(1, dt / 0.08); fc.exPrev = ex; fc.exValid = true;
-        const lat = _l.dot(e.right) + (LAT_KP * ex + LAT_KD * fc.exDot) * V, upc = Math.max(_l.dot(e.up) + kp * ey * V + fc.trackInt, 0.5 * G0);
-        const rn = Math.atan2(lat, upc), w = clamp((0.2 - err) / 0.1, 0, 1);
+        fc.exInt = clamp(fc.exInt + LAT_KI * ex * dt * (err < 0.08 ? 1 : 0), -0.04, 0.04);   // trims the steady lateral offset
+        const lat = _l.dot(e.right) + (LAT_KP * ex + LAT_KD * fc.exDot + fc.exInt) * V, upc = Math.max(_l.dot(e.up) + kp * ey * V + fc.trackInt, 0.5 * G0);
+        const rn = Math.atan2(lat, upc), w = clamp((LAT_W - err) / (LAT_W * 0.5), 0, 1);
         re = rv ? rollErr + (rn - rollErr) * w : rn; rv = true;
       }
-      fc.rollErr = re; fc.rollValid = rv;
+      fc.rollErr = re; fc.rollValid = rv; fc.dbgEy = _n.dot(e.up); fc.dbgEx = _n.dot(e.right);
       fc.nzCmd = clamp(Math.abs(re) > 0.5 ? Math.min(nz, 2) : nz, -1, gLimit);
-      fc.yawCmd = err < 0.05 ? clamp(_n.dot(e.right) * 12, -0.4, 0.4) : 0;
+      fc.yawCmd = 0;                                     // (rudder corrections made the lateral loop worse)
       return err;
     },
-    nzFull: prof.gMax, exPrev: 0, exDot: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
+    nzFull: prof.gMax, nzFullV: 0, exPrev: 0, exDot: 0, exInt: 0, exValid: false, trackInt: 0, trackValid: false, trackPrev: new THREE.Vector3(), trackRate: new THREE.Vector3(),
 
     /** Speed hold: target IAS (m/s). opts: { ab: allow afterburner, brake: allow the speedbrake, min, max lever } */
     speed(ias, ab = true, brake = true, minLever = 0) {
@@ -210,7 +222,8 @@ export function createFlightController(e, prof) {
       const aLim = Math.min(fc.alphaLimit, p.fbw ? p.alphaFcs : fc.alphaLimit);
       const sm = e.sim?.debug?.aero?.stallMargin;              // rad to the angle of maximum lift (flight model)
       const aCap = sm != null && sm < 1 ? Math.min(aLim, s.aoa + sm - 0.05) : aLim;
-      if (s.aoa > 0.03 && nz > 0) {
+      // AoA cap (only near the limit: during the G onset the AoA leads the load factor, and the ratio would cut the pull)
+      if (s.aoa > Math.max(0.03, aCap * 0.8) && nz > 0) {
         const nzA = Math.max(s.gLoad, 0.3) * (aCap / s.aoa);
         if (nzA < nz) nz = Math.max(nzA, Math.min(nz, 0.6));
       }
@@ -249,7 +262,9 @@ export function createFlightController(e, prof) {
       if (!p.fbw && c.pitch > 0.25 && s.aoa > 0.01 && !s.stalled) {
         const est = 1 + Math.max(s.gLoad - 1, 0) / c.pitch;
         fc.nzFull += (Math.min(est, p.gMax) - fc.nzFull) * Math.min(1, dt / 0.8);
-      } else fc.nzFull += (p.gMax - fc.nzFull) * Math.min(1, dt / 15);
+        fc.nzFullV = Math.max(fc.nzFullV * (1 - Math.min(1, dt / 20)), s.ias);
+      } else if (s.ias < fc.nzFullV - 25) fc.nzFull += (p.gMax - fc.nzFull) * Math.min(1, dt / 15);   // slower than when it was learned
+      else fc.nzFullV = Math.max(fc.nzFullV, 0);
       // ---- roll: rate command from the roll error
       let pDes = 0;
       // roll-angle loop with lead on the current roll rate (conventional aircraft respond slower: more lead)
