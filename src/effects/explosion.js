@@ -287,7 +287,7 @@ void main() {
     // once the fireball has lifted off, what lights the smoke from below is the pool fire on the ground: move the
     // fire light down to it and keep a floor on its power (the coarse probe misses the thin burning layer)
     const pk = fb.mirror ? 0 : clamp((tEval - 2) / 4, 0, 1);
-    if (pk > 0) { fb.centroid.lerp(_v2.set(0.1, 0, 0.12), pk); fb.power = Math.max(fb.power, 0.45 * pk); }
+    if (pk > 0) { fb.centroid.lerp(_v2.set(0.1, 0, 0.12), pk); fb.power = Math.max(fb.power, 0.7 * pk); }
     const mx = Math.max(_c[0], _c[1], _c[2], 1e-9); fb.color = [_c[0] / mx, Math.max(0.25, _c[1] / mx), Math.max(0.05, _c[2] / mx)];
     if (pk > 0) { const w = pk * 0.7; fb.color = [fb.color[0] * (1 - w) + w, fb.color[1] * (1 - w) + 0.45 * w, fb.color[2] * (1 - w) + 0.12 * w]; }
     // light bake after the probe, so the fire-transmittance channel looks toward this bake's fire position

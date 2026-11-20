@@ -165,7 +165,7 @@ export function createCrashFx(ctx, deps) {
       const r = 6 * f.scale * Math.sqrt(rnd()), a = rnd() * 6.283;
       ps.spawn(v3.set(f.pos.x + Math.cos(a) * r, f.pos.y + 0.4, f.pos.z + Math.sin(a) * r), v2.set(sgn() * 1.5, 1 + rnd() * 2, sgn() * 1.5));
     }
-    const volK = f.volume && fireballs.active() && f.t < 50 ? 0.35 : 1;
+    const volK = f.volume && fireballs.active() && f.t < 50 ? 0.7 : 1;
     const smokeRate = (f.t < f.life ? 3.5 : Math.max(0, 3.5 * (1 - (f.t - f.life) / 90))) * Math.max(0.6, f.scale) * volK;
     f.smokeAcc += smokeRate * dt * q;
     while (f.smokeAcc >= 1) {
@@ -393,10 +393,19 @@ export function createCrashFx(ctx, deps) {
       const ghost = player.visual.object3D.clone(true);
       ghost.visible = true; ctx.scene.add(ghost);
       // gear-up slide: no legs under it; it lies on its belly with a slight list and the nose down
-      if (C.o.kind === 'belly' || C.o.kind === 'ditch') ghost.traverse((ob) => { if (/\.leg$|wheel|tyre/i.test(ob.name)) ob.visible = false; });
+      const gearUp = C.o.kind === 'belly' || C.o.kind === 'ditch';
+      if (gearUp) ghost.traverse((ob) => { if (/\.(leg|strut|rod|wheel\d*|link[LU])$|Door|tyre/i.test(ob.name)) ob.visible = false; });
+      // rest height: the airframe's lowest painted surface on the ground (with the gear gone), sunk 15 cm into it
+      let rest = 0.4;
+      if (gearUp) {
+        const src = player.visual.object3D, bb = new THREE.Box3(), rp = new THREE.Vector3().setFromMatrixPosition(src.matrixWorld);
+        src.updateMatrixWorld(true);
+        src.traverse((ob) => { if (ob.isMesh && /^static:paint/.test(ob.name)) { if (!ob.geometry.boundingBox) ob.geometry.computeBoundingBox(); bb.union(ob.geometry.boundingBox.clone().applyMatrix4(ob.matrixWorld)); } });
+        if (!bb.isEmpty()) rest = clamp(rp.y - bb.min.y - 0.15, 0.2, 4);
+      }
       quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.05, 0.02, 0.1)));
       C.fake = { position: state.position.clone(), velocity: state.velocity.clone(), quaternion: quat, onGround: true, ghost, mu: C.o.surface === 'water' ? 0.9 : C.o.surface === 'runway' ? 0.33 : 0.6 };
-      C.fake.position.y = gp.y + (C.o.surface === 'water' ? 0.2 : 0.4);
+      C.fake.position.y = gp.y + (C.o.surface === 'water' ? rest * 0.6 : rest);
     }
     // spectator shots: the (intact, parked) player aircraft is not part of the scene being looked at
     if (raw.fxcam === 'crash' && player?.visual?.object3D) { player.visual.object3D.visible = false; C.hidVisual = player.visual.object3D; }
