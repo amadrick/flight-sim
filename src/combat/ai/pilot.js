@@ -48,7 +48,8 @@ export function createPilot(combat, team, e, o = {}) {
   const off = { x: 0, y: 0, z: 0 };
   const slot = new THREE.Vector3(), lastKnown = new THREE.Vector3(), home = new THREE.Vector3().copy(e.state.position), orbitC = new THREE.Vector3();
   let aoaS = 0;
-  const tAccS = new THREE.Vector3(); let planeT = 0;    // target manoeuvre-plane steadiness (gunnery)
+  const tAccS = new THREE.Vector3(); let planeT = 0;
+  let mergeHold = -1, mergeHoldTgt = null, prevInFlight = 0, missedT = -99;   // missile employment: hold to the merge, after a miss    // target manoeuvre-plane steadiness (gunnery)
   const manDir = new THREE.Vector3(), aim = new THREE.Vector3(), ffv = new THREE.Vector3(), escDir = new THREE.Vector3();
   const mslots = [];                                   // missile threat memory: { m, onset, seen }
   for (let i = 0; i < 6; i++) mslots.push({ m: null, onset: 0, seen: false, flares: 0, flareAt: 0, flareNext: 0, plan: '', breakAt: 0 });
@@ -61,7 +62,7 @@ export function createPilot(combat, team, e, o = {}) {
   let targetSince = 0, lastTarget = null, lastTally = null, fighting = false, wasFighting = false;
   let fineTrack = false, aimNX = 0, aimNY = 0, aimX = 0, aimY = 0, settleT = 0, burstT = 0, gapT = 0, firing = false, lastShot = -99, lastCycle = -99;
   let prevGunErr = 1, gunErrS = 0, lockSince = -1, flareT = 0, jinkT = 0, jinkBank = 0, jinkNz = 0, recovering = false, recT = 0, escTurn = 0, floorAlt = -1e9, mistakeT = 0, mistake = '';
-  let stalemateT = 0, holdSet = false, extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1, lookT = 0;
+  let stalemateT = 0, holdSet = false, extendT = 0, lastHp = e.hp ?? 100, bugout = false, maydaySent = false, winchesterSent = false, lostSightT = 0, defendSide = 1, lookT = 0, neutralT = 0, neutralLim = 30;
 
   const gunDbg = { err: 0, tol: 0, r: 0, good: false, losRate: 0 };      // last gun fire-control numbers (tools)
   const pilot = {
@@ -368,6 +369,19 @@ export function createPilot(combat, team, e, o = {}) {
   function tryMissile(T) {
     const W = combat.weapons, t = combat.clock;
     const L = e.lock;
+    // own missiles in flight at this target; one just gone with the target still alive = a miss
+    let inFlight = 0;
+    for (const m of W.missiles) if (m.owner === e && m.target === T && m.alive) inFlight++;
+    if (prevInFlight > 0 && inFlight === 0 && T.alive) missedT = t;
+    prevInFlight = inFlight;
+    // the merge: many pilots do not take the head-on radar shot the moment it is valid. Decided once per bandit:
+    // hold it to the merge and fight (turn fighters, unsure pilots) or shoot (aces early, cautious pilots)
+    if (mergeHoldTgt !== T) {
+      mergeHoldTgt = T;
+      const pBase = skill > 0.75 ? 0.3 : skill > 0.4 ? 0.6 : 0.65;
+      const pPers = personality === 'turn' ? 0.25 : personality === 'cautious' ? -0.3 : personality === 'energy' ? -0.1 : 0;
+      mergeHold = rng() < clamp(pBase + pPers, 0.05, 0.95) ? 1 : 0;
+    }
     if (!L || L.state !== 'locked' || L.target !== T) { lockSince = -1; return; }
     if (lockSince < 0) lockSince = t;
     if (t - lockSince < sk.shotDelay) return;                // time to decide to shoot (rookies hesitate)
@@ -388,9 +402,11 @@ export function createPilot(combat, team, e, o = {}) {
       if (geo.ata > 35 * DEG) return;
     } else if (geo.closure < -100 && r > rNe) return;          // running target: wait for the no-escape zone
     if (r < rMin || r > Math.min(rShot, rMax)) return;
+    // holding to the merge: no shots in the forward hemisphere until the pass is over
+    if (mergeHold === 1) { if (L.aspect > 100 * DEG && geo.situation === 'head-on') return; if (geo.range < 2500 || geo.situation !== 'head-on') mergeHold = 0; }
+    // first exchange defeated: it becomes a turning fight; only a good rear-quarter shot for a while
+    if (t - missedT < lerp(35, 15, skill) && !(L.aspect < 70 * DEG && r < Math.max(rNe, rMin * 2))) return;
     // one missile at a time at the same target (aces fire a second after a while)
-    let inFlight = 0;
-    for (const m of W.missiles) if (m.owner === e && m.target === T && m.alive) inFlight++;
     if (inFlight > (skill > 0.75 && t - lastShot > 10 ? 1 : 0)) return;
     // do not shoot when a friendly is close to the target (IR seekers switch, radar fuzes)
     combat.world.friendsOf(e, friends);
@@ -453,6 +469,16 @@ export function createPilot(combat, team, e, o = {}) {
     stalemateT = geo.situation === 'offensive' || geo.range > 2500 ? 0 : stalemateT + sk.think;
     if (stalemateT > lerp(60, 25, skill) && (e.loadout?.missiles?.ir || 0) > 0 && geo.threatAta > 70 * DEG && V > corner * 0.7) {
       stalemateT = 0; setMode('extend', 8); return;
+    }
+    // flat stalemate (an endless circle or scissors): break the symmetry. With the energy, go vertical and come down
+    // on the bandit; without it, wait for him to make the move (or a mistake)
+    neutralT = geo.situation === 'offensive' && geo.range < 1500 || geo.range > 3500 ? 0 : neutralT + sk.think;
+    if (neutralT > neutralLim) {
+      neutralT = 0; neutralLim = lerp(45, 18, skill) * (0.7 + 0.6 * rng());
+      const myE = energyHeight(s.position.y, s.tas), hisE = energyHeight(T.state.position.y, T.state.tas);
+      if (myE > hisE - 150 && agl > sk.deck + 1200 && V > corner * 0.8 && geo.threatAta > 30 * DEG) {
+        setMode('vertical', 6); A.copy(T.state.position).sub(s.position); A.y = 0; if (A.lengthSq() > 1) manDir.copy(A.normalize()); return;
+      }
     }
     // 4. out of energy and not winning: extend, then come back
     const slow = V < corner * 0.55 - sk.slack * 0.3;
@@ -613,7 +639,7 @@ export function createPilot(combat, team, e, o = {}) {
         if (pilot.sub === 'lost') { aimAt(lastKnown); want.g = gHard * 0.7; return; }
         if (pilot.sub === 'tail') {
           // aim at a point well behind the bandit on its flight path (its turn circle), toward its six
-          pursuitPoint(e, T, 'lag', aim, 2.2);
+          pursuitPoint(e, T, 'lag', aim, +(process.env.TAIL || 2.2));
           aimAt(aim); want.g = gHard; want.spd = prof.corner + sk.speedBias * 0.5;
           energyTilt(want.spd);
           return;
@@ -631,6 +657,7 @@ export function createPilot(combat, team, e, o = {}) {
         } else pursuitPoint(e, T, pilot.sub || 'pure', aim, 1);
         if (pilot.sub !== 'zone') aimAt(aim);
         energyTilt(prof.corner + sk.speedBias * 0.5);
+        // slow: a skilled pilot eases the pull (max AoA at low speed only bleeds more) and unloads to get the speed back
         // slow: a skilled pilot eases the pull (max AoA at low speed only bleeds more) and unloads to get the speed back
         { const vs = prof.corner * 0.72, v = s.ias;
           if (v < vs && skill > 0.3 && mistake !== 'slow') want.g = Math.min(want.g, Math.max(1.3, gHard * (v / vs) ** (2 + 3 * skill))); }
@@ -695,9 +722,10 @@ export function createPilot(combat, team, e, o = {}) {
     if (h < 0.05 || skill < 0.3) return;
     const w = clamp((skill - 0.3) / 0.5, 0, 1);
     let el = Math.asin(clamp(d.y, -1, 1));
-    if (dv > 25 && el < 0) el = Math.min(0, el + clamp((dv - 25) / 60, 0, 0.6) * w);
+    // the dive allowed shrinks to nothing as the speed rises past the fight speed (above the bandit = energy)
+    if (el < 0) el = Math.max(el, -lerp(1.2, 0.05, w * clamp((dv + 30) / 40, 0, 1)));
     if (dv > 0 && agl < sk.deck + 1500) el = Math.max(el, 0.25 * w);
-    if (process.env.ELMAX) el = Math.min(el, lerp(1.4, lerp(0.1, 1.2, clamp((e.state.ias / prof.corner - 0.55) / 0.45, 0, 1)), w));
+    el = Math.min(el, lerp(1.4, lerp(0.1, 1.2, clamp((e.state.ias / prof.corner - 0.55) / 0.45, 0, 1)), w));
     const k = Math.cos(el) / h;
     d.x *= k; d.z *= k; d.y = Math.sin(el);
   }
@@ -726,7 +754,7 @@ export function createPilot(combat, team, e, o = {}) {
     // tracking error: correlated wander that grows when the target moves fast across the sight
     losFeedForward(e, T, ffv);
     const losRate = ffv.length() / Math.max(s.tas, 50);           // rad/s
-    const sig = sk.aimSigma * (1 + 6 * losRate) * (mistake === 'lost' ? 3 : 1);
+    const sig = sk.aimSigma * (1 + lerp(6, 2.5, skill) * losRate) * (mistake === 'lost' ? 3 : 1);
     const a = Math.exp(-dt / sk.aimTau), b = sig * Math.sqrt(1 - a * a);
     aimNX = aimNX * a + b * gauss(); aimNY = aimNY * a + b * gauss();
     const k2 = 1 - Math.exp(-dt / 0.25);                  // smooth the wander (a hand, not white noise)
@@ -762,11 +790,11 @@ export function createPilot(combat, team, e, o = {}) {
     settleT = good && steady ? settleT + dt : 0;
     gapT -= dt;
     if (burstT > 0) {
-      burstT -= dt; want.fire = good || err < tol * 2.5;
+      burstT -= dt; want.fire = good || err < tol * lerp(2.5, 1.25, skill);
       if (burstT <= 0) gapT = lerp(sk.burstGap[0], sk.burstGap[1], rng());
     } else if (good && settleT > sk.settle && gapT <= 0) {
       burstT = lerp(sk.burst[0], sk.burst[1], rng()); want.fire = true;
-    } else if (gapT <= 0 && err < tol * 2.2 && err < prevGunErr && r < sk.gunMax * 0.8 && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r)) {
+    } else if (gapT <= 0 && err < tol * lerp(2.2, 1.3, skill) && err < prevGunErr && r < sk.gunMax * 0.8 && geo.aa < sk.headOnGuns && e.loadout?.gun?.rounds !== 0 && !friendlyInLine(T, r)) {
       // snapshot: the pipper sweeps through the target while we can't track it: a short burst as it passes
       burstT = lerp(0.25, 0.45, rng()); want.fire = true;
     }
