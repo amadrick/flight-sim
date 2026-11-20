@@ -60,7 +60,7 @@ const d = ctx.input.touch.addDock({  // a whole block of buttons another module 
 });                                // → { get rect(), remove() }, null when another dock is set (one at a time)
 ctx.input.touch.removeDock('combat');
 ```
-`addDock`: the layout reserves the measured block (landscape: right edge under Cam / Menu, centred beside the stick zone, the
+`addDock`: the layout reserves the measured block (landscape: right edge, bottom-aligned beside the stick zone (the top of the edge stays free for overlay panels), the
 zone and rail step left of it; square-ish screens: top of the right column with the stick zone below; portrait: beside the
 stick zone above the rudder, or above the action row on very narrow phones) and sets the element's `left` / `top`. It is
 re-measured on every relayout and whenever the element's `hidden` / `class` / `style` change; a hidden element reserves

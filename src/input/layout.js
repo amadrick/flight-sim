@@ -30,7 +30,7 @@ export const isPortrait = (W, H) => H > W * 1.05;
  * @param {{t?:number,r?:number,b?:number,l?:number}} ins safe-area insets
  * @param {{extra?:number, dock?:{w,h}, hinge?:{x,y,w,h}}} opts extra: number of extra action buttons for the rail;
  *   dock: size of one block of buttons owned by another module (ctx.input.touch.addDock, e.g. the combat fire grid):
- *   landscape → right edge under Cam / Menu, vertically centred in the stick column, the stick zone and rail step left of it;
+ *   landscape → right edge, bottom-aligned beside the stick zone, the stick zone and rail step left of it;
  *   portrait → right-aligned above the action row (the extra row steps left of it);
  *   hinge: the gap between two viewport segments (dual-screen / foldable spanned), in viewport CSS px. A vertical hinge
  *   (side-by-side screens) puts the left-thumb controls and the HUD on the left screen and the stick zone, rail and
@@ -83,8 +83,9 @@ export function touchLayout(W, H, ins = {}, opts = {}) {
     if (dk) {
       const avail = H - bt - zy;
       if (zoneRight - zx0 >= minZone) {
-        // dock beside the stick zone, at the right edge, centred in the column
-        L.dock = R(W - r - dk.w, zy + Math.max(0, (avail - dk.h) / 2), dk.w, Math.min(dk.h, avail));
+        // dock beside the stick zone at the right edge, bottom-aligned (thumb reach; the top of the right edge stays free
+        // for overlay panels such as the combat radar)
+        L.dock = R(W - r - dk.w, zy + Math.max(0, avail - dk.h), dk.w, Math.min(dk.h, avail));
       } else {
         // narrow (square-ish) screens: dock at the top of the right column, stick zone and rail below it
         L.dock = R(W - r - dk.w, zy, dk.w, dk.h);

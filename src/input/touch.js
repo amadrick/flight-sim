@@ -349,8 +349,8 @@ export function createTouchControls(ctx, h) {
     /**
      * Dock a whole block of buttons that another module builds and owns (e.g. a weapons grid). `el` must be absolutely
      * positioned inside ctx.uiRoot; the layout measures it (offsetWidth / offsetHeight, re-measured on every relayout and
-     * when its `hidden` attribute, class or style changes), reserves that rectangle (landscape: right edge under Cam / Menu,
-     * centred beside the stick zone; portrait: beside the stick zone above the rudder) and sets its left / top. While `el`
+     * when its `hidden` attribute, class or style changes), reserves that rectangle (landscape: right edge, bottom-aligned
+     * beside the stick zone; portrait: beside the stick zone above the rudder) and sets its left / top. While `el`
      * is hidden nothing is reserved. One dock at a time. Returns { get rect(), remove() }, or null when another dock is set.
      */
     addDock(spec) {
