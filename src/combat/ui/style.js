@@ -58,7 +58,7 @@ export const CSS = /* css */`
 .cbt-ui-kicker .cbt-ui-done { color: var(--hud); }
 .cbt-ui-btitle { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 3.2vw, 40px); line-height: 1; letter-spacing: 0.03em; text-transform: uppercase; margin: 6px 0 6px; text-wrap: balance; }
 .cbt-ui-tagline { font-size: 14.5px; color: var(--fg); margin: 0 0 10px; line-height: 1.4; }
-.cbt-ui-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-radius: var(--r-l); background: rgb(0 0 0 / 0.14); box-shadow: inset 0 0 0 1px var(--hair); margin: 4px 0 2px; }
+.cbt-ui-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: fit-content; max-width: 100%; border-radius: var(--r-l); background: rgb(0 0 0 / 0.14); box-shadow: inset 0 0 0 1px var(--hair); margin: 4px 0 2px; }
 .cbt-ui-fact { padding: 8px 12px 9px; min-width: 0; position: relative; }
 .cbt-ui-fact + .cbt-ui-fact::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--hair); }
 .cbt-ui-fact-k { font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); white-space: nowrap; }
@@ -87,7 +87,7 @@ export const CSS = /* css */`
 .cbt-ui-step button { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); box-shadow: inset 0 0 0 1px var(--hair); font-size: 18px; font-weight: 500; line-height: 1; transition: background 0.2s; }
 .cbt-ui-step button:hover { background: var(--fill-2); }
 .cbt-ui-step button:disabled { opacity: 0.35; cursor: default; }
-.cbt-ui-step output { min-width: 74px; text-align: center; font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.cbt-ui-step output { min-width: 88px; text-align: center; font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; }
 
 /* settings */
 .cbt-ui-dock { display: flex; justify-content: center; align-items: flex-start; }
@@ -158,7 +158,6 @@ export const CSS = /* css */`
   .cbt-ui-missions { grid-template-columns: minmax(0, 1fr); }
   .cbt-ui-missions > .menu-panel { grid-row: 1; grid-column: 1; }
   .cbt-ui-root:not(.cbt-ui-detail) .cbt-ui-brief, .cbt-ui-root.cbt-ui-detail .cbt-ui-list { display: none; }
-  .cbt-ui-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cbt-ui-fact { padding: 7px 9px 8px; }
   .cbt-ui-fact-v { font-size: 14.5px; }
   .cbt-ui-dgrid { grid-template-columns: minmax(0, 1fr); }

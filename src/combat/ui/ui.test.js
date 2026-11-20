@@ -107,7 +107,7 @@ test('debrief rows only for reported stats', () => {
 test('custom setup is clamped', () => {
   const c = cleanCustom({ enemies: 20, wingmen: -1, gunsOnly: 1, startRange: 'x', advantage: 'sideways', enemyType: '' });
   assert.equal(c.enemies, 8); assert.equal(c.wingmen, 0); assert.equal(c.gunsOnly, true);
-  assert.equal(c.startRange, 18000); assert.equal(c.advantage, 'neutral'); assert.equal(c.enemyType, 'mixed');
+  assert.equal(c.startRange, 18520); assert.equal(c.advantage, 'neutral'); assert.equal(c.enemyType, 'mixed');
   assert.deepEqual(cleanCustom(null), cleanCustom({}));
 });
 
@@ -115,6 +115,6 @@ test('tactical map scene from the placeholder mission shape', () => {
   const sc = mapScene({ start: { airport: 'KHVN', offset: { bearing: 180, distance: 10000 }, hdg: 20 }, enemies: [{ bearing: 0, distance: 8000 }], friends: [{ bearing: 90, distance: 250 }] });
   assert.ok(Math.abs(sc.player.z - 10000) < 1e-6 && Math.abs(sc.player.x) < 1e-6);
   assert.ok(Math.abs(sc.hostiles[0].z - 2000) < 1e-6);
-  assert.ok(sc.radius >= 25000);
+  assert.ok(sc.radius >= 12000);
   assert.equal(mapScene({}).player, null);
 });

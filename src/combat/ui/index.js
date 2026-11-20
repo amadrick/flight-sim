@@ -268,11 +268,12 @@ export async function createCombatUi(combat) {
     const kicker = h('div', { class: 'cbt-ui-kicker' }, h('span', { text: g?.label || m.category }), no ? h('span', { text: `· ${String(no).padStart(2, '0')}` }) : null,
       done ? h('span', { class: 'cbt-ui-done', text: '· Completed' }) : null);
     const facts = h('div', { class: 'cbt-ui-facts' },
-      h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Threat' }), h('div', { class: 'cbt-ui-fact-v' }, m.threat ? pips(m.threat) : '–')),
-      h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Length' }), h('div', { class: 'cbt-ui-fact-v' }, m.minutes ? `≈ ${Math.round(m.minutes)}` : '–', m.minutes ? h('small', { text: 'min' }) : null)),
+      m.threat ? h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Threat' }), h('div', { class: 'cbt-ui-fact-v' }, pips(m.threat))) : null,
+      m.minutes ? h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Length' }), h('div', { class: 'cbt-ui-fact-v' }, `≈ ${Math.round(m.minutes)}`, h('small', { text: 'min' }))) : null,
       h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Best' }), h('div', { class: 'cbt-ui-fact-v' },
         best?.rating ? h('span', { class: 'cbt-ui-rate', 'data-r': best.rating, text: best.rating }) : null,
         best ? group3(best.score || 0) : '–')));
+    facts.style.gridTemplateColumns = `repeat(${facts.childElementCount}, minmax(92px, 150px))`;
     const cond = conditionsLine(m, AIRPORTS, WX_LABEL);
     mapCanvas = h('canvas', { class: 'cbt-ui-map', role: 'img', 'aria-label': 'Tactical map of the mission area' });
     briefBody.append(
@@ -310,7 +311,7 @@ export async function createCombatUi(combat) {
   function redrawMap() {
     const m = selected();
     if (!mapCanvas || !m) return;
-    try { if (!drawMap(mapCanvas, m.def, ctx, m.id)) mapCanvas.hidden = !mapCanvas.clientWidth && !narrow(); } catch (e) { mapCanvas.hidden = true; console.warn('[combat ui] map', e); }
+    try { drawMap(mapCanvas, m.def, ctx, m.id); } catch (e) { mapCanvas.hidden = true; console.warn('[combat ui] map', e); }
   }
 
   // ---- settings view -------------------------------------------------------------------------------------------
@@ -392,6 +393,7 @@ export async function createCombatUi(combat) {
       combat.input?.release?.();
     }
     ui.isOpen = true; root.hidden = false;
+    document.documentElement.classList.add('cbt-ui-open');
     if (ctx.menu?.isOpen) ctx.menu.close();
     setPaused(true);
     if (ctx.cameraRig && ctx.cameraRig.mode !== 'showcase') ctx.cameraRig.setMode?.('showcase');
@@ -416,6 +418,7 @@ export async function createCombatUi(combat) {
   }
   function hide() {
     ui.isOpen = false; root.hidden = true; view = null;
+    document.documentElement.classList.remove('cbt-ui-open');
     try { if (root.contains(document.activeElement)) document.activeElement.blur(); } catch {}
     downOpen.clear();
   }
@@ -583,6 +586,7 @@ export async function createCombatUi(combat) {
 
 const CSS_ESC = (s) => String(s).replace(/["\\]/g, '\\$&');
 const EXTRA_CSS = `
+.cbt-ui-open .menu-corner, .cbt-ui-open .menu-crash, .cbt-ui-open .inp-yoke, .cbt-ui-open .inp-touch, .cbt-ui-open .cbt-inp-touch { display: none !important; }
 .cbt-ui-root .cbt-ui-mrow[aria-selected="true"] { background: var(--sel); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.18); }
 .cbt-ui-root .cbt-ui-mrow[aria-selected="true"] .menu-row-tag { color: var(--amber-soft); }
 .cbt-ui-root .menu-seg > .menu-segbtn[aria-checked="true"] { background: var(--sel); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.18); }

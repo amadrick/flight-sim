@@ -139,14 +139,14 @@ export function breakdownRows(stats = {}) {
   return b.filter(r => r && r.label != null).map(r => ({ label: String(r.label), points: Math.round(Number(r.points) || 0) }));
 }
 
-export const CUSTOM_DEFAULT = { enemies: 2, wingmen: 1, enemyType: 'mixed', gunsOnly: false, startRange: 18000, altitude: 5000, advantage: 'neutral' };
+export const CUSTOM_DEFAULT = { enemies: 2, wingmen: 1, enemyType: 'mixed', gunsOnly: false, startRange: 18520, altitude: 4572, advantage: 'neutral' };
 export const ADVANTAGES = [
   { id: 'neutral', label: 'Neutral', note: 'Head-on, co-altitude.' },
   { id: 'offensive', label: 'Offensive', note: 'You start behind them.' },
   { id: 'defensive', label: 'Defensive', note: 'They start behind you.' },
 ];
-export const RANGE_STEPS = [5000, 9000, 18000, 37000, 55000];          // m (about 3, 5, 10, 20, 30 NM)
-export const ALT_STEPS = [600, 1500, 3000, 5000, 7600, 10700];          // m (about 2k, 5k, 10k, 16k, 25k, 35k ft)
+export const RANGE_STEPS = [3, 5, 10, 20, 30].map(nm => nm * 1852);               // m (3, 5, 10, 20, 30 NM)
+export const ALT_STEPS = [2000, 5000, 10000, 15000, 25000, 35000].map(ft => Math.round(ft * 0.3048));   // m
 const clampInt = (v, a, b, d) => (isNum(+v) && v !== '' && v != null ? Math.max(a, Math.min(b, Math.round(+v))) : d);
 /** Validate a custom-mission setup. */
 export function cleanCustom(c = {}) {

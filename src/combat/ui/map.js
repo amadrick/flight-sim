@@ -33,7 +33,7 @@ export function mapScene(def = {}) {
   let cx = 0, cz = 0; for (const p of pts) { cx += p.x; cz += p.z; } cx /= pts.length; cz /= pts.length;
   if (m.center && Number.isFinite(m.center.x)) { cx = m.center.x; cz = m.center.z; }
   let r = 0; for (const p of pts) r = Math.max(r, Math.hypot(p.x - cx, p.z - cz));
-  const radius = Number.isFinite(m.radius) ? m.radius : Math.max(25000, r * 1.35 + 6000);
+  const radius = Number.isFinite(m.radius) ? m.radius : Math.max(12000, r * 1.3 + 3000);
   return { center: { x: cx, z: cz }, radius, player, hostiles, friendlies, airportId: apt?.id || null };
 }
 
