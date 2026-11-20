@@ -21,6 +21,7 @@ export function createLiveBand(ac, dest) {
     bass: makeBass(ac, hp, white),
     sbass: makeSynthBass(ac, hp),
   };
+  inst.drums.warm();                                    // every node exists up front: nothing is built during play
   const sources = [white];
   for (const k in inst) sources.push(...inst[k].sources);
   let alive = true;

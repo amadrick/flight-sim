@@ -87,7 +87,7 @@ export function createRadio(ac, dest, opts = {}) {
     cur = { item, R, t, end: t + 0.1 + est, speech: false, done: false };
     if (ss && (ss.getVoices?.() || []).length) {
       try {
-        const u = new SpeechSynthesisUtterance(item.text); const v = pickVoice(ss, R); if (v) u.voice = v;
+        const u = new SpeechSynthesisUtterance(item.text); try { const v = pickVoice(ss, R); if (v) u.voice = v; } catch { /* a stale or foreign voice object: default voice */ }
         u.pitch = R.pitch; u.rate = R.rate; u.volume = Math.max(0, Math.min(1, volume));
         const me = cur; u.onend = u.onerror = () => { me.done = true; }; u.onstart = () => { me.started = true; };
         ss.speak(u); cur.speech = true; cur.end = t + 2.5 + est * 1.6;      // onend normally fires first; this is a safety net

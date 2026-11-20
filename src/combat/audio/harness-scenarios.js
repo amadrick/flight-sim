@@ -104,7 +104,7 @@ export const SCENARIOS = {
           setLoad(1 / 60, false);
           m.update(ac.currentTime, 'fight');
           if (firstStem === null && m.info.playing && !m.info.live && m.info.section) firstStem = ac.currentTime - t0;
-          if ((m.info.stems.allReadyMs !== null && firstStem !== null) || n - w0 > 240000) { clearInterval(iv); done(); }
+          if ((m.info.stems.allReadyMs !== null && firstStem !== null) || n - w0 > 120000) { clearInterval(iv); done(); }
         }, 16);
       });
       const st = m.info.stems;

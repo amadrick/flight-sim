@@ -57,7 +57,7 @@ export function buildRig(ac, cue, out, { os = '4x', mix = {}, role = 'all' } = {
   const S = () => ({ reverb: hall().in, delay: delay().in });
   const room = lazy(() => { const r = makeReverb(ac, { decay: 0.9, damp: 5000, size: 0.85, level: 0.5 }); r.out.connect(sum); return r; });
   const make = {
-    drums: () => { const bus = G(ac, 0.75 * (mix.drums ?? 1)); bus.connect(sum); return makeDrums(ac, bus, room().in, makeGatedVerb(ac, bus), white, { hats: mix.hats ?? 1 }); },
+    drums: () => { const bus = G(ac, 0.75 * (mix.drums ?? 1)); bus.connect(sum); return makeDrums(ac, bus, room().in, () => makeGatedVerb(ac, bus), white, { hats: mix.hats ?? 1 }); },
     gtr: () => { const bus = G(ac, 1.4 * (mix.gtr ?? 1)); bus.connect(pump); const rs = G(ac, 0.12); bus.connect(rs); rs.connect(room().in); return makeRhythmGuitar(ac, bus, white, { os }); },
     lead: () => makeLeadGuitar(ac, sum, S(), { pan: 0.1, os }),
     lead2: () => makeLeadGuitar(ac, sum, S(), { pan: -0.35, detune: -6, os }),
@@ -85,6 +85,15 @@ export function buildRig(ac, cue, out, { os = '4x', mix = {}, role = 'all' } = {
       get(k).trigger(e, t, sd);
     },
     release(t) { for (const k in inst) inst[k].release(t); },
+    /** the build steps the events need, one heavy constructor each, so the caller can yield between them */
+    steps(keys) {
+      const need = new Set(), out = [];
+      for (const k0 of keys) { const k = k0 === 'scrape' ? 'gtr' : k0; if (role === 'drums' ? k === 'drums' : (make[k] && (role !== 'band' || k !== 'drums'))) need.add(k); }
+      if (need.has('drums') || need.has('gtr')) out.push(['room', room]);
+      if ([...need].some((k) => k !== 'drums' && k !== 'gtr' && k !== 'bass' && k !== 'sbass')) out.push(['hall', hall], ['delay', delay]);
+      for (const k of need) out.push([k, () => get(k)]);
+      return out;
+    },
   };
 }
 
@@ -134,12 +143,17 @@ export async function renderSection(cue, name, profile = PROFILES.desktop, opts 
   let renderMs = 0;
   for (const j of jobs) {
     const ac = new O(j.ch, Math.ceil(j.sr * dur), j.sr);
-    const out = G(ac, 1); out.connect(ac.destination);
+    const out = G(ac, 1);
+    // `tilt`: a high shelf (dB above ~700 Hz) for the low, chuggy sections, so they still read on a phone speaker
+    if (sec.tilt) { const sh = BQ(ac, 'highshelf', 700, 0.7, sec.tilt); out.connect(sh); sh.connect(ac.destination); } else out.connect(ac.destination);
     // section level (loud-quiet dynamics) and an optional swell across the section (pre-chorus lift)
     const lv = sec.level ?? 1;
     out.gain.setValueAtTime(lv * (sec.swell ? sec.swell[0] : 1), 0);
     if (sec.swell) out.gain.linearRampToValueAtTime(lv * sec.swell[1], total - barDur * 0.25);
     const rig = buildRig(ac, cue, out, { os: opts.os, mix: sec.mix || {}, role: j.role });
+    await M.breathe(true, 'rig');
+    const keys = new Set(); for (const b of bars) for (const evs of b.steps) for (const e of evs) keys.add(e.dr ? 'drums' : e.i);
+    for (const [k, build] of rig.steps(keys)) { build(); await M.breathe(true, 'build:' + k); }
     for (let b = 0; b < bars.length; b++) for (let k = 0; k < 16; k++) {
       const evs = bars[b].steps[k], t = (b * 16 + k) * sd;
       for (let i = 0; i < evs.length; i++) { rig.trigger(evs[i], t, sd); await M.breathe(false, evs[i].i); }

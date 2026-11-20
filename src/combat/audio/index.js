@@ -201,8 +201,13 @@ export async function createCombatAudio(combat) {
   });
   on('mission:abort', () => stopAll(0.4));
   // the briefing screen: start rendering as soon as a mission is chosen (before the AudioContext may even exist)
-  const brief = (p) => { const m = p?.mission || (p?.id && combat.director?.getMission?.(p.id)) || null; if (m) prepareMusic(m); };
-  ev.on('mission:brief', brief); ev.on('mission:select', brief);
+  // ('briefing:open' { missionId } from the mission screens; the stems stay cached if the player backs out)
+  const brief = (p) => { const id = p?.missionId ?? p?.id; const m = p?.mission || (id && combat.director?.getMission?.(id)) || null; if (!m) return;
+    // a phone keeps one cue: browsing another mission mid-fight must not evict the music that is playing
+    if (combat.active && profile.keep < 2 && A?.music?.info && pickCue(m) !== A.music.info.cue) return;
+    prepareMusic(m); };
+  ev.on('briefing:open', brief);
+  try { const id = combat.ui?.briefingMission; if (id) brief({ missionId: id }); } catch {}   // a briefing already on screen
   ev.on('mission:start', (p) => { if (!A) prepareMusic(p?.mission || combat.mission); });
   on('player:down', () => { stopGuns(); A.warnings.stopAll(now()); });
   // radio lines and the like may arrive before the AudioContext runs; mission:abort must still reset state

@@ -78,7 +78,8 @@ export function createMusic(ac, dest, opts = {}) {
       return;
     }
     silentBars = 0;
-    const contin = voice && cur && voice.for === nb.section && nb.index === cur.index + 1 && voice.bar + 1 < voice.bars;
+    let contin = voice && cur && voice.for === nb.section && nb.index === cur.index + 1 && voice.bar + 1 < voice.bars;
+    if (contin && voice.live && nb.index % 4 === 0 && stems.get(nb.section)) contin = false;   // hand over at the phrase
     if (contin) { voice.bar++; if (voice.live) liveBar(nb, t, voice); }
     else {
       const old = voice, ended = old && !old.live && cur && cur.last && old.for === cur.section && old.bar + 1 >= old.bars;
@@ -119,6 +120,7 @@ export function createMusic(ac, dest, opts = {}) {
       if (mood === 'off' || !enabled) return;
       if (pendingCue) { const c = pendingCue; pendingCue = null; api.setCue(c.id); }
       const first = firstFor(mood); if (!first) return;          // e.g. the victory tag already played
+      stems.prepare(ORDER);                                      // no-op when already queued / rendered
       if (!stems.get(first)) stems.want(first);                  // the live band covers it meanwhile
       level(now, 0.05); info.playing = true; started = true; nextT = now + 0.05; cur = null; voice = null; silentBars = 0;
     }
