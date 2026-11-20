@@ -48,8 +48,19 @@
   score pops, mission-end banner (stays until the debrief screen opens), first-minute key hints (keyboard only;
   each fades when used).
 
+## Flight assist
+While `combat.assist.info.active`: the commanded nose (`assist.command`) is drawn as a steering reticle — open circle +
+centre dot, HUD green, projected at the gun cross's distance so the two register in every camera; on the screen edge
+with an arrow when off screen. The gun cross is the actual nose; a thin lead line joins them beyond ~3°. `gunAssist`
+turns the reticle white with four ticks and `AIM`. `info.limiting` → `MAX TURN` / `G LIMIT` / `TOO SLOW` (`OVERSPEED`
+when the speed limit is an overspeed) under the reticle, debounced 0.3 s; `pullUp` / 'ground' → a flashing `PULL UP`
+box with an up arrow in the SHOOT-cue slot (SHOOT suppressed), on at once, held 0.3 s. `autoThrottle` → `A/THR` chip
+in the stores panel. With mouse aim (`assist.aim.active`) the input module's DOM ring at the pointer is the reticle;
+the HUD then draws only the nose cross and the lead line. The overlay canvas sits above the glass panels (z 5) so
+no steering cue can hide under them.
+
 ## Combat cameras
-Reads `combat.camera.mode`. In `missile` / `kill` / `victory` (not seen from the nose) the boresight-referenced layer is
+Reads `combat.camera.mode` (`fight`, the default mission chase view, is treated as plain chase; a peek reports `padlock`). In `missile` / `kill` / `victory` (not seen from the nose) the boresight-referenced layer is
 hidden (gun cross, funnel, pipper, seeker / lock rings, launch-zone scale, SHOOT cue, damage arcs) and so are the
 "turn this way" edge cues; world-projected markers, the target box and the warning box stay, plus a camera label at the
 top (`MISSILE CAM` with the missile's time to go, `KILL CAM`, `VICTORY`). In `padlock` everything stays and a nose /
