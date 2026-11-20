@@ -12,8 +12,9 @@ export const HINTS = [
   { keys: ['Tab'], text: 'Next target', cmd: 'targetNext' },
   { keys: ['Y'], text: 'Target nearest the nose', cmd: 'targetNearest' },
   { keys: ['Z'], text: 'Switch missile', cmd: 'weaponNext' },
+  { keys: ['O'], text: 'Target view (padlock)', cmd: 'padlock' },
 ];
-const HINT_LIFE = 60;          // s of mission time the hint card stays
+const HINT_LIFE = 20;          // s of (unblocked) mission time the hint card stays
 
 export function createPanels(root, opts) {
   const doc = document;
@@ -22,7 +23,8 @@ export function createPanels(root, opts) {
 
   // ---- objectives -------------------------------------------------------------------------------------
   const left = el('div', 'cbt-hud-left', root);
-  const obj = el('div', 'cbt-hud-obj glass', left);
+  const lrow = el('div', 'cbt-hud-lrow', left);
+  const obj = el('div', 'cbt-hud-obj glass', lrow);
   const objH = el('div', 'cbt-hud-obj-h', obj, '<span class="cbt-hud-cap">Objectives</span>');
   const timer = el('span', 'cbt-hud-timer', objH); timer.hidden = true;
   const objList = el('ul', '', obj);
@@ -193,7 +195,7 @@ export function createPanels(root, opts) {
   }
 
   return {
-    left, obj, side, radarBox, radarCv, statBox, statCv, subs,
+    left, lrow, obj, side, feed, radarBox, radarCv, statBox, statCv, subs,
     renderObjectives, setTimer, setScore, addKill, addPop, showBanner, hideBanner() { banner.hidden = true; },
     startHints, usedHint, setHintsBlocked, setHintsAllowed, setKillCap(n) { killCap = n; while (kills.length > killCap) kills.shift().k.remove(); }, setSubsBottom, reset, tick, subQ,
     get hintsVisible() { return hintT >= 0; },

@@ -121,8 +121,11 @@ test('seat mode: phones and touch screens are narrow', async () => {
   const { seatMode } = await import('./seats.js');
   assert.equal(seatMode(1920, 1080, false), 'wide');
   assert.equal(seatMode(400, 800, false), 'narrow');
-  assert.equal(seatMode(1366, 1024, true), 'narrow');
+  assert.equal(seatMode(1366, 1024, true), 'touch');
+  assert.equal(seatMode(844, 390, true), 'touch');
   assert.equal(seatMode(900, 480, false), 'narrow');
+  const { isCompact } = await import('./seats.js');
+  assert.equal(isCompact(844, 390), true); assert.equal(isCompact(960, 540), false);
 });
 
 test('the whole hud module imports in node without touching the DOM', async () => {
