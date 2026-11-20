@@ -28,20 +28,20 @@ vec4 vegMapAt(vec2 cell) { return texelFetch(tVegMap, ivec2(mod(cell, uVegWin.z)
 // stand's edge (the mantle of bushes and low growth that closes a real forest edge). Same hashes near and far, so
 // the mesh and impostor layers agree. Returns the size (m, 0 = none) and moves base / species.
 float vegUnder(vec2 cell, vec4 m, inout vec2 base, inout int s) {
-  if (m.r <= 0.0 || m.a < 0.2 || uVegSp[s].w > 0.5) return 0.0;
+  if (m.r <= 0.0 || m.a < 0.12 || uVegSp[s].w > 0.5) return 0.0;
   float occ = step(0.01, vegMapAt(cell + vec2(1.0, 0.0)).r) + step(0.01, vegMapAt(cell - vec2(1.0, 0.0)).r)
             + step(0.01, vegMapAt(cell + vec2(0.0, 1.0)).r) + step(0.01, vegMapAt(cell - vec2(0.0, 1.0)).r);
-  float edge = 1.0 - 0.25 * occ;
+  float edge = min((4.0 - occ) * 0.6, 1.0);        // one open side already makes a stand edge
   vec2 uh = vegHash(cell + 130000.0), uh2 = vegHash(cell + 150000.0);
-  float p = (0.45 + 0.55 * edge) * smoothstep(0.2, 0.5, m.a);
+  float p = (0.5 + 0.5 * edge) * max(smoothstep(0.2, 0.5, m.a), edge);
   if (uh.x >= p) return 0.0;
   vec2 loc = vegCellLocal(cell);
   base += mod(loc + ${(TREE_CELL / 2).toFixed(2)} + (uh2 - 0.5) * 2.4, ${TREE_CELL.toFixed(2)}) - loc;
   // saplings of the stand's own species (more under conifers), bushes otherwise
-  bool sap = uh.y < (uVegSp[s].z > 0.5 ? 0.5 : 0.3);
+  bool sap = uh.y < (uVegSp[s].z > 0.5 ? 0.5 : 0.3 + 0.25 * edge);
   s = sap ? s : (uh.y < 0.85 ? ${SPECIES_INDEX.bush} : ${SPECIES_INDEX.scrub});
-  float sz = mix(1.3, 3.2, uh2.x) * (1.0 + 0.5 * edge);
-  if (sap) sz = mix(2.5, 7.0, uh2.y * uh2.y) * (0.75 + 0.45 * edge);
+  float sz = mix(1.3, 3.2, uh2.x) + edge * mix(1.5, 3.5, uh2.y);
+  if (sap) sz = mix(3.0, 8.0, uh2.y) * (0.75 + 0.45 * edge);
   return sz;
 }
 // height of the RENDERED terrain at render-space xz (the mesh's level blend; exact near the camera)

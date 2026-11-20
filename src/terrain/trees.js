@@ -70,6 +70,7 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
   // the canopy LUT uniforms ride along in the terrain's shared uniforms (for the surface shader's distant forest)
   Object.assign(uniforms, nn.uniforms);
   const tintOn = !genClassic && raw.vegTint !== '0';
+  uniforms.uVegRelief = { value: !genClassic && raw.vegRelief !== '0' ? 1 : 0 };
   uniforms.uVegLeafTint = { value: ['broad', 'conifer'].map((g) => new THREE.Vector3(...(tintOn ? LEAF_TINT[g] : [1, 1, 1]))) };
   const G = tier.G, Gn = tier.near > 0 ? Math.ceil(2 * tier.near / TREE_CELL) + 2 : 0;
   const placement = createPlacement(ctx, { L, G, uniforms });
@@ -184,12 +185,12 @@ export function createTrees(ctx, { L, uniforms, airfield = null }) {
       const doy = ctx.time?.dayOfYear ?? 172;
       U.uVegSeason.value.x = Math.max(0, Math.min(1, (doy - 262) / 30)) * (1 - Math.max(0, Math.min(1, (doy - 325) / 20)));
       if (near) { near.update(camWX, camWZ); near.mesh.castShadow = shadowsOn(); }
-      if (nearU) { nearU.update(camWX, camWZ); nearU.mesh.castShadow = shadowsOn(); }
+      if (nearU) { nearU.update(camWX, camWZ); nearU.mesh.castShadow = false; }    // understory: receives only (saves a depth pass)
       if (grass) grass.update(camWX, camWZ, org, Hd);
       if (turf) { turf.update(camWX, camWZ, org, Hd); uniforms.uTurfShell.value.x = turf.mesh.visible ? 1 : 0; }
       if (blades) { blades.update(camWX, camWZ, org, Hd, airfield); uniforms.uTurfShell.value.z = blades.mesh.visible ? bladeTier.R1 : 0; }
       const bladesOn = blades && blades.mesh.visible;
-      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) * (nearU ? 2 : 1) + 1 + (farU ? 1 : 0) + (gsh ? 1 : 0) + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0) + (bladesOn ? 1 : 0);
+      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + (nearU ? 1 : 0) + 1 + (farU ? 1 : 0) + (gsh ? 1 : 0) + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0) + (bladesOn ? 1 : 0);
       stats.trianglesSubmitted = nearTris * (nearU ? 2 : 1) + G * G * 2 * (farU ? 2 : 1) + (gsh ? gsh.triangles : 0) + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0) + (turf && turf.mesh.visible ? turf.stats.triangles : 0) + (bladesOn ? blades.stats.triangles : 0);
       stats.turf = turf ? turf.stats : null;
       stats.blades = blades ? blades.stats : null;
