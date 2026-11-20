@@ -20,5 +20,6 @@ export const ICON = {
   controls: stroke('<rect x="2.8" y="6.5" width="18.4" height="11" rx="2.6"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7.5 14h9"/>'),
   fullscreen: stroke('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
   menu: stroke('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+  missions: stroke('<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 1.8v4M12 18.2v4M1.8 12h4M18.2 12h4"/>'),
   help: stroke('<rect x="2.8" y="6.5" width="18.4" height="11" rx="2.6"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7.5 14h9"/>'),
 };

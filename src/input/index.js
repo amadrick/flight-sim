@@ -221,18 +221,21 @@ export async function createInput(ctx) {
     const prev = pad.prev;
     const press = (i) => { const p = !!(bt[i] && bt[i].pressed); const was = !!prev[i]; prev[i] = p; if (p && !was) activity = true; return p && !was; };
     const open = menuOpen();
-    const fire = (name, always) => { if (!open || always) command(name); };
+    // combat mode: buttons the combat module owns this frame (fire controls while airborne in a mission, everything while
+    // a mission screen is open) are skipped here — see src/combat/ui/INTEGRATION.md
+    const owned = (i) => !!(ctx.combat && ctx.combat.input && ctx.combat.input.padOwns && ctx.combat.input.padOwns(i));
+    const fire = (name, always, i) => { if ((!open || always) && !(i !== undefined && owned(i))) command(name); };
     if (std) {
-      if (press(0) && !open) command('gearToggle');
-      if (press(1) && !open) toggleSpeedbrake();
-      if (press(2)) fire('flapsDown');
-      if (press(3)) fire('flapsUp');
-      if (press(8)) fire('cameraNext');
-      if (press(9)) fire('menu', true);
-      if (press(14)) fire('cameraPrev');
-      if (press(15)) fire('cameraNext');
+      if (press(0) && !open && !owned(0)) command('gearToggle');
+      if (press(1) && !open && !owned(1)) toggleSpeedbrake();
+      if (press(2)) fire('flapsDown', false, 2);
+      if (press(3)) fire('flapsUp', false, 3);
+      if (press(8)) fire('cameraNext', false, 8);
+      if (press(9)) fire('menu', true, 9);
+      if (press(14)) fire('cameraPrev', false, 14);
+      if (press(15)) fire('cameraNext', false, 15);
       // trim with auto-repeat
-      const up = !!(bt[12] && bt[12].pressed), dn = !!(bt[13] && bt[13].pressed);
+      const up = !!(bt[12] && bt[12].pressed) && !owned(12), dn = !!(bt[13] && bt[13].pressed) && !owned(13);
       const rep = up ? 1 : dn ? -1 : 0;
       if (rep !== 0 && !open) {
         activity = true;

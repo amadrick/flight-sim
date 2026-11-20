@@ -155,7 +155,10 @@ export async function createMenu(ctx) {
   const tabs = {};
   const mkTab = (id, label) => (tabs[id] = h('button', { class: 'menu-tab', id: 'menu-tab-' + id, type: 'button', onclick: () => go(id === 'hangar' ? 'main' : id) },
     h('span', { html: ICON[id], style: 'display:contents' }), label));
-  const tabBar = h('nav', { class: 'menu-tabs menu-cap glass-clear glass-lens', 'aria-label': 'Menu sections' }, mkTab('hangar', 'Hangar'), mkTab('settings', 'Settings'), mkTab('controls', 'Controls'));
+  // combat: the Missions tab opens the combat module's mission select (ctx.combat is created after the menu: read lazily)
+  const missionsTab = h('button', { class: 'menu-tab', id: 'menu-tab-missions', type: 'button', onclick: () => openMissions() },
+    h('span', { html: ICON.missions, style: 'display:contents' }), 'Missions');
+  const tabBar = h('nav', { class: 'menu-tabs menu-cap glass-clear glass-lens', 'aria-label': 'Menu sections' }, mkTab('hangar', 'Hangar'), missionsTab, mkTab('settings', 'Settings'), mkTab('controls', 'Controls'));
   const tabInd = h('span', { class: 'menu-ind', 'aria-hidden': 'true' }); tabBar.prepend(tabInd); indicators.push([tabBar, tabInd]);
   const stLcl = h('span', { class: 'menu-status-v', id: 'menu-status-lcl' });
   const stApt = h('span', { class: 'menu-status-v', id: 'menu-status-apt' });
@@ -304,6 +307,10 @@ export async function createMenu(ctx) {
     let src = Array.isArray(ctx.input?.bindings) && ctx.input.bindings.length ? ctx.input.bindings : DEFAULT_BINDINGS;
     // F1 (the in-flight controls card) is handled here and in the HUD, not by input
     if (!src.some(b => /controls card/i.test(b.action || ''))) src = [...src, { group: 'Sim', action: 'Controls card show / hide', keys: ['F1'] }];
+    // combat keys (ctx.combat is created after the menu: rendered again each time the Controls screen opens)
+    const cb = ctx.combat?.input;
+    if (Array.isArray(cb?.bindings)) src = [...src, ...cb.bindings.map(b => ({ group: b.group || 'Combat', action: b.action, keys: b.keys }))];
+    if (Array.isArray(cb?.padBindings)) src = [...src, ...cb.padBindings];
     const groupNames = [...BINDING_GROUPS, ...new Set(src.map(b => b.group).filter(g => g && !BINDING_GROUPS.includes(g)))];
     for (const g of groupNames) {
       const rows = src.filter(b => (b.group || 'Sim') === g);
@@ -334,6 +341,9 @@ export async function createMenu(ctx) {
   const pauseSub = h('div', { class: 'menu-pause-sub' });
   const condPause = conditions('menu-p-');
   const kbd = (t) => h('kbd', { class: 'menu-kbd', text: t });
+  const restartLabel = h('span', { text: 'Restart flight' });
+  const restartBtn = h('button', { class: 'menu-act', id: 'menu-restart', type: 'button', onclick: () => restart() }, restartLabel, kbd('Backspace'));
+  const missionsBtn = h('button', { class: 'menu-act', id: 'menu-pause-missions', type: 'button', onclick: () => openMissions() }, 'Mission select', h('span', { class: 'menu-act-chev' }));
   const resumeBtn = h('button', { class: 'menu-act menu-act-primary glass-tint', id: 'menu-resume', type: 'button', onclick: () => close() }, 'Resume', kbd('Esc'));
   const vPause = h('section', { class: 'menu-view menu-dock menu-dock-l', 'data-view': 'pause', style: '--origin: top left' },
     h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Paused' },
@@ -341,7 +351,8 @@ export async function createMenu(ctx) {
       h('div', { class: 'menu-scroll' },
         h('div', { class: 'menu-actions' },
           resumeBtn,
-          h('button', { class: 'menu-act', id: 'menu-restart', type: 'button', onclick: () => restart() }, 'Restart flight', kbd('Backspace')),
+          restartBtn,
+          missionsBtn,
           h('button', { class: 'menu-act', id: 'menu-pause-settings', type: 'button', onclick: () => go('settings') }, 'Settings', h('span', { class: 'menu-act-chev' })),
           h('button', { class: 'menu-act', id: 'menu-pause-controls', type: 'button', onclick: () => go('controls') }, 'Controls', h('span', { class: 'menu-act-chev' })),
           h('button', { class: 'menu-act menu-act-dim', id: 'menu-hangar', type: 'button', onclick: () => toHangar() }, 'Back to hangar', h('span', { class: 'menu-act-chev' }))),
@@ -463,7 +474,11 @@ export async function createMenu(ctx) {
   }
   function syncPause() {
     const p = ctx.player; pauseSub.textContent = '';
+    const inMission = !!ctx.combat?.active;
+    restartLabel.textContent = inMission ? 'Restart mission' : 'Restart flight';
+    missionsBtn.hidden = !ctx.combat?.ui;
     if (!p) return;
+    if (inMission && ctx.combat.mission?.title) pauseSub.append(h('b', { text: ctx.combat.mission.title }), h('br'));
     const s = p.state || {};
     pauseSub.append(h('b', { text: p.def?.name || '' }), h('br'),
       `${p.airport?.id || ''} RWY ${p.runway?.name || ''}`, h('br'),
@@ -530,7 +545,13 @@ export async function createMenu(ctx) {
     try { ctx.audio?.resume?.(); } catch {}
     close();
   }
-  function restart() { hideCrash(); ctx.session?.restart?.(); close(); }
+  function restart() {
+    hideCrash();
+    if (ctx.combat?.active) { close(); ctx.combat.restart(); return; }   // in a combat mission: restart the whole mission
+    ctx.session?.restart?.(); close();
+  }
+  /** Combat mission select (owned by src/combat/ui); it closes the menu itself and returns here on Back. */
+  function openMissions() { try { ctx.combat?.ui?.openMissions?.(); } catch (e) { console.warn('[menu] mission select failed', e); } }
   function toHangar() { go('main'); }
 
   function show(v) {
@@ -541,6 +562,7 @@ export async function createMenu(ctx) {
     tabBar.hidden = flight;
     for (const [k, t] of Object.entries(tabs)) { if ((k === 'hangar' ? 'main' : k) === v) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); }
     if (v === 'pause') syncPause();
+    if (v === 'controls' && ctx.combat?.input && !keysWrap.dataset.combat) { keysWrap.dataset.combat = '1'; renderKeys(); }
     if (v !== 'main') setAptOpen(false);
     // panels grow out of the control that opened them: tabs (top centre) or the corner Menu button (top right)
     if (v === 'pause') views[v].style.setProperty('--origin', 'top right');
@@ -596,7 +618,7 @@ export async function createMenu(ctx) {
   }
   function updateCorner() { const was = corner.hidden; corner.hidden = menu.isOpen || !ctx.session?.active; if (was && !corner.hidden) { cornerT = 0; corner.classList.remove('dim'); } }
   function showCrash() {
-    if (menu.isOpen || inHangar) return;
+    if (menu.isOpen || inHangar || ctx.combat?.active) return;
     const r = crashInfo?.reason || ctx.player?.state?.crashReason || '';
     crashReason.textContent = r ? String(r) : 'The aircraft was destroyed.';
     crash.hidden = false;
@@ -655,7 +677,7 @@ export async function createMenu(ctx) {
       lastCmdAt = performance.now(); handleMenuKey();
     } else if (name === 'hudToggle') { hudOn = !hudOn; sync(); }
   });
-  ev.on('crash', (p) => { if (inHangar || crashTimer > 0 || !crash.hidden) return; crashInfo = p || null; crashTimer = CRASH_DELAY; });
+  ev.on('crash', (p) => { if (inHangar || crashTimer > 0 || !crash.hidden || ctx.combat?.active) return; crashInfo = p || null; crashTimer = CRASH_DELAY; });
   ev.on('session:start', () => { hideCrash(); updateCorner(); syncLiveries(); if (menu.isOpen) requestAnimationFrame(() => placeAll(false)); });
   ev.on('session:end', () => { updateCorner(); });
   ev.on('time:change', (hr) => { if (Number.isFinite(hr)) { sel.tod = hr; if (menu.isOpen) syncClock(); } });
