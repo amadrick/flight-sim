@@ -277,7 +277,7 @@ export function createWeapons(combat) {
     zg.vLaunch = Math.max(100, s.velocity.dot(v1)); zg.vAway = ts.velocity.dot(v1); zg.vTarget = ts.velocity.length(); zg.range = range;
     launchZone(table(sel), zg, zone);
     L.range = range; L.closure = closure; L.offBoresight = lockInfo.off;
-    L.aspect = t.forward ? Math.acos(Math.max(-1, Math.min(1, -t.forward.dot(v1)))) : 0;   // 0 = tail-on
+    L.aspect = t.forward ? Math.acos(Math.max(-1, Math.min(1, t.forward.dot(v1)))) : 0;   // 0 = shooter astern of the target (tail-on), π = head-on (same as util.geometry)
     L.rMax = zone.rMax; L.rNe = zone.rNe; L.tti = zone.tti;
     L.rMin = S.armDist + Math.max(0, closure) * S.armTime + 150;
     L.inRange = range >= L.rMin && range <= L.rMax;
