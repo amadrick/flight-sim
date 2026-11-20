@@ -191,7 +191,7 @@ export const CAMPAIGN = [
       const wing = s.wingmen(3);
       const [h2, h3, h4] = wing.members;
       const slag = s.group('slag', { type: 'mixed', count: 4, callsign: 'Slag', at: { rel: 0, dist: 34000, alt: 6500 }, formation: 'line', spacing: 1300 });
-      const reinf = s.wave('slag2', { type: ['f15', 'f14', 'f16'], count: s.n(1, 1, 3), callsign: 'Slag', startIndex: 5, skill: s.skill('enemy', s.n(-0.1, 0, 0)), at: () => s.at({ rel: s.pick([-35, 35]), dist: 26000, alt: 7000 }), call: '@awacs.wave' }, { or: [{ kills: 3 }, { after: 200 }] }, () => {
+      const reinf = s.wave('slag2', { type: ['f15', 'f14', 'f16'], count: s.n(1, 2, 3), callsign: 'Slag', startIndex: 5, skill: s.skill('enemy', s.n(-0.1, 0, 0)), at: () => s.at({ rel: s.pick([-35, 35]), dist: 26000, alt: 7000 }), call: '@awacs.wave' }, { or: [{ kills: 3 }, { after: 200 }] }, () => {
         s.say('furnace', 'Slag lead to base: we are being swept. Send everyone.', { voice: 'enemy', team: 'red', priority: 1, delay: 3 });
         s.say(h4 || 'awacs', 'Here comes the rest of their squadron. Pick your shots.', { priority: 1, delay: 8 });
       });
@@ -401,7 +401,7 @@ export const CAMPAIGN = [
       const ember = s.group('ember', { type: 'b2', count: 2, callsign: 'Ember', at: { from: haven, brg: 222, dist: s.n(76000, 76000, 78000), alt: 7000 }, heading: haven, spacing: 1500, formation: 'line',
         passive: true, loadout: UNARMED, hp: s.n(110, 160, 200), points: 160, mark: 'BOMBER', speed: 220, role: 'bomber',
         order: () => s.orders.patrol([V(haven.x, 7000, haven.z)], { passive: true }) });
-      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 1, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: s.n(72000, 72000, 74000), alt: 8000 }, heading: haven,
+      const cinder = s.group('cinder', { type: ['f16', 'f14'], count: s.n(1, 2, 2), callsign: 'Cinder', at: { from: haven, brg: 221, dist: s.n(72000, 72000, 74000), alt: 8000 }, heading: haven,
         loadout: s.n({ ir: 0, radar: 0 }, undefined, undefined), skill: s.skill('enemy', s.n(-0.08, 0, 0)),
         engageWithin: 15000, order: (i) => s.orders.escort(ember.members[i % 2], { x: 600, y: 800, z: 500 }) });
       const lamp = s.wave('lamp', { type: 'a10', count: s.n(1, 1, 2), callsign: 'Lamp', at: { from: haven, brg: 105, dist: s.n(85000, 72000, 70000), agl: 1700 }, heading: haven,
