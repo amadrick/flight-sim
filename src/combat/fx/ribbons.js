@@ -202,9 +202,10 @@ void main() {
   vec4 SD = uSD[st];
   float heat = mix(vH.x, vH.y, sc);
   float ar = age / max(SD.w, 1e-3);
-  float hk = heat * exp(-ar * ar);   // gaussian: gone within a segment or two (segments can be tens of metres long)
+  // gaussian, cut to exactly zero past ~2 tau: night exposure is ~1000x day, so even a 1e-4 tail would light the whole trail
+  float hk = heat * exp(-ar * ar) * (1.0 - smoothstep(1.4, 2.1, ar));
   vec3 emis = SD.rgb * hk * a * (0.6 + 0.8 * nz.r);
   // flame colour cools with age (yellow-white → orange → deep red)
-  emis *= mix(vec3(0.75, 0.35, 0.25), vec3(1.0), exp(-age / max(SD.w * 0.6, 1e-3)));
+  emis *= mix(vec3(0.9, 0.45, 0.25), vec3(1.0), exp(-age / max(SD.w * 0.6, 1e-3)));
   outColor = fxFinishAP(lit * a, a, emis, mix(vApA, vApB, sc));
 }`;
