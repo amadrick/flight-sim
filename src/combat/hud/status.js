@@ -116,7 +116,7 @@ export function createStatus(cv, tok, specs) {
       g.font = fL; const lw = short.length * fs * 0.6;
       if (sel) { g.strokeStyle = C.amber; g.lineWidth = 1.2; g.strokeRect(Math.round(x - 4) + 0.5, Math.round(y - row * 0.42) + 0.5, Math.round(lw + 8 + m * fs * 0.78), Math.round(row * 0.84)); }
       label(short, x, sel ? C.amber : C.dim);
-      x += lw + 5;
+      x += lw + 8;
       const r = fs * 0.3;
       for (let i = 0; i < m; i++) {
         const cx = x + r + i * fs * 0.78;

@@ -279,7 +279,7 @@ export async function createCombatHud(combat) {
       touch = coarse || !!ctx.input?.touchEnabled;
       layout(W, Hh, dpr);
       H.camMode = combat.camera?.mode || null; H.touch = touch;
-      H.camLabelY = H.seatCompact ? 30 : Math.min(Hh / 2 + H.cueOff + (H.camMode === 'padlock' ? H.fsWarn * 1.25 : 0), stripTop(W, Hh) - H.fs * 1.4);
+      H.camLabelY = 30;   // top centre: clear of the cue, subtitles and strip; the sim's toasts there are transient
       H.interior = ctx.cameraRig?.isInterior ?? mode === 'cockpit';
       const live = !ctx.time?.paused;
 

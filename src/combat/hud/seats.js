@@ -14,7 +14,7 @@ export const SEATS = {
   compactMaxH: 440,         // px: at or below → compact flag
   sideTop: 54,              // px below the top gutter: clears the menu's in-flight corner buttons (top right)
   radar: { wide: 212, narrow: 132, touch: 116, compact: 92 },   // scope edge length, px
-  touchLeftMax: 420,        // px: width of the left stack in touch mode (and never more than 100vw − 180 px)
+  touchLeftMax: 400,        // px: width of the left stack in touch mode (and never more than 100vw − 180 px)
   kills: { wide: 3, narrow: 2, touch: 2 },
   subs: { wide: 'bottom', narrow: 'left', touch: 'left' },     // 'bottom' (above the strip estimate) | 'left' (stacked)
   subsStripGap: 12,         // px between the subtitles and the top of the flight-data strip (wide)
