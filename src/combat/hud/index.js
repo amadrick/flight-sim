@@ -170,7 +170,7 @@ export async function createCombatHud(combat) {
     if (source && source.kind === 'aircraft') H.near.t = Math.max(H.near.t, 0.6);
   });
   ev.on('lock:locked', ({ shooter } = {}) => { if (isMe(shooter)) H.lockSnap = 1; });
-  ev.on('weapon:nolock', ({ entity } = {}) => { if (isMe(entity)) msg('NO LOCK', tok.accent); });
+  ev.on('weapon:nolock', ({ entity, text } = {}) => { if (isMe(entity)) msg(text ? String(text).toUpperCase() : 'NO LOCK', tok.accent); });
   ev.on('weapon:select', ({ entity, selected } = {}) => { if (isMe(entity)) msg((combat.weapons?.specs?.missiles?.[selected]?.short || String(selected || '').toUpperCase()) + ' SELECTED', tok.hud, 1.1); });
   const MISS = { timeout: 'MISSILE TIMED OUT', ground: 'MISSILE INTO GROUND', decoyed: 'MISSILE DECOYED', energy: 'MISSILE OUT OF ENERGY', lost: 'MISSILE LOST LOCK' };
   ev.on('missile:miss', ({ missile, reason } = {}) => {

@@ -2,18 +2,11 @@
 // first-minute control hints. DOM is touched on events and on value changes only (never per frame without a change).
 import { F } from '../../ui/hud/common.js';
 import { createSubtitleQueue } from './math.js';
+import { HUD_HINTS } from '../input/map.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export const HINTS = [
-  { keys: ['Space'], text: 'Guns (hold)', cmd: 'gun' },
-  { keys: ['Enter', 'X'], text: 'Missile', cmd: 'missile' },
-  { keys: ['V'], text: 'Flares', cmd: 'flare' },
-  { keys: ['Tab'], text: 'Next target', cmd: 'targetNext' },
-  { keys: ['Y'], text: 'Target nearest the nose', cmd: 'targetNearest' },
-  { keys: ['Z'], text: 'Switch missile', cmd: 'weaponNext' },
-  { keys: ['O'], text: 'Target view (padlock)', cmd: 'padlock' },
-];
+export const HINTS = HUD_HINTS;      // the key list lives with the key map (src/combat/input/map.js)
 const HINT_LIFE = 20;          // s of (unblocked) mission time the hint card stays
 
 export function createPanels(root, opts) {
