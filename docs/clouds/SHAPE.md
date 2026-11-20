@@ -13,6 +13,21 @@ can be compared side by side; all round-four and round-five switches still work.
   (scratchpad final.sh), which is 3-4 oktas by design. The chase proof below uses the lead's command (fair).
 * Bubble volume v2 (`clBubV`, boot-time, 1 = default): domain-warped (2 octaves of tiling gradient noise, ~0.2 cell),
   radii 0.32-0.95 cell with more small ones, plus a satellite sphere (0.35-0.6 x) on the upper side of every bubble.
+* **Where the soap-bubble rings come from** (close turret, harness `weather=scattered&tod=15&cx=6000&cz=-3000&cy=1800&
+  yaw=20&pitch=6&standoff=400&standoffMin=300`, scratchpad c4/diag*.png): NOT the density (the vertical section,
+  `view=slice`, is solid with sharp lobes; the direct-sun-only view `clDbg=1` shows opaque lumpy turrets). Toggling
+  `clLam=0`, `clCav=0`, `clLobeSh=0`, `clLobe=0`, `clMsN=80`, `clMsBub=1`, `clSph=0` all left the rings. `scatter=classic`
+  and `clMs=0` have NO rings and no veil (opaque, contrasty cauliflower). So it is the lighting inputs of the learned
+  MS path: the light march and the network's 9 taps sample the CHEAP density (envelope + at most octave 0), while the
+  visible surface is up to ~0.5 cell radii away from it. Bubble parts outside the cheap envelope get tauSun ~ 0 and
+  "thin cloud" taps, parts inside get its full shadow: the outline where the envelope cuts each bubble is printed on the
+  lit face (rings), and the whole bubble shell outside the envelope reads as a grey translucent veil.
+* Fix 1 (`clLOff`, default 1): the light march and the MS taps add the sample's own displacement (visible surface minus
+  cheap surface, km) to the cheap density, fading over `clLOffR` / `clMsOffR` x the largest bubble size. Depth toward the
+  sun and the taps are then measured from the visible surface. Rings much weaker, veil reduced.
+* Fix 2 (`clBubMu`, default 1): lobe orientation from the change of the visible surface function (envelope + cascade)
+  over a short step toward the sun, instead of the gradient of the sphere field alone (which lit each whole sphere,
+  also where the envelope cuts it: a disc with a dark rim).
 
 ## 0. Round six: cauliflower, field variety, cost
 

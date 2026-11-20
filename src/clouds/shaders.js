@@ -100,6 +100,7 @@ uniform vec4 uClBub3;      // round six: x = entrainment-skin thickness factor o
 uniform vec4 uClPhys;      // round five: x = adiabatic liquid-water lapse (g m^-3 per m), y = (droplet number / 150 cm^-3)^(1/3),
                            //   z = liquid-water cap of layer clouds (g m^-3), w = 1: extinction from the microphysics (0 = round four)
 
+uniform vec4 uClBub5;      // round six b: x = reach of the bubble offset in the learned-MS taps, y = in the light march (x largest bubble)
 uniform vec4 uClBub4;      // round six b: x = sphere tracing through the bubble shell (march), y = bubble shape v2 (signed union),
                            //   z = lobe-orientation term from the bubble field, w = reserved
 float clSat(float x) { return clamp(x, 0.0, 1.0); }
@@ -579,9 +580,9 @@ ${msGLSL ? `
 // density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
 #define CL_MS5 1
 ${/float\s+cloudMsForwardPeak\s*\(\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float/.test(msGLSL) ? '#define CL_MS_AUREOLE 1' : ''}
-vec4 clMsWx = vec4(0.0); float clMsLod = 1.0; vec3 clMsP0 = vec3(0.0); float clMsOff = 0.0;
+vec4 clMsWx = vec4(0.0); float clMsLod = 1.0; vec3 clMsP0 = vec3(0.0); float clMsOff = 0.0, clMsOffR = 600.0;
 // (round six b: the taps see the cheap surface moved by the sample's own bubble displacement, as the light march does)
-float clMsSigma(vec3 p) { vec4 info; clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clLightOffR);
+float clMsSigma(vec3 p) { vec4 info; clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
   float s = clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; clNoBub0 = false; clLightOff = 0.0; return s; }
 #define CLOUD_MS_SIGMA(p) clMsSigma(p)
 ${msGLSL}
@@ -968,10 +969,12 @@ void main() {
           if (uClBub4.w > 0.0 && bubS > 0.0 && uClBub.x > 0.0) {
             float lam0 = clamp(thermS * uClBub.z, 22.0, 650.0);
             float exCh = exS_ + (uClBub3.w > 0.0 ? bubS * uClBub.x * lam0 * 1e-3 * (bubS0 - CL_BUB_C) * mix(0.35, 1.0, clSat(info.x * 12.0)) : 0.0);
-            clLightOffIn = uClBub4.w * (surfS - exCh); clLightOffR = 2.0 * lam0;
+            clLightOffIn = uClBub4.w * (surfS - exCh); clLightOffR = uClBub5.y * lam0;
           }
           #ifdef CL_MS5
-          clMsOff = clLightOffIn; clMsP0 = pa;
+          // (the taps skip the bubble octave when uClCost.z is set: their offset is then measured from the plain envelope)
+          clMsOff = uClCost.z > 0.5 && uClBub4.w > 0.0 && bubS > 0.0 && uClBub.x > 0.0 ? uClBub4.w * (surfS - exS_) : clLightOffIn;
+          clMsP0 = pa; clMsOffR = uClBub5.x * clamp(thermS * uClBub.z, 22.0, 650.0);
           #endif
           float tauSun = clTauLight(pa, wx, lod, fract(blue2 + nDense * 0.618), pix < 10.0 && surfK > 0.0 ? min(fp, 12.0) : -1.0, ex - exLo, edge);
           // round six: lobe orientation from the bubble field where the detailed light samples do not run (beyond ~10 m

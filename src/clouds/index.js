@@ -106,7 +106,7 @@ export async function createClouds(ctx) {
   const U = {
     tClBase: { value: noise3.base }, tClDetail: { value: noise3.detail }, tClWeather: { value: weatherRT.texture },
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
-    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClCost: v4(0.004, 0, 0, 0),
+    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClCost: v4(0.004, 0, 0, 0),
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
     uClDet: v4(1, 1, 1, 1), uClLife: v4(0, 1, 0, 0), uClPhys: v4(2e-3, 1, 0.6, 1), uClMie: v4(0.9946, 0.594, 27.1, 0.498), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
@@ -527,6 +527,7 @@ export async function createClouds(ctx) {
     // entrainment skin of growing turrets (clSkin x round five's 20 m), lobe lighting in the learned-MS path and the
     // bubble-field lobe orientation (clLobe), the largest bubble octave in the cheap density (light march, shadow map: lobe
     // self-shadowing; clLobeSh), analytic sun path through the anvil slab (clAnvL: no contour arcs under the anvil)
+    U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), 0, 0);
     U.uClBub4.value.set(dbg('clSph', 1), dbg('clBubS', 1), dbg('clBubMu', 1), dbg('clLOff', 1));
     U.uClBub3.value.set(dbg('clSkin', 0.3), dbg('clLobe', 1), dbg('clAnvL', 1), dbg('clLobeSh', 1));
     // cost (round six): rays stop at transmittance clTmin (round five 0.004), far-field light from the shadow map alone beyond
