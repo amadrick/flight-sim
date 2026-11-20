@@ -150,28 +150,33 @@ export function makePavementMaterial(ctx, shared, pools) {
           if (concrete) {
             // Portland cement concrete: 7.5 m (runway) / 6 m (apron) slabs, sealed joints, per-slab cure tone,
             // corner breaks, tar over-banding on re-sealed joints, oil and fuel stains, fine pitting
-            float slab = kind < 1.5 ? 7.5 : 6.0;
+            // slabs: one paving lane (7.5 m) wide, 6 m long (aprons 6 x 6). Each lane was slip-formed in one pass, so
+            // the tone follows the lane and drifts slowly along it; slab to slab it hardly changes (strongly varying
+            // slabs read as floor tiles)
+            vec2 slab = kind < 1.5 ? vec2(6.0, 7.5) : vec2(6.0);
             vec2 cell = floor(sl / slab);
             vec2 inC = sl - cell * slab;
             float h1 = scnHash(cell + seed), h2 = scnHash(cell * 1.37 + seed + 5.1), h3 = scnHash(cell * 2.11 + 9.7);
-            float tone = 0.80 + 0.34 * h1;
-            vec3 base = kind < 1.5 ? vec3(0.225, 0.220, 0.208) : vec3(0.205, 0.20, 0.188);
-            col = base * tone * (0.8 + 0.4 * aggr) * (0.88 + 0.24 * nB.g) * (0.9 + 0.2 * nC.b);
-            col *= vec3(1.0, 0.99 + 0.02 * h2, 0.97 + 0.05 * h3);                         // cement batches differ
-            // pour campaigns / later reconstruction: blocks of slabs with a different overall tone
-            vec2 zc = floor(sl / (slab * vec2(9.0, 6.0)));
-            col *= 0.88 + 0.2 * scnHash(zc * 3.1 + seed + 11.0);
-            float jx = scnLines(sl.x + 0.01, slab, 0.02), jy = scnLines(sl.y + 0.01, slab, 0.02);
-            float ob = max(scnLines(sl.x + 0.06, slab, 0.14) * step(0.55, h2), scnLines(sl.y + 0.06, slab, 0.14) * step(0.6, h3));
+            float laneT = scnHash(vec2(cell.y, seed + 2.7));
+            float drift = texture(tNoise, vec2(sl.x / 420.0, cell.y * 0.37 + 0.13)).g;
+            float tone = 0.88 + 0.12 * laneT + 0.14 * (drift - 0.5) + 0.05 * (h1 - 0.5);
+            vec3 base = kind < 1.5 ? vec3(0.235, 0.228, 0.214) : vec3(0.205, 0.20, 0.188);
+            col = base * tone * (0.84 + 0.32 * aggr) * (0.9 + 0.2 * nB.g) * (0.92 + 0.16 * nC.b);
+            col *= vec3(1.0, 0.99 + 0.02 * laneT, 0.97 + 0.04 * h3);                       // cement batches differ
+            // later reconstruction: the odd block of slabs replaced, a touch paler / cleaner
+            vec2 zc = floor(sl / (slab * vec2(9.0, 2.0)));
+            col *= 1.0 + 0.07 * step(0.82, scnHash(zc * 3.1 + seed + 11.0));
+            float jx = scnLines(sl.x + 0.01, slab.x, 0.012), jy = scnLines(sl.y + 0.01, slab.y, 0.016);
+            float ob = max(scnLines(sl.x + 0.06, slab.x, 0.12) * step(0.8, h2), scnLines(sl.y + 0.06, slab.y, 0.12) * step(0.7, laneT));
             float j = max(jx, jy);
             // sealed joints: a thin dark sealant line, its edges a little chipped; old joints weathered paler
-            col *= 1.0 - (0.42 - 0.2 * step(0.6, h3)) * j;
+            col *= 1.0 - (0.34 - 0.16 * step(0.6, h3)) * j;
             // broom finish (transverse texture) and mottled curing: visible only up close / as a mean tone
             col *= 0.97 + 0.06 * texture(tNoise, vec2(sl.x / 0.9, sl.y / 23.0) + 0.29).r * (1.0 - smoothstep(0.01, 0.05, length(fwidth(sl))));
             col *= 0.92 + 0.16 * smoothstep(0.3, 0.7, texture(tNoise, sl / 2.7 + 0.61).g);
             col = mix(col, vec3(0.05, 0.048, 0.045), 0.8 * ob * (0.7 + 0.3 * nD.r));
             // spalled corners and the odd shattered slab (dark crack lines)
-            float corner = (1.0 - smoothstep(0.0, 0.9, min(inC.x, slab - inC.x))) * (1.0 - smoothstep(0.0, 0.9, min(inC.y, slab - inC.y)));
+            float corner = (1.0 - smoothstep(0.0, 0.9, min(inC.x, slab.x - inC.x))) * (1.0 - smoothstep(0.0, 0.9, min(inC.y, slab.y - inC.y)));
             col *= 1.0 - 0.25 * corner * step(0.7, h1);
             float crk = smoothstep(0.75, 0.95, crackNet) * step(0.9, h3);
             col *= 1.0 - 0.3 * crk;
@@ -179,6 +184,12 @@ export function makePavementMaterial(ctx, shared, pools) {
             float stain = smoothstep(0.62, 0.82, nB.b * 0.55 + nD.g * 0.45) * (kind > 2.5 ? 1.0 : 0.35);
             col *= 1.0 - 0.45 * stain;
             col *= 1.0 - 0.12 * smoothstep(0.5, 0.9, nD.b);
+            // runways: tyre dust and drips darken the trafficked keel, the outer lanes stay clean and pale
+            if (kind < 1.5) {
+              float acr = abs(vLocal.y) + 3.0 * (nB.r - 0.5);
+              col *= mix(1.04, 0.84, 1.0 - smoothstep(pwid * 0.12, pwid * 0.3, acr));
+              col *= 1.0 - 0.18 * exp(-pow(vLocal.y / 1.8, 2.0)) * (0.5 + 0.5 * nD.r);
+            }
             hgt -= (j + ob * 0.3) * 0.008 + crk * 0.004;
             rough = 0.80 + 0.1 * aggr - 0.3 * stain - 0.25 * ob;
           } else {

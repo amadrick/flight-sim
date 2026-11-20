@@ -92,7 +92,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         vec2 rxz = grid.xy + (ij + 0.1 + 0.8 * h.xy) * sp;
         float dc = distance(rxz, cameraPosition.xz);
         // ring membership, dithered thinning toward the outer edge, pavement / outside the airside
-        float keep = ring0 ? step(dc, uBlRing.x) : step(uBlRing.x, dc) * step(h.z, 1.0 - smoothstep(uBlRing.y * 0.55, uBlRing.y, dc));
+        float keep = ring0 ? step(dc, uBlRing.x) : step(uBlRing.x, dc) * step(h.z, 1.0 - smoothstep(uBlRing.y * 0.35, uBlRing.y, dc));
         vec2 am = airMap(rxz);
         keep *= step(0.08 + 0.5 * h.w, am.x) * step(0.5, airSide(rxz)) * step(0.5, uAirInfo.z);
         vec2 w = rxz + uOrigin.xz;
@@ -158,7 +158,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         // turf colours (keep near TURF_REF so the blades sit in the ground and the shells): younger yellow-green
         // tips, darker older blades, the odd dead straw blade, browner in the long grass
         vec3 c = vec3(0.105, 0.175, 0.052) * (0.75 + 0.5 * vBl.y);
-        c = mix(c, vec3(0.16, 0.21, 0.075), smoothstep(0.6, 1.0, bt) * 0.3);
+        c = mix(c, vec3(0.15, 0.20, 0.07), smoothstep(0.6, 1.0, bt) * 0.15);
         c = mix(c, vec3(0.26, 0.235, 0.13), clamp(vBl.z, 0.0, 1.0) * 0.85 + vBl.w * 0.15);
         // self shadowing / occlusion inside the sward: the base sees little sky or sun
         c *= mix(0.55, 1.1, smoothstep(0.0, 0.85, bt));
@@ -182,7 +182,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
         reflectedLight.indirectDiffuse = vec3(0.0); reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0);
         #endif
         // (a sub-pixel glossy tip turns into sparkle; the sheen is kept for the blades big enough to show it)
-        reflectedLight.directSpecular *= 0.2;`)
+        reflectedLight.directSpecular *= 0.12;`)
       .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
         {
           // light through the blade: sun behind it (leaf transmittance ~0.3 x reflectance, yellower), mostly the
@@ -190,7 +190,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
           vec3 nW = inverseTransformDirection(normal, viewMatrix);
           vec3 vW = normalize(cameraPosition - vBlW);
           float back = max(-dot(nW, uSunDir), 0.0) * 0.6 + 0.8 * pow(max(dot(-vW, uSunDir), 0.0), 4.0);
-          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * uSunColor * (back * 0.22 * smoothstep(0.15, 0.9, bt) * step(0.0, uSunDir.y) / PI);
+          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.1, 1.15, 0.6) * uSunColor * (back * 0.12 * smoothstep(0.15, 0.9, bt) * step(0.0, uSunDir.y) / PI);
         }`);
   };
   mat.customProgramCacheKey = () => `skyward-blades-${G0}-${G1}`;

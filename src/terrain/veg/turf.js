@@ -149,7 +149,7 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         vec3 V = normalize(vTV);
         float graze = tss(0.08, 0.30, abs(V.y) + 1.5 / max(dc, 1.0));      // shells read as sheets at grazing angles far off
         // under the 3-D blades (veg/blades.js) the upper shells give way: they would read as fuzz over the blades
-        float underB = uTurfShell.z > 0.0 ? (1.0 - tss(uTurfShell.z * 0.6, uTurfShell.z, dc)) * tss(0.2, 0.6, vTZ) : 0.0;
+        float underB = uTurfShell.z > 0.0 ? (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc)) * tss(0.2, 0.6, vTZ) : 0.0;
         float a = bl.r * edge * fadeD * graze * uTurfOn * (1.0 - 0.9 * underB);
         if (a < 0.02) discard;
         vec3 c = vec3(0.072, 0.100, 0.042) * (0.75 + 0.5 * bl.g);
@@ -157,7 +157,7 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         // inside the sward: lower parts see less sky and sun (bright tips, dark bases), blades of older passes dull
         c *= (0.35 + 0.75 * vTZ) * (1.0 - 0.15 * since);
         // ... and under the 3-D blades the remaining lower shells are the shaded depth between them
-        if (uTurfShell.z > 0.0) c *= 1.0 - 0.55 * (1.0 - tss(uTurfShell.z * 0.6, uTurfShell.z, dc));
+        if (uTurfShell.z > 0.0) c *= 1.0 - 0.55 * (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc));
         diffuseColor.rgb = c;
         diffuseColor.a = a;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
