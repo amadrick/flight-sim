@@ -253,6 +253,7 @@ importance-sampled direction per texel and lobe with horizon visibility. Single 
 | classic fitted per held-out tile (roughness, F0, diffuse scale; oracle) | 0.484 | 0.095 |
 | **network** (knows only groove / exposure / rubber / wetness) | **0.115** | **0.071** |
 | network, grazing views (mu_v < 0.2) vs classic | 0.149 vs 0.850 | 0.103 vs 0.373 |
+| Monte Carlo noise of the reference (noise.py; the sun term is deterministic) | 0 | 0.003 |
 
 What it learned: at grazing view the eye sees the stone tops, so the visible albedo is higher than the tile mean and
 the surface brightens down-sun (Kd up to ~1.7) and darkens looking into the sun; the stones and grooves hide about half
