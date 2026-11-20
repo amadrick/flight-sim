@@ -110,12 +110,14 @@ export const INSTANT = [
         const skill = Math.min(0.97, s.skill('enemy', -0.2) + 0.05 * wave);
         // the first waves warm you up: guns only, then one heater each, then full racks
         const loadout = wave <= 2 ? { ir: 0, radar: 0 } : wave <= 4 ? { ir: 1, radar: 0 } : undefined;
-        const g = s.group(`wave${wave}`, { type: wave < 3 ? 'f16' : 'mixed', count: n, callsign: names[(wave - 1) % names.length], skill, spacing: 700, loadout,
-          at: { rel: s.between(-45, 45), dist: s.between(17000, 24000) }, call: '@awacs.wave' });
+        // the first two waves come from ahead, flying away from you: a free first shot to settle in
+        const geo = wave <= 2 ? { at: { rel: s.between(-20, 20), dist: s.between(7000, 9000) }, heading: { rel: s.between(-30, 30) } } : { at: { rel: s.between(-45, 45), dist: s.between(17000, 24000) } };
+        const g = s.group(`wave${wave}`, { type: wave < 3 ? 'f16' : 'mixed', count: n, callsign: names[(wave - 1) % names.length], skill: wave <= 2 ? skill - 0.1 : skill, spacing: 700, loadout,
+          ...geo, call: '@awacs.wave' });
         ob.set(`wave ${wave}`);
         // a wave that is not cleared in time is joined by the next one: stalemates turn into pressure, never into a draw
         const cur = wave;
-        const late = s.after(s.n(150, 120, 100), () => { if (!s.ended && wave === cur && g.alive > 0) { s.say('awacs', 'Next wave is not waiting for you, {cs}. More inbound!', { priority: 1 }); stacked++; next(); } });
+        const late = s.after(s.n(150, 120, 100) + (wave <= 2 ? 60 : 0), () => { if (!s.ended && wave === cur && g.alive > 0) { s.say('awacs', 'Next wave is not waiting for you, {cs}. More inbound!', { priority: 1 }); stacked++; next(); } });
         s.when(() => g.alive === 0, () => { s.cancel(late); if (wave === cur) cleared(); else if (!s.ended) { clearedCount++; s.score(100 * cur, 'Waves cleared', `Wave ${cur} cleared`); if (clearedCount >= MAX) s.win(`Survived all ${MAX} waves`); } });
       };
       let stacked = 0, clearedCount = 0;

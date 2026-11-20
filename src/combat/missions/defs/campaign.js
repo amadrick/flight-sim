@@ -175,11 +175,11 @@ export const CAMPAIGN = [
       const wing = s.wingmen(3);
       const [h2, h3, h4] = wing.members;
       const slag = s.group('slag', { type: 'mixed', count: 4, callsign: 'Slag', at: { rel: 0, dist: 34000, alt: 6500 }, formation: 'line', spacing: 1300 });
-      const reinf = s.wave('slag2', { type: ['f15', 'f14', 'f16'], count: s.n(1, 2, 3), callsign: 'Slag', startIndex: 5, skill: s.skill('enemy', s.n(-0.1, 0, 0)), at: () => s.at({ rel: s.pick([-35, 35]), dist: 26000, alt: 7000 }), call: '@awacs.wave' }, { or: [{ kills: 3 }, { after: 200 }] }, () => {
+      const reinf = s.wave('slag2', { type: ['f15', 'f14', 'f16'], count: s.n(1, 1, 3), callsign: 'Slag', startIndex: 5, skill: s.skill('enemy', s.n(-0.1, 0, 0)), at: () => s.at({ rel: s.pick([-35, 35]), dist: 26000, alt: 7000 }), call: '@awacs.wave' }, { or: [{ kills: 3 }, { after: 200 }] }, () => {
         s.say('furnace', 'Slag lead to base: we are being swept. Send everyone.', { voice: 'enemy', team: 'red', priority: 1, delay: 3 });
         s.say(h4 || 'awacs', 'Here comes the rest of their squadron. Pick your shots.', { priority: 1, delay: 8 });
       });
-      s.bingo(s.n(390, 360, 340), { fraction: s.n(0.5, 0.5, 0.65), win: 'Slag swept from the Flats', lose: 'Slag held the Glass Flats' });
+      s.bingo(s.n(420, 400, 360), { fraction: s.n(0.5, 0.5, 0.65), win: 'Slag swept from the Flats', lose: 'Slag held the Glass Flats' });
       s.destroy('sweep', 'Destroy the Slag patrol and reinforcements', [slag, reinf]);
       s.protect('home', 'Bring all three wingmen home', wing, { optional: true, points: 250 });
       const flags = {};
@@ -264,15 +264,15 @@ export const CAMPAIGN = [
     start: { at: { x: 40000, z: -92000 }, agl: 900, hdg: 0, spd: 250 },
     script(s) {
       const lineZ = s.places.lanternLine.z;
-      const z0 = s.anchor.z - s.n(12000, 15000, 18000);
+      const z0 = s.anchor.z - s.n(14000, 22000, 26000);
       const path = s.route([{ x: 40000, z: z0 }, { x: 46000, z: z0 - 14000 }, { x: 37000, z: z0 - 28000 }, { x: 43000, z: lineZ - 20000 }, { x: 40000, z: lineZ - 60000 }], { agl: 600 });
       const mule = s.group('mule', {
-        type: 'c17', count: 1, callsign: 'Mule', single: true, at: path[0].clone(), heading: 0, passive: true, loadout: { ...UNARMED, flares: 30 },
-        hp: s.n(160, 220, 260), points: 300, role: 'hva', mark: 'MULE', order: () => s.orders.patrol(path.slice(1), { passive: true, loop: false }),
+        type: 'c17', count: 1, callsign: 'Mule', single: true, at: path[0].clone(), heading: 0, passive: true, loadout: { ...UNARMED, flares: s.n(10, 45, 60) },
+        hp: s.n(160, 280, 320), points: 300, role: 'hva', mark: 'MULE', order: () => s.orders.patrol(path.slice(1), { passive: true, loop: false }),
       });
       const M = () => mule.leader;
       const gravel = s.group('gravel', {
-        type: ['f16', 'fa18'], count: s.n(1, 2, 2), callsign: 'Gravel', at: () => s.at({ from: M(), brg: 180, dist: 3000, alt: M().state.position.y + 600 }), heading: 0,
+        type: ['f16', 'fa18'], count: s.n(1, 2, 2), callsign: 'Gravel', skill: s.skill('enemy', s.n(0, 0.1, 0.1)), at: () => s.at({ from: M(), brg: 180, dist: 3000, alt: M().state.position.y + 600 }), heading: 0,
         order: (i) => ({ ...s.orders.escort(M(), { x: (i % 2 ? -1 : 1) * 400, y: 300, z: 500 }), weaponsHold: true }),
       });
       // inside the storm Gravel has not seen you yet: they hold formation until you get close, shoot, or hit something
@@ -285,7 +285,7 @@ export const CAMPAIGN = [
       };
       s.on('missile:launch', ({ shooter }) => { if (shooter === s.player) s.after(s.n(4, 2, 1), () => wake('shot')); });
       s.on('damage', ({ target }) => { if (target === M() || gravel.members.includes(target)) wake('shot'); });
-      s.when(() => { const p = s.player, m = M(); return p && m && flat(p.state.position, m.state.position) < s.n(3000, 4500, 7000); }, () => wake('seen'));
+      s.when(() => { const p = s.player, m = M(); return p && m && flat(p.state.position, m.state.position) < s.n(3000, 7000, 9000); }, () => wake('seen'));
       const kill = s.destroy('mule', 'Shoot down Mule before the Lantern Line', mule);
       s.destroy('escorts', 'Destroy the escorts', gravel, { optional: true });
       const style = s.objective('gun', 'Bring Mule down with the gun', { hidden: true, points: 300 });
@@ -448,7 +448,7 @@ export const CAMPAIGN = [
         s.say(wing.leader || 'awacs', 'Where did they come from? Oh. The clouds. Right.', { priority: 0, delay: 4 });
       });
       s.destroy('all', 'Destroy every Directorate fighter', [flint, slag, pop]);
-      s.bingo(s.n(420, 400, 380), { fraction: s.n(0.6, 0.7, 0.8), win: 'Formation broken', lose: 'The formation held' });
+      s.bingo(s.n(450, 420, 400), { fraction: s.n(0.5, 0.6, 0.75), win: 'Formation broken', lose: 'The formation held' });
       s.protect('h2', 'Bring your wingmen home', wing, { optional: true });
       let guns = 0;
       const gun = s.objective('guns', 'Three kills with the cannon', { hidden: true, points: 300 });
@@ -476,7 +476,7 @@ export const CAMPAIGN = [
       const wing = s.wingmen(s.n(2, 2, 1));
       const hilt = s.group('hilt', { type: ['f15', 'f14', 'fa18'], count: s.n(2, 3, 4), callsign: 'Hilt', startIndex: 2, at: { rel: 0, dist: 30000, alt: 6500 }, formation: 'line', spacing: 1000, skill: s.skill('elite', -0.12) });
       const ace = s.declare('quillon', {
-        type: 'f22', count: 1, callsign: 'Quillon', single: true, skill: s.skill('elite', 0.08), hp: s.n(130, 170, 210), loadout: { ir: 2, radar: 0 },
+        type: 'f22', count: 1, callsign: 'Quillon', single: true, skill: s.skill('elite', s.n(0, 0.1, 0.05)), hp: s.n(130, 170, 230), loadout: { ir: 2, radar: s.n(0, 0, 2), flares: s.n(20, 30, 40) },
         points: 600, role: 'ace', mark: 'QUILLON', at: () => s.at({ rel: s.pick([-35, 35]), dist: 15000, alt: (s.player ? s.player.state.position.y : 6000) + 1200 }),
       });
       const duel = s.destroy('quillon', 'Shoot down Quillon', ace, { points: 500 });
@@ -492,13 +492,36 @@ export const CAMPAIGN = [
         const q = ace.leader;
         s.steer(q, 'QUILLON');
         hilt.order(() => s.orders.flee(0, 7000));
+        if (q?.pilot) q.pilot.setOrder(s.orders.engage(s.player));
+        // the wingmen keep the ring: they cover the fleeing Hilt jets and leave the duel to you (on rookie they stay in)
+        if (s.difficulty !== 'rookie') {
+          wing.spec.managed = null;
+          wing.order((e) => ({ ...s.orders.orbit(s.at({ from: e, rel: 0, dist: 4000 }), 6000, e.state.position.y), weaponsHold: true }));
+          // honour lasts until it doesn't: they come in after a while, or as soon as lead takes a hit
+          let joined = false;
+          const join = (line) => {
+            if (joined || s.ended) return; joined = true;
+            wing.spec.managed = 'wing';
+            const q2 = ace.leader; if (q2) wing.order(() => s.orders.engage(q2));
+            s.say(wing.leader || 'awacs', line, { priority: 1 });
+          };
+          s.after(s.n(0, 75, 140), () => join('Enough watching. Coming in, lead. He can complain to the referee.'));
+          s.on('damage', ({ target, source }) => { if (target === s.player && source === ace.leader) s.after(2, () => join('Lead\'s hit! Halyard 2 is in, breaking his rules and mine.')); });
+        }
         s.chat([
           [0.5, 'awacs', 'New contact, single, fast, {dir}. That\'s him.', { priority: 2, vars: { dir: q && s.player ? clockDir(s.player.state, q.state.position) : 'high' } }],
           [4, 'ace', 'Hilt flight, clear the stage. Halyard 1, shall we?', { voice: 'enemy', team: 'red' }],
           [6, wing.leader || 'awacs', 'Lead, we\'ll keep the rest off you. Go.'],
         ]);
       };
-      s.trigger({ or: [{ dead: hilt, count: Math.max(1, hilt.size - 1) }, { after: s.n(200, 170, 150) }] }, arrive);
+      s.trigger({ or: [{ dead: hilt, count: Math.max(1, hilt.size - 1) }, { after: s.n(200, 170, 150) }] }, () => {
+        arrive();
+        // he came to be photographed, not to run dry: after a while Quillon calls it and leaves
+        s.countdown(s.n(330, 300, 270), 'Quillon bingo', () => {
+          const q = ace.leader; if (q?.pilot) q.pilot.setOrder(s.orders.flee(0, 8000));
+          s.lose('Quillon got away', [[0.5, 'ace', 'Fuel, I am afraid. Another morning, Halyard 1. Do practise.', { voice: 'enemy', team: 'red' }], [4, 'awacs', 'He\'s extending north, too fast to catch. Bring it home, {cs}.']]);
+        });
+      });
       let said66 = false, said33 = false, hitT = -99;
       s.on('damage', ({ target, source }) => {
         const q = ace.leader; if (!q) return;
