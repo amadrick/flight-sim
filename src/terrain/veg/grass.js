@@ -33,6 +33,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
       tTerrH: uniforms.tTerrH, tTerrD: uniforms.tTerrD, tTerrNoise: uniforms.tTerrNoise, uTerrLvl: uniforms.uTerrLvl,
       uTerrCam: uniforms.uTerrCam, uTerrLod: uniforms.uTerrLod, uTerrTile: uniforms.uTerrTile, uTerrRw: uniforms.uTerrRw,
       uTerrRwL: uniforms.uTerrRwL, uOrigin: uniforms.uOrigin, uSunDir: uniforms.uSunDir, uTerrShadowOn: uniforms.uTerrShadowOn,
+      tAirMap: uniforms.tAirMap, uAirMap: uniforms.uAirMap, uAirInfo: uniforms.uAirInfo,
       ...GU,
     },
     vertexShader: FULLSCREEN_VERT,
@@ -79,7 +80,14 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         float hgt = mix(0.35, 0.75, n3.g) * (1.0 - 0.5 * alpine);
         float kind = 0.0;
         float turf = C.pad * (1.0 - desertAmt);
-        if (turf > 0.5) { hgt = mix(0.16, 0.30, n4.r) * mix(1.0, 1.8, ss(120.0, 400.0, pave)); kind = 1.0; dens = (1.0 - desertAmt) * ss(3.0, 8.0, pave) * (0.75 + 0.25 * n3.r); }
+        if (turf > 0.5) {
+          // airfield: the mown sward is the turf shells' (veg/turf.js); tufts only stand in the long-grass zones
+          // (seed heads, docks, thistles), sparse, never on or right beside the pavement
+          float dA = min(airMap(rxz).x, pave);
+          float longZ = ss(60.0, 130.0, dA + 40.0 * (n2.r - 0.5));
+          hgt = mix(0.22, 0.45, n4.r); kind = 1.0;
+          dens = (1.0 - desertAmt) * ss(3.0, 8.0, dA) * longZ * (0.18 + 0.30 * n3.r);
+        }
         float reedP = ss(0.03, 0.15, water) * (1.0 - ss(0.45, 0.6, water)) * (1.0 - C.pad);
         vec2 hh = vegHash(cellI + 5000.0);
         if (reedP > hh.y * 0.8) { hgt = mix(1.3, 2.1, n4.b); kind = 2.0; dens = reedP; }
@@ -152,7 +160,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         // the surface shader's grass colours (meadow / turf / reeds), slightly brighter toward the tips
         vec3 gc = mix(vec3(0.046, 0.082, 0.024), vec3(0.092, 0.128, 0.042), vGM.a);
         gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
-        if (vGM.g > 0.5 && vGM.g < 1.5) gc = vec3(0.070, 0.112, 0.036) * (0.9 + 0.2 * vGM.a);
+        if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.062, 0.105, 0.034), vec3(0.150, 0.135, 0.075), 0.45 * vGM.a + 0.2) * (0.9 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);
         gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.8, 1.08, vGFade.y);
         gc *= 0.8 + 0.4 * vGM.w;      // per-tuft variation

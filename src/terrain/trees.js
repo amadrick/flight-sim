@@ -21,6 +21,7 @@ import { createCommonUniforms, vegDebug } from './veg/common.js';
 import { createNearTrees } from './veg/near.js';
 import { createFarTrees } from './veg/far.js';
 import { createGrass } from './veg/grass.js';
+import { createTurf, TURF_TIERS } from './veg/turf.js';
 import { TREE_CELL } from './veg/species.js';
 import { createVegNeural } from '../neural/veg.js';
 
@@ -35,7 +36,7 @@ const TIERS = {
 
 let shared = null;      // meshes / atlases survive quality changes (rebuilding them is the expensive part of boot)
 
-export function createTrees(ctx, { L, uniforms }) {
+export function createTrees(ctx, { L, uniforms, airfield = null }) {
   const t0 = performance.now();
   const raw = ctx.params.raw || {};
   const tier = { ...(TIERS[ctx.quality.level] || TIERS.medium) };
@@ -77,6 +78,11 @@ export function createTrees(ctx, { L, uniforms }) {
   const near = Gn ? createNearTrees(ctx, { L, Gn, U, neuralGLSL: nn.glsl }) : null;
   const far = createFarTrees(ctx, { L, G, U, imp, neuralGLSL: nn.glsl, blend: tier.blend });
   const grass = tier.grass ? createGrass(ctx, { L, Gg: tier.grass, uniforms, U }) : null;
+  // near-field 3-D airfield turf (shells); turf=0 turns it off
+  const turfTier = raw.turf === '0' || !airfield ? null : TURF_TIERS[ctx.quality.level] || null;
+  const turf = turfTier ? createTurf(ctx, { L, tier: turfTier, uniforms, U, airfield }) : null;
+  uniforms.uTurfShell.value.set(turf ? 1 : 0, turfTier ? turfTier.R : 0, 0, 0);
+  if (turf) group.add(turf.mesh);
   if (near) group.add(near.mesh);
   group.add(far.mesh);
   if (grass) group.add(grass.mesh);
@@ -131,11 +137,14 @@ export function createTrees(ctx, { L, uniforms }) {
       U.uVegSeason.value.x = Math.max(0, Math.min(1, (doy - 262) / 30)) * (1 - Math.max(0, Math.min(1, (doy - 325) / 20)));
       if (near) { near.update(camWX, camWZ); near.mesh.castShadow = shadowsOn(); }
       if (grass) grass.update(camWX, camWZ, org, Hd);
-      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0);
-      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0);
+      if (turf) { turf.update(camWX, camWZ, org, Hd); uniforms.uTurfShell.value.x = turf.mesh.visible ? 1 : 0; }
+      stats.drawCalls = (near ? (shadowsOn() ? 2 : 1) : 0) + 1 + (grass && grass.mesh.visible ? 1 : 0) + (turf && turf.mesh.visible ? 1 : 0);
+      stats.trianglesSubmitted = nearTris + G * G * 2 + (grass && grass.mesh.visible ? tier.grass ** 2 * 6 : 0) + (turf && turf.mesh.visible ? turf.stats.triangles : 0);
+      stats.turf = turf ? turf.stats : null;
     },
     dispose() {
-      placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose();
+      placement.dispose(); near?.dispose(); far.dispose(); grass?.dispose(); turf?.dispose();
+      uniforms.uTurfShell.value.x = 0;
       uniforms.uTerrTree.value.x = 0;
     },
   };

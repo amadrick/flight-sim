@@ -16,6 +16,7 @@
 import { groundEcoGLSL } from '../neural/ground-cover.js';
 import { CLASSIC_COVER_GLSL, CLASSIC_SURFACE_GLSL } from './ground-classic.glsl.js';
 import { SETTLE_GLSL } from './settle.js';
+import { AIRFIELD_GLSL } from './airfield.js';
 
 /** GLSL for the vertex stage of the terrain (and anything else that wants the learned cover): TerrEco terrEco(rxz, h). */
 export const ECO_GLSL = groundEcoGLSL();
@@ -30,6 +31,7 @@ uniform vec4 uTerrRw[8];         // runways: xy = centre (render-space xz), zw =
 uniform float uTerrRwL[8];       // runway half lengths (0 = unused slot)
 uniform vec3 uSunDir;
 uniform float uTerrShadowOn;
+${AIRFIELD_GLSL}
 
 vec2 terrHash2(vec2 p) {
   uvec2 q = uvec2(ivec2(p));
@@ -139,17 +141,22 @@ TerrCover terrCoverEco(vec2 rxz, float h, vec3 n, float curv, float arid, float 
   C.mac = terrMacro(rxz + uOrigin.xz, distance(rxz, uTerrCam.xz));
   float macro2 = n0.g * 0.6 + C.mac.y * 0.4;
   // airfields: keep fields and woods clear of the runways (the scenery module builds on this ground)
-  float rwd = 1.0e6;
+  float rwd = 1.0e6, rwApp = 1.0e6;
   for (int i = 0; i < 8; i++) {
     if (uTerrRwL[i] > 0.0) {
       vec2 q = rxz - uTerrRw[i].xy;
       float al = dot(q, uTerrRw[i].zw);
       vec2 perp = q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 250.0, uTerrRwL[i] + 250.0);
       rwd = min(rwd, length(perp));
+      rwApp = min(rwApp, length(q - uTerrRw[i].zw * clamp(al, -uTerrRwL[i] - 1100.0, uTerrRwL[i] + 1100.0)));
     }
   }
   float padR = mix(760.0, 230.0, C.tropic);           // small islands: only the strip itself is kept clear
   C.pad = 1.0 - ss(padR, padR * 1.32, rwd + mix(260.0, 70.0, C.tropic) * (n1.r - 0.5) + mix(120.0, 60.0, C.tropic) * (n2.r - 0.5));
+  // around the mapped airport the airside ends at the perimeter fence (airfield.js): fields, hedges and woods come up
+  // to it; the approach corridors (1.1 km beyond the runway ends, 150 m either side) stay open
+  float aside = airSide(rxz);
+  if (aside >= 0.0) C.pad = max(aside, (1.0 - ss(150.0, 230.0, rwApp + 60.0 * (n2.r - 0.5))) * (1.0 - C.tropic));
   // climatic tree line (trees near it are stunted); where trees actually stand is the network's business
   C.treeline = 2180.0 + 2.0 * clamp(latK + 95.0, -200.0, 200.0) + 260.0 * (C.mac.x - 0.5) + 90.0 * (n2.g - 0.5);
   float open = (1.0 - C.pad) * (1.0 - water) * ss(1.2, 3.2, h);
@@ -249,8 +256,14 @@ const float TERR_ANISO = 3.0;
 const float TERR_ANISO = 1.5;
 #endif
 uniform float uTerrWet;          // rain: 0 dry .. 1 soaked ground
+// airfield turf (set by terrSurface, read by the turf reflectance): cover, lay direction (world xz), lay 0..1, sward height (m)
+float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; float gTurfH = 0.06;
+// diffuse albedo the turf colours are written relative to (hemispherical albedo of the traced reference sward)
+const vec3 TURF_REF = vec3(0.072, 0.100, 0.042);
+uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m)
+float gGrassK = 0.0;             // natural grass share of the pixel (gets the long-sward reflectance)
 
-struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
+struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; float specK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
 
 const float M_GRASS = 0.0, M_SOIL = 1.0, M_GRAVEL = 2.0, M_ROCK = 3.0, M_SAND = 4.0, M_MUD = 5.0, M_CANOPY = 6.0, M_STRATA = 7.0;
 // per material: x = tint amplitude, y = cavity (height) darkening, z = detail normal strength, w = roughness
@@ -634,16 +647,48 @@ TerrSurf terrSurface(vec3 rp) {
     col = mix(col, c, disc * pivPot);
     if (disc * pivPot > 0.5) mat = M_GRASS;
   }
-  // airport turf: mown grass where the climate grows any (elsewhere the pad keeps its natural surface)
+  // ---- airfield grass -----------------------------------------------------------------------------------------
+  // Mown in long passes parallel to the runway (every other pass lays the blades the other way: the stripes are a
+  // view-dependent effect, see the turf reflectance below), short in the graded strip next to the pavement and left
+  // long further out (bird control), clumpy, with dry knolls, weedy patches and a worn, gritty verge at the pavement
+  // edge. Distances to the pavement come from the airfield map (airfield.js).
   float turf = pad * (1.0 - desertAmt) * (1.0 - ss(1.0, 3.0, 4.0 - h));
-  vec3 turfCol = vec3(0.070, 0.112, 0.036) * (0.86 + 0.28 * n3.r) * (0.9 + 0.2 * n4.g);
-  turfCol *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);      // mowing stripes
-  turfCol = mix(turfCol, grassDry * 0.9, ss(0.5, 0.75, n2.r * 0.6 + n4.g * 0.4) * 0.35);
-  // worn, thin patches showing soil close up
-  float thin = ss(0.66, 0.82, bk2) * 0.5 * near5;
-  turfCol = mix(turfCol, vec3(0.150, 0.115, 0.080), thin);
-  col = mix(col, turfCol, turf * 0.9);
-  if (turf > 0.5) mat = thin > 0.3 ? M_SOIL : M_GRASS;
+  gTurfAmt = 0.0;
+  if (turf > 0.001) {
+    vec2 am = airMap(rp.xz);
+    float dP = am.x;
+    TurfP TP = turfPlan(w, dP, n2.r, n2.g, n3.r);
+    float longG = TP.longG, since = TP.since, pf = TP.pf, passW = TP.passW;
+    gTurfH = TP.H; gTurfLay = TP.lay; gTurfDir = TP.dir;
+    vec3 tc = TURF_REF;
+    // clumps and tussocks (0.3 - 4 m), patchy growth (20 - 100 m)
+    float clump = 0.55 * (n5.g - 0.5) * near5 + 0.6 * (n4.r - 0.5) * near4 + 0.5 * (n3.g - 0.5) + 0.35 * (C.mac.y - 0.5);
+    tc *= clamp(1.0 + 0.45 * clump, 0.6, 1.5);
+    // dry, straw-coloured knolls; seed heads in the long grass; dark clover and weeds in the short sward
+    float dryP = ss(0.56, 0.80, n2.r * 0.45 + n3.b * 0.35 + (near4 * (n4.g - 0.5) + 0.5) * 0.2) * (0.45 + 0.4 * longG) * (1.0 - 0.6 * lush * lush);
+    tc = mix(tc, grassDry * 0.8, dryP);
+    tc = mix(tc, vec3(0.150, 0.135, 0.078), longG * 0.28 * ss(0.35, 0.8, n4.b * near4 + 0.5 * (1.0 - near4)));
+    tc = mix(tc, vec3(0.036, 0.080, 0.028), (1.0 - longG) * ss(0.60, 0.82, n4.a * 0.6 * near4 + 0.3 * (1.0 - near4) + n3.a * 0.4) * 0.55);
+    // mower wheel tracks along the pass edges (flattened, a touch paler), only while resolved
+    float trk = terrLine(abs(pf - 0.5) * passW - (0.5 * passW - 0.45), 0.18, px) * ss(1.5, 0.4, px) * (1.0 - longG) * (1.0 - since);
+    tc *= 1.0 + 0.10 * trk;
+    // worn verge: thin turf over soil and grit washed off the pavement, then the shadowed drop at the edge itself
+    float edge = ss(2.6 + 1.6 * (n4.g - 0.5) * near4 + 1.0 * (n3.r - 0.5), 0.15, dP);
+    vec3 grit = mix(vec3(0.150, 0.128, 0.094), vec3(0.205, 0.195, 0.175), ss(0.3, 0.7, n5.r * near5 + 0.5 * (1.0 - near5))) * (0.85 + 0.3 * n4.b);
+    float bare = edge * (0.35 + 0.55 * ss(0.35, 0.75, n4.r * 0.5 * near4 + 0.25 + n5.b * 0.5 * near5 + 0.25 * (1.0 - near5)));
+    tc = mix(tc, grit, bare);
+    float lip = ss(0.40, 0.0, dP) * ss(-0.3, -0.05, dP);
+    tc *= 1.0 - 0.5 * lip;
+    // turf without an airfield map (other airports, classic fallback): the old diagonal stripe tint
+    if (uAirInfo.z < 0.5) tc *= 0.94 + 0.12 * step(0.5, fract((w.x + w.y) / 14.0)) * ss(6.0, 1.0, px);
+    // under the 3-D shells (near the camera) the ground between the blades is thatch and shade
+    float shellK = uTurfShell.x * (1.0 - ss(uTurfShell.y * 0.45, uTurfShell.y * 0.85, distance(rp.xz, uTerrCam.xz))) * (1.0 - bare);
+    tc = mix(tc, vec3(0.050, 0.052, 0.030), shellK * 0.55);
+    col = mix(col, tc, turf * 0.95);
+    rough = mix(rough, mix(0.95, 0.88, bare), turf);
+    gTurfAmt = turf * (1.0 - bare);
+    if (turf > 0.5) mat = bare > 0.45 ? M_GRAVEL : M_GRASS;
+  }
 
   // ---- scree and bare rock: where the simulation strips the soil, plus anything too steep to hold it ------------
   // talus tongues run down the chutes; ribs of rock stand between them
@@ -671,8 +716,10 @@ TerrSurf terrSurface(vec3 rp) {
   float steep = ss(0.24, 0.50, slope);
   if (rockAmt > 0.5) mat = M_ROCK;
 
+  gGrassK = grassAmt * (1.0 - cropAmt) * (1.0 - washAmt) * (1.0 - rockAmt) * (1.0 - screeAmt) * (1.0 - turf) * (1.0 - 0.6 * shrubAmt);
   // painted forest canopy goes over ground, scree and low outcrops (but not over cliffs)
   paint *= 1.0 - steepPix;
+  gGrassK *= 1.0 - paint;
   col = mix(col, fcol, paint);
   rough = mix(rough, 0.95, paint);
   if (paint > 0.5) mat = M_CANOPY;
@@ -1028,11 +1075,39 @@ TerrSurf terrSurface(vec3 rp) {
   float nl = dot(ng, uSunDir);
   S.shadow = nl > 0.0 ? mix(1.0, terrShadow(rp, ng, lf, TERR_SHADOW_STEPS), ss(0.0, 0.10, nl)) : 1.0;
   S.emis = vec3(0.0);
+  S.specK = 1.0;
   S.shadow *= microSh;
+#ifdef TERR_TURF
+  // grass is a canopy of blades, not paint: the learned turf reflectance (src/neural/ground-turf.js) gives the
+  // directional behaviour (hot spot down-sun, dark and sheeny into the sun, mowing stripes from the lay) and the
+  // sky-light response, both relative to the albedo the colours above are written against
+  float turfK = clamp(gTurfAmt, 0.0, 1.0), grassK = clamp(gGrassK, 0.0, 1.0) * (1.0 - turfK);
+  turfK *= (1.0 - snow) * (1.0 - wsurf); grassK *= (1.0 - snow) * (1.0 - wsurf);
+  float bK = turfK + grassK;
+  if (bK > 0.002 && uTurfSky.w > 0.5) {
+    // corner A = freshly mown and laid (lay 0.5, 4.5 cm), B = long, nearly upright (lay 0.12, 13 cm)
+    float tL = (turfK * clamp((0.50 - gTurfLay) / 0.38, 0.0, 1.0) + grassK) / bK;
+    vec4 TR = turfReflectance(ng, Vw, uSunDir, turfK > grassK ? gTurfDir : vec2(1.0, 0.0), tL);
+    vec3 skyK = TR.a * uTurfSky.rgb, sunK = TR.rgb;
+    vec3 ref = mix(uTurfRefA, uTurfRefB, tL);
+    // brightness from the networks, colour mostly from the painted albedo (the traced leaf optics are one cultivar;
+    // 30 % of the traced chroma change is kept: yellower toward the sheen, bluer-green down-sun)
+    const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
+    vec3 skyR = skyK / ref, sunR = sunK / max(skyK, vec3(1.0e-4));
+    skyR = mix(vec3(dot(skyR, LUM)), skyR, 0.3);
+    sunR = mix(vec3(dot(sunK, LUM) / max(dot(skyK, LUM), 1.0e-4)), sunR, 0.3);
+    S.albedo = mix(S.albedo, S.albedo * skyR, bK);
+    S.canopyK *= mix(vec3(1.0), sunR, bK);
+    S.specK = 1.0 - 0.85 * bK;                         // the cuticle sheen is part of the learned BRF
+  }
+#endif
 #ifdef TERR_MICRO
   // relief this pixel no longer resolves (the 4 m detail scale has faded): the learned micro-relief transfer gives
   // its mean effect on direct light, so the far field keeps the directional behaviour of the near field
   float sig = TERR_SIG[int(mat)] * (1.0 - fade4) * (1.0 - 0.7 * snow) * (1.0 - wsurf) * (1.0 - playa);
+#ifdef TERR_TURF
+  sig *= 1.0 - clamp(gTurfAmt + gGrassK, 0.0, 1.0);    // the turf reflectance already holds the canopy's self-shadowing
+#endif
 #ifdef TERR_SETTLE
   sig *= 1.0 - paved;
 #endif
