@@ -380,9 +380,9 @@ export function createPilot(combat, team, e, o = {}) {
     // hold it to the merge and fight (turn fighters, unsure pilots) or shoot (aces early, cautious pilots)
     if (mergeHoldTgt !== T) {
       mergeHoldTgt = T;
-      const pBase = skill > 0.75 ? 0.5 : skill > 0.4 ? 0.65 : 0.7;
+      const pBase = 0.7;
       const pPers = personality === 'turn' ? 0.25 : personality === 'cautious' ? -0.3 : personality === 'energy' ? -0.1 : 0;
-      mergeHold = rng() < clamp(pBase + pPers, 0.05, 0.95) ? 1 : 0;
+      mergeHold = !isEasy(T) && rng() < clamp(pBase + pPers, 0.05, 0.95) ? 1 : 0;   // bombers, drones: no reason to wait
     }
     if (!L || L.state !== 'locked' || L.target !== T) { lockSince = -1; return; }
     if (lockSince < 0) lockSince = t;
@@ -406,15 +406,15 @@ export function createPilot(combat, team, e, o = {}) {
       if (asp > 140 * DEG && r > 1500) return;           // head-on IR shots only very close (the seeker sees the hot nose badly)
       if (geo.ata > lerp(35, 18, clamp((skill - 0.2) / 0.7, 0, 1)) * DEG) return;
       // a bandit in a hard turn out-turns the seeker: skilled pilots wait for it to ease off or for a tail-on shot
-      if (skill > 0.4 && (T.state.gLoad || 1) > 5.5 && asp > 45 * DEG && r > rMin * 1.6) return;
+      if (!isEasy(T) && skill > 0.4 && (T.state.gLoad || 1) > 5.5 && asp > 45 * DEG && r > rMin * 1.6) return;
       // in the turning fight, skilled pilots wait for a rear-quarter shot (the beam / front shots get flared or out-turned)
-      if (r < 4000 && asp > lerp(150, 75, clamp((skill - 0.2) / 0.7, 0, 1)) * DEG && r > rMin * 1.6) return;
+      if (!isEasy(T) && r < 4000 && asp > lerp(150, 75, clamp((skill - 0.2) / 0.7, 0, 1)) * DEG && r > rMin * 1.6) return;
     } else if (geo.closure < -100 && r > rNe) return;          // running target: wait for the no-escape zone
     if (r < rMin || r > Math.min(rShot, rMax)) return;
     // holding to the merge: no shots in the forward hemisphere until the pass is over
     if (mergeHold === 1) { if (tmpGeo.range < 2000 || tmpGeo.ata > 90 * DEG) mergeHold = 0; else if (asp > 100 * DEG) return; }
     // first exchange defeated: it becomes a turning fight; only a good rear-quarter shot for a while
-    if (t - missedT < lerp(35, 15, skill) && !(asp < 70 * DEG && r < Math.max(rNe, rMin * 2))) return;
+    if (!isEasy(T) && t - missedT < lerp(35, 15, skill) && !(asp < 70 * DEG && r < Math.max(rNe, rMin * 2))) return;
     // one missile at a time at the same target (aces fire a second after a while)
     if (inFlight > (skill > 0.75 && t - lastShot > 10 ? 1 : 0)) return;
     // do not shoot when a friendly is close to the target (IR seekers switch, radar fuzes)
