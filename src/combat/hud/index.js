@@ -248,7 +248,14 @@ export async function createCombatHud(combat) {
     if (!simHint) simHint = doc.querySelector('.hud-hint');
     const up = !!simHint && !simHint.hidden && !simHint.classList.contains('off');
     const want = up ? simHint.offsetHeight + 10 : 0;
-    if (want !== hintShift) { hintShift = want; panels.left.style.transform = want ? `translateY(${want}px)` : ''; panels.setHintsBlocked(up); }
+    if (want !== hintShift) {
+      hintShift = want;
+      // step below the card; when that would run into the bottom of the screen, wait (hidden) until the card goes
+      const room = want && want + panels.left.offsetHeight + 16 > stripTop(H.W, H.H) - 8;
+      panels.left.style.transform = want && !room ? `translateY(${want}px)` : '';
+      panels.left.style.visibility = room ? 'hidden' : '';
+      panels.setHintsBlocked(up);
+    }
   }
 
   let shown = false, frame = 0;
