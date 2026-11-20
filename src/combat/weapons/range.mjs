@@ -14,7 +14,7 @@ import { flyout, buildTable, launchZone } from './missile.js';
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf('--' + n); return i >= 0 ? +args[i + 1] : d; };
 const isMain = process.argv[1] && process.argv[1].endsWith('range.mjs');
-const want = (n) => isMain && (!args.some((a) => ['gun', 'ir', 'radar', 'flyout'].includes(a)) || args.includes(n));
+const want = (n) => isMain && (!args.some((a) => ['gun', 'ir', 'radar', 'flyout', 'htk'].includes(a)) || args.includes(n));
 const N = flag('n', 6), ALT = flag('alt', 5000), QUICK = args.includes('--quick');
 const DT = 1 / 60, G = 9.80665;
 const FWD = new THREE.Vector3(0, 0, -1), UP = new THREE.Vector3(0, 1, 0), RIGHT = new THREE.Vector3(1, 0, 0);
@@ -182,18 +182,19 @@ async function gunRun(range, turnG, seed, gun = 'm61', targetId = 'f16', hitOnly
     shooter.forward.copy(FWD).applyQuaternion(ss.quaternion); shooter.up.copy(UP).applyQuaternion(ss.quaternion); shooter.right.copy(RIGHT).applyQuaternion(ss.quaternion);
   };
   if (hitOnly) target.invulnerable = true;
-  let hits = 0, shots0 = shooter.loadout.gun.rounds, ttk = null, t0 = c.clock;
+  let hits = 0, shots0 = shooter.loadout.gun.rounds, ttk = null, t0 = c.clock, htk = null, firstSmoke = null;
+  const offS = c.events.on('bullet:hit', (p) => { if (p.target === target && firstSmoke == null && (target.damage.smoke > 0.05 || target.damage.leak > 0 || target.damage.fire > 0)) firstSmoke = hits + 1; });
   const off = c.events.on('bullet:hit', (p) => { if (p.target === target) hits++; });
   shooter.trigger = true;
   for (let i = 0; i < (hitOnly ? 1.5 : 4) / DT; i++) {
     c.clock += DT; world.stepAircraft(DT); place(); W.update(DT);
-    if (!target.alive) { ttk = c.clock - t0; break; }
+    if (!target.alive) { ttk = c.clock - t0; htk = hits; break; }
   }
   shooter.trigger = false;
   // let the remaining rounds arrive for the hit count
   for (let i = 0; i < 2 / DT && target.alive; i++) { c.clock += DT; world.stepAircraft(DT); place(); W.update(DT); }
-  off();
-  return { shots: shots0 - shooter.loadout.gun.rounds, hits, ttk };
+  off(); offS();
+  return { shots: shots0 - shooter.loadout.gun.rounds, hits, ttk, htk, firstSmoke };
 }
 
 const pct = (x) => (x * 100).toFixed(0).padStart(4) + '%';
@@ -241,6 +242,21 @@ if (want('gun')) {
   }
 }
 
+async function hitsToKill() {
+  console.log(`\n## Hits to kill (perfect tracking from 300 m astern, straight target, n=${N}): mean hits at the kill (first visible damage at hit #)`);
+  const tg = ['f16', 'f15', 'a10', 'c17', 'b738'];
+  console.log('gun        ' + tg.map((t) => pad(t, 14)).join(''));
+  for (const gun of ['m61', 'gau22', 'gau8']) {
+    const cells = [];
+    for (const id of tg) {
+      let h = 0, k = 0, fs = 0, nf = 0;
+      for (let i = 0; i < N; i++) { const r = await gunRun(300, 1, 400 + i, gun, id); if (r.htk != null) { h += r.htk; k++; } if (r.firstSmoke != null) { fs += r.firstSmoke; nf++; } }
+      cells.push(`${k ? (h / k).toFixed(1) : '>' } (${nf ? (fs / nf).toFixed(1) : '-'})`);
+    }
+    console.log(pad(gun, 6) + '     ' + cells.map((x) => pad(x, 14)).join(''));
+  }
+}
+
 async function missileTable(type, modes, ranges, aspects) {
   const S = MISSILES[type];
   console.log(`\n## ${S.name}: kill probability (hit probability), F-16 vs F-16 at ${ALT} m, 250 m/s, n=${N}. '·' = no seeker lock at launch range`);
@@ -268,6 +284,7 @@ async function missileTable(type, modes, ranges, aspects) {
   console.log('miss letter: most common miss reason (e energy, d decoyed, l lost, t timeout, g ground)');
 }
 
+if (want('htk')) await hitsToKill();
 if (want('ir')) {
   const ranges = QUICK ? [1500, 3000, 4500, 6000] : [1000, 2000, 3000, 4500, 6000, 8000, 10000];
   await missileTable('ir', ['straight', 'break', 'beam', 'flares'], ranges, QUICK ? [0] : [0, 90, 180]);

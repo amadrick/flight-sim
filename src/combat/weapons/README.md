@@ -21,7 +21,7 @@ Guns, missiles, flares, hit detection, the damage model and per-aircraft loadout
 - `flares[]` holds flare entities: `kind 'flare', owner, age, life`, plus `heat` (0..1 for fx) and `intensity`.
 - `equip(e, overrides)`: overrides can include `{ gun (rounds), gunType, ir, radar, flares, hp, invulnerable }`.
   - `e.loadout = { gun: { type, name, spec, rounds, max, firing, spin, heat }, missiles: { ir, radar }, missilesMax, flares, flaresMax, selected }`
-  - `e.lock = { target, state, progress, seeker, inRange, range, rMin, rMax, rNe, tti, closure, aspect (0 = tail-on), offBoresight }`. `tti` is 0 when out of reach.
+  - `e.lock = { target, state, progress, seeker, inRange, range, rMin, rMax, rNe, tti, closure, aspect (rad: 0 = shooter astern of the target / tail-on, π = head-on, same as `util.geometry`), offBoresight }`. `tti` is 0 when out of reach.
   - `e.damage = { smoke, fire, engineOut[], leak, fuelLost, pilot, parts: { fuselage, cockpit, wingL, wingR, tail, engines[] } }`, all 0..1.
 - `launchMissile(e, type?)` needs a lock. A type other than the selected one is allowed only if `canLock` passes for it now. Launches are at least 0.6 s apart. Without a lock it emits `weapon:nolock` and returns null. There is no boresight or dumb launch.
 - `dropFlares(e)` releases a pair. There is a 0.4 s cooldown.
@@ -49,8 +49,8 @@ Guns, missiles, flares, hit detection, the damage model and per-aircraft loadout
 
 These are new or extended; every listener tolerates extra fields.
 
-- `bullet:hit` `{ shooter, target, position, part, bodyPosition, gun }`
-- `bullet:near` `{ target, shooter, position, distance }`: throttled to once per 0.35 s per target
+- `bullet:hit` `{ shooter, target, position, part, bodyPosition, gun, damage (hp removed), hp, killed }`, emitted after the damage is applied
+- `bullet:near` `{ target, shooter, position, distance }`: fires for any aircraft, the player included, when a round passes within about 14 m of its hit shape without hitting. Throttled to once per 0.35 s per target
 - `bullet:ground` `{ position, shooter, gun }`: throttled to once per 0.07 s per shooter
 - `damage` `{ …, part }`
 - `kill` info: `{ part, cause, assists[], disintegrated?, pilotKilled?, distance? }`. Collisions give `weapon: 'collision'` and `info.other`.
@@ -63,6 +63,18 @@ These are new or extended; every listener tolerates extra fields.
 - `fire:start` `{ target }`, `engine:out` `{ target, index }`, `collision` `{ a, b, position }`
 - `rwr:spike` `{ source, target }`: a radar starts acquiring `target` (the earliest warning, about 1.8 s before `rwr:lock`)
 - `rearm` `{ entity, loadout }`
+
+## Kill credit
+
+`lastHitBy` / `lastHitWeapon` / `lastHitT` are set on every hit that has a source (gun, missile blast, scripted damage with
+`source`). Fire damage over time keeps the attacker who started it. Credit expires `CREDIT_WINDOW` (30 s, in `damage.js`)
+after the last hit, but not while the aircraft is still burning. A clean terrain crash long after a scratch is therefore credited to nobody.
+
+## Gun lethality
+
+Damage per round: 20 mm 13, 25 mm 19, 30 mm 34 (× 0.75–1.25, × part multiplier). Hits to kill, perfect tracking from 300 m astern:
+F-16 ≈ 7, F-15 ≈ 10, A-10 ≈ 20, C-17 ≈ 36, 737 ≈ 16 with the 20 mm; the 30 mm needs about 3 / 5 / 8 / 14 / 6. Visible damage
+(smoke, leak or fire) shows from the first or second hit on fighters.
 
 ## Fairness for the human player
 
