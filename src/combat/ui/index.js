@@ -15,7 +15,7 @@ import { drawMap } from './map.js';
 import { createProgressStore } from './progress.js';
 import { installMenuHooks, HOOK_CSS } from './hooks.js';
 import {
-  DIFFICULTY, groupMissions, nextMission, conditionsLine, outcomeCopy, debriefDelay, statRows, breakdownRows,
+  DIFFICULTY, groupMissions, nextMission, firstRunMission, conditionsLine, outcomeCopy, debriefDelay, statRows, breakdownRows,
   group3, fmtTime, CUSTOM_DEFAULT, ADVANTAGES, RANGE_STEPS, ALT_STEPS, cleanCustom, nearestStep, fmtFt, fmtNm, isNum,
 } from './logic.js';
 
@@ -25,6 +25,7 @@ const svg = (inner, fill) => `<svg viewBox="0 0 24 24" aria-hidden="true" ${fill
 const IC = {
   check: svg('<path d="M5 12.5l4.2 4.2L19 7"/>'),
   medal: svg('<path d="M12 3.2l2.5 5.3 5.8.7-4.3 4 1.1 5.7L12 16.1 6.9 18.9 8 13.2 3.7 9.2l5.8-.7z"/>', true),
+  sliders: svg('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/>'),
   sound: svg('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/>'),
 };
 
@@ -59,20 +60,38 @@ export async function createCombatUi(combat) {
 
   // ---- settings (remembered) --------------------------------------------------------------------------
   if (!DIFF_IDS.includes(raw.difficulty)) { const d = store.getSetting('difficulty'); if (DIFF_IDS.includes(d)) combat.difficulty = d; }
+  // Combat settings: one record in the progress store, applied at boot, live on change and again on every mission start.
+  // Camera keys (camKillCam / camFeel) are the ones src/combat/camera reads from this same store.
+  const num01 = (k, d) => { const v = Number(store.getSetting(k, d)); return Number.isFinite(v) ? clamp(v, 0, 1) : d; };
   const settings = {
     musicOn: store.getSetting('musicOn', true) !== false,
-    musicVolume: clamp(Number(store.getSetting('musicVolume', 0.7)) || 0, 0, 1),
+    musicVolume: num01('musicVolume', 0.7),
     radioVoice: store.getSetting('radioVoice', true) !== false,
+    radioVolume: num01('radioVolume', 1),
+    sfxVolume: num01('sfxVolume', 1),
+    camKillCam: store.getSetting('camKillCam', true) !== false,
+    camFeel: store.getSetting('camFeel', true) !== false,
   };
   function applyAudio() {
-    const a = combat.audio; if (!a) return;
-    try {
-      if ('musicEnabled' in a || typeof a.setMusicEnabled !== 'function') a.musicEnabled = settings.musicOn;
-      a.setMusicEnabled?.(settings.musicOn);
-      a.setMusicVolume?.(settings.musicOn ? settings.musicVolume : 0);
-      a.setRadioVoice?.(settings.radioVoice);
-    } catch (e) { console.warn('[combat ui] audio settings', e); }
+    const a = combat.audio;
+    if (a) {
+      try {
+        if (typeof a.setMusicEnabled === 'function') a.setMusicEnabled(settings.musicOn); else a.musicEnabled = settings.musicOn;
+        a.setMusicVolume?.(settings.musicVolume);
+        a.setRadioVoice?.(settings.radioVoice);
+        a.setRadioVolume?.(settings.radioVolume);
+        a.setSfxVolume?.(settings.sfxVolume);
+      } catch (e) { console.warn('[combat ui] audio settings', e); }
+    }
+    const c = combat.camera;   // created after the UI: applied lazily (mission start, every change)
+    if (c) {
+      try {
+        if (c.killCam !== settings.camKillCam) c.setKillCam?.(settings.camKillCam);
+        if (c.feel !== settings.camFeel) c.setFeel?.(settings.camFeel);
+      } catch (e) { console.warn('[combat ui] camera settings', e); }
+    }
   }
+  function setSetting(k, v) { settings[k] = v; store.setSetting(k, v); applyAudio(); syncSettings(); }
   applyAudio();
   let custom = cleanCustom({ ...CUSTOM_DEFAULT, ...(store.getSetting('custom') || {}) });
   const acChoice = { ...(store.getSetting('aircraft') || {}) };
@@ -88,11 +107,12 @@ export async function createCombatUi(combat) {
   let last = null;              // { id, options, result, record } of the last decided mission
   let score = null;             // count-up { el, to, t, dur }
   let groups = [];
+  let starter = null;           // first run: the mission to start with (shows a 'Start here' hint)
   const downOpen = new Set();
 
   const ui = {
     isOpen: false,
-    update, openMissions, debrief: () => showDebrief(), close: () => { if (ui.isOpen) leaveTo(view === 'debrief' ? 'flight' : origin); },
+    update, openMissions, openSettings, debrief: () => showDebrief(), close: () => { if (ui.isOpen) leaveTo(view === 'debrief' ? 'flight' : origin); },
     get view() { return ui.isOpen ? view : null; },
     get progress() { return store; },
     settings,
@@ -107,8 +127,8 @@ export async function createCombatUi(combat) {
   const backBtn = h('button', { class: 'menu-back', id: 'cbt-ui-back', type: 'button', 'aria-label': 'Back', onclick: () => back() });
   const capTitle = h('span', { class: 'cbt-ui-captitle', text: 'Missions' });
   const capSub = h('span', { class: 'cbt-ui-capsub' });
-  const setBtn = h('button', { class: 'cbt-ui-iconcap glass-clear glass-lens', id: 'cbt-ui-settings-btn', type: 'button', 'aria-label': 'Combat sound settings', 'aria-pressed': 'false', onclick: () => toggleSettings() },
-    h('span', { html: IC.sound, style: 'display:contents' }), h('span', { text: 'Sound' }));
+  const setBtn = h('button', { class: 'cbt-ui-iconcap glass-clear glass-lens', id: 'cbt-ui-settings-btn', type: 'button', 'aria-label': 'Combat settings', 'aria-pressed': 'false', onclick: () => toggleSettings() },
+    h('span', { html: IC.sliders, style: 'display:contents' }), h('span', { text: 'Settings' }));
   const top = h('header', { class: 'cbt-ui-top' }, h('div', { class: 'cbt-ui-cap glass-clear' }, backBtn, capTitle, capSub), setBtn);
 
   // mission list
@@ -125,21 +145,30 @@ export async function createCombatUi(combat) {
   // settings
   const sw = (id, label, on, fn) => h('button', { class: 'menu-switch', id, type: 'button', role: 'switch', 'aria-label': label, 'aria-pressed': String(on), 'aria-checked': String(on), onclick: fn });
   const field = (t, d, ctl) => h('div', { class: 'menu-field' }, h('div', { class: 'menu-field-l' }, h('span', { class: 'menu-field-t', text: t }), d ? h('span', { class: 'menu-field-d', text: d }) : null), ctl);
-  const musicSw = sw('cbt-ui-music', 'Music', settings.musicOn, () => { settings.musicOn = !settings.musicOn; store.setSetting('musicOn', settings.musicOn); applyAudio(); syncSettings(); });
-  const radioSw = sw('cbt-ui-radio', 'Radio voice', settings.radioVoice, () => { settings.radioVoice = !settings.radioVoice; store.setSetting('radioVoice', settings.radioVoice); applyAudio(); syncSettings(); });
-  const volRange = h('input', { class: 'menu-range menu-range-plain', type: 'range', id: 'cbt-ui-musicvol', min: '0', max: '100', step: '1', 'aria-label': 'Music volume' });
-  const volRead = h('span', { class: 'menu-vol-read' });
-  volRange.addEventListener('input', () => { settings.musicVolume = +volRange.value / 100; applyAudio(); syncSettings(); });
-  volRange.addEventListener('change', () => store.setSetting('musicVolume', settings.musicVolume));
-  const setPanel = h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Combat sound' },
-    h('div', { class: 'menu-subhead' }, h('span', { class: 'menu-subtitle', text: 'Combat sound' })),
+  const ctlByKey = {};
+  const swField = (key, title, desc) => { const b = sw('cbt-ui-' + key, title, settings[key], () => setSetting(key, !settings[key])); ctlByKey[key] = b; return field(title, desc, b); };
+  const rangeField = (key, label) => {
+    const r = h('input', { class: 'menu-range menu-range-plain', type: 'range', id: 'cbt-ui-' + key, min: '0', max: '100', step: '1', 'aria-label': label });
+    const read = h('span', { class: 'menu-vol-read' });
+    r.addEventListener('input', () => { settings[key] = +r.value / 100; applyAudio(); syncSettings(); });
+    r.addEventListener('change', () => store.setSetting(key, settings[key]));
+    ctlByKey[key] = r; r._read = read;
+    return h('div', { class: 'menu-field cbt-ui-volfield' }, h('span', { class: 'cbt-ui-rl', text: label }), h('div', { class: 'menu-vol', style: 'flex:1' }, r, read));
+  };
+  const diffNote = h('p', { class: 'menu-note' });
+  const diffSeg = radios('Default difficulty', DIFFICULTY, combat.difficulty, (id) => { combat.difficulty = id; store.setSetting('difficulty', id); syncSettings(); }, 'menu-seg');
+  const setPanel = h('div', { class: 'menu-panel glass', role: 'region', 'aria-label': 'Combat settings' },
+    h('div', { class: 'menu-subhead' }, h('span', { class: 'menu-subtitle', text: 'Combat settings' })),
     h('div', { class: 'menu-scroll' },
-      h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Music' })),
-        h('div', { class: 'menu-group' }, field('Music', 'Score under the fight, louder when it heats up', musicSw),
-          h('div', { class: 'menu-field cbt-ui-volfield' }, h('div', { class: 'menu-vol', style: 'flex:1' }, volRange, volRead)))),
-      h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Radio' })),
-        h('div', { class: 'menu-group' }, field('Radio voice', 'Spoken calls from flight, controller and bandits. Subtitles always show.', radioSw))),
-      h('p', { class: 'menu-note', style: 'margin:0 12px 10px', text: 'Master volume is in the main Settings.' })));
+      h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Sound' })),
+        h('div', { class: 'menu-group' }, swField('musicOn', 'Music', 'Score under the fight, louder when it heats up'), rangeField('musicVolume', 'Music'),
+          swField('radioVoice', 'Radio voice', 'Spoken calls. Subtitles always show.'), rangeField('radioVolume', 'Radio'),
+          rangeField('sfxVolume', 'Effects'))),
+      h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Camera' })),
+        h('div', { class: 'menu-group' }, swField('camKillCam', 'Kill cam', 'A short outside shot when you shoot someone down'),
+          swField('camFeel', 'Camera shake', 'Gun shake, hit kicks and buffet. Off for a steady view'))),
+      h('div', { class: 'menu-sec' }, h('div', { class: 'menu-h' }, h('span', { text: 'Default difficulty' })), diffSeg, diffNote),
+      h('p', { class: 'menu-note', style: 'margin:0 12px 10px', text: 'Changes apply at once. Master volume is in the main Settings.' })));
   const vSettings = h('section', { class: 'cbt-ui-view cbt-ui-dock' }, setPanel);
   // debrief
   const debPanel = h('section', { class: 'menu-panel glass cbt-ui-debp', role: 'region', 'aria-label': 'Debrief' });
@@ -171,6 +200,7 @@ export async function createCombatUi(combat) {
         const tag = h('span', { class: 'cbt-ui-mtag' });
         if (best?.rating) tag.append(h('span', { class: 'cbt-ui-rate', 'data-r': best.rating, title: `Best rating ${best.rating}`, text: best.rating }));
         if (m.threat) tag.append(pips(m.threat));
+        if (!store.anyAttempt() && firstRunMission(combat.director?.missions)?.id === m.id) tag.prepend(h('span', { class: 'cbt-ui-start', text: 'Start here' }));
         const row = h('button', {
           class: 'menu-row cbt-ui-mrow' + (done ? ' done' : ''), type: 'button', role: 'option', id: 'cbt-ui-m-' + m.id, 'data-item': '1', 'data-mission': m.id,
           'aria-selected': 'false', tabindex: '-1', onclick: (e) => selectMission(m.id, e.detail === 0 ? 'key' : 'pointer'),
@@ -267,6 +297,7 @@ export async function createCombatUi(combat) {
     const best = store.best(m.id), done = store.completed(m.id);
     const kicker = h('div', { class: 'cbt-ui-kicker' }, h('span', { text: g?.label || m.category }), no ? h('span', { text: `· ${String(no).padStart(2, '0')}` }) : null,
       done ? h('span', { class: 'cbt-ui-done', text: '· Completed' }) : null);
+    const startHint = starter === m.id ? h('p', { class: 'cbt-ui-hint', text: 'Start here: the basics of the gun, against a target that does not shoot back.' }) : null;
     const facts = h('div', { class: 'cbt-ui-facts' },
       m.threat ? h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Threat' }), h('div', { class: 'cbt-ui-fact-v' }, pips(m.threat))) : null,
       m.minutes ? h('div', { class: 'cbt-ui-fact' }, h('div', { class: 'cbt-ui-fact-k', text: 'Length' }), h('div', { class: 'cbt-ui-fact-v' }, `≈ ${Math.round(m.minutes)}`, h('small', { text: 'min' }))) : null,
@@ -277,7 +308,7 @@ export async function createCombatUi(combat) {
     const cond = conditionsLine(m, AIRPORTS, WX_LABEL);
     mapCanvas = h('canvas', { class: 'cbt-ui-map', role: 'img', 'aria-label': 'Tactical map of the mission area' });
     briefBody.append(
-      h('div', { class: 'cbt-ui-bhead' }, kicker, h('h2', { class: 'cbt-ui-btitle', id: 'cbt-ui-btitle', text: m.title }), m.tagline ? h('p', { class: 'cbt-ui-tagline', text: m.tagline }) : null,
+      h('div', { class: 'cbt-ui-bhead' }, kicker, h('h2', { class: 'cbt-ui-btitle', id: 'cbt-ui-btitle', text: m.title }), startHint, m.tagline ? h('p', { class: 'cbt-ui-tagline', text: m.tagline }) : null,
         facts, cond ? h('div', { class: 'cbt-ui-cond', text: cond }) : null, mapCanvas));
     if (m.brief.length) briefBody.append(sec('Brief', ...m.brief.map(p => h('p', { class: 'cbt-ui-p', text: p }))));
     if (m.objectives.length) briefBody.append(sec('Objectives', h('ul', { class: 'cbt-ui-obj' }, m.objectives.map(o => h('li', { text: o })))));
@@ -316,17 +347,29 @@ export async function createCombatUi(combat) {
 
   // ---- settings view -------------------------------------------------------------------------------------------
   function syncSettings() {
-    for (const [b, on] of [[musicSw, settings.musicOn], [radioSw, settings.radioVoice]]) { b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-checked', String(on)); }
-    const v = Math.round(settings.musicVolume * 100);
-    if (document.activeElement !== volRange) volRange.value = String(v);
-    volRange.style.setProperty('--v', v + '%'); volRead.textContent = v + '%';
-    volRange.disabled = !settings.musicOn;
-    volRange.closest('.menu-field').style.opacity = settings.musicOn ? '' : '0.45';
+    for (const k of ['musicOn', 'radioVoice', 'camKillCam', 'camFeel']) { const b = ctlByKey[k]; b.setAttribute('aria-pressed', String(settings[k])); b.setAttribute('aria-checked', String(settings[k])); }
+    for (const [k, dep] of [['musicVolume', 'musicOn'], ['radioVolume', 'radioVoice'], ['sfxVolume', null]]) {
+      const r = ctlByKey[k], v = Math.round(settings[k] * 100);
+      if (document.activeElement !== r) r.value = String(v);
+      r.style.setProperty('--v', v + '%'); r._read.textContent = v + '%';
+      const off = !!dep && !settings[dep]; r.disabled = off; r.closest('.menu-field').style.opacity = off ? '0.45' : '';
+    }
+    setRadio(diffSeg, combat.difficulty);
+    diffNote.textContent = DIFFICULTY.find(d => d.id === combat.difficulty)?.note || '';
   }
   function toggleSettings() {
-    if (view === 'settings') { show(settingsFrom); focusView(); return; }
+    if (view === 'settings') { back(); return; }
     settingsFrom = view === 'debrief' ? 'debrief' : 'missions';
-    show('settings'); syncSettings(); focus(musicSw);
+    show('settings'); syncSettings(); focusView();
+  }
+  /** Open the combat settings directly (pause menu): Back returns where it came from. */
+  function openSettings() {
+    if (ui.isOpen) { if (view !== 'settings') toggleSettings(); return true; }
+    origin = ctx.menu?.isOpen ? (ctx.menu.view === 'pause' ? 'pause' : 'main') : (ctx.session?.active ? 'flight' : 'main');
+    settingsFrom = 'origin';
+    syncSettings();
+    enter('settings');
+    return true;
   }
 
   // ---- debrief -------------------------------------------------------------------------------------------------
@@ -371,7 +414,7 @@ export async function createCombatUi(combat) {
     const nxt = oc.ok && mid ? nextMission(combat.director?.missions, mid) : null;
     const acts = [];
     const btn = (id, label, sub, fn, primary) => h('button', { class: 'menu-btn' + (primary ? ' glass-tint' : ''), id, type: 'button', onclick: fn }, label, sub ? h('small', { text: sub }) : null);
-    if (nxt) acts.push(btn('cbt-ui-next', 'Next mission', nxt.title, () => openMissions(nxt.id), true));
+    if (nxt) acts.push(btn('cbt-ui-next', 'Next mission', (last?.record?.firstClear ? 'Unlocked: ' : '') + nxt.title, () => openMissions(nxt.id), true));
     acts.push(btn('cbt-ui-retry', 'Retry', oc.ok ? 'Fly it again' : 'Same setup', () => retry(), !nxt));
     acts.push(btn('cbt-ui-select', 'Mission select', null, () => openMissions(mid)));
     acts.push(btn('cbt-ui-hangar', 'Hangar', null, () => leaveTo('main')));
@@ -381,6 +424,7 @@ export async function createCombatUi(combat) {
     score = isNum(s.score) ? { el: scoreV, to: s.score, t: 0, dur: reducedMotion() ? 0 : 1.1 } : null;
     if (score && score.dur === 0) { scoreV.textContent = group3(score.to); score = null; }
   }
+  const primaryAction = () => debPanel.querySelector('.cbt-ui-dacts .glass-tint');
   const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
 
   // ---- actions ------------------------------------------------------------------------------------------------
@@ -412,7 +456,7 @@ export async function createCombatUi(combat) {
   function focusView() {
     let el = null;
     if (view === 'missions') el = (narrow() && detail) ? flyBtn : listEl.querySelector('[tabindex="0"]') || flyBtn;
-    else if (view === 'settings') el = musicSw;
+    else if (view === 'settings') el = ctlByKey.musicOn;
     else if (view === 'debrief') el = debPanel.querySelector('.cbt-ui-dacts .glass-tint') || debPanel.querySelector('.cbt-ui-dacts button');
     if (el && !el.disabled) focus(el);
   }
@@ -425,16 +469,20 @@ export async function createCombatUi(combat) {
   function leaveTo(dest) {
     if (dest === 'debrief' && (last?.result || combat.result)) { renderDebrief(last?.result || combat.result); show('debrief'); focusView(); return; }
     hide();
+    if (dest === 'pause') restoreCam();               // back to a paused flight: its own camera, not the showcase
     if ((dest === 'main' || dest === 'pause') && ctx.menu?.open) { ctx.menu.open(dest); return; }
     setPaused(false); restoreCam();
   }
   function back() {
-    if (view === 'settings') { show(settingsFrom); focusView(); return; }
+    if (view === 'settings') {
+      if (settingsFrom === 'origin') { leaveTo(origin); return; }
+      show(settingsFrom); if (settingsFrom === 'missions') { buildList(); syncList(); renderBrief(); } focusView(); return;
+    }
     if (view === 'missions') {
       if (narrow() && detail) { detail = false; syncDetail(); focus(listEl.querySelector('[tabindex="0"]')); return; }
       leaveTo(origin); return;
     }
-    // debrief: Esc does nothing (choose an action)
+    if (view === 'debrief') openMissions(last?.id || combat.mission?.id);   // Esc on the debrief: mission select
   }
   function openMissions(id) {
     let o;
@@ -446,7 +494,9 @@ export async function createCombatUi(combat) {
     const ids = allMissions().map(m => m.id);
     const want = typeof id === 'string' && ids.includes(id) ? id : null;
     const lastId = store.getSetting('lastMission');
-    selId = want || (ids.includes(selId) ? selId : null) || (ids.includes(lastId) ? lastId : null) || ids.find(x => !store.completed(x)) || ids[0] || null;
+    starter = store.anyAttempt() ? null : firstRunMission(combat.director?.missions)?.id || null;
+    if (starter) syncList();
+    selId = want || (ids.includes(selId) ? selId : null) || starter || (ids.includes(lastId) ? lastId : null) || ids.find(x => !store.completed(x)) || ids[0] || null;
     detail = !!want;
     syncList(); renderBrief();
     enter('missions');
@@ -506,8 +556,9 @@ export async function createCombatUi(combat) {
       return;
     }
     if ((e.key === 'Enter' || e.key === ' ') && !t?.closest?.('button, input, a')) {
-      // nothing focused: Enter flies the selected mission / takes the debrief's primary action
-      if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); if (view === 'missions' && !flyBtn.disabled) fly(); else if (view === 'debrief') debPanel.querySelector('.cbt-ui-dacts .glass-tint')?.click(); }
+      // nothing focused: Enter / Space fly the selected mission or take the debrief's primary action
+      e.preventDefault();
+      if (!e.repeat) { if (view === 'missions' && !flyBtn.disabled) fly(); else if (view === 'debrief') primaryAction()?.click(); }
     }
   }, true);
   // keyups of keys pressed while a screen was up stay with the screens (input's keyup would preventDefault a button's
@@ -595,7 +646,7 @@ export async function createCombatUi(combat) {
   }
 
   // debug: ?cbtui=missions|settings opens a screen at boot
-  ev.on('ready', () => { if (raw.cbtui === 'missions') openMissions(raw.cbtmission); else if (raw.cbtui === 'settings') { openMissions(); toggleSettings(); } });
+  ev.on('ready', () => { if (raw.cbtui === 'missions') openMissions(raw.cbtmission); else if (raw.cbtui === 'settings') openSettings(); });
   return ui;
 }
 

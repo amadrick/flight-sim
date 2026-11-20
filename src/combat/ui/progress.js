@@ -79,6 +79,8 @@ export function createProgressStore(storage = safeLocalStorage(), key = STORE_KE
     },
     getSetting(k, d) { const v = data.settings[k]; return v === undefined ? d : v; },
     setSetting(k, v) { data.settings[k] = v; return save(); },
+    /** True once any mission has been attempted (first-run hints use it). */
+    anyAttempt() { for (const k in data.missions) if ((data.missions[k]?.attempts | 0) > 0 || data.missions[k]?.completed) return true; return false; },
     counts(ids) { let done = 0; for (const id of ids) if (entry(id)?.completed) done++; return { done, total: ids.length }; },
   };
 }

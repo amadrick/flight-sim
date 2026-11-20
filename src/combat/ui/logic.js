@@ -170,3 +170,10 @@ export function nearestStep(steps, v) {
 export const M_PER_FT = 0.3048, M_PER_NM = 1852;
 export const fmtFt = (m) => group3(Math.round(m / M_PER_FT / 100) * 100) + ' ft';
 export const fmtNm = (m) => { const n = m / M_PER_NM; return (n < 10 ? n.toFixed(1).replace(/\.0$/, '') : String(Math.round(n))) + ' NM'; };
+
+/** First-run pick: the gunnery training mission if listed, else the first training mission, else the first mission. */
+export function firstRunMission(list) {
+  const g = groupMissions(list);
+  const all = g.flatMap(x => x.missions);
+  return all.find(m => m.id === 'train-gunnery') || g.find(x => x.id === 'training')?.missions[0] || all[0] || null;
+}
