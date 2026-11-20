@@ -171,9 +171,10 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         float gDist = distance(gBase, uTerrCam.xz);
         float gR = gG * uVegGrassWin.w * 0.5;
         float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x) * step(gM.g, 2.5);
-        // airfield weeds stand alone in the sward: past ~30 m one is a pixel or two, a dark speck after the final
-        // sharpen, while the ground shader already carries their tone - let them go
-        gH *= gM.g > 0.5 && gM.g < 1.5 ? 1.0 - smoothstep(18.0, 32.0, gDist) : 1.0;
+        // airfield weeds and meadow tussocks stand alone in the sward: past ~30-40 m one is a pixel or two, a dark
+        // speck after the final sharpen, while the ground shader already carries their tone - let them go (tall
+        // margin grass and reeds stay)
+        gH *= gM.g > 0.5 && gM.g < 1.5 ? 1.0 - smoothstep(18.0, 32.0, gDist) : gM.g < 0.5 ? 1.0 - smoothstep(26.0, 44.0, gDist) * (1.0 - smoothstep(0.6, 1.0, gM.r)) : 1.0;
         float gAng = gh2.y * 6.2831853, gc = cos(gAng), gs = sin(gAng);
         float gW = gM.g > 1.5 ? 0.6 : (gM.g > 0.5 ? mix(1.1, 1.5, gh.y) : mix(0.6, 1.0, gh.y));
         vec3 gl = vec3(position.x * gW, position.y * gH, position.z * gW);
@@ -200,7 +201,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         fo.a *= 1.0 + 0.3 * max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
         if (fo.a < 0.5) discard;
         // the surface shader's grass colours (meadow / turf / reeds), slightly brighter toward the tips
-        vec3 gc = mix(vec3(0.046, 0.082, 0.024), vec3(0.092, 0.128, 0.042), vGM.a);
+        vec3 gc = mix(vec3(0.068, 0.098, 0.036), vec3(0.128, 0.140, 0.060), vGM.a);
         gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
         if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.090, 0.122, 0.048), vec3(0.205, 0.180, 0.105), 0.45 * vGM.a + 0.25) * (0.95 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);

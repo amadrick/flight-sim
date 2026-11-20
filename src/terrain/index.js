@@ -267,7 +267,11 @@ export async function createTerrain(ctx) {
       settle.update(org, lit, buildings ? buildings.fadeRadius : 0);
     }
     if (trees) trees.update(wx, wz, org, Hd, minLevel);
-    if (crops) crops.update(wx, wz, org, Hd, !!(trees && trees.object3D.visible));
+    if (crops) {
+      // (no farmland inside an airfield: skip the crop plants' draw when every plant in reach would be on its grass)
+      const onAir = airfield.distanceAt(wx, wz)[0] < 110 + crops.stats.radius1;
+      crops.update(wx, wz, org, Hd, !!(trees && trees.object3D.visible) && !onAir);
+    }
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
     stats.drawCalls = 1 + (trees && trees.object3D.visible ? trees.stats.drawCalls : 0);
     stats.veg = trees ? trees.stats : null;

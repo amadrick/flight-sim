@@ -199,6 +199,7 @@ export function createBlades(ctx, { L, tier, uniforms, U }) {
              : t < 0.9 ? top + vec3(wax.x * r * side, 0.0, wax.y * r * side) + vec3(-wax.y, 0.0, wax.x) * r * 0.6
              : top + vec3(wax.y, 0.0, -wax.x) * r * 1.4;
         }
+        if (keep < 0.5) tp = vec3(0.0, -1.0e5, 0.0);     // (a dropped blade leaves no sliver of its width behind)
         // normal: blade plane normal (facing the way it leans), turned across the width (rounded section) and pulled
         // up: a thin blade's shaded side glows with transmitted light and light from its neighbours, so in a sward the
         // blades are lit more like the canopy top than like isolated cards

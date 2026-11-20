@@ -162,6 +162,9 @@ export function createCropPlants(ctx, { L, tier, uniforms }) {
           float fr = 0.045 + 0.02 * hb.z;
           tp = t < 0.9 ? top + vec3(sideD.x, 0.0, sideD.y) * fr * side + vec3(wdir.x, 0.0, wdir.y) * fr * 0.3 : top + vec3(wdir.x, 0.02, wdir.y) * fr;
         }
+        // a dropped plant must not leave its ribbon's width behind: a sliver at its base, widened to a pixel at range,
+        // speckled every field and the turf with dark dots
+        if (keep < 0.5) tp = vec3(0.0, -1.0e5, 0.0);
         vec3 tang = normalize(vec3(wdir.x * sin(ib), cos(ib), wdir.y * sin(ib)));
         vec3 sv = vec3(sideD.x, 0.0, sideD.y);
         vec3 pn = normalize(cross(sv, tang));
