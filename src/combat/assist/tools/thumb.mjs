@@ -11,8 +11,8 @@
 // the real key ramp, src/input/logic.js), and holds the trigger when the pipper is on.
 import * as THREE from 'three';
 import { createSandbox } from '../../ai/tools/sandbox.mjs';
-import { stepKeyAxis } from '../../../input/logic.js';
-import { ASSIST_TUNING } from '../index.js';
+import { stepKeyAxis, shapeStick, shapeAxis } from '../../../input/logic.js';
+import { ASSIST_TUNING, shapeRate } from '../index.js';
 import { profileOf, createFlightController } from '../../ai/fly.js';
 
 const DEG = Math.PI / 180, KT = 0.514444;
@@ -38,11 +38,12 @@ const wrap = (a) => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
  * held until the nose has turned `deg`, then released. Returns t90 (s), overshoot (deg), and what the released stick
  * did over the next 3–8 s (heading drift deg/s, flight-path change deg, bank at the end).
  */
-export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 3000, stick = 'analog', seed = 1, axis = 'h', tune = null }) {
+export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 3000, stick = 'analog', seed = 1, axis = 'h', tune = null, hold = 0 }) {
   const b = await createSandbox({ seed, difficulty: 'veteran' });
   if (tune) Object.assign(ASSIST_TUNING, tune);
   const c = b.combat;
   c.assist.setMode('assist');
+  c.assist.device = stick === 'digital' ? 'keys' : 'analog';
   if (process.env.FRAME) c.assist.frame = process.env.FRAME;
   const rho = Math.exp(-alt / 9000);
   const e = spawnPlayer(b, { aircraft: type, position: new THREE.Vector3(0, alt, 0), heading: 0, speed: kt * KT / Math.sqrt(rho) });
@@ -55,7 +56,7 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
   const ias0 = e.state.ias / KT, alt0 = e.state.position.y;
   noseAngles(e, na); const h0 = na.h, el0 = na.el;
   const ks = { v: 0, t: 0, dir: 0 };
-  let t = 0, phase = 'hold', tRel = null, t90 = null, peak = 0, h3 = 0, g3 = 0, h8 = 0, g8 = 0, maxG = 0, bankEnd = 0;
+  let hRel = 0, h4 = 0, t = 0, phase = 'hold', tRel = null, t90 = null, peak = 0, h3 = 0, g3 = 0, h8 = 0, g8 = 0, maxG = 0, bankEnd = 0;
   const target = deg * DEG;
   const dt = 1 / 60;
   const gam = () => Math.asin(Math.max(-1, Math.min(1, e.state.velocity.y / Math.max(e.state.velocity.length(), 1))));
@@ -64,7 +65,7 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
     noseAngles(e, na);
     const ch = axis === 'h' ? wrap(na.h - h0) : na.el - el0;
     if (t90 === null && ch >= 0.9 * target) t90 = t;
-    if (phase === 'hold' && ch >= target) { phase = 'rel'; tRel = t; }
+    if (phase === 'hold' && (hold > 0 ? t >= hold : ch >= target)) { phase = 'rel'; tRel = t; hRel = ch; }
     if (phase === 'rel') peak = Math.max(peak, ch);
     const want = phase === 'hold' ? 1 : 0;
     const v = stick === 'digital' ? stepKeyAxis(ks, want, dt) : want;
@@ -79,15 +80,25 @@ export async function stepResponse({ type = 'f16', kt = 350, deg = 30, alt = 300
     if (tRel !== null) {
       const dtR = t - tRel;
       if (dtR <= 3 && dtR + dt > 3) { h3 = na.h; g3 = gam(); }
+      if (dtR <= 4 && dtR + dt > 4) h4 = ch;
       if (dtR <= 8 && dtR + dt > 8) { h8 = na.h; g8 = gam(); bankEnd = e.state.roll; return true; }
     }
     return !e.alive;
   }, dt);
   return {
-    type, kt, ias0: Math.round(ias0), deg, stick, axis, t90, tRel, overshoot: tRel !== null ? (peak - target) / DEG : null, maxG,
+    type, kt, ias0: Math.round(ias0), deg, stick, axis, t90, tRel, overshoot: tRel !== null ? (peak - (hold > 0 ? hRel : target)) / DEG : null, maxG,
     driftDegS: tRel !== null ? wrap(h8 - h3) / DEG / 5 : null, gammaChange: tRel !== null ? (g8 - g3) / DEG : null,
-    bankEnd: bankEnd / DEG, settle3: tRel !== null ? (wrap(h3 - h0) - target) / DEG : null, altLoss: alt0 - e.state.position.y, alive: e.alive, limiting: c.assist.info.limiting,
+    bankEnd: bankEnd / DEG, giveBack: tRel !== null ? (hRel - h4) / DEG : null, turned: hRel / DEG, settle3: tRel !== null ? (wrap(h3 - h0) - target) / DEG : null, altLoss: alt0 - e.state.position.y, alive: e.alive, limiting: c.assist.info.limiting,
   };
+}
+
+/** The stick deflection that gives the nose-rate fraction f through the input shaping and the assist's expo (a
+ *  practised player knows the curve of the stick and pushes as far as the rate they want needs). */
+function invShape(f, dz) {
+  if (f <= 0) return 0;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (shapeRate(shapeAxis(mid, dz, 0.4)) < f) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
 }
 
 function gauss(rng) { let u = 0, v = 0; while (u === 0) u = rng(); v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
@@ -97,16 +108,25 @@ function gauss(rng) { let u = 0, v = 0; while (u === 0) u = rng(); v = rng(); re
  * Returns { update(dt) } — call before combat.pre each frame (it writes e.controls and e.trigger).
  */
 export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = null, span = null } = {}) {
-  const SPAN = (span ?? +(process.env.SPAN || (mode === 'assist' ? 6 : 5))) * DEG;
+  // how hard the thumb pushes per degree off: with the assist a practised player settles on the gain that keeps the
+  // loop steady for their reaction time (crossover ≈ 1 / (2.6 × delay), McRuer's crossover model), i.e. full rate at
+  // SPAN = full rate × 2.6 × delay off; on direct controls a fixed 5°
+  const spanFix = span ?? (process.env.SPAN ? +process.env.SPAN : null);
+  const spanOf = () => (spanFix !== null ? spanFix * DEG : mode === 'assist' ? Math.max(4 * DEG, (c.assist._st.wMax || 0.4) * 2.6 * delay) : 5 * DEG);
   const rng = c.rng;
   const N = 32, bx = new Float32Array(N), by = new Float32Array(N), bt = new Float32Array(N);
   let head = 0, t = 0;
-  const delay = lag ?? (process.env.LAG != null ? +process.env.LAG : 0.15 + rng() * 0.1);
+  const delay = lag ?? (process.env.LAG != null ? +process.env.LAG : stick === 'touch' ? 0.1 + rng() * 0.05 : 0.15 + rng() * 0.1);
+  // touch stick state: the finger lifts now and then (output 0 at once) and lands again at a slightly different
+  // deflection (an offset and a gain error until the next lift)
+  const tch = { lift: 0, next: 1 + rng() * 3, idle: 0, ox: 0, oy: 0, gain: 1 };
+  const shaped = { x: 0, y: 0 };
   const NOISE = process.env.NOISE != null ? +process.env.NOISE : 1;
   const kx = { v: 0, t: 0, dir: 0 }, ky = { v: 0, t: 0, dir: 0 };
   const SOL = { point: new THREE.Vector3(), dir: new THREE.Vector3(), tof: 0, range: 0, inRange: false };
   let nx = 0, ny = 0, sample = 0, ix = 0, iy = 0, tapT = 0, tapU = 0.5, tapV = 0.5;
   const KI = +(process.env.KI ?? 1.0);
+  const keyS = [0, 1].map(() => ({ dir: 0, hold: false, down: 0, cool: 0, pPrev: 0, rateS: 0 }));
   const thumb = {
     delay, firstSolution: null, firing: 0,
     update(dt) {
@@ -141,6 +161,7 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
       let px = 0, py = 0;
       for (let i = 0; i < N; i++) { const j = (head - i + N) % N; if (bt[j] <= t - delay || i === N - 1) { px = bx[j]; py = by[j]; break; } }
       // stick
+      const SPAN = spanOf();
       let sx, sy;
       if (mode === 'assist') {
         // push toward the target on the screen, proportional near the centre, full stick when far
@@ -163,15 +184,62 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
       }
       // the ground: a player who sees it coming pulls out (wings level, then pull)
       const agl = s.position.y - (c.ctx.world.groundHeightAt?.(s.position.x, s.position.z) ?? 0);
-      if (s.velocity.y < -15 && agl + s.velocity.y * 10 < 600) {
+      const ground = s.velocity.y < -15 && agl + s.velocity.y * 10 < 600;
+      if (ground) {
         if (mode === 'assist') { sx = 0; sy = 1; }
         else { sx = Math.max(-1, Math.min(1, -s.roll * 1.2)); sy = Math.abs(s.roll) < 1.0 ? 1 : 0.1; }
       }
-      if (stick === 'digital') {
+      if (stick === 'digital' && mode === 'assist') {
+        // arrow keys with the assist's key law: hold while far off (let go early by what the reticle will still move
+        // in the reaction time), single taps (small nose steps) near the aim, a few per second at most
+        const pull = ground;
+        for (let i = 0; i < 2; i++) {
+          const pv = i ? py : px, K = keyS[i];
+          const rate = (pv - K.pPrev) / dt; K.pPrev = pv;
+          K.rateS += (rate - K.rateS) * Math.min(1, dt / 0.1);
+          K.cool -= dt;
+          if (K.down > 0) { K.down -= dt; if (K.down <= 0) K.dir = 0; }
+          else if (K.hold) {
+            if (Math.abs(pv) + Math.sign(pv) * K.rateS * (delay + 0.05) < 1.5 * DEG || Math.sign(pv) !== K.dir) { K.hold = false; K.dir = 0; K.cool = 0.15; }
+          } else if (Math.abs(pv) > 6 * DEG) { K.hold = true; K.dir = Math.sign(pv); }
+          else if (Math.abs(pv) > 1.0 * DEG && K.cool <= 0) { K.dir = Math.sign(pv); K.down = 0.06 + rng() * 0.04; K.cool = 0.25 + rng() * 0.15; }
+        }
+        let dx = keyS[0].dir, dy = keyS[1].dir;
+        if (pull) { dx = 0; dy = 1; }
+        sx = stepKeyAxis(kx, dx, dt); sy = stepKeyAxis(ky, dy, dt);
+      } else if (stick === 'digital') {
         // arrow keys: held while far off, tapped near the aim (tap length ~ the deflection the thumb would like)
         tapT -= dt; if (tapT <= 0) { tapT = 0.12; tapU = rng(); tapV = rng(); }
         const dx = Math.abs(sx) > Math.max(0.15, tapU) ? Math.sign(sx) : 0, dy = Math.abs(sy) > Math.max(0.15, tapV) ? Math.sign(sy) : 0;
         sx = stepKeyAxis(kx, dx, dt); sy = stepKeyAxis(ky, dy, dt);
+      }
+      if (mode === 'assist' && stick !== 'digital' && !ground) {
+        // the thumb's wish is a reticle rate (fraction of the full rate): push as far as that needs
+        const m = Math.hypot(sx, sy);
+        if (m > 1e-6) { const d = invShape(Math.min(1, m), stick === 'touch' ? 0.07 : 0.1) / m; sx *= d; sy *= d; }
+      }
+      if (stick === 'analog') {
+        // a gamepad stick through the simulator's own shaping (src/input/index.js: radial dead zone 0.1, expo 0.4)
+        shapeStick(sx, sy, shaped, 0.1, 0.4); sx = shaped.x; sy = shaped.y;
+      } else if (stick === 'touch') {
+        // a phone's virtual stick: coarse (8-bit), shaky, often pinned at the rim, no fine control below ~0.15, and the
+        // thumb lifts off (0 at once) and lands again somewhere a little different; then the simulator's touch shaping
+        // (radial dead zone 0.07, expo 0.4)
+        let m = Math.hypot(sx, sy);
+        tch.idle = m < 0.12 ? tch.idle + dt : 0;
+        tch.next -= dt;
+        if (tch.lift > 0) { tch.lift -= dt; sx = sy = 0; m = 0; if (tch.lift <= 0) { const a = rng() * 2 * Math.PI, r = 0.04 + rng() * 0.1; tch.ox = Math.cos(a) * r; tch.oy = Math.sin(a) * r; tch.gain = 1 + (rng() - 0.5) * 0.5 * (process.env.T_OFS ?? 1); } }
+        else if (!process.env.T_NOLIFT && (tch.next <= 0 || tch.idle > 0.4)) { tch.lift = 0.08 + rng() * 0.22; tch.next = 1.5 + rng() * 3.5; tch.idle = 0; sx = sy = 0; m = 0; }
+        else if (m > 1e-6) {
+          let mo = m * tch.gain;
+          if (mo > 0.6 && !process.env.T_NOPIN) mo = 1;                                       // pinned at the rim
+          else if (mo < 0.15 && !process.env.T_NOMIN) mo = mo < 0.06 ? 0 : 0.1 + rng() * 0.1;  // no fine control down here
+          sx = sx / m * mo + tch.ox; sy = sy / m * mo + tch.oy;
+          sx += gauss(rng) * 0.03; sy += gauss(rng) * 0.03;
+          const q = (v) => Math.round(Math.max(-1, Math.min(1, v)) * 127) / 127;
+          sx = q(sx); sy = q(sy);
+        }
+        shapeStick(sx, sy, shaped, 0.07, 0.4); sx = shaped.x; sy = shaped.y;
       }
       e.controls.roll = sx; e.controls.pitch = sy; e.controls.yaw = 0;
       // throttle: a player leaves it at MIL-ish, AB when slow (rookie auto-throttle may take over)
@@ -185,18 +253,19 @@ export function createThumb(c, e, { mode = 'assist', stick = 'analog', lag = nul
 }
 
 /** One fight: the thumb in the player's aircraft vs an AI. */
-export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill = 0.25, mode = 'assist', stick = 'analog', seconds = 150, range = 6000, alt = 4000, difficulty = 'veteran' }) {
+export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill = 0.25, mode = 'assist', stick = 'analog', seconds = 150, range = 6000, alt = 4000, difficulty = 'veteran', onFrame = null, throttle = 0.9 }) {
   const b = await createSandbox({ seed, difficulty });
   const c = b.combat, w = c.world, rng = c.rng;
   c.difficulty = difficulty;
   c.assist.setMode(mode === 'assist' ? 'assist' : 'off');
+  c.assist.device = stick === 'digital' ? 'keys' : 'analog';
   const ang = (rng() - 0.5) * 0.6, off = (rng() - 0.5) * 2000;
   const loadout = { ir: 0, radar: 0 };
   const P = spawnPlayer(b, { aircraft: type, position: new THREE.Vector3(off, alt + (rng() - 0.5) * 600, range / 2), heading: (ang / DEG + 360) % 360, speed: 220, loadout });
   const B = w.spawnAircraft({ aircraft: aiType || type, team: 'red', position: new THREE.Vector3(-off, alt + (rng() - 0.5) * 600, -range / 2), heading: 180 + ang / DEG, speed: 220, callsign: 'Red', skill: aiSkill, loadout });
   B.pilot = c.ai.createPilot(B, { skill: aiSkill });
   P.target = B;
-  P.controls.throttle = 0.9;
+  P.controls.throttle = throttle;
   const thumb = createThumb(c, P, { mode, stick });
   const rec = { seed, type, mode, stick, aiSkill, firstSolution: null, kill: false, killT: null, died: false, deathBy: null, hits: 0, shots: 0, ground: 0, gunAssistT: 0, limiting: {} };
   c.events.on('kill', (k) => {
@@ -216,6 +285,7 @@ export async function thumbDuel({ seed = 1, type = 'f16', aiType = null, aiSkill
         console.log(`t ${c.clock.toFixed(0)} alt ${s.position.y.toFixed(0)} ias ${(s.ias / KT).toFixed(0)} g ${s.gLoad.toFixed(1)} roll ${(s.roll / DEG).toFixed(0)} pitch ${(s.pitch / DEG).toFixed(0)} vy ${s.velocity.y.toFixed(0)} stick ${P.controls.pitch.toFixed(2)},${P.controls.roll.toFixed(2)} thr ${P.controls.throttle.toFixed(2)} lim ${i.limiting} ${i.pullUp ? 'PULLUP' : ''} r ${B.state.position.distanceTo(s.position).toFixed(0)} B ${B.pilot.mode}`);
       }
       const l = c.assist.info.limiting; if (l) rec.limiting[l] = (rec.limiting[l] || 0) + dt;
+      onFrame?.(c, P, B, dt, thumb);
     }
     if ((!P.alive || !B.alive) && end === null) end = c.clock;
     return end !== null && c.clock > end + 0.5;
@@ -238,6 +308,7 @@ export async function trackTest({ type = 'f16', pattern = 'turn', g = 4, range =
   const c = b.combat, w = c.world;
   c.difficulty = difficulty;
   c.assist.setMode(mode === 'assist' ? 'assist' : 'off');
+  c.assist.device = stick === 'digital' ? 'keys' : 'analog';
   if (process.env.FRAME) c.assist.frame = process.env.FRAME;
   if (aim !== null) c.assist.setAimAssist(aim);
   const loadout = { ir: 0, radar: 0 };
@@ -275,7 +346,7 @@ export async function trackTest({ type = 'f16', pattern = 'turn', g = 4, range =
       if (err < 2 * DEG) in2++;
       if (process.env.TRACE && (n % +(process.env.TRACE)) === 0) {
         _r.copy(c.assist.frameRight).addScaledVector(_f, -c.assist.frameRight.dot(_f)).normalize(); _u.crossVectors(_r, _f); const fz = SOL.dir.dot(_f);
-        console.log(`t ${c.clock.toFixed(1)} r ${r.toFixed(0)} pip x ${(Math.atan2(SOL.dir.dot(_r), fz) / DEG).toFixed(1)} y ${(Math.atan2(SOL.dir.dot(_u), fz) / DEG).toFixed(1)} err ${(err / DEG).toFixed(1)} stick ${P.controls.pitch.toFixed(2)},${P.controls.roll.toFixed(2)} g ${P.state.gLoad.toFixed(1)} tg ${B.state.gLoad.toFixed(1)} roll ${(P.state.roll / DEG).toFixed(0)} troll ${(B.state.roll / DEG).toFixed(0)} ${c.assist.info.gunAssist ? 'GA' : ''} ${c.assist.info.limiting} A-v ${(Math.acos(Math.min(1, c.assist.command.dot(_d.copy(P.state.velocity).normalize()))) / DEG).toFixed(1)} aoaS ${(c.assist._st.aoaS / DEG).toFixed(1)} nAero ${c.assist._st.nAero.toFixed(1)} aoa ${(P.state.aoa / DEG).toFixed(1)}`);
+        const Nc = c.assist.command, nz = SOL.dir.dot(Nc); console.log(`ret x ${(Math.atan2(SOL.dir.dot(c.assist.frameRight), nz) / DEG).toFixed(1)} y ${(Math.atan2(SOL.dir.dot(c.assist.frameUp), nz) / DEG).toFixed(1)} N-F ${(Math.acos(Math.min(1, Nc.dot(_f))) / DEG).toFixed(1)} | t ${c.clock.toFixed(1)} r ${r.toFixed(0)} pip x ${(Math.atan2(SOL.dir.dot(_r), fz) / DEG).toFixed(1)} y ${(Math.atan2(SOL.dir.dot(_u), fz) / DEG).toFixed(1)} err ${(err / DEG).toFixed(1)} stick ${P.controls.pitch.toFixed(2)},${P.controls.roll.toFixed(2)} g ${P.state.gLoad.toFixed(1)} tg ${B.state.gLoad.toFixed(1)} roll ${(P.state.roll / DEG).toFixed(0)} troll ${(B.state.roll / DEG).toFixed(0)} ${c.assist.info.gunAssist ? 'GA' : ''} ${c.assist.info.limiting} A-v ${(Math.acos(Math.min(1, c.assist.command.dot(_d.copy(P.state.velocity).normalize()))) / DEG).toFixed(1)} aoaS ${(c.assist._st.aoaS / DEG).toFixed(1)} nAero ${c.assist._st.nAero.toFixed(1)} aoa ${(P.state.aoa / DEG).toFixed(1)}`);
       }
     }
     return false;
@@ -293,18 +364,22 @@ if (isMain) {
   if (cmd === 'steps') {
     const speeds = flag('speeds', '250,350,450').split(',').map(Number), sticks = flag('sticks', 'analog,digital').split(',');
     const degs = flag('degs', '30,120').split(',').map(Number), axis = flag('axis', 'h');
-    console.log('type  kt(ias)  stick    deg   t90 s  overshoot°  maxG  nose@+3s°  | released 3-8 s: drift°/s  Δγ°  bank°  | alt loss m');
-    for (const type of types) for (const kt of speeds) for (const stick of sticks) for (const deg of degs) {
-      const r = await stepResponse({ type, kt, deg, stick, axis, alt: +flag('alt', 3000), tune: process.env.TUNE ? JSON.parse(process.env.TUNE) : null });
+    const hold = +flag('hold', 0);
+    console.log(`type  kt(ias)  stick    ${hold ? 'hold s' : 'deg   '}t90 s  overshoot°  maxG  nose@+3s°  | released 3-8 s: drift°/s  Δγ°  bank°  | alt loss m | give-back° (+4 s)`);
+    for (const type of types) for (const kt of speeds) for (const stick of sticks) for (const deg of (hold ? [hold] : degs)) {
+      const r = await stepResponse({ type, kt, deg, stick, axis, hold, alt: +flag('alt', 3000), tune: process.env.TUNE ? JSON.parse(process.env.TUNE) : null });
       const f = (x, n = 1, w = 6) => (x === null || x === undefined ? '-' : x.toFixed(n)).padStart(w);
-      console.log(`${type.padEnd(5)} ${String(kt).padStart(3)}(${String(r.ias0).padStart(3)}) ${stick.padEnd(8)} ${String(deg).padStart(4)} ${f(r.t90, 2, 7)} ${f(r.overshoot, 1, 10)} ${f(r.maxG, 1, 5)} ${f(r.settle3, 1, 9)}   | ${f(r.driftDegS, 2, 15)} ${f(r.gammaChange, 1, 5)} ${f(r.bankEnd, 0, 6)}  | ${f(r.altLoss, 0, 6)}${r.alive ? '' : ' DEAD'}`);
+      console.log(`${type.padEnd(5)} ${String(kt).padStart(3)}(${String(r.ias0).padStart(3)}) ${stick.padEnd(8)} ${String(deg).padStart(4)} ${f(r.t90, 2, 7)} ${f(r.overshoot, 1, 10)} ${f(r.maxG, 1, 5)} ${f(r.settle3, 1, 9)}   | ${f(r.driftDegS, 2, 15)} ${f(r.gammaChange, 1, 5)} ${f(r.bankEnd, 0, 6)}  | ${f(r.altLoss, 0, 6)} | ${f(r.giveBack, 1, 6)} of ${f(r.turned, 0, 4)}${r.alive ? '' : ' DEAD'}`);
     }
   } else if (cmd === 'track') {
     const pats = flag('patterns', 'turn,weave').split(','), modes = flag('modes', 'assist,direct').split(','), sticks = flag('sticks', 'analog,digital').split(',');
     const aims = flag('aims', '').split(',').filter(Boolean).map(Number);
     console.log('type  pattern mode    stick    aim   | in hit cone  within 2°  rms°   on-target firing s  firing s');
     for (const type of types) for (const pattern of pats) for (const mode of modes) for (const stick of sticks) for (const aim of (mode === 'assist' && aims.length ? aims : [null])) {
-      const r = await trackTest({ type, pattern, mode, stick, aim, g: +flag('g', 4), seconds: +flag('seconds', 30), tune: null });
+      const seeds = +flag('seeds', 3), rs = [];
+      for (let k = 1; k <= seeds; k++) rs.push(await trackTest({ type, pattern, mode, stick, aim, seed: k, g: +flag('g', 4), seconds: +flag('seconds', 30), tune: null }));
+      const avg = (f) => rs.reduce((a, x) => a + x[f], 0) / rs.length;
+      const r = { aim: rs[0].aim, cone: avg('cone'), in2: avg('in2'), rmsDeg: avg('rmsDeg'), hits: avg('hits'), firing: avg('firing'), alive: rs.every((x) => x.alive) };
       console.log(`${type.padEnd(5)} ${pattern.padEnd(7)} ${mode.padEnd(7)} ${stick.padEnd(8)} ${String(mode === 'assist' ? r.aim : '-').padEnd(5)} | ${(r.cone * 100).toFixed(0).padStart(6)} %   ${(r.in2 * 100).toFixed(0).padStart(6)} %  ${r.rmsDeg.toFixed(1).padStart(5)}  ${r.hits.toFixed(1).padStart(10)}  ${r.firing.toFixed(1).padStart(15)}${r.alive ? '' : ' DEAD'}`);
     }
   } else if (cmd === 'duel') {
@@ -315,7 +390,7 @@ if (isMain) {
     console.log('type  ai       mode    stick    | kills  deaths  t-first-solution s (median, n)  t-kill s  hits/run  gunAssist s');
     for (const type of types) for (const ai of ais) for (const mode of modes) for (const stick of sticks) {
       const rs = [];
-      for (let i = 0; i < runs; i++) rs.push(await thumbDuel({ seed: seed0 + i, type, aiSkill: AI[ai] ?? +ai, mode, stick, seconds, difficulty: ai === 'rookie' ? 'rookie' : 'veteran' }));
+      for (let i = 0; i < runs; i++) rs.push(await thumbDuel({ seed: seed0 + i, type, aiSkill: AI[ai] ?? +ai, mode, stick, seconds, throttle: +flag('throttle', 0.9), difficulty: ai === 'rookie' ? 'rookie' : 'veteran' }));
       all.push(...rs);
       const fs = rs.map((r) => r.firstSolution).filter((x) => x !== null).sort((a, b) => a - b);
       const ks = rs.filter((r) => r.kill).map((r) => r.killT).sort((a, b) => a - b);
