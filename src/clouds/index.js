@@ -71,7 +71,7 @@ export async function createClouds(ctx) {
   // round six (clField=0: round five): broken power law of sizes, clustered placement, gentler border taper
   const field6 = dbg('clField', 1) > 0;
   const cells = createCellField({ seed: ctx.params?.seed ?? 1337, borderTaper: String(raw.clBorder ?? 1) !== '0',
-    ...(field6 ? { slope: 1.7, slope2: 3.2, dBreak: 1100, cluster: dbg('clClu', 1.2), taperK: 1, taperTo: 1.6, fill: dbg('clFill', 0.7), satellite: dbg('clSatl', 0.5) } : {}) });
+    ...(field6 ? { slope: 1.7, slope2: 3.2, dBreak: 1100, cluster: dbg('clClu', 1.2), taperK: 1, taperTo: 1.6, fill: dbg('clFill', 0.7), satellite: dbg('clSatl', 0) } : {}) });
   const weatherField = makeWeatherFieldJS(noise2);
 
   const atmGLSL = ctx.pipeline?.atmosphere?.glsl || FALLBACK_ATMOSPHERE_GLSL;

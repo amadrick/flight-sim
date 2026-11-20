@@ -120,6 +120,7 @@ float clMu0 = 2.0;         // side output of clTauLight: cos between the local s
 float clSurf = 0.0;        // side output of clDensityFull: depth of the sample below the eroded surface (shape units, ~km)
 float clSurfL = 0.0;       // round six c: the same below the surface the light march / MS-tap offsets refer to (profile erosion: before the erosion)
 float clBubK = 0.0;        // side output of clShape (round six): weight of the bubble cascade (growing cumulus / Cb towers 1, decks 0)
+float clBorder = 0.0;      // side output of clShape (round six c): 0 inside the cell's territory .. 1 at its border with a neighbour
 float clNubW = 0.0;        // side output of clShape (round six c): 1 = cumulus cell or Cb tower (profile erosion), 0 = deck / anvil
 float clNF = 0.0;          // round six: texture-fetch counter (clCount=2 writes it per ray to the march's aux.a)
 float clPixM = 0.0;
@@ -171,9 +172,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   //  80 m, extruded up the steep walls of a cell, were the vertical "curtain" lines on big cumulus seen from close by)
   vec2 uvC = pc * uClCell.x;
   float lc = lod + 1.0;
-  // (round six c: at every level up to mip 4 with the profile erosion, which turns the C0 creases of the coarser mips of
-  //  far towers into vertical fins)
-  if (uClBub2.z > 0.0 && lc < (uClNub.x > 0.0 ? 4.5 : 2.5)) {
+  if (uClBub2.z > 0.0 && lc < 2.5) {
     lc = floor(lc); float cs = float(textureSize(tClCells, int(lc)).x);
     vec2 tc = uvC * cs - 0.5, ti = floor(tc), tf = tc - ti;
     uvC = (ti + tf * tf * (3.0 - 2.0 * tf) + 0.5) / cs;
@@ -260,6 +259,7 @@ float clShape(vec3 pa, vec4 wx, float lod, out vec4 info) {
   float gT = turK * uClShape3.z * capD * (1.2 * 8.0 * uClNoise.x * kS);
   float gradC = min(sqrt(1.44 + gT * gT), 8.0) / 1.2;
   float d = rad * (1.0 - (2.0 * cl.r - 1.0));                    // distance from the cell centre (m)
+  clBorder = uClNub.x > 0.0 ? smoothstep(1.2, 1.55, 2.0 - 2.0 * cl.r) : 0.0;
   float exC = (rS - d) * 1e-3 - step(cl.r, 0.002) - (1.0 - bottom) * 0.4 - max(hc - 1.0, 0.0) * H * 3e-3;   // turrets may overshoot the dome a little, never reach the lid
   // round six: far away, a cell smaller than ~3-6 low-res pixels is hit or missed by the jittered coarse steps from frame
   // to frame (speckle "confetti" on the horizon): such cells fade out (their share of the sky stays in the bigger ones)
@@ -447,6 +447,9 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
     float wisp = max(clDecay, uClNub2.w * (1.0 - clSat(info.x * 2.5)));
     float bCav = 0.2, bD = 0.0;
     if (uClBub.x > 0.0) bD = clBubbles(pa, fp, bCav) * mix(0.35, 1.0, hK) * (1.0 - 0.6 * clDecay);
+    // (no bubble pushes the surface across the border of the cell's territory: the neighbour's owner takes over there with
+    //  its own height and phase, and a bulge cut by that border is a vertical cliff: sawtooth walls between packed cells)
+    if (bD > 0.0) bD *= 1.0 - clBorder;
     clBubD = bD;
     float sd = excess + bD;                                              // km below the turret surface
     float P = max(clamp(uClNub.y * lam0, 10.0, 80.0) * 1e-3 * mix(1.0, uClNub3.y, wisp) * mix(0.5, 1.0, hK), 1.5 * edge);
