@@ -74,8 +74,33 @@ weak silver lining; dark speckle dots along the far horizon. Shots `scratchpad r
 * **Horizon speckle found**: `clClamp=0` removes it. The history clamp clamped premultiplied radiance and opacity
   independently; a small distant cloud's history kept its opacity and lost its light (dark dot) or the reverse (blue dot).
   Now one factor scales both (`clClampC`, default 1), and a transparent history made opaque takes the current colour.
-* Vertical fins on dissolving towers: the 2-D curl warp shifted whole columns alike; replaced by a 3-D warp. The cell field
-  is fetched C1 up to mip 4 with the profile erosion (C0 creases of the coarse mips).
+* Vertical fins on dissolving towers: the 2-D curl warp shifted whole columns alike; replaced by a 3-D warp (fins only
+  partly gone, see below). Fetching the cell field C1 up to mip 4 made it worse (smoothstepped coarse texels = terraces,
+  vertical teeth on towers 2-5 km away): reverted.
+* **Sawtooth walls** in the 1500 m view (r6b had them too, the satellites made them common): a bubble bulging out across the
+  border of its cell's territory is cut there by the neighbour's owner (other height, phase): a comb of vertical cliffs.
+  Outward bubble displacement now fades to 0 over the outer part of the territory (`clBorder`, dEff 1.2 .. 1.55 radii).
+  Satellites still produced cliffs between packed cells (a big cell next to a small one tapers within a narrow band of
+  the small one's radius), so `clSatl` defaults to 0. `clFill` 0.7 raised the cover (and the airborne spawn ended next to a
+  cloud), back to 0.55; the stronger clustering `clClu` 1.2 stays.
+* Horizontal bands on distant clouds at low sun: the far-field light (shadow map alone beyond `clFarL` pixels) had no
+  jitter along the light slope; it now gets the same +-k texel jitter as the near path. The second erosion octave fades
+  while its cells still span 2-4 footprints (sparkle on thin edges).
+
+| switch | default | meaning (0 / off = round six b) |
+| --- | --- | --- |
+| `clNub` | 1 | profile erosion on the big bubble octaves |
+| `clNubB` | 3 | bubble octaves kept (r6b: 4) |
+| `clNubP` | 0.6 | profile depth, x largest bubble cell, clamped 10-80 m |
+| `clNubE` | 1.4 | erosion depth (share of the profile; E clamps at 1) |
+| `clNubT` | 1.6 | erosion noise tile, x largest bubble cell |
+| `clNubS`, `clNubW` | 0.45, 1 | sharpening exponent: growing tops, wispy parts |
+| `clNubF` | 0.6 | wispy share of the low flanks |
+| `clNubWP` | 3 | profile depth factor where wispy |
+| `clNubL` | 0.8 | share of the erosion the light march sees |
+| `clNubCb` | 0 | profile erosion on Cb towers too (1 drew a waffle pattern on the storm towers) |
+| `clClampC` | 1 | one factor for colour and opacity in the history clamp (horizon speckle) |
+| `clSatl`, `clClu`, `clFill` | 0, 1.2, 0.55 | satellite thermals, clustering, disk fill of the cell field (r6: 0, 0.7, 0.55) |
 
 ## 0. Round six: cauliflower, field variety, cost
 

@@ -466,11 +466,11 @@ float clDensityFull(vec3 pa, float excess, vec4 info, float fp, float edge) {
     vec4 n1 = textureLod(tClBase, q, clamp(l1, 0.0, 6.0)); clNF += 1.0;
     float e = mix(1.0 - clCap(clSat((n1.g - 0.3) / 0.6)), n1.r, wisp);
     float l2 = l1 + 2.0;
-    if (l2 < 5.0) {
+    if (l2 < 3.0) {
       vec3 q2 = vec3(0.80 * q.x - 0.60 * q.z, q.y, 0.60 * q.x + 0.80 * q.z) * 4.0 + (n1.gba - 0.5) * mix(0.25, 0.8, wisp) + 0.37;
       vec4 n2 = textureLod(tClBase, q2, clamp(l2, 0.0, 6.0)); clNF += 1.0;
       float e2 = mix(1.0 - clCap(clSat((n2.b - 0.3) / 0.6)), n2.r, wisp);
-      e += 0.5 * clSat(5.0 - l2) * (e2 - 0.45);
+      e += 0.5 * clSat(3.0 - l2) * (e2 - 0.45);                       // (faded while its cells still span 2-4 footprints)
     }
     float E = clSat(uClNub.z * e);
     float x = clSat((sd / P - E) / max(1.0 - E, 0.05));
@@ -739,7 +739,17 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
   // depth inside the layer), 4 fetches instead of ~16. Within the map only (+-41 km, faded from 30 km).
   if (uClCost.y > 0.0 && clPixM > uClCost.y && uCloudShadowC.z > 0.5) {
     vec2 dm = pa.xz - uCloudShadowA.xy; float rm = max(abs(dm.x), abs(dm.y));
-    if (rm < 30000.0) { clNF += 4.0; return cloudShadowTauF(pa.xz + uCloudShadowC.xy, pa.y, true); }
+    if (rm < 30000.0) {
+      clNF += 4.0;
+      // (round six c: with the same +-k texel jitter along the light slope as the near path below: at low sun the map's
+      //  texel structure, projected along the slope, printed horizontal bands on distant clouds)
+      vec2 jo = vec2(0.0);
+      if (uClNub.x > 0.0) {
+        float sl = length(uCloudShadowB.xy), texM = 1.0 / (uCloudShadowA.z * float(textureSize(tCloudShadowMap, 0).x));
+        jo = uCloudShadowB.xy / max(sl, 1e-3) * ((jit - 0.5) * 2.0 * texM * max(uClFullRes.w, 1.0));
+      }
+      return cloudShadowTauF(pa.xz + uCloudShadowC.xy + jo, pa.y, true);
+    }
   }
   vec4 info;
   // round four: close to the camera the first segment (0 .. 62 m at 4 steps) is sampled twice WITH the detail
