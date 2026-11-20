@@ -224,6 +224,12 @@ try {
         await shoot(page, f('cockpit'), L('cockpit'));
         await ev(() => window.__sim.ctx.cameraRig.setMode('chase')); await step(1);
       }
+      if (screens.includes('crash')) {
+        await ev(() => { const c = window.__sim.ctx, s = c.player.state; s.crashed = true; s.crashReason = 'Impact with terrain at 212 kt'; c.events.emit('crash', { reason: s.crashReason }); });
+        for (let i = 0; i < 13; i++) await step(5);      // the crash dialog comes up after 2 s
+        await shoot(page, f('crash'), L('crash'));
+        await ev(() => document.getElementById('menu-crash-restart')?.click()); await step(3);
+      }
       // menus
       for (const v of ['pause', 'settings', 'controls']) {
         if (!screens.includes(v)) continue;

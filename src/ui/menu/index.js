@@ -734,6 +734,8 @@ export async function createMenu(ctx) {
     get view() { return view; },
     get selection() { return { ...sel }; },
     get glass() { return glass; },
+    /** The post-crash Restart / Back to hangar dialog is up (the HUD then hides its own crash card). */
+    get crashDialogOpen() { return !crash.hidden; },
     update() {
       const rdt = ctx.time.realDt || 0;
       glass.update(rdt, menu.isOpen);

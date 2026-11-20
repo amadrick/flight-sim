@@ -286,7 +286,7 @@ export async function createInput(ctx) {
 
     // visibility of touch UI
     if (touchUI) {
-      const show = input.touchEnabled && !open && !(ctx.cameraRig && ctx.cameraRig.mode === 'showcase');
+      const show = input.touchEnabled && !open && !(ctx.cameraRig && ctx.cameraRig.mode === 'showcase') && !(ctx.player && ctx.player.state && ctx.player.state.crashed);
       if (show !== touchVisible) { touchVisible = show; touchUI.setShown(show); }
     }
     const ts = touchUI ? touchUI.st : touch;

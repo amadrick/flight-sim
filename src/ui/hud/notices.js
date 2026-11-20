@@ -205,7 +205,7 @@ export function createNotices(ctx) {
       }
       paused.hidden = !(ctx.time?.paused && p);
       const crashed = !!p?.state.crashed;
-      crash.hidden = !crashed;
+      crash.hidden = !crashed || !!ctx.menu?.crashDialogOpen;   // the menu's dialog replaces the card after 2 s
       if (crashed) {
         const reason = p.state.crashReason || lastCrashReason || 'Aircraft destroyed';
         if (reason !== lastReason) { lastReason = reason; crashReason.textContent = reason; }
