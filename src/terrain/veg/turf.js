@@ -149,18 +149,19 @@ export function createTurf(ctx, { L, tier, uniforms, U, airfield }) {
         vec3 V = normalize(vTV);
         float graze = tss(0.08, 0.30, abs(V.y) + 1.5 / max(dc, 1.0));      // shells read as sheets at grazing angles far off
         // under the 3-D blades (veg/blades.js) the upper shells give way: they would read as fuzz over the blades
-        float underB = uTurfShell.z > 0.0 ? (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc)) * tss(0.2, 0.6, vTZ) : 0.0;
+        // (all of them: lower shells left under the blades blended their dark depth over the blade bases)
+        float underB = uTurfShell.z > 0.0 ? 1.0 - tss(uTurfShell.z * 0.5, uTurfShell.z * 0.95, dc) : 0.0;
         // low sun: the sheets' cross-section pattern turns into strokes drawn along the sun (the turf reflectance
         // already carries the canopy's low-sun look), so they thin out and flatten their contrast
         float lowSun = 1.0 - tss(0.08, 0.35, uSunDir.y);
-        float a = bl.r * edge * fadeD * graze * uTurfOn * (1.0 - 0.9 * underB) * (1.0 - 0.45 * lowSun);
+        float a = bl.r * edge * fadeD * graze * uTurfOn * (1.0 - underB) * (1.0 - 0.45 * lowSun);
         if (a < 0.02) discard;
-        vec3 c = vec3(0.072, 0.100, 0.042) * (0.75 + 0.5 * mix(bl.g, 0.5, 0.6 * lowSun));
+        vec3 c = vec3(0.080, 0.118, 0.045) * (0.75 + 0.5 * mix(bl.g, 0.5, 0.6 * lowSun));
         c = mix(c, vec3(0.165, 0.150, 0.080), longG * 0.30 * bl.g + 0.25 * tss(0.6, 0.85, vTP2.x));
+        // dead and yellowing blades scattered through the sward (more in the rough)
+        c = mix(c, vec3(0.25, 0.21, 0.12), tss(0.82 - 0.12 * longG, 0.95, bl.g) * 0.8);
         // inside the sward: lower parts see less sky and sun (bright tips, dark bases), blades of older passes dull
-        c *= (0.35 + 0.75 * vTZ) * (1.0 - 0.15 * since);
-        // ... and under the 3-D blades the remaining lower shells are the shaded depth between them
-        if (uTurfShell.z > 0.0) c *= 1.0 - 0.55 * (1.0 - tss(uTurfShell.z * 0.35, uTurfShell.z, dc));
+        c *= (0.50 + 0.60 * vTZ) * (1.0 - 0.15 * since);
         diffuseColor.rgb = c;
         diffuseColor.a = a;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);')

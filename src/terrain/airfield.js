@@ -53,11 +53,18 @@ TurfP turfPlan(vec2 w, float dP, float nA, float nB, float nC) {
   uint hh = q.x * 0x8da6b343u + q.y * 0xd8163841u + 0x9e3779b9u;
   hh ^= hh >> 15; hh *= 0x2c1b3c6du; hh ^= hh >> 12; hh *= 0x297a2d39u; hh ^= hh >> 15;
   T.since = float(hh & 0xffffu) / 65536.0;
-  T.longG = clamp((dP + 50.0 * (nA - 0.5) + 20.0 * (nC - 0.5) - 55.0) / 65.0, 0.0, 1.0);
+  uint h2 = hh * 0x9e3779b9u + 0x7f4a7c15u; h2 ^= h2 >> 13; h2 *= 0x5bd1e995u; h2 ^= h2 >> 15;
+  float bh2 = float(h2 & 0xffffu) / 65536.0;
+  // most of an airfield is rough grass cut a few times a year for bird control: only a strip along the pavement is
+  // kept short (wider along the runway's graded strip, ragged where the mower turned), and some blocks of that
+  // strip have been let grow out since the last cut
+  T.longG = clamp((dP + 34.0 * (nA - 0.5) + 16.0 * (nC - 0.5) - 26.0) / 34.0, 0.0, 1.0);
+  T.longG = max(T.longG, step(0.80, bh2) * 0.55);
   T.longG = T.longG * T.longG * (3.0 - 2.0 * T.longG);
-  T.H = mix(0.04, 0.13, T.longG) * (0.8 + 0.45 * T.since);
-  // (rotary gang mowers without rollers lay the grass only a little: stripes are subtle and fade as it regrows)
-  T.lay = mix(0.62, 0.18, T.longG) * (1.0 - 0.5 * T.since);
+  T.H = mix(0.05, 0.16, T.longG) * (0.8 + 0.45 * T.since);
+  // (rotary gang mowers without rollers lay the grass only a little: stripes are subtle, fade as it regrows, and
+  // the blocks cut with a flail or a rotary deck show none)
+  T.lay = mix(0.36, 0.12, T.longG) * (1.0 - 0.6 * T.since) * (0.35 + 0.65 * step(0.45, bh2));
   T.dir = ax * (mod(pid, 2.0) < 0.5 ? 1.0 : -1.0);
   return T;
 }

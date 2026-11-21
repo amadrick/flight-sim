@@ -82,7 +82,12 @@ export function createPlacement(ctx, { L, G, uniforms, level = 4 }) {
         float belowTL = ss(C.treeline + 60.0, C.treeline - 260.0, h);
         // solitary trees and bushes in open country (more along creeks and on rough ground), shrubs in the drylands
         float pSolo = open * (1.0 - desertAmt) * belowTL * (0.0012 + 0.010 * ss(0.55, 0.8, n2.g) + 0.10 * C.forest) * (1.0 - C.crop) * (1.0 + 2.5 * C.tropic);   // scattered palms all over tropical lowlands
-        float pBush = open * (1.0 - desertAmt) * belowTL * (0.002 + 0.012 * ss(0.6, 0.85, n3.g) + 0.15 * C.forest) * (1.0 - C.crop) + open * ss(0.2, 0.45, arid) * (1.0 - desertAmt) * 0.08;
+        float pBush = open * (1.0 - desertAmt) * belowTL * (0.004 + 0.016 * ss(0.6, 0.85, n3.g) + 0.15 * C.forest) * (1.0 - C.crop) + open * ss(0.2, 0.45, arid) * (1.0 - desertAmt) * 0.08;
+        // scrub that breaks up the open country: bramble and thorn along the field margins that have no hedge,
+        // willow and alder scrub on river banks
+        float fieldEdge = C.crop > 0.3 ? (1.0 - ss(2.0, 6.0, C.fld.edge)) * (1.0 - ss(0.2, 0.5, C.hedge)) * ss(0.45, 0.7, n3.g * 0.6 + n2.r * 0.4) : 0.0;
+        float bank = ss(0.02, 0.10, Gh.w) * (1.0 - ss(0.30, 0.50, Gh.w)) * (1.0 - C.pad) * ss(1.5, 4.0, h);
+        pBush += (0.14 * fieldEdge + 0.22 * bank * ss(0.35, 0.6, n3.r)) * (1.0 - desertAmt) * belowTL;
         // drylands: creosote / sage in loose drifts, denser along the runnels, almost none on moving dune sand
         float pShrub = open * desertAmt * (0.025 + 0.24 * ss(0.42, 0.78, n2.g * 0.6 + n1.r * 0.4) + 6.0 * max((D.z - 0.5) / 1.25, 0.0)) * (1.0 - 0.96 * dune);
         float u = hs.x, sp = -1.0, size = 0.0;

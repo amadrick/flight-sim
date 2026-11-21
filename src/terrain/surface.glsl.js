@@ -110,6 +110,15 @@ TerrField terrFieldAt(vec2 w) {
   return F;
 }
 
+// Crop class position of a farm parcel (shared by the field shader and the near-field crop plants): the district's
+// crop mix, mountain valleys grow grass. Thresholds (terrFieldColor): < 0.22 green cereal, < 0.34 ripe cereal,
+// < 0.41 ploughed, < 0.47 seedbed, < 0.63 pasture, < 0.73 stubble, < 0.80 grass ley, < 0.88 maize, < 0.935 oilseed
+// rape, < 0.965 beet / potatoes, else fallow. Stage = F.id.y.
+float terrFieldT(TerrField F, vec2 w, float h) {
+  float t = pow(F.id.x, mix(0.6, 1.7, terrHash2(floor(w / 4020.0) + 9000.0).x));
+  if (ss(650.0, 1250.0, h) > fract(F.id.x * 3.7 + F.id.y)) t = F.id.y < 0.55 ? 0.55 : 0.77;
+  return t;
+}
 struct TerrCover {
   float pad; float treeline; float tropic; float forest; float conifer; float crop;
   float hedge;     // hedgerow / shelter-belt trees inside farmland (already included in forest)
@@ -262,6 +271,11 @@ float gTurfAmt = 0.0; vec2 gTurfDir = vec2(1.0, 0.0); float gTurfLay = 0.0; floa
 const vec3 TURF_REF = vec3(0.072, 0.100, 0.042);
 uniform vec4 uTurfShell;         // near-field turf shells (veg/turf.js): x = on, y = radius (m); z = grass blade radius (veg/blades.js)
 float gGrassK = 0.0;             // natural grass share of the pixel (gets the long-sward reflectance)
+vec4 gCrop = vec4(-1.0, 0.0, 1.0, 0.0);   // farm field: x = crop canopy class (-1 none), y = canopy share, zw = row direction (world xz)
+float gCropAmt = 0.0;            // field share of the pixel
+float gCropH = 0.0;              // standing crop height (m), as the grass map gives the crop plants (veg/grass.js)
+float gViewMu = 1.0;             // cosine of the view zenith angle (set before terrFieldColor)
+float gCropEar = 0.0;            // 1 = cereal ears / seed heads on top (ripe or ripening grain, hay)
 
 struct TerrSurf { vec3 albedo; float rough; vec3 n; float ao; float shadow; vec3 canopyK; vec3 emis; float specK; };   // canopyK: direct-sun factor of the painted forest (vegetation canopy network)
 
@@ -281,6 +295,66 @@ const vec4 TERR_MATP[8] = vec4[8](
 const float TERR_SIG[8] = float[8](0.42, 0.30, 0.45, 0.45, 0.15, 0.08, 0.0, 0.45);
 // Coverage of a line of half width hw whose centre is dist away, seen through a pixel px wide (box filter).
 float terrLine(float dist, float hw, float px) { return clamp((hw - dist) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * hw / px + 0.15); }
+
+// ---- the sward and the standing crop seen from a low eye ---------------------------------------------------------
+// From eye height a lawn or a wheat field is not a painted floor: every blade or stalk stands up, lit toward its tip,
+// with the shaded depth of the sward between them, so the ground beyond the 3-D plants reads as a fine vertical
+// grain of blades. An upright blade of height H whose base is r from a camera hc above the ground hides the ground
+// from r to r hc / (hc - H): in (azimuth, log r) around the camera every blade is the same size. This draws that
+// grain: cells of cellPx pixels in azimuth by one blade height in log r, a blade in each (2 staggered layers, the
+// row behind overlapped by the row in front, composited far to near, filtered against the pixel), shaded dark at
+// the base and lit toward the tip over a dark gap. Amplitude follows the blade's on-screen height (gone below a
+// pixel and far above the ground) and the factor is normalised to mean 1, so the colour the distance converges to
+// does not change. The grain sits in the camera's frame: it does not swim with rotation, only with travel.
+uniform vec4 uTerrNear;          // low-eye ground: x = radians per pixel, y = 3-D crop plant radius (m), z = 3-D blade radius (m)
+float gSwAmp = 0.0;              // how far the blades stand out at this pixel (terrSward, before the contrast falloff)
+vec4 terrSwHash(vec2 c) {
+  uvec2 q = uvec2(ivec2(c) + 1048576);
+  uint h = q.x * 0x8da6b343u + q.y * 0xd8163841u + 0x9e3779b9u;
+  h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12; h *= 0x297a2d39u; h ^= h >> 15;
+  uint h2 = h * 0x9e3779b9u + 0x7f4a7c15u; h2 ^= h2 >> 13; h2 *= 0x5bd1e995u; h2 ^= h2 >> 15;
+  return vec4(float(h & 0xffffu), float(h >> 16), float(h2 & 0xffffu), float(h2 >> 16)) / 65536.0;
+}
+// Hs = blade / stalk height (m), cellPx = cell width (px), hw0 = blade half width (cells), ear = 1 for an ear or a
+// seed head widening the top, spacing = plant spacing (m), M = mean of the raw shade for these settings (0.67 for hw0 0.32, 0.73 for 0.20 with ears), deadP = share of
+// dead / straw blades. Returns x = brightness factor (mean 1), y = upper-blade share, z = dead share, w = blade hue
+// (-1 yellow-green young .. +1 blue-green old).
+vec4 terrSward(vec3 rp, float Hs, float cellPx, float hw0, float ear, float M, float deadP, float spacing) {
+  vec3 q = rp - uTerrCam.xyz;
+  float hc = -q.y, r = length(q.xz) + 1.0e-3, dist = length(q) + 1.0e-3;
+  float pa = max(uTerrNear.x, 1.0e-5);
+  float hpx = Hs * r / (dist * dist * pa);                       // on-screen height of an upright blade, px
+  float amp = ss(1.5, 5.0, hpx) * ss(0.05, 0.4, (hc - Hs) / max(Hs, 0.01)) * step(0.005, Hs);
+  gSwAmp = amp;
+  // a cell many plants wide averages them: the grain's contrast falls with range (spacing = plant spacing, m)
+  amp *= clamp(pow(spacing / (r * cellPx * pa), 0.35), 0.3, 1.0);
+  if (amp < 0.004) return vec4(1.0, 0.0, 0.0, 0.0);
+  float Lg = log(hc / max(hc - Hs, 0.01));
+  float N = floor(6.2831853 / (cellPx * pa));
+  float u = (atan(q.z, q.x) * 0.15915494 + 0.5) * N;
+  float v = log(r) / Lg;
+  float fwu = dist / (r * cellPx), fwv = dist * dist * pa / (max(hc, 0.01) * r * Lg);
+  float s = 0.45, tip = 0.0, dead = 0.0, hue = 0.0;
+  float v1 = v - 0.43, j0 = floor(v), j1 = floor(v1);
+  int kf = (j1 + 0.43 > j0) ? 1 : 0;
+  for (int i = 0; i < 4; i++) {
+    int k = (i == 0 || i == 2) ? kf : 1 - kf;
+    float vk = k == 1 ? v1 : v, uk = k == 1 ? u - 0.5 : u;
+    float jc = floor(vk) - float(i / 2);
+    vec4 hh = terrSwHash(vec2(mod(floor(uk), N) + float(k) * 7919.0, jc + float(k) * 3571.0));
+    float hf = 0.55 + 0.75 * hh.y, t = (vk - jc) / hf;
+    if (t >= 1.0) continue;
+    float dx = fract(uk) - (0.25 + 0.5 * hh.x) - (hh.z - 0.5) * 0.5 * t * t;
+    float w = hw0 * (1.0 - pow(t, 1.6));
+    if (ear > 0.5 && t > 0.72) w = hw0 * 1.6;
+    float cv = clamp((w - abs(dx)) / fwu + 0.5, 0.0, 1.0) * clamp((1.0 - t) * hf / max(fwv, 1.0e-3) + 0.5, 0.0, 1.0);
+    s = mix(s, (0.58 + 0.55 * t) * (0.85 + 0.3 * hh.w), cv);
+    hue = mix(hue, hh.z * 2.0 - 1.0, cv);
+    tip = mix(tip, t, cv);
+    dead = mix(dead, step(fract(hh.w * 7.31 + hh.x * 3.7), deadP), cv);
+  }
+  return vec4(mix(1.0, s / M, amp), tip * amp, dead * amp, hue * amp);
+}
 // Share of the ground covered when a fraction f is broken into patches by the noise value nz (mean 0.5, sigma sg);
 // e = edge softness in noise units. As e grows (distance) the result converges to f itself.
 float terrPatch(float f, float nz, float sg, float e) {
@@ -314,76 +388,196 @@ void terrSide(vec3 T, vec2 off, vec3 rp, vec3 n, float layer, vec3 dpx, vec3 dpy
 }
 
 // ---- farmland ------------------------------------------------------------------------------------------------------
-// Colour of the farm parcel F. wet = soil moisture, n2/n3/n4 = noise, px = metres per pixel. Returns rgb + a = surface
-// kind for the detail layers (0 crop canopy / grass, 1 bare soil, 2 gravel).
-vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, vec4 n4, float px, vec2 vxz, out float rough, out vec2 fdn) {
-  // regional crop mix per district, then the class of this field; mountain valleys grow grass (pasture, hay)
-  float t = pow(F.id.x, mix(0.6, 1.7, terrHash2(floor(w / 4020.0) + 9000.0).x));
-  if (ss(650.0, 1250.0, h) > fract(F.id.x * 3.7 + F.id.y)) t = F.id.y < 0.55 ? 0.60 : 0.82;
+// Colour of the farm parcel F. wet = soil moisture, n2..n5 = noise (n4 / n5 = 0.5 once they no longer resolve),
+// px = metres per pixel. Returns rgb + a = surface kind for the detail layers (0 crop canopy / grass, 1 bare soil,
+// 2 gravel). crop: x = canopy class for the crop reflectance network (-1 none), y = canopy share of the pixel,
+// zw = world xz direction ALONG the drill rows.
+// What makes farmland read as farmland from the air (and not as flat coloured rectangles): the soil zones that swirl
+// through every bare and young field, crops of several kinds at different stages, cover that grows unevenly (thin on
+// dry knolls, drowned in wet hollows), the machine's own marks - tramlines every 18-30 m, drill passes that look
+// lighter or darker depending on the way you look along them, the headland ring where the machine turned, plough
+// lands with their dead furrows, straw swaths and bales on the stubble, cut swaths on the hay - and the margins: a
+// strip of rough grass, a sterile strip, a track.
+const float CROP_NONE = -1.0;
+vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, vec4 n4, vec4 n5, float px, vec2 vxz, vec4 dd, out float rough, out vec2 fdn, out vec4 crop) {
+  float t = terrFieldT(F, w, h);
+  gCropH = 0.0; gCropEar = 0.0;
+  // a crop that covers 40 % of the ground seen from above hides all of it seen across the field: the gap fraction of
+  // a canopy goes as (gap from above)^(1 / cos view zenith), so the soil between the rows fades from a low eye
+  float muV = clamp(gViewMu, 0.04, 1.0);
   float stage = F.id.y;
+  float id2 = fract(F.id.x * 13.13 + F.id.y * 7.71), id3 = fract(F.id.x * 3.37 + F.id.y * 17.9);
   bool wide = F.size.x > F.size.y;
-  float along = wide ? F.pq.x : F.pq.y, across = wide ? F.pq.y : F.pq.x, len = wide ? F.size.x : F.size.y;
-  // headlands: at both ends of the field the machine turns and works across
-  float head = step(min(along, len - along), 13.0);
-  float cr = mix(across, along, head);
-  // world direction of the axis the rows are counted along (the field frame is the survey grid, turned 12 degrees)
+  float along = wide ? F.pq.x : F.pq.y, across = wide ? F.pq.y : F.pq.x;
+  float len = wide ? F.size.x : F.size.y, wid = wide ? F.size.y : F.size.x;
+  // headland: a ring 2-4 machine widths wide round the whole field, worked parallel to the nearest edge
+  float headW = 12.0 + 12.0 * id3;
+  float deAl = min(along, len - along), deAc = min(across, wid - across);
+  float head = 1.0 - step(headW, F.edge);
+  bool endHead = deAl < deAc;
+  float cr = head > 0.5 ? (endHead ? deAl : deAc) : across;
+  // world direction of the field axes (the field frame is the survey grid, turned 12 degrees)
   vec2 dAx = F.flip > 0.5 ? vec2(0.208, 0.978) : vec2(0.978, -0.208), dAy = F.flip > 0.5 ? vec2(0.978, -0.208) : vec2(0.208, 0.978);
-  vec2 crDir = (head > 0.5) == wide ? dAx : dAy;
+  vec2 alDir = wide ? dAx : dAy, acDir = wide ? dAy : dAx;
+  vec2 crDir = (head > 0.5 && endHead) ? alDir : acDir;            // across the passes / rows here
   fdn = vec2(0.0);
-  // growth is uneven: wetter hollows are darker and lusher, dry knolls pale; drill misses and waterlogging
-  float vig = clamp(0.5 + 1.1 * (wet - 0.52) + 0.9 * (n3.r - 0.5) + 0.5 * (n2.g - 0.5) + 0.35 * (n4.g - 0.5), 0.0, 1.0);
-  vec3 soil = mix(vec3(0.165, 0.130, 0.080), vec3(0.090, 0.070, 0.045), clamp(wet * 1.3 - 0.25 + 0.5 * (n3.g - 0.5), 0.0, 1.0));
-  vec3 c; float rowP = 0.0, rowA = 0.0, swP = 0.0, swA = 0.0, tram = 0.0, kind = 0.0;
+  crop = vec4(CROP_NONE, 0.0, vec2(-crDir.y, crDir.x));
+  // soil zones (till, alluvium, chalk patches) swirl through the fields: they set the soil colour and how well the
+  // crop grows; wetter hollows lusher (or drowned), dry knolls pale and thin
+  float zone = 0.5 + 0.55 * (n2.g - 0.5) + 0.45 * (n3.r - 0.5) + 0.25 * (n4.g - 0.5);
+  float vig = clamp(0.5 + 1.0 * (wet - 0.52) + 1.2 * (zone - 0.5) + 0.3 * (n4.b - 0.5), 0.0, 1.0);
+  float chalk = ss(0.52, 0.78, n2.b * 0.55 + terrHash2(floor(w / 3100.0) + 77.0).y * 0.45);
+  float moist = clamp(wet * 1.3 - 0.32 + 1.3 * (zone - 0.5) + 0.25 * (n4.r - 0.5), 0.0, 1.0);
+  vec3 soilD = mix(vec3(0.205, 0.165, 0.115), vec3(0.300, 0.280, 0.236), chalk);
+  vec3 soilW = mix(vec3(0.098, 0.077, 0.055), vec3(0.165, 0.148, 0.120), chalk);
+  vec3 soil = mix(soilD, soilW, moist);
+  vec3 strawC = vec3(0.285, 0.240, 0.150);
+  vec3 c = soil; float cover = 0.0, preset = CROP_NONE;
+  float rowP = 0.0, rowA = 0.0, swP = 0.0, swA = 0.0, tram = 0.0, kind = 0.0, passA = 0.0;
   rough = 0.92;
-  if (t < 0.25) {            // cereal, green: from thin young growth showing soil to dense blue-green
-    c = mix(mix(soil, vec3(0.085, 0.150, 0.040), 0.55 + 0.3 * vig), vec3(0.040, 0.098, 0.036), ss(0.25, 0.8, stage));
-    c *= 0.82 + 0.36 * vig; tram = 1.0; rowP = 0.25; rowA = 0.10;
-  } else if (t < 0.39) {     // ripe grain; some fields are being harvested (stubble behind a straight line)
-    c = mix(vec3(0.335, 0.265, 0.115), vec3(0.275, 0.200, 0.085), vig) * (0.9 + 0.2 * stage);
-    tram = 1.0;
-    float cut = step(0.55, stage) * step(across / max(wide ? F.size.y : F.size.x, 1.0), fract(stage * 9.7));
-    c = mix(c, vec3(0.245, 0.215, 0.135), cut); swP = 7.5; swA = 0.10 * cut; tram *= 1.0 - cut;
-  } else if (t < 0.50) {     // ploughed / harrowed earth
-    c = soil * (0.9 + 0.3 * stage); rowP = 0.45; rowA = 0.30; swP = 6.0; swA = 0.06; kind = 1.0; rough = 0.88;
-  } else if (t < 0.69) {     // pasture: mottled, grazed unevenly
-    c = mix(vec3(0.105, 0.135, 0.050), vec3(0.052, 0.098, 0.030), vig);
-    c = mix(c, vec3(0.180, 0.165, 0.080), ss(0.62, 0.85, n4.r * 0.5 + n3.g * 0.5) * 0.4);
-  } else if (t < 0.79) {     // stubble
-    c = mix(vec3(0.255, 0.220, 0.130), vec3(0.200, 0.170, 0.100), vig); rowP = 0.25; rowA = 0.12; swP = 7.5; swA = 0.09;
-  } else if (t < 0.86) {     // hay: mown, swaths drying in rows
-    c = mix(vec3(0.130, 0.160, 0.058), vec3(0.085, 0.125, 0.040), vig); swP = 5.0; swA = 0.22 * step(0.4, stage);
-  } else if (t < 0.94) {     // maize: tall, dark, strong rows
-    c = mix(vec3(0.060, 0.115, 0.032), vec3(0.034, 0.082, 0.026), vig); rowP = 0.75; rowA = 0.28;
-  } else if (t < 0.962) {    // oilseed rape in flower
-    c = mix(vec3(0.120, 0.160, 0.040), vec3(0.330, 0.300, 0.060), ss(0.2, 0.6, stage) * (0.6 + 0.4 * vig)); tram = 1.0;
-  } else {                   // fallow: weeds over old stubble
-    c = mix(vec3(0.190, 0.160, 0.100), vec3(0.075, 0.105, 0.045), ss(0.35, 0.65, n3.r * 0.5 + n4.g * 0.5)); kind = 0.5;
+  if (t < 0.22) {                 // winter cereal, green: from rows of thin seedlings over the soil to a closed blue-green crop
+    cover = clamp(0.18 + 0.95 * stage + 0.45 * (vig - 0.5), 0.06, 1.0);
+    vec3 g = mix(vec3(0.064, 0.098, 0.040), vec3(0.050, 0.086, 0.044), stage) * (0.84 + 0.32 * vig);
+    c = mix(soil, g, 1.0 - pow(1.0 - cover, 1.0 / muV));
+    tram = 1.0; rowP = 0.125; rowA = 0.5 * pow(1.0 - cover, 1.0 / muV) + 0.04; passA = 1.0;
+    preset = cover < 0.55 ? 0.0 : 1.0;
+    gCropH = 0.10 + 0.75 * stage;
+  } else if (t < 0.34) {          // ripening / ripe grain; the combine is in some (stubble behind a straight line)
+    float ripe = ss(0.15, 0.65, stage);
+    vec3 g = mix(vec3(0.112, 0.122, 0.056), vec3(0.290, 0.228, 0.115), ripe) * (0.88 + 0.24 * vig);
+    g = mix(g, g * vec3(0.72, 0.88, 0.85), (1.0 - 0.5 * ripe) * ss(0.62, 0.9, moist) * 0.7);    // late, green in the wet hollows
+    // lodged patches (laid flat by wind and rain): paler and smoother, swirled
+    float lodge = ss(0.66, 0.80, n3.g * 0.6 + n4.b * 0.4) * ripe * step(0.35, id2);
+    g = mix(g, g * vec3(1.20, 1.18, 1.10), lodge);
+    c = g; cover = 0.95; tram = 1.0; passA = 0.7;
+    preset = ripe > 0.5 ? 2.0 : 1.0;
+    gCropH = 0.80 + 0.15 * id2; gCropEar = 1.0;
+    float cut = step(0.6, stage) * max(step(across / max(wid, 1.0), fract(stage * 9.7)), head) * (1.0 - step(0.9, id2));
+    if (cut > 0.5) {
+      c = mix(strawC, soil, 0.25) * (0.92 + 0.16 * vig); cover = 0.08; preset = 3.0; tram = 0.6;
+      swP = 7.6; swA = -0.16; rowP = 0.125; rowA = 0.10; passA = 0.0;
+      gCropH = 0.14; gCropEar = 0.0;
+    }
+  } else if (t < 0.41) {          // ploughed: lands 20-40 m wide with dead furrows between them, clods drying pale on top
+    c = soil * 0.86;
+    float landW = 22.0 + 18.0 * id2, lf = fract(across / landW);
+    c *= 0.95 + 0.07 * step(0.5, fract(across / landW * 0.5));
+    c *= 1.0 - 0.22 * terrLine(min(lf, 1.0 - lf) * landW, 0.45, px);
+    c = mix(c, soilD * 0.95, 0.22 * ss(0.45, 0.8, n5.r) * (1.0 - moist));
+    rowP = 0.36; rowA = 0.32; kind = 1.0; rough = 0.96; head = 0.0; cr = across; crDir = acDir;
+  } else if (t < 0.47) {          // harrowed / drilled seedbed: fine, pale, dry; drill passes and wheel marks
+    c = mix(soil, soilD, 0.35) * (0.94 + 0.12 * vig);
+    rowP = 0.125; rowA = 0.07; kind = 1.0; rough = 0.90; passA = 0.6; tram = step(0.5, stage);
+  } else if (t < 0.63) {          // pasture: grazed unevenly, rank tussocks the stock leave, dung patches, buttercup fields
+    c = mix(vec3(0.086, 0.110, 0.050), vec3(0.054, 0.090, 0.036), vig);
+    float rank = ss(0.56, 0.78, n4.r * 0.55 + n5.g * 0.45);
+    c = mix(c, vec3(0.135, 0.135, 0.066), rank * 0.55);
+    c = mix(c, vec3(0.040, 0.084, 0.032), ss(0.70, 0.86, n5.b) * 0.45);
+    c = mix(c, vec3(0.200, 0.178, 0.045), ss(0.58, 0.80, n3.b) * step(0.72, id2) * 0.45);
+    // poached, bare ground round the gate and the trough (a field corner)
+    c = mix(c, soil * 0.8, (1.0 - ss(6.0, 28.0, length(vec2(deAl, deAc)) + 10.0 * (n4.g - 0.5))) * step(0.5, id3) * 0.8);
+    cover = 0.9; preset = 6.0; rough = 0.94;
+  } else if (t < 0.73) {          // stubble: straw rows from the combine, bales on some, soil and green volunteers through it
+    c = mix(vec3(0.272, 0.228, 0.146), vec3(0.212, 0.178, 0.112), vig * 0.5 + moist * 0.5);
+    c = mix(c, soil, 0.22 + 0.25 * (1.0 - stage));
+    c = mix(c, vec3(0.085, 0.108, 0.046), ss(0.45, 0.95, stage) * ss(0.42, 0.72, n4.g * 0.5 + n3.g * 0.5) * 0.35);
+    swP = 7.6; swA = -0.18 * step(0.25, id3);
+    rowP = 0.125; rowA = 0.12; tram = 1.0; cover = 0.06; preset = 3.0;
+    gCropH = 0.12 + 0.06 * id2;
+  } else if (t < 0.80) {          // grass ley for hay / silage: lush, or cut and lying in swaths, or bare-ish after the harvest
+    c = mix(vec3(0.080, 0.116, 0.046), vec3(0.058, 0.100, 0.038), vig);
+    float cutL = step(0.45, stage);
+    c = mix(c, vec3(0.120, 0.128, 0.064), cutL * 0.6);
+    swP = 6.5 + 2.0 * id3; swA = 0.28 * cutL * step(stage, 0.75);
+    cover = 0.9; preset = cutL > 0.5 ? 6.0 : 6.0; passA = 0.6 * cutL;
+    gCropH = cutL > 0.5 ? 0.08 : 0.35 + 0.3 * id2; gCropEar = 1.0 - cutL;
+  } else if (t < 0.88) {          // maize: rows 75 cm apart, soil between them until the canopy closes, tan when ripe
+    cover = mix(0.22, 0.92, ss(0.1, 0.55, stage)) * (0.85 + 0.3 * vig);
+    vec3 g = mix(vec3(0.050, 0.090, 0.032), vec3(0.040, 0.078, 0.030), vig);
+    g = mix(g, vec3(0.200, 0.170, 0.095), ss(0.85, 0.97, stage));
+    float gapV = pow(1.0 - clamp(cover, 0.0, 1.0), 1.0 / muV);
+    c = mix(soil, g, 1.0 - gapV);
+    rowP = 0.75; rowA = 0.55 * gapV + 0.10;
+    preset = cover < 0.55 ? 7.0 : 4.0;
+    gCropH = mix(0.35, 2.4, ss(0.05, 0.6, stage));
+  } else if (t < 0.935) {         // oilseed rape: blue-green, then a sheet of yellow, then grey-green pods
+    float flower = ss(0.22, 0.45, stage) * (1.0 - ss(0.78, 0.92, stage));
+    vec3 g = mix(vec3(0.058, 0.098, 0.044), vec3(0.120, 0.128, 0.064), ss(0.8, 0.95, stage));
+    vec3 y = vec3(0.360, 0.300, 0.042) * (0.82 + 0.3 * vig);
+    c = mix(g, y, flower * (0.55 + 0.45 * vig));
+    cover = 0.9; tram = 1.0; passA = 0.4;
+    preset = flower > 0.5 ? 5.0 : 1.0;
+    gCropH = mix(0.3, 1.35, ss(0.0, 0.4, stage));
+  } else if (t < 0.965) {         // sugar beet / potatoes: broad dark leaves in wide rows (potato ridges)
+    cover = mix(0.18, 0.95, ss(0.05, 0.5, stage));
+    float gapB = pow(1.0 - cover, 1.0 / muV);
+    c = mix(soil * (0.9 + 0.1 * step(0.5, id2)), vec3(0.046, 0.090, 0.042) * (0.85 + 0.3 * vig), 1.0 - gapB);
+    rowP = mix(0.5, 0.75, step(0.5, id2)); rowA = 0.6 * gapB + 0.12;
+    preset = cover < 0.55 ? 7.0 : 1.0;
+    gCropH = mix(0.12, 0.45, ss(0.05, 0.5, stage));
+  } else {                        // fallow: weeds over old stubble, thistles and docks
+    c = mix(vec3(0.165, 0.148, 0.090), vec3(0.075, 0.100, 0.046), ss(0.35, 0.65, n3.r * 0.5 + n4.g * 0.5));
+    c = mix(c, soil, ss(0.55, 0.8, n5.r) * 0.3);
+    kind = 0.5; cover = 0.7; preset = 6.0;
+    gCropH = 0.3;
   }
-  c *= 0.86 + 0.28 * F.id.y;
-  // drill rows / furrows (close up), swaths (from pattern altitude), tramlines (two wheel tracks every 24 m)
+  c *= 0.92 + 0.16 * id2;                                           // variety, drilling date, fertiliser
+  // drowned patches in the wettest hollows: yellowed, thin crop over dark wet soil
+  float drown = ss(0.86, 0.97, moist + 0.25 * (n2.r - 0.5)) * step(0.5, cover) * step(0.4, id3);
+  c = mix(c, mix(soilW, vec3(0.13, 0.13, 0.06), 0.5), drown * 0.6);
+  // drill rows / furrows (close up): ridges and furrows catch the light
+  // (filtered against the pixel footprint across the rows, not its long axis: looking along them from low down the
+  // rows, passes and tramlines stay sharp converging lines into the distance instead of a blur)
+  float pxc = abs(dot(dd.xy, crDir)) + abs(dot(dd.zw, crDir)) + 0.001;
   if (rowP > 0.0) {
-    float rk = ss(rowP * 0.9, rowP * 0.3, px), ph = cr * 6.2831853 / rowP;
+    float rk = ss(rowP * 0.9, rowP * 0.3, pxc), ph = cr * 6.2831853 / rowP;
     c *= 1.0 - rowA * (0.5 + 0.5 * sin(ph)) * rk;
-    fdn = crDir * (-(0.35 + 1.6 * rowA) * cos(ph) * rk);                 // ridges and furrows catch the light
+    fdn = crDir * (-(0.35 + 1.6 * rowA) * cos(ph) * rk);
   }
-  // every pass of the machine lays the crop over the other way: alternate bands look lighter or darker depending on
-  // which way you look along them (what makes fields read as striped from the air)
-  float passW = 6.0 + 6.0 * floor(F.id.y * 3.0), passK = ss(passW * 0.7, passW * 0.2, px) * (1.0 - kind) * step(0.5, 1.0 - head);
+  // drill / mower passes: every other pass lays the crop the other way (lighter or darker depending on which way you
+  // look along them); wider, irregular passes in the headland
+  float passW = 4.0 + 2.0 * floor(id3 * 3.0) + 2.0 * head, passK = ss(passW * 0.7, passW * 0.15, pxc) * passA;
   float passS = step(0.5, fract(cr / passW)) * 2.0 - 1.0;
-  c *= 1.0 + passK * passS * (0.035 + 0.10 * dot(vxz, vec2(-crDir.y, crDir.x)));
-  if (swP > 0.0) c *= 1.0 - swA * step(0.5, fract(cr / swP + 0.25)) * ss(swP * 0.8, swP * 0.25, px);
-  if (tram > 0.0) {
-    float tx = abs(abs(fract(cr / 24.0) - 0.5) * 24.0 - 0.95);
-    c = mix(c, mix(c, soil, 0.75) * 1.05, terrLine(tx, 0.22, px) * tram * ss(5.0, 1.5, px));
+  c *= 1.0 + passK * passS * (0.025 + 0.09 * dot(vxz, crDir));
+  // swaths (straw rows from the combine, cut grass) and round bales sitting on them
+  if (swA != 0.0) {
+    float sx = fract(cr / swP + 0.25), sline = terrLine(abs(sx - 0.5) * swP, 0.75, px);
+    c *= 1.0 - swA * sline * ss(swP * 1.4, swP * 0.25, px);
+    // (dropped where the baler happened to fill: irregular, sparse along each swath - a regular lattice of bales read
+    // as a stipple pattern from altitude)
+    float bA = along / 31.0 + 0.37 * floor(cr / swP);
+    vec2 bh = terrHash2(vec2(floor(bA), floor(cr / swP)) + F.id * 17.0);
+    float bale = step(0.6, id2) * step(0.55, bh.x) * terrLine(length(vec2((sx - 0.5) * swP, (fract(bA) - 0.2 - 0.6 * bh.y) * 31.0)), 0.8, px);
+    c = mix(c, vec3(0.30, 0.26, 0.17) * 1.1, bale * step(stage, 0.85) * (1.0 - head));
   }
-  // field margin: an unsown strip, a track along some sides, the hedge bank
-  float margin = 1.0 - ss(1.0, 3.5 + px, F.edge);
-  c = mix(c, vec3(0.110, 0.130, 0.055) * (0.8 + 0.4 * n4.r), margin * 0.8);
+  // tramlines: two wheel tracks 1.9 m apart every 18-30 m, and one round the headland; bare soil in a green crop,
+  // shaded slots in a tall ripe one
+  if (tram > 0.0) {
+    float tW = 18.0 + 6.0 * floor(id2 * 3.0);
+    float tc0 = head > 0.5 ? abs(cr - headW * 0.5) : abs(fract(cr / tW) - 0.5) * tW;
+    float tx = abs(tc0 - 0.95);
+    float tl = terrLine(tx, 0.24, pxc) * tram * ss(8.0, 1.0, pxc);
+    c = mix(c, mix(soil, c * 0.55, 0.35 * (1.0 - cover)) * 0.95, tl * mix(0.55, 0.9, cover));
+  }
+  // compaction in the headland: thinner, more uneven crop
+  c = mix(c, mix(c, soil, 0.25) * (0.95 + 0.1 * n4.r), head * step(0.3, cover) * 0.55);
+  cover *= 1.0 - 0.25 * head;
+  // field margin: an uncropped strip of rough grass (1.5-5 m, tussocky), a sterile strip beside the crop on some,
+  // a track along some sides
+  float marW = 1.5 + 3.5 * id3;
+  float margin = 1.0 - ss(marW - 0.5, marW + 0.5 + px, F.edge);
+  vec3 mcol = vec3(0.098, 0.115, 0.054) * (0.75 + 0.5 * n4.r) * (0.8 + 0.4 * ss(0.3, 0.7, n5.g));
+  mcol = mix(mcol, vec3(0.17, 0.15, 0.09), ss(0.6, 0.85, n5.r * 0.5 + n3.b * 0.5) * 0.5);
+  c = mix(c, mcol, margin * 0.92);
+  float sterile = terrLine(abs(F.edge - marW - 0.4), 0.35, px) * step(0.55, id2) * step(0.2, cover);
+  c = mix(c, soil * 0.9, sterile * 0.8);
   float track = terrLine(abs(F.edge - 1.6), 0.9, px) * step(fract(F.id.x * 13.7), 0.45);
   c = mix(c, vec3(0.235, 0.205, 0.160), track * 0.8);
+  cover *= 1.0 - margin;
+  if (margin > 0.5) preset = 6.0;
   // gravel section roads with grass verges
   float verge = terrLine(F.road, 7.0, px);
-  c = mix(c, vec3(0.095, 0.125, 0.050) * (0.8 + 0.4 * n4.g), verge * 0.9);
+  c = mix(c, vec3(0.092, 0.115, 0.050) * (0.8 + 0.4 * n4.g), verge * 0.9);
   float rd = terrLine(F.road, 2.6, px);
   c = mix(c, vec3(0.285, 0.265, 0.225), rd);
   kind = mix(kind, 2.0, step(0.5, rd));
@@ -392,9 +586,11 @@ vec4 terrFieldColor(TerrField F, vec2 w, float h, float wet, vec4 n2, vec4 n3, v
   float fd = max(abs(fpos.x), abs(fpos.y)) + 14.0 * (n3.g - 0.5);
   float farm = step(0.45, F.blk.x) * (1.0 - ss(52.0, 60.0 + px, fd));
   c = mix(c, mix(vec3(0.225, 0.205, 0.170) * (0.85 + 0.3 * n4.r), vec3(0.070, 0.105, 0.040), ss(22.0, 30.0, fd + 10.0 * (n4.r - 0.5))), farm);
+  float off = max(max(verge, rd), farm);
   // far away a pixel holds many fields: converge to the district mean instead of shimmering
   float farK = ss(0.20, 0.9, px / max(min(F.size.x, F.size.y), 40.0));
-  c = mix(c, vec3(0.135, 0.150, 0.068) * (0.9 + 0.2 * vig), farK);
+  c = mix(c, vec3(0.128, 0.138, 0.072) * (0.9 + 0.2 * vig), farK);
+  crop = vec4(preset, clamp(cover, 0.0, 1.0) * (1.0 - off) * (1.0 - farK), -crDir.y, crDir.x);
   return vec4(c, kind);
 }
 
@@ -599,13 +795,24 @@ TerrSurf terrSurface(vec3 rp) {
     canopy = mix(forest, clamp((cn.b - (1.0 - forest * 1.04)) * 6.0 + 0.5, 0.0, 1.0) * ss(0.0, 0.08, forest), fine * 0.85);
     canopy = max(canopy, C.hedge * 0.8);               // a hedgerow is a continuous strip, not a row of dots
     // sunlit crown tops over the dark gaps between the trees; every crown its own shade of green
-    fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine) * mix(1.0, 0.86, conifer);
+    // (with the 3-D canopy (VEG_CANOPY) its painted crown relief carries this; two unaligned crown patterns multiplied)
+#ifndef VEG_CANOPY
+    fcol *= mix(1.0, (0.62 + 0.76 * cn.a) * (0.55 + 0.75 * ss(0.15, 0.75, cn.b)), fine);
     canopyAO = mix(1.0, 0.30 + 0.92 * crown, fine);
+#endif
+    fcol *= mix(1.0, 0.86, conifer);
     // from further off the canopy reads as an uneven, mottled surface (no cell pattern: it would show its grid)
     float fineF = ss(40.0, 8.0, pxt) * (1.0 - 0.7 * fine);
     fcol *= 1.0 + fineF * (0.9 * (n3.g - 0.5) + 0.5 * (n3.r - 0.5));
     canopyAO *= 1.0 + fineF * 0.8 * (n3.g - 0.5);
     fcol *= (0.84 + 0.32 * n2.g) * (0.80 + 0.40 * C.mac.y);   // stand-to-stand variety
+    // stands of different age and height (410 m / 110 m noise): taller, older stands darker and rougher, young
+    // plantations and thickets lighter; seen from far off a forest is a mosaic of stands, not one painted patch
+    float standH = ss(0.25, 0.80, n2.b * 0.6 + n3.b * 0.4);
+    fcol *= mix(1.10, 0.80, standH) * mix(vec3(1.0), vec3(1.06, 1.02, 0.90), (1.0 - standH) * 0.6);
+    canopyAO *= mix(1.0, 0.86 + 0.14 * (1.0 - standH), ss(2.0, 12.0, pxt));
+    // the stand edge: the outermost crowns stand in the open and the ground just outside is in their shade
+    canopyAO *= 1.0 - 0.22 * ss(0.15, 0.45, forest) * ss(0.85, 0.45, forest) * ss(2.0, 10.0, pxt);
   }
   float floorAmt = canopy * t3d;                       // forest floor under real trees
 #ifdef VEG_CANOPY
@@ -620,8 +827,10 @@ TerrSurf terrSurface(vec3 rp) {
   if (cropPot > 0.001) {
     float fr;
     vec2 fdn;
-    vec4 fc = terrFieldColor(C.fld, w, h, wet, n2, n3, n4, px, Vw.xz, fr, fdn);
+    gViewMu = Vw.y;
+    vec4 fc = terrFieldColor(C.fld, w, h, wet, n2, n3, n4, n5, px, Vw.xz, vec4(dxz, dyz), fr, fdn, gCrop);
     fieldDn = fdn * cropAmt;
+    gCropAmt = cropAmt;
     col = mix(col, fc.rgb, cropAmt);
     rough = mix(rough, fr, cropAmt);
     if (cropAmt > 0.5) mat = fc.a > 1.5 ? M_GRAVEL : fc.a > 0.75 ? M_SOIL : M_GRASS;
@@ -661,10 +870,17 @@ TerrSurf terrSurface(vec3 rp) {
     float longG = TP.longG, since = TP.since, pf = TP.pf, passW = TP.passW;
     gTurfH = TP.H; gTurfLay = TP.lay; gTurfDir = TP.dir;
     vec3 tc = TURF_REF;
-    // clumps and tussocks (0.3 - 4 m), patchy growth (20 - 100 m)
+    // grass seen from a few metres on is not paint-green: dead leaves, seed heads and the shade between the tussocks
+    // mix in, more in the rough - olive, less saturated, yellower
+    tc = mix(tc, vec3(0.100, 0.104, 0.052), 0.20 + 0.45 * longG);
+    // clumps and tussocks (0.3 - 4 m), patchy growth (20 - 100 m); the rough is tussocky: lit tops, shaded hollows
     // (the 20-100 m terms are kept gentle: strong, they read as blotchy noise from the ground)
     float clump = 0.6 * (n5.g - 0.5) * near5 + 0.55 * (n4.r - 0.5) * near4 + 0.22 * (n3.g - 0.5) + 0.2 * (C.mac.y - 0.5);
-    tc *= clamp(1.0 + 0.42 * clump, 0.6, 1.5);
+    tc *= clamp(1.0 + (0.42 + 0.45 * longG) * clump, 0.5, 1.6);
+    float hollow = ss(0.42, 0.22, n5.g * near5 + 0.5 * (1.0 - near5)) * near5 + ss(0.40, 0.25, n4.r) * near4 * 0.5;
+    tc *= 1.0 - 0.35 * longG * hollow;
+    // seed heads in the rough: a buff / purplish haze over the green, patchy
+    tc = mix(tc, vec3(0.175, 0.150, 0.110), longG * 0.30 * ss(0.40, 0.75, n4.g * near4 + 0.5 * (1.0 - near4) * 0.8 + 0.25 * n3.b));
     // dry, straw-coloured knolls; seed heads in the long grass; dark clover and weeds in the short sward
     float dryP = ss(0.56, 0.80, n2.r * 0.45 + n3.b * 0.35 + (near4 * (n4.g - 0.5) + 0.5) * 0.2) * (0.45 + 0.4 * longG) * (1.0 - 0.6 * lush * lush);
     tc = mix(tc, grassDry * 0.8, dryP);
@@ -686,7 +902,9 @@ TerrSurf terrSurface(vec3 rp) {
     float shellK = uTurfShell.x * (1.0 - ss(uTurfShell.y * 0.45, uTurfShell.y * 0.85, distance(rp.xz, uTerrCam.xz))) * (1.0 - bare);
     // inside the blade radius (veg/blades.js) the blades are the sward's top: the ground is the shaded thatch below
     float bladeK = uTurfShell.z > 0.0 ? 1.0 - ss(uTurfShell.z * 0.35, uTurfShell.z, distance(rp.xz, uTerrCam.xz)) : 0.0;
-    tc = mix(tc, vec3(0.028, 0.036, 0.016), shellK * (0.55 + 0.45 * bladeK));
+    // (between the 3-D blades the eye sees the lower, shaded parts of other blades and thatch: darker green, not
+    // black - blades must never read darker than the ground they stand on)
+    tc = mix(tc, mix(vec3(0.034, 0.042, 0.020), tc * 0.62, bladeK), shellK * (0.55 + 0.45 * bladeK));
     col = mix(col, tc, turf * 0.95);
     rough = mix(rough, mix(0.95, 0.88, bare), turf);
     gTurfAmt = turf * (1.0 - bare);
@@ -726,6 +944,30 @@ TerrSurf terrSurface(vec3 rp) {
   col = mix(col, fcol, paint);
   rough = mix(rough, 0.95, paint);
   if (paint > 0.5) mat = M_CANOPY;
+
+  // ---- low eye: the grain of the blades and stalks (terrSward) ----------------------------------------------------
+  // over the airfield turf, natural grass and the standing crops, from a few metres out (the 3-D blades and crop
+  // plants carry on over it) to where a blade is a pixel high; under the 3-D plants it is the shaded sward between them
+  {
+    float kT = clamp(gTurfAmt, 0.0, 1.0);
+    float kC = clamp(gCropAmt * gCrop.y, 0.0, 1.0) * (1.0 - kT) * step(0.05, gCropH);
+    float kG = clamp(gGrassK, 0.0, 1.0) * (1.0 - kT) * (1.0 - kC);
+    float kAll = kT + kC + kG;
+    if (kAll > 0.02 && uTerrNear.x > 0.0 && uTerrCam.y - rp.y < 60.0) {
+      float cW = kC / kAll, ear = step(0.5, cW * gCropEar);
+      float Hs = (kT * gTurfH * 1.3 + kC * gCropH + kG * 0.30) / kAll;
+      vec4 SW = terrSward(rp, Hs, mix(2.4, 2.0, cW), ear > 0.5 ? 0.20 : 0.32, ear, ear > 0.5 ? 0.73 : 0.67, 0.05 * (1.0 - cW), mix(0.02, 0.07, cW));
+      col *= mix(1.0, SW.x, kAll);
+      col *= 1.0 + kAll * SW.w * mix(vec3(-0.07, -0.01, 0.10), vec3(-0.04, -0.02, 0.0), cW);             // every blade its own green
+      col = mix(col, col * mix(vec3(1.06, 1.05, 0.86), vec3(1.10, 1.06, 0.92), ear), SW.y * 0.4 * kAll); // lit tips a touch yellower; ears
+      col = mix(col, vec3(0.26, 0.225, 0.14), SW.z * 0.4 * kAll);                                       // dead blades, straw
+      // into a low sun the eye sees the shaded sides of the standing stalks (the 3-D crop plants show the same): the
+      // crop's grain goes darker toward the sun, the sheen of the far field (crop reflectance) stays
+      vec2 vh = -Vw.xz / max(length(Vw.xz), 1.0e-3), sh2 = uSunDir.xz / max(length(uSunDir.xz), 1.0e-3);
+      float back = max(dot(vh, sh2), 0.0) * ss(0.7, 0.1, uSunDir.y) * ss(-0.02, 0.08, uSunDir.y);
+      col *= 1.0 - 0.55 * back * gSwAmp * cW * min(gCropH / 0.5, 1.0);
+    }
+  }
 
   // ---- snow and glacier ice -------------------------------------------------------------------------------------
   // late-lying snow from the simulation (shaded faces, loaded gullies, avalanche cones); it cannot hold on the
@@ -1072,7 +1314,7 @@ TerrSurf terrSurface(vec3 rp) {
 
   // ---- ambient occlusion and self shadow -----------------------------------------------------------------------
   float ao = 1.0 - clamp(conc * 1.6 + concW * 2.2, -0.08, 0.62);
-  ao *= mix(1.0, canopyAO, paint) * mix(1.0, 0.5, floorAmt);   // canopy self-occlusion, shade under real trees
+  ao *= mix(1.0, canopyAO, paint) * mix(1.0, 0.7, floorAmt);   // canopy self-occlusion, shade under real trees (which also draw contact shadows)
   ao *= 1.0 - 0.3 * shrubAmt;
   ao *= clamp(1.0 + 0.5 * hgt * soft, 0.6, 1.15);              // cavities of the micro relief
   S.albedo = col; S.rough = rough; S.n = n; S.ao = ao;
@@ -1114,12 +1356,29 @@ TerrSurf terrSurface(vec3 rp) {
     S.specK = 1.0 - bK * (1.0 - 0.15 * dayT);          // the cuticle sheen is part of the learned BRF
   }
 #endif
+#ifdef TERR_CROP
+  // field crops are canopies standing in rows: the learned crop reflectance (src/neural/ground-crop.js) gives the
+  // factor the direct sun is multiplied by relative to the painted (sky-lit) colour - hot spot down-sun, shaded rows
+  // into the sun and across the rows, the sheen of ripe ears and petals
+  float cropK = gCropAmt * gCrop.y * step(0.0, gCrop.x) * (1.0 - snow) * (1.0 - wsurf) * uCropOn;
+  if (cropK > 0.002) {
+    vec3 kc = cropSunK(gCrop.x, gCrop.zw, Vw, uSunDir);
+    const vec3 LUMC = vec3(0.2126, 0.7152, 0.0722);
+    kc = mix(vec3(dot(kc, LUMC)), kc, 0.3);
+    float dayC = ss(-0.02, 0.10, uSunDir.y);
+    S.canopyK *= mix(vec3(1.0), kc, cropK * dayC);
+    S.specK *= 1.0 - 0.85 * cropK;
+  }
+#endif
 #ifdef TERR_MICRO
   // relief this pixel no longer resolves (the 4 m detail scale has faded): the learned micro-relief transfer gives
   // its mean effect on direct light, so the far field keeps the directional behaviour of the near field
   float sig = TERR_SIG[int(mat)] * (1.0 - fade4) * (1.0 - 0.7 * snow) * (1.0 - wsurf) * (1.0 - playa);
 #ifdef TERR_TURF
   sig *= 1.0 - clamp(gTurfAmt + gGrassK, 0.0, 1.0);    // the turf reflectance already holds the canopy's self-shadowing
+#endif
+#ifdef TERR_CROP
+  sig *= 1.0 - clamp(cropK, 0.0, 1.0);                  // ... and the crop reflectance the crop canopy's
 #endif
 #ifdef TERR_SETTLE
   sig *= 1.0 - paved;

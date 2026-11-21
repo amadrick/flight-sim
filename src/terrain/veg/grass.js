@@ -27,6 +27,8 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
     uVegPaveS: { value: Array.from({ length: MAXR }, () => new THREE.Vector2()) },    // half length, half width (0 = unused)
     uVegGrassOn: { value: 1 },
   };
+  // the near-field crop plants (cover-crop.js) read this map
+  uniforms.tVegGrass = GU.tVegGrass; uniforms.uVegGrassWin = GU.uVegGrassWin; uniforms.uVegGrassOrg = GU.uVegGrassOrg;
   const mapMat = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
     uniforms: {
@@ -34,6 +36,10 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
       uTerrCam: uniforms.uTerrCam, uTerrLod: uniforms.uTerrLod, uTerrTile: uniforms.uTerrTile, uTerrRw: uniforms.uTerrRw,
       uTerrRwL: uniforms.uTerrRwL, uOrigin: uniforms.uOrigin, uSunDir: uniforms.uSunDir, uTerrShadowOn: uniforms.uTerrShadowOn,
       tAirMap: uniforms.tAirMap, uAirMap: uniforms.uAirMap, uAirInfo: uniforms.uAirInfo,
+      // the cover reads the settlements (roads, towns): without their integer textures bound, the usampler2D sat on
+      // the same unit as a float texture and every draw of this pass failed (INVALID_OPERATION) - the map stayed
+      // empty, so no grass tufts, meadow blades or crop plants grew anywhere
+      ...(uniforms.tSetGrid ? { tSetGrid: uniforms.tSetGrid, tSetSeg: uniforms.tSetSeg, tSetTown: uniforms.tSetTown, uSetOrg: uniforms.uSetOrg, uSetOn: uniforms.uSetOn } : {}),
       ...GU,
     },
     vertexShader: FULLSCREEN_VERT,
@@ -44,6 +50,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
       ${TILE_CONSTS_GLSL}
       ${COVER_GLSL}
       ${CELL_GLSL}
+      #define GR_DBG ${+(ctx.params?.raw?.grDbg || 0)}
       uniform vec4 uVegGrassWin; uniform vec2 uVegGrassOrg;
       uniform vec4 uVegPave[${MAXR}]; uniform vec2 uVegPaveS[${MAXR}];
       void main() {
@@ -84,16 +91,62 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
           // airfield: the mown sward is the turf shells' (veg/turf.js); tufts only stand in the long-grass zones
           // (seed heads, docks, thistles), sparse, never on or right beside the pavement
           float dA = min(airMap(rxz).x, pave);
-          float longZ = ss(60.0, 130.0, dA + 40.0 * (n2.r - 0.5));
+          float longZ = ss(24.0, 60.0, dA + 34.0 * (n2.r - 0.5));
           hgt = mix(0.22, 0.45, n4.r); kind = 1.0;
-          dens = (1.0 - desertAmt) * ss(3.0, 8.0, dA) * longZ * (0.18 + 0.30 * n3.r);
+          // (the rough itself is the blades' and the shells'; only the odd tall weed stands out of it)
+          dens = (1.0 - desertAmt) * ss(3.0, 8.0, dA) * longZ * 0.04 * ss(0.55, 0.8, n3.r);
+        }
+        // farm fields: the uncropped margin is rough grass and tall weeds (cow parsley, docks, thistles); the crop
+        // itself is drawn by the near-field crop plants (cover-crop.js), which read this map: kind 3 + class / 10,
+        // r = crop height, b = row direction (angle / pi), a = cover
+        vec4 cropOut = vec4(-1.0);
+        vec2 hh = vegHash(cellI + 5000.0);
+        if (C.crop > 0.3 && turf < 0.5) {
+          TerrField F = C.fld;
+          float id2 = fract(F.id.x * 13.13 + F.id.y * 7.71), id3 = fract(F.id.x * 3.37 + F.id.y * 17.9);
+          float marW = 1.5 + 3.5 * id3;
+          float marginK = 1.0 - ss(marW - 0.4, marW + 0.4, F.edge);
+          float verge = 1.0 - ss(6.0, 8.0, F.road);
+          float rough = max(marginK, verge) * (1.0 - ss(0.8, 1.2, 2.6 - F.road)) * step(1.5, F.road);
+          if (rough > hh.x * 0.9 + 0.05) { dens = 1.0; hgt = mix(0.35, 1.05, n4.b * 0.6 + n3.g * 0.4); kind = 0.0; }
+          else if (marginK < 0.5 && F.road > 7.5) {
+            float t = terrFieldT(F, rxz + uOrigin.xz, h), st = F.id.y;
+            bool wide = F.size.x > F.size.y;
+            float along = wide ? F.pq.x : F.pq.y, across = wide ? F.pq.y : F.pq.x, len = wide ? F.size.x : F.size.y, wid = wide ? F.size.y : F.size.x;
+            float headW = 12.0 + 12.0 * id3;
+            bool endHead = F.edge < headW && min(along, len - along) < min(across, wid - across);
+            vec2 dAx = F.flip > 0.5 ? vec2(0.208, 0.978) : vec2(0.978, -0.208), dAy = F.flip > 0.5 ? vec2(0.978, -0.208) : vec2(0.208, 0.978);
+            vec2 rowD = (wide != endHead) ? dAx : dAy;
+            float cls = -1.0, ch = 0.0, cov = 1.0;
+            if (t < 0.22) { cls = 0.0; ch = 0.10 + 0.75 * st; cov = clamp(0.18 + 0.95 * st, 0.1, 1.0); }
+            else if (t < 0.34) {
+              bool cut = st > 0.6 && (across / max(wid, 1.0) < fract(st * 9.7) || F.edge < headW) && id2 < 0.9;
+              cls = cut ? 2.0 : 1.0; ch = cut ? 0.14 : 0.80 + 0.15 * id2;
+            }
+            else if (t >= 0.63 && t < 0.73) { cls = 2.0; ch = 0.12 + 0.06 * id2; }
+            else if (t >= 0.80 && t < 0.88) { cls = 3.0; ch = mix(0.35, 2.4, ss(0.05, 0.6, st)) * (st > 0.97 ? 0.9 : 1.0); cov = mix(0.22, 0.92, ss(0.1, 0.55, st)); }
+            else if (t >= 0.88 && t < 0.935) { cls = 4.0; ch = mix(0.3, 1.35, ss(0.0, 0.4, st)); }
+            else if (t >= 0.935 && t < 0.965) { cls = 5.0; ch = mix(0.12, 0.45, ss(0.05, 0.5, st)); cov = mix(0.18, 0.95, ss(0.05, 0.5, st)); }
+            else if (t >= 0.73 && t < 0.80 && st < 0.45) { cls = 6.0; ch = 0.35 + 0.3 * id2; }
+            if (cls >= 0.0) { float ang = atan(rowD.y, rowD.x); cropOut = vec4(ch * (0.8 + 0.4 * n3.g), 3.0 + cls * 0.1 + 0.01, mod(ang, 3.14159265) / 3.14159265, cov); }
+          }
         }
         float reedP = ss(0.03, 0.15, water) * (1.0 - ss(0.45, 0.6, water)) * (1.0 - C.pad);
-        vec2 hh = vegHash(cellI + 5000.0);
         if (reedP > hh.y * 0.8) { hgt = mix(1.3, 2.1, n4.b); kind = 2.0; dens = reedP; }
         float dry = clamp(ss(0.08, 0.5, arid) + 0.5 * (n0.r - 0.5) + ss(1300.0, 2200.0, h) * 0.45, 0.0, 1.0);
         float exists = step(hh.x, dens);
-        outColor = vec4(hgt * exists, kind, dry, n2.r * 0.6 + n1.g * 0.4);
+        // (kind 0 carries the meadow share in 0..0.4: the near-field blades grow from it off the airfield)
+        outColor = vec4(hgt * exists, kind < 0.5 ? 0.4 * clamp(dens, 0.0, 1.0) : kind, dry, n2.r * 0.6 + n1.g * 0.4);
+        if (cropOut.y > 2.5 && kind < 1.5) outColor = cropOut;
+        #if GR_DBG == 1
+        outColor = vec4(0.9, 3.11, 0.3, 1.0) * step(0.3, C.crop);
+        #elif GR_DBG == 2
+        outColor = vec4(0.9, 3.11, 0.3, 1.0) * step(0.3, C.crop) * step(7.5, C.fld.road);
+        #elif GR_DBG == 3
+        outColor = vec4(0.9, 3.11, 0.3, 1.0);
+        #elif GR_DBG == 4
+        outColor = vec4(0.8, 0.2, 0.0, 0.5);
+        #endif
       }`,
   });
   const tri = fullscreenTriangle();
@@ -131,7 +184,11 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         vec2 gBase = (gCell - uVegGrassOrg) * uVegGrassWin.w + (0.15 + 0.7 * gh) * uVegGrassWin.w - mod(uOrigin.xz, uVegGrassWin.w);
         float gDist = distance(gBase, uTerrCam.xz);
         float gR = gG * uVegGrassWin.w * 0.5;
-        float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x);
+        float gH = gM.r * uVegGrassOn * (1.0 - smoothstep(gR * 0.55, gR * 0.95, gDist)) * mix(0.55, 1.35, gh2.x * gh2.x) * step(gM.g, 2.5);
+        // airfield weeds and meadow tussocks stand alone in the sward: past ~30-40 m one is a pixel or two, a dark
+        // speck after the final sharpen, while the ground shader already carries their tone - let them go (tall
+        // margin grass and reeds stay)
+        gH *= gM.g > 0.5 && gM.g < 1.5 ? 1.0 - smoothstep(18.0, 32.0, gDist) : gM.g < 0.5 ? 1.0 - smoothstep(26.0, 44.0, gDist) * (1.0 - smoothstep(0.6, 1.0, gM.r)) : 1.0;
         float gAng = gh2.y * 6.2831853, gc = cos(gAng), gs = sin(gAng);
         float gW = gM.g > 1.5 ? 0.6 : (gM.g > 0.5 ? mix(1.1, 1.5, gh.y) : mix(0.6, 1.0, gh.y));
         vec3 gl = vec3(position.x * gW, position.y * gH, position.z * gW);
@@ -158,11 +215,13 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
         fo.a *= 1.0 + 0.3 * max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
         if (fo.a < 0.5) discard;
         // the surface shader's grass colours (meadow / turf / reeds), slightly brighter toward the tips
-        vec3 gc = mix(vec3(0.046, 0.082, 0.024), vec3(0.092, 0.128, 0.042), vGM.a);
-        gc = mix(gc, mix(vec3(0.235, 0.200, 0.095), vec3(0.175, 0.160, 0.075), vGM.a), vGM.b);
-        if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.062, 0.105, 0.034), vec3(0.150, 0.135, 0.075), 0.45 * vGM.a + 0.2) * (0.9 + 0.2 * vGM.a);
+        vec3 gc = mix(vec3(0.068, 0.098, 0.036), vec3(0.128, 0.140, 0.060), vGM.a);
+        gc = mix(gc, mix(vec3(0.200, 0.172, 0.085), vec3(0.150, 0.140, 0.068), vGM.a), vGM.b * 0.7);
+        if (vGM.g > 0.5 && vGM.g < 1.5) gc = mix(vec3(0.090, 0.122, 0.048), vec3(0.205, 0.180, 0.105), 0.45 * vGM.a + 0.25) * (0.95 + 0.2 * vGM.a);
         if (vGM.g > 1.5) gc = vec3(0.080, 0.100, 0.040);
-        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.5, 1.25, 0.7), fo.g * 0.5) * mix(0.8, 1.08, vGFade.y);
+        // (a tuft is a clump: its lower half sits in its own shade and the sward's - lit like a lawn top all the way
+        // down, the margin tufts read as pale paper bushes against the crop)
+        gc *= (0.5 + 0.8 * fo.r) * mix(vec3(1.0), vec3(1.25, 1.12, 0.8), fo.g * 0.5) * mix(0.5, 1.0, vGFade.y * vGFade.y);
         gc *= 0.8 + 0.4 * vGM.w;      // per-tuft variation
         diffuseColor.rgb = gc;`)
       .replace('#include <normal_fragment_maps>', 'normal = normalize(vNormal);');
@@ -170,7 +229,7 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
   mat.customProgramCacheKey = () => 'skyward-veg-grass';
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'veg-grass'; mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
-  mesh.castShadow = false; mesh.receiveShadow = true;
+  mesh.castShadow = false; mesh.receiveShadow = false;
 
   // pavement rectangles from the airport layouts (scenery) near the camera
   let rects = null, lastX = 1e18, lastZ = 1e18;
@@ -194,11 +253,26 @@ export function createGrass(ctx, { L, Gg, cell = 1.0, uniforms, U }) {
     mesh, uniforms: GU, Gg,
     /** debug: grass map as base64 RGBA8 (height*255, kind*80, dry*255, 255) */
     read() {
-      const buf = new Uint16Array(Gg * Gg * 4); ctx.renderer.readRenderTargetPixels(rt, 0, 0, Gg, Gg, buf);
+      const r = ctx.renderer, gl = r.getContext();
+      gl.getError();
+      const prevRT = r.getRenderTarget(); r.setRenderTarget(rt); r.setClearColor(0x000000, 0); r.render(mapScene, mapCam); r.setRenderTarget(prevRT);
+      const e0 = gl.getError();
+      const fb = r.properties.get(rt).__webglFramebuffer;
+      const prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      const rtype = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE), rfmt = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT);
+      let buf = new Float32Array(Gg * Gg * 4);
+      if (rtype === gl.HALF_FLOAT && rfmt === gl.RGBA) {
+        const hb = new Uint16Array(Gg * Gg * 4);
+        gl.readPixels(0, 0, Gg, Gg, gl.RGBA, gl.HALF_FLOAT, hb);
+        for (let i = 0; i < hb.length; i++) buf[i] = THREE.DataUtils.fromHalfFloat(hb[i]);
+      } else gl.readPixels(0, 0, Gg, Gg, gl.RGBA, gl.FLOAT, buf);
+      const err = e0 + ':' + gl.getError() + ':' + gl.checkFramebufferStatus(gl.FRAMEBUFFER) + ':' + rtype + ':' + rfmt + ':' + gl.getError();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prev);
       const out = new Uint8Array(Gg * Gg * 4);
-      for (let i = 0; i < Gg * Gg; i++) { out[i * 4] = Math.min(255, THREE.DataUtils.fromHalfFloat(buf[i * 4]) * 255); out[i * 4 + 1] = THREE.DataUtils.fromHalfFloat(buf[i * 4 + 1]) * 80; out[i * 4 + 2] = THREE.DataUtils.fromHalfFloat(buf[i * 4 + 2]) * 255; out[i * 4 + 3] = 255; }
+      for (let i = 0; i < Gg * Gg; i++) { out[i * 4] = Math.min(255, buf[i * 4] * 255); out[i * 4 + 1] = Math.min(255, buf[i * 4 + 1] * 80); out[i * 4 + 2] = Math.min(255, buf[i * 4 + 2] * 255); out[i * 4 + 3] = 255; }
       let str = ''; for (let i = 0; i < out.length; i += 8192) str += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
-      return JSON.stringify({ w: Gg, h: Gg, b64: btoa(str), visible: mesh.visible, rects: near.length });
+      return JSON.stringify({ w: Gg, h: Gg, b64: btoa(str), visible: mesh.visible, rects: near.length, glError: err });
     },
     update(camWX, camWZ, org, agl) {
       const on = agl < 150;

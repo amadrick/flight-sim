@@ -1,0 +1,89 @@
+24000 samples, 120 tiles, 20 held out (4000 samples)
+sun net
+  step 4000: batch mse 0.0273
+  step 8000: batch mse 0.0215
+  step 12000: batch mse 0.0207
+  step 16000: batch mse 0.0198
+  step 20000: batch mse 0.0180
+  step 24000: batch mse 0.0197
+sky net
+  step 4000: batch mse 0.0136
+  step 8000: batch mse 0.0125
+  step 12000: batch mse 0.0116
+rpv fit
+  rpv 300: 0.0804
+  rpv 600: 0.0800
+  rpv 900: 0.0799
+  rpv 1200: 0.0798
+{
+ "lambert_oracle": {
+  "ln_rmse": 0.4548976719379425,
+  "ln_rmse_grazing_view": 0.6204646229743958,
+  "ln_rmse_low_sun": 0.6072366237640381
+ },
+ "rpv": {
+  "ln_rmse": 0.3107423563886189,
+  "ln_rmse_grazing_view": 0.3652360618897235,
+  "ln_rmse_low_sun": 0.3641410677948819
+ },
+ "network": {
+  "ln_rmse": 0.21600940505822142,
+  "ln_rmse_grazing_view": 0.2478857488887166,
+  "ln_rmse_low_sun": 0.23969814600002046
+ },
+ "network_train": {
+  "ln_rmse": 0.13261606133912512
+ },
+ "sky": {
+  "lambert_oracle": 0.22272831201553345,
+  "network": 0.13290403713663893
+ },
+ "per_kind": {
+  "cereal": {
+   "lambert_oracle": 0.4689285159111023,
+   "rpv": 0.3125431566733898,
+   "network": 0.17758398942098594,
+   "n": 1600
+  },
+  "maize": {
+   "lambert_oracle": 0.38037756085395813,
+   "rpv": 0.33260993415020734,
+   "network": 0.29323578137125594,
+   "n": 600
+  },
+  "rape": {
+   "lambert_oracle": 0.4352179169654846,
+   "rpv": 0.4044323145768922,
+   "network": 0.32219102428242685,
+   "n": 600
+  },
+  "meadow": {
+   "lambert_oracle": 0.522294282913208,
+   "rpv": 0.23621811942083087,
+   "network": 0.12748567537526603,
+   "n": 800
+  },
+  "stubble": {
+   "lambert_oracle": 0.37816399335861206,
+   "rpv": 0.22800202513678877,
+   "network": 0.1525113873871235,
+   "n": 400
+  }
+ },
+ "mc_noise": {
+  "configs": 96,
+  "rays": 1536,
+  "ln_rmse_sun": 0.0472635754533453,
+  "ln_rmse_sky": 0.09094718162146748,
+  "rel_lum_sun": 0.041006849919121215
+ }
+}
+cereal_young [0.0675, 0.0792, 0.0374]
+cereal_green [0.0287, 0.0503, 0.0149]
+cereal_ripe [0.1171, 0.0923, 0.0404]
+stubble [0.2063, 0.1677, 0.0989]
+maize [0.0262, 0.0532, 0.0153]
+rape_flower [0.2498, 0.1991, 0.0287]
+meadow_long [0.057, 0.0656, 0.0232]
+maize_young [0.0967, 0.1, 0.0512]
+wrote /home/user/wt/ground3/src/neural/ground-crop-weights.js 2118 parameters

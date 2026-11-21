@@ -20,9 +20,11 @@ import { createSettlements } from './settle.js';
 import { createBuildings } from './buildings.js';
 import { createGroundMicro } from '../neural/ground-micro.js';
 import { createGroundTurf } from '../neural/ground-turf.js';
+import { createGroundCrop } from '../neural/ground-crop.js';
 import { createGroundDetail } from './ground-detail.js';
 import { createTrees } from './trees.js';
 import { createAirfieldMap } from './airfield.js';
+import { createCropPlants, CROP_TIERS } from './veg/cover-crop.js';
 
 export { heightAt };
 
@@ -67,6 +69,8 @@ export async function createTerrain(ctx) {
   const micro = groundMode === 'neural' && rawP.micro !== '0' ? createGroundMicro() : null;
   // learned turf / grass canopy reflectance (turfbrdf=0: Lambertian grass as before)
   const turfBrdf = groundMode === 'neural' && rawP.turfbrdf !== '0' ? createGroundTurf() : null;
+  // learned crop canopy reflectance (cropbrdf=0: the painted fields stay Lambertian)
+  const cropBrdf = groundMode === 'neural' && rawP.cropbrdf !== '0' ? createGroundCrop() : null;
   const groundQ = () => ({ low: 0, medium: 1 }[ctx.quality.level] ?? 2);
   const detail = groundMode === 'neural' ? createGroundDetail(renderer, { size: ctx.quality.level === 'low' ? 256 : 512, anisotropy: ctx.quality.anisotropy ?? 4 }) : null;
   let cfg = configFor(ctx);
@@ -94,7 +98,9 @@ export async function createTerrain(ctx) {
     ...(micro ? micro.uniforms : {}),
     ...airfield.uniforms,
     ...(turfBrdf ? turfBrdf.uniforms : {}),
+    ...(cropBrdf ? cropBrdf.uniforms : {}),
     uTurfShell: { value: new THREE.Vector4() },     // near-field turf shells: x = on, y = radius (m)
+    uTerrNear: { value: new THREE.Vector4() },      // low-eye ground grain (surface terrSward): x = radians per pixel, y = crop plant radius, z = blade radius
   };
 
   // ---- geometry: one (P+1)^2 grid patch, instanced ---------------------------------------------------------
@@ -132,6 +138,14 @@ export async function createTerrain(ctx) {
     if (cfg.treeG > 0) { trees = createTrees(ctx, { L, uniforms, airfield }); ctx.scene.add(trees.object3D); }
   }
   makeTrees();
+  // near-field crop plants in the farm fields (they read the grass map that createTrees builds); cropPlants=0 off
+  let crops = null;
+  function makeCrops() {
+    if (crops) { ctx.scene.remove(crops.mesh); crops.dispose(); crops = null; }
+    const tier = CROP_TIERS[ctx.quality.level];
+    if (tier && trees && uniforms.tVegGrass && groundMode === 'neural' && rawP.cropPlants !== '0') { crops = createCropPlants(ctx, { L, tier, uniforms }); ctx.scene.add(crops.mesh); }
+  }
+  makeCrops();
   let buildings = null;
   function makeBuildings() {
     if (buildings) { ctx.scene.remove(buildings.object3D); buildings.dispose(); buildings = null; }
@@ -159,7 +173,7 @@ export async function createTerrain(ctx) {
     noiseTex.noise.anisotropy = noiseTex.norm.anisotropy = ctx.quality.anisotropy ?? 4;
     noiseTex.noise.needsUpdate = noiseTex.norm.needsUpdate = true;
     if (detail) detail.texture.anisotropy = ctx.quality.anisotropy ?? 4;
-    makeTrees(); makeBuildings();
+    makeTrees(); makeCrops(); makeBuildings();
     frameNo = 0;
   }
   ctx.events.on('quality:change', rebuild);
@@ -238,6 +252,7 @@ export async function createTerrain(ctx) {
     for (let i = 0; i < 8; i++) { const r = RUNWAYS[i]; uniforms.uTerrRw.value[i].set(r.x - org.x, r.z - org.z, r.dx, r.dz); }
     airfield.update(wx, wz, org);
     if (turfBrdf) turfBrdf.update(F.uSunDir.value.y, !!ctx.params.test);
+    if (cropBrdf) cropBrdf.update(F.uSunDir.value.y, !!ctx.params.test);
     if (raw.terrHideWater && ctx.water?.object3D) ctx.water.object3D.visible = false;
     uniforms.uTerrWin.value = (N / 2 - SNAP - EDGE - 1) * cfg.t0;
     uniforms.uTerrOrg.value.copy(org);
@@ -253,10 +268,23 @@ export async function createTerrain(ctx) {
       settle.update(org, lit, buildings ? buildings.fadeRadius : 0);
     }
     if (trees) trees.update(wx, wz, org, Hd, minLevel);
+    if (crops) {
+      // (no farmland inside an airfield: skip the crop plants' draw when every plant in reach would be on its grass)
+      const onAir = airfield.distanceAt(wx, wz)[0] < 110 + crops.stats.radius1;
+      crops.update(wx, wz, org, Hd, !!(trees && trees.object3D.visible) && !onAir);
+    }
+    {
+      const vh = ctx.renderer?.domElement?.height || 720, fov = cam.fov || 60;
+      const ts = uniforms.uTurfShell.value;
+      uniforms.uTerrNear.value.set(raw.sward === '0' ? 0 : 2 * Math.tan(fov * Math.PI / 360) / vh / (cam.zoom || 1),
+        crops && crops.mesh.visible ? crops.stats.radius1 : 0, ts.z, 0);
+    }
     stats.treeTriangles = trees && trees.object3D.visible ? trees.triangles : 0;
     stats.drawCalls = 1 + (trees && trees.object3D.visible ? trees.stats.drawCalls : 0);
     stats.veg = trees ? trees.stats : null;
     stats.buildings = buildings ? buildings.stats : null;
+    stats.crops = crops ? crops.stats : null;
+    if (crops && crops.mesh.visible) stats.drawCalls += 1;
     if (buildings && buildings.object3D.visible) stats.drawCalls += 1;
   }
 
@@ -285,7 +313,7 @@ float terrainHeight(vec2 worldXZ) {
 
   // ---- debug helpers (tests / tooling) ------------------------------------------------------------------------
   const debug = {
-    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0, settleMs: settle ? settle.ms : 0, microMs: micro ? micro.ms : 0, airfield: airfield.stats, turfBrdf: turfBrdf ? { bootMs: turfBrdf.bootMs, lastBakeMs: turfBrdf.lastBakeMs } : null }; },
+    get config() { return { ...cfg, P, L, S0, ground: groundMode, groundQuality: groundQ(), detailMs: detail ? detail.ms : 0, settleMs: settle ? settle.ms : 0, microMs: micro ? micro.ms : 0, airfield: airfield.stats, turfBrdf: turfBrdf ? { bootMs: turfBrdf.bootMs, lastBakeMs: turfBrdf.lastBakeMs } : null, cropBrdf: cropBrdf ? { bootMs: cropBrdf.bootMs, lastBakeMs: cropBrdf.lastBakeMs } : null }; },
     /** Compare the GPU-generated heights of one clipmap level with the CPU function. Returns max/mean abs error (m). */
     parity(level = 0, step = 7) {
       const N = cfg.N, lv = clip.levels[level];
