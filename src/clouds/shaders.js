@@ -750,7 +750,7 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
   // depth inside the layer), 4 fetches instead of ~16. Within the map only (+-41 km, faded from 30 km).
   if (uClCost.y > 0.0 && clPixM > uClCost.y && uCloudShadowC.z > 0.5) {
     vec2 dm = pa.xz - uCloudShadowA.xy; float rm = max(abs(dm.x), abs(dm.y));
-    if (rm < 30000.0 && uClR7.x > 0.0) {
+    if (rm < 30000.0 && uClR7.x > 0.0 && clNubW > 0.5) {   // (cumulus cells only: on Cb towers the two coarse samples drew horizontal streaks)
       // round seven (clFarN): the map alone puts the column's optical depth uniformly between its moments; on the sun-facing
       // tops and flanks of a cumulus (the 80 m texels mix in the rays through the thick core) that left the lit side in deep
       // shadow: far clouds (most of the chase view) were dark-topped balls lit only by multiple scattering. Two jittered
