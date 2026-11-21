@@ -645,6 +645,7 @@ ${CLOUD_DENSITY_GLSL}
 ${scatterGLSL}
 uniform vec4 uClR7;          // round seven: x = 1: two cheap light samples before the shadow map in the far field (clFarN),
                              // y = gain on the light march's optical depth (clTauK), z = gain on the learned-MS taps (clTapK)
+uniform vec4 uClR7b;         // x = mip offset of the MS taps over the sample's (clTapLod; < 0: fixed mip 1), y = 1: each tap fetches its own weather (clTapWx)
 ${msGLSL ? `
 // ---- round five: learned multiple scattering (docs/clouds/NEURAL.md). Taps = physical extinction of the cheap base
 // density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
@@ -653,8 +654,10 @@ ${/float\s+cloudMsForwardPeak\s*\(\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float/.
 vec3 clDbgTap = vec3(0.0);
 vec4 clMsWx = vec4(0.0); float clMsLod = 1.0; vec3 clMsP0 = vec3(0.0); float clMsOff = 0.0, clMsOffR = 600.0;
 // (round six b: the taps see the cheap surface moved by the sample's own bubble displacement, as the light march does)
-float clMsSigma(vec3 p) { vec4 info; clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
-  float s = clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8 * uClR7.z; clNoBub0 = false; clLightOff = 0.0; return s; }
+float clMsSigma(vec3 p) { vec4 info;
+  if (uClR7b.y > 1.5) { clLightOff = 0.0; return clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; }   // (debug: plain cheap density)
+  clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
+  float s = clDensityBase(p, uClR7b.y > 0.5 ? clWeather(p.xz, 0.0) : clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8 * uClR7.z; clNoBub0 = false; clLightOff = 0.0; return s; }
 #define CLOUD_MS_SIGMA(p) clMsSigma(p)
 ${msGLSL}
 uniform vec4 uClMs;          // x = network evaluations per ray (deeper samples reuse the last), y = strength of lam / occ on this path
@@ -956,6 +959,11 @@ void main() {
       float cosT = dot(rd, uClLightDir);
       #ifdef CL_MS5
       vec3 msPhase = cloudPhaseMie(cosT), msLast = vec3(0.0);
+      // round seven (clMsAt): the network runs where the ray has reached an optical depth of uClR7b.z (then .w), not on the
+      // first dense samples; the samples in front of that point keep their multiple-scattering weights (msJ, msA) until it
+      // is known. See the comment at the evaluation.
+      float msEv = 0.0, msA = 0.0, msBestW = -1.0, msLodS = 0.0, msTsS = 0.0, msTcS = 0.0, msOffS = 0.0, msOffRS = 600.0;
+      vec3 msJ = vec3(0.0), msPS = vec3(0.0); vec4 msWxS = vec4(0.0);
       #endif
       float voxel = 1.0 / (uClNoise.x * 128.0), voxelD = 1.0 / (uClNoise.y * 32.0);
 
@@ -1141,12 +1149,29 @@ void main() {
           // light kept in the beam by the diffraction peak, and every higher order of sun, sky and ground light from the
           // network fed with physical optical depths. Replaces J (octaves / diffusion / powder / round-three nets), the
           // ambient visibility and both round-four calibrations. lam / occ (sub-100 m lobe detail) at reduced strength.
-          if (nDense <= uClMs.x) {
-            clMsWx = wx; clMsLod = lod + 1.5;
+          // Round seven: WHERE the network runs. Round five ran it on the first two dense samples of the ray, i.e. in the outer
+          // skin (camera optical depth ~0.1): bubbles, fringes and fragments outside the cheap envelope whose taps see almost
+          // no cloud (measured on a game cloud at 4 km, opacity-weighted tap sums up / down / forward 0.05 / 0.1 / 3 against
+          // 10 / 7 / 30 on the same pixels from the exported field), so the network lit every cloud as a thin isolated wisp:
+          // the same flat multiple scattering at the top and the base (path tracer: 3-5 x brighter at the top). The visible
+          // light comes from camera depths ~0.2-2 (weight e^-tau), so the network now runs at the first sample past
+          // tauCam = uClR7b.z (0.7) and again past uClR7b.w (2.5). The samples in front of the first evaluation keep their
+          // multiple-scattering weights (msJ for E J_ms, msA for the sky / ground terms) and get the result when it is
+          // known; a ray that never gets that deep (thin cloud) is evaluated at its most visible sample after the loop.
+          // Same two evaluations per ray. uClR7b.z = 0: round six c.
+          bool msDefer = uClR7b.z > 0.0 && uClDet3.x < 0.5;
+          float msTc = -log(max(T, 1e-30));
+          float msW = T * (1.0 - exp(-sig * ds));
+          if (msDefer ? (msEv < uClMs.x && msTc + 0.5 * sig * ds >= (msEv < 0.5 ? uClR7b.z : uClR7b.w)) : nDense <= uClMs.x) {
+            clMsWx = wx; clMsLod = uClR7b.x < 0.0 ? 1.0 : lod + uClR7b.x;
             vec3 tU = cloudMsTapSegments(pa, vec3(0.0, 1.0, 0.0)), tD = cloudMsTapSegments(pa, vec3(0.0, -1.0, 0.0));
             vec3 tF = cloudMsTapSegments(pa, rd);
-            msLast = cloudMsLight(tauSun, -log(max(T, 1e-30)), uClLightDir.y, cosT, tU, tD, tF);
+            msLast = cloudMsLight(tauSun, msTc, uClLightDir.y, cosT, tU, tD, tF);
             clDbgTap = vec3(dot(tU, vec3(1.0)), dot(tD, vec3(1.0)), dot(tF, vec3(1.0)));
+            if (msEv < 0.5) { L += msJ * msLast.x + msA * (ambUp * msLast.y + ambDn * msLast.z); msJ = vec3(0.0); msA = 0.0; }
+            msEv += 1.0;
+          } else if (msDefer && msEv < 0.5 && msW > msBestW) {
+            msBestW = msW; msPS = pa; msWxS = wx; msLodS = lod; msTsS = tauSun; msTcS = msTc; msOffS = clMsOff; msOffRS = clMsOffR;
           }
           #ifdef CL_MS_AUREOLE
           float msFwd = cloudMsForwardPeak(tauSun, msPhase.g, cosT);   // (v2: with the aureole near the sun)
@@ -1163,6 +1188,7 @@ void main() {
           float jK = mix(1.0, 1.6 * exp(-tauSun * 0.125) + 0.15, uClBub5.z);
           vec3 S = E * (msPhase * exp(-tauSun) +  msFwd + msLast.x * jK) * occM.x
                  + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;
+          if (msDefer && msEv < 0.5) { S = E * (msPhase * exp(-tauSun) + msFwd) * occM.x; msJ += msW * E * jK * occM.x; msA += msW * occM.y; }
           #elif defined(CL_AMBIENT_VIS)
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
           vec2 vis = cloudAmbientVis(tauUp, tauDn) * mix(vec2(1.0), vec2(0.84, 1.17), uClDet5.y);   // (same calibration)
@@ -1173,6 +1199,7 @@ void main() {
           vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
           #endif
           #ifdef CL_MS5
+          if (uClDet3.x > 14.5) { clMsWx = wx; clMsLod = lod + 1.5; clMsP0 = pa; S = vec3(clMsSigma(pa), clMsSigma(pa + vec3(0.0, 50.0, 0.0)), clMsSigma(pa + rd * 50.0)) * 100.0; } else   // round seven debug: tap density at the sample, 50 m up, 50 m forward (1/100 m)
           if (uClDet3.x > 13.5) S = vec3(ds * 0.01, fp * 0.01, edge * 10.0); else   // round seven debug: step (100 m), footprint (100 m), edge (100 m)
           if (uClDet3.x > 12.5) { vec4 i2; S = vec3(ts * 1e-3, d * uClNoise.w * 100.0, clDensityBase(pa, wx, 1.0, i2) * i2.w * uClNoise.w * 100.0); } else   // round seven debug: distance (km), full and cheap extinction (1/100 m)
           if (uClDet3.x > 11.5) S = clTauDbgM < 0.0 ? vec3(0.0, min(tauSun, 60.0), 2.0) : vec3(min(clTauDbgM, 60.0), min(tauSun - clTauDbgM, 60.0), clTauDbgF); else   // round seven debug: march part, map part, far path flag
@@ -1203,6 +1230,15 @@ void main() {
         }
         t += ds;
       }
+      #ifdef CL_MS5
+      // (round seven, clMsAt: a ray that never reached the evaluation depth: the network at its most visible sample)
+      if (msA > 0.0 && msBestW > 0.0) {
+        clMsWx = msWxS; clMsLod = uClR7b.x < 0.0 ? 1.0 : msLodS + uClR7b.x; clMsOff = msOffS; clMsOffR = msOffRS; clMsP0 = msPS;
+        vec3 ms = cloudMsLight(msTsS, msTcS, uClLightDir.y, cosT, cloudMsTapSegments(msPS, vec3(0.0, 1.0, 0.0)),
+                               cloudMsTapSegments(msPS, vec3(0.0, -1.0, 0.0)), cloudMsTapSegments(msPS, rd));
+        L += msJ * ms.x + msA * (ambUp * ms.y + ambDn * ms.z);
+      }
+      #endif
     }
   }
 
