@@ -4,6 +4,29 @@ Owner: cloud-shape engineer (`src/clouds/**`). Numbers come from docs/clouds/RES
 the light transport contract is docs/clouds/NEURAL.md. Every new piece has a URL switch (last column) so old and new
 can be compared side by side; all round-four and round-five switches still work.
 
+## 0d. Round seven: running log (newest last)
+
+Owner's verdict on round six c: "Clouds still seem synthetic". Method: the game's own cloud (harness, `clRefL=1`: sun
+irradiance 1, uniform sky 0.06 / ground 0.025, no aerial perspective) against the path tracer (pt.py, all orders, Mie
+phase) on the density the game exports for the same box (`tools/neural/clouds/game_compare.py`). Statistics on the pixels
+both see as opaque: mean luminance, p95/p5, mean per fifth of the cloud's rows top to base (top/base = first / last),
+edge luminance per opacity on the reference's partly transparent pixels, log-RMSE and correlation per pixel.
+
+* Comparison pitfalls found (previous attempts were misled by them): the export box must contain the whole cloud (a box wall
+  that cuts a cloud is lit as a surface and drops the shadow of the cut-off part; fixed with `boxNear` in cmp_eval); the
+  harness at 240x135 marches with 60-75 m footprints (a far-field regime), so the comparison views emulate the game's
+  pixel size with a narrow field of view (fov 25-30 at 320x180 ~ 960x540 at fov 60).
+* **The light was computed in the wrong place.** The learned multiple scattering ran on the first two dense samples of a
+  ray, i.e. in the outer skin (camera optical depth ~0.1-0.2): bubbles, fringes and fragments outside the cheap envelope.
+  Their taps see almost nothing (opacity-weighted tap sums up / down / forward 0.05 / 0.1 / 3 against 10 / 7 / 30 from the
+  exported field on the same pixels), so every cloud was lit as a thin isolated wisp: the same flat multiple scattering
+  top to base. Per sample, the shader's tap density agrees with the export (`clDbg=15`); the network fed the exported
+  field's taps reproduces the path-traced profile (J top/base 3-5). Fix (`clMsAt` 0.7, `clMsAt2` 2.5): the network runs at
+  the first sample past camera optical depth 0.7, then past 2.5; samples in front keep their weights until the result is
+  known; thin rays use their most visible sample after the loop. Same two evaluations per ray.
+* The light march itself is close once the comparison is fair (opacity-weighted tauSun game 3.6 / 7.7 / 9.6 / 12 / 13 vs
+  path tracer 3.0 / 6.4 / 8.6 / 9.8 / 9.9 top to base); the earlier "tauSun x1.8" (`clTauK`) came from the box-cut view.
+
 ## 0b. Round six b: running log (newest last)
 
 * Kept the predecessor's uncommitted Cb tweak (turret cells 500-900 m, cascade x0.7): commit 7e7a713.
