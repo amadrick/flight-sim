@@ -828,7 +828,10 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
     d0 = d1;
   }
   clLightOff = 0.0;
-  tau *= uClNoise.w * 0.8 * uClR7.y;                               // 0.8: base density is not eroded (round seven: x clTauK)
+  // 0.8: base density is not eroded (round seven: x clTauK, default 1.25, i.e. gain 1: with the profile erosion carving only
+  // a 10-80 m skin, the cheap density integrated over the first km equals the full one on exported game fields, 0.97-1.0;
+  // fit to the path tracer on three game views: log-RMSE 0.333 / 0.271 / 0.416 vs 0.294 / 0.313 / 0.425 at x1)
+  tau *= uClNoise.w * 0.8 * uClR7.y;
   clTauDbgM = tau;
   vec3 pe = pa + uClLightDir * 1000.0;
   // undo the air-mass offset: cloudShadowTau wants world XZ (it subtracts the wind offset itself)
