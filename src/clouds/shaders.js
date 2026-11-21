@@ -643,15 +643,21 @@ ${atmosphereGLSL}
 ${CLOUD_SHADOW_GLSL}
 ${CLOUD_DENSITY_GLSL}
 ${scatterGLSL}
+uniform vec4 uClR7;          // round seven: x = 1: two cheap light samples before the shadow map in the far field (clFarN),
+                             // y = gain on the light march's optical depth (clTauK), z = gain on the learned-MS taps (clTapK)
+uniform vec4 uClR7b;         // x = mip offset of the MS taps over the sample's (clTapLod; < 0: fixed mip 1), y = 1: each tap fetches its own weather (clTapWx)
 ${msGLSL ? `
 // ---- round five: learned multiple scattering (docs/clouds/NEURAL.md). Taps = physical extinction of the cheap base
 // density in air-mass space, with the sample's own weather fetch and a mip one level coarser than the light march.
 #define CL_MS5 1
 ${/float\s+cloudMsForwardPeak\s*\(\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float/.test(msGLSL) ? '#define CL_MS_AUREOLE 1' : ''}
+vec3 clDbgTap = vec3(0.0);
 vec4 clMsWx = vec4(0.0); float clMsLod = 1.0; vec3 clMsP0 = vec3(0.0); float clMsOff = 0.0, clMsOffR = 600.0;
 // (round six b: the taps see the cheap surface moved by the sample's own bubble displacement, as the light march does)
-float clMsSigma(vec3 p) { vec4 info; clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
-  float s = clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; clNoBub0 = false; clLightOff = 0.0; return s; }
+float clMsSigma(vec3 p) { vec4 info;
+  if (uClR7b.y > 1.5) { clLightOff = 0.0; return clDensityBase(p, clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8; }   // (debug: plain cheap density)
+  clNoBub0 = uClCost.z > 0.5; clLightOff = clMsOff * clSat(1.0 - length(p - clMsP0) / clMsOffR);
+  float s = clDensityBase(p, uClR7b.y > 0.5 ? clWeather(p.xz, 0.0) : clMsWx, clMsLod, info) * info.w * uClNoise.w * 0.8 * uClR7.z; clNoBub0 = false; clLightOff = 0.0; return s; }
 #define CLOUD_MS_SIGMA(p) clMsSigma(p)
 ${msGLSL}
 uniform vec4 uClMs;          // x = network evaluations per ray (deeper samples reuse the last), y = strength of lam / occ on this path
@@ -670,6 +676,8 @@ uniform vec4 uClFlash[2];    // lightning: xyz = render-space position, w = inte
 uniform vec4 uClCirrus;      // x = altitude (m), y = amount (0..1), zw = render-space -> cirrus air-mass offset
 uniform vec4 uClAmbUp;       // rgb = clear-sky ambient irradiance / pi for the clouds (NOT divided by the player's cloud shadow), w = 1: use it
 uniform vec4 uClAmbDn;       // rgb = ground-bounce radiance under the cloud field
+uniform vec4 uClRef;         // round seven, reference lighting for the path-tracer comparison: x = 1 on (sun E = 1, uniform
+                             // sky / ground radiance y / z, no aerial perspective, no cirrus)
 
 const float CL_R = 6371000.0;
 
@@ -723,9 +731,11 @@ float clSurfMu(vec3 pa, vec4 wx, float lod, float F0, float fp, float lam0) {
 }
 // Optical depth toward the light: a few exponentially spaced samples of the cheap density (cone/light march of
 // [Schneider15], shortened), then the baked shadow map for everything farther away (other clouds, upper layers).
+float clTauDbgM = 0.0, clTauDbgF = 0.0;     // round seven debug (clDbg=12): optical depth toward the sun from the light march (first km), far path flag
 float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, float edge) {
-  float tau = 0.0, d0 = 0.0;
+  float tau = 0.0, d0 = 0.0; clTauDbgM = -1.0; clTauDbgF = 0.0;
   float offL = clLightOffIn; clLightOffIn = 0.0;
+  vec4 info;
   // round six, inside the anvil: the ice slab is nearly uniform, so its optical depth toward the sun is its extinction x
   // the slant path to its top (up to the 1 km the shadow map takes over from). The 4 point samples cut the thin
   // horizontal slab with a count that changes with the depth below its top: contour arcs under the anvil.
@@ -740,6 +750,25 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
   // depth inside the layer), 4 fetches instead of ~16. Within the map only (+-41 km, faded from 30 km).
   if (uClCost.y > 0.0 && clPixM > uClCost.y && uCloudShadowC.z > 0.5) {
     vec2 dm = pa.xz - uCloudShadowA.xy; float rm = max(abs(dm.x), abs(dm.y));
+    if (rm < 30000.0 && uClR7.x > 0.0 && clNubW > 0.5) {   // (cumulus cells only: on Cb towers the two coarse samples drew horizontal streaks)
+      // round seven (clFarN): the map alone puts the column's optical depth uniformly between its moments; on the sun-facing
+      // tops and flanks of a cumulus (the 80 m texels mix in the rays through the thick core) that left the lit side in deep
+      // shadow: far clouds (most of the chase view) were dark-topped balls lit only by multiple scattering. Two jittered
+      // cheap-density samples over the first kilometre, then the map from there (as the near path does).
+      float t1 = 0.0;
+      for (int j = 0; j < 2; j++) {
+        float a0 = j == 0 ? 0.0 : 250.0, a1 = j == 0 ? 250.0 : 1000.0;
+        vec3 pl = pa + uClLightDir * mix(a0, a1, fract(jit + 0.618 * float(j)));
+        clLightOff = offL * clSat(1.0 - 0.5 * (a0 + a1) / clLightOffR);
+        t1 += clDensityBase(pl, wx, uClR7.w < 0.0 ? 1.0 : lod + uClR7.w * (1.0 + float(j)), info) * info.w * (a1 - a0);
+      }
+      clLightOff = 0.0;
+      vec3 pe = pa + uClLightDir * 1000.0;
+      float sl = length(uCloudShadowB.xy), texM = 1.0 / (uCloudShadowA.z * float(textureSize(tCloudShadowMap, 0).x));
+      vec2 jo = uCloudShadowB.xy / max(sl, 1e-3) * ((jit - 0.5) * 2.0 * texM * max(uClFullRes.w, 1.0));
+      clNF += 4.0; clTauDbgM = t1 * uClNoise.w * 0.8 * uClR7.y; clTauDbgF = 1.0;
+      return t1 * uClNoise.w * 0.8 * uClR7.y + cloudShadowTauF(pe.xz + uCloudShadowC.xy + jo, pe.y, true);
+    }
     if (rm < 30000.0) {
       clNF += 4.0;
       // (round six c: with the same +-k texel jitter along the light slope as the near path below: at low sun the map's
@@ -752,7 +781,6 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
       return cloudShadowTauF(pa.xz + uCloudShadowC.xy + jo, pa.y, true);
     }
   }
-  vec4 info;
   // round four: close to the camera the first segment (0 .. 62 m at 4 steps) is sampled twice WITH the detail
   // erosion: the shadow one lobe casts on the next, i.e. the dark creases of a cauliflower surface under side light
   bool micro = uClDet.y > 0.5 && fp > 0.0;
@@ -800,7 +828,11 @@ float clTauLight(vec3 pa, vec4 wx, float lod, float jit, float fp, float ex0, fl
     d0 = d1;
   }
   clLightOff = 0.0;
-  tau *= uClNoise.w * 0.8;                                         // 0.8: base density is not eroded
+  // 0.8: base density is not eroded (round seven: x clTauK, default 1.25, i.e. gain 1: with the profile erosion carving only
+  // a 10-80 m skin, the cheap density integrated over the first km equals the full one on exported game fields, 0.97-1.0;
+  // fit to the path tracer on three game views: log-RMSE 0.333 / 0.271 / 0.416 vs 0.294 / 0.313 / 0.425 at x1)
+  tau *= uClNoise.w * 0.8 * uClR7.y;
+  clTauDbgM = tau;
   vec3 pe = pa + uClLightDir * 1000.0;
   // undo the air-mass offset: cloudShadowTau wants world XZ (it subtracts the wind offset itself)
   // At low sun the 2.5D shadow map projects its horizontal structure onto cloud faces compressed by tan(elevation),
@@ -926,9 +958,15 @@ void main() {
                           + atmSkyRadiance(vec3(-sa.y, 0.208, sa.x)) + atmSkyRadiance(vec3(sa.y, 0.208, -sa.x)));
         ambUp = mix(ambUp, side * uClLightSel.z * uClLightSel.x + ambUp * (1.0 - uClLightSel.x), uClDet3.w);
       }
+      if (uClRef.x > 0.5) { ambUp = vec3(uClRef.y); ambDn = vec3(uClRef.z); }
       float cosT = dot(rd, uClLightDir);
       #ifdef CL_MS5
       vec3 msPhase = cloudPhaseMie(cosT), msLast = vec3(0.0);
+      // round seven (clMsAt): the network runs where the ray has reached an optical depth of uClR7b.z (then .w), not on the
+      // first dense samples; the samples in front of that point keep their multiple-scattering weights (msJ, msA) until it
+      // is known. See the comment at the evaluation.
+      float msEv = 0.0, msA = 0.0, msBestW = -1.0, msLodS = 0.0, msTsS = 0.0, msTcS = 0.0, msOffS = 0.0, msOffRS = 600.0;
+      vec3 msJ = vec3(0.0), msPS = vec3(0.0); vec4 msWxS = vec4(0.0);
       #endif
       float voxel = 1.0 / (uClNoise.x * 128.0), voxelD = 1.0 / (uClNoise.y * 32.0);
 
@@ -1018,7 +1056,7 @@ void main() {
         if (ex > 0.0) {
           // footprint of the sample: the (low-res) pixel across the ray, half a step along it (the temporal filter
           // integrates the step jitter); the detail octaves and the density ramp follow it: crisp near, soft far
-          if (uClDet.x > 0.5) { fp = max(pix, 0.75 * ds); edge = clamp(fp * 0.001, uClDet2.z, 0.05); }
+          if (uClDet.x > 0.5) { fp = max(pix, uClBub5.w * ds); edge = clamp(fp * 0.001, uClDet2.z, 0.05); }   // (round seven: clEdgeS, share of the step in the footprint)
           else { fp = ds; edge = clamp(ds * 0.0005, 0.009, 0.05); }
           d = clDensityFull(pa, ex - exLo, info, fp, edge) * info.w * fadeFar;
         }
@@ -1093,6 +1131,7 @@ void main() {
           #endif
           float eS = clSat((ts - t0) / max(tB - t0, 1.0)), eH = clSat((h - eLo) / (eHi - eLo));
           vec3 E = mix(mix(EaL, EbL, eS), mix(EaH, EbH, eS), eH);
+          if (uClRef.x > 0.5) E = vec3(1.0);
           #if defined(CL_AMBIENT_VIS) && !defined(CL_MS5)
           // Round four, calibration of the round-three network against a path-traced 10 m cumulus at the new
           // extinction (tools/neural/gt_near.py, 9600 points): with a low sun the light enters through the flanks
@@ -1113,11 +1152,29 @@ void main() {
           // light kept in the beam by the diffraction peak, and every higher order of sun, sky and ground light from the
           // network fed with physical optical depths. Replaces J (octaves / diffusion / powder / round-three nets), the
           // ambient visibility and both round-four calibrations. lam / occ (sub-100 m lobe detail) at reduced strength.
-          if (nDense <= uClMs.x) {
-            clMsWx = wx; clMsLod = lod + 1.5;
+          // Round seven: WHERE the network runs. Round five ran it on the first two dense samples of the ray, i.e. in the outer
+          // skin (camera optical depth ~0.1): bubbles, fringes and fragments outside the cheap envelope whose taps see almost
+          // no cloud (measured on a game cloud at 4 km, opacity-weighted tap sums up / down / forward 0.05 / 0.1 / 3 against
+          // 10 / 7 / 30 on the same pixels from the exported field), so the network lit every cloud as a thin isolated wisp:
+          // the same flat multiple scattering at the top and the base (path tracer: 3-5 x brighter at the top). The visible
+          // light comes from camera depths ~0.2-2 (weight e^-tau), so the network now runs at the first sample past
+          // tauCam = uClR7b.z (0.7) and again past uClR7b.w (2.5). The samples in front of the first evaluation keep their
+          // multiple-scattering weights (msJ for E J_ms, msA for the sky / ground terms) and get the result when it is
+          // known; a ray that never gets that deep (thin cloud) is evaluated at its most visible sample after the loop.
+          // Same two evaluations per ray. uClR7b.z = 0: round six c.
+          bool msDefer = uClR7b.z > 0.0 && (uClDet3.x < 0.5 || abs(uClDet3.x - 7.5) < 1.0);   // (also in the debug views 7 / 8: SS / MS only)
+          float msTc = -log(max(T, 1e-30));
+          float msW = T * (1.0 - exp(-sig * ds));
+          if (msDefer ? (msEv < uClMs.x && msTc + 0.5 * sig * ds >= (msEv < 0.5 ? uClR7b.z : uClR7b.w)) : nDense <= uClMs.x) {
+            clMsWx = wx; clMsLod = uClR7b.x < 0.0 ? 1.0 : lod + uClR7b.x;
             vec3 tU = cloudMsTapSegments(pa, vec3(0.0, 1.0, 0.0)), tD = cloudMsTapSegments(pa, vec3(0.0, -1.0, 0.0));
             vec3 tF = cloudMsTapSegments(pa, rd);
-            msLast = cloudMsLight(tauSun, -log(max(T, 1e-30)), uClLightDir.y, cosT, tU, tD, tF);
+            msLast = cloudMsLight(tauSun, msTc, uClLightDir.y, cosT, tU, tD, tF);
+            clDbgTap = vec3(dot(tU, vec3(1.0)), dot(tD, vec3(1.0)), dot(tF, vec3(1.0)));
+            if (msEv < 0.5) { L += (msJ * msLast.x + msA * (ambUp * msLast.y + ambDn * msLast.z)) * step(0.5, abs(uClDet3.x - 7.0)); msJ = vec3(0.0); msA = 0.0; }
+            msEv += 1.0;
+          } else if (msDefer && msEv < 0.5 && msW > msBestW) {
+            msBestW = msW; msPS = pa; msWxS = wx; msLodS = lod; msTsS = tauSun; msTcS = msTc; msOffS = clMsOff; msOffRS = clMsOffR;
           }
           #ifdef CL_MS_AUREOLE
           float msFwd = cloudMsForwardPeak(tauSun, msPhase.g, cosT);   // (v2: with the aureole near the sun)
@@ -1130,10 +1187,13 @@ void main() {
           // cloud-ms.js reference): its shading comes from the taps, so a sunlit bulge and the shaded flank beside it get the
           // same multiply scattered sunlight and near faces read as flat grey. Diffusion makes the sun's higher orders fall
           // off with the depth toward the sun (lit tops 5-10 x the shaded parts, research doc 5.6): J_ms x (1.6 e^(-tauSun/8)
-          // + 0.15), mean ~1 over the lit skin. clSunK = 0: round six.
+          // + 0.15), mean ~1 over the lit skin. clSunK = 0: round six. (Round seven: with the network run at the right depth,
+          // half strength fits the path tracer best on game clouds: log-RMSE 0.294 / 0.313 at clSunK 0.5 against 0.346 / 0.337 at
+          // 1 and 0.299 / 0.356 at 0; top / base 2.01 / 3.98 for 2.10 / 3.87 in the reference, side-lit / backlit view.)
           float jK = mix(1.0, 1.6 * exp(-tauSun * 0.125) + 0.15, uClBub5.z);
           vec3 S = E * (msPhase * exp(-tauSun) +  msFwd + msLast.x * jK) * occM.x
                  + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;
+          if (msDefer && msEv < 0.5) { S = E * (msPhase * exp(-tauSun) + msFwd) * occM.x; msJ += msW * E * jK * occM.x; msA += msW * occM.y; }
           #elif defined(CL_AMBIENT_VIS)
           // learned (src/neural/cloud-light.js): source per unit hemisphere radiance, all orders of scattering
           vec2 vis = cloudAmbientVis(tauUp, tauDn) * mix(vec2(1.0), vec2(0.84, 1.17), uClDet5.y);   // (same calibration)
@@ -1144,6 +1204,14 @@ void main() {
           vec3 S = E * J * (occ.x * lam) + 0.5 * (ambUp * visUp + ambDn * visDn) * occ.y;
           #endif
           #ifdef CL_MS5
+          if (uClDet3.x > 14.5) { clMsWx = wx; clMsLod = lod + 1.5; clMsP0 = pa; S = vec3(clMsSigma(pa), clMsSigma(pa + vec3(0.0, 50.0, 0.0)), clMsSigma(pa + rd * 50.0)) * 100.0; } else   // round seven debug: tap density at the sample, 50 m up, 50 m forward (1/100 m)
+          if (uClDet3.x > 13.5) S = vec3(ds * 0.01, fp * 0.01, edge * 10.0); else   // round seven debug: step (100 m), footprint (100 m), edge (100 m)
+          if (uClDet3.x > 12.5) { vec4 i2; S = vec3(ts * 1e-3, d * uClNoise.w * 100.0, clDensityBase(pa, wx, 1.0, i2) * i2.w * uClNoise.w * 100.0); } else   // round seven debug: distance (km), full and cheap extinction (1/100 m)
+          if (uClDet3.x > 11.5) S = clTauDbgM < 0.0 ? vec3(0.0, min(tauSun, 60.0), 2.0) : vec3(min(clTauDbgM, 60.0), min(tauSun - clTauDbgM, 60.0), clTauDbgF); else   // round seven debug: march part, map part, far path flag
+          if (uClDet3.x > 10.5) S = clDbgTap; else                                                        // round seven debug: summed taps up, down, fwd
+          if (uClDet3.x > 9.5) S = vec3(min(tauSun, 60.0), min(-log(max(T, 1e-30)), 60.0), 0.0); else    // round seven debug: tauSun, tauCam
+          if (uClDet3.x > 7.5) S = E * msLast.x * jK * occM.x + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;    // round seven debug: all multiple scattering
+          else if (uClDet3.x > 6.5) S = E * (msPhase * exp(-tauSun) + msFwd) * occM.x; else                    // round seven debug: single scattering
           if (uClDet3.x > 5.5) S = vec3(msLast.x * 2.0, msLast.y, exp(-tauSun)) * 0.6; else      // round six b debug: J_ms, V_sky, direct sun
           #endif
           if (uClDet3.x > 4.5) S = vec3(bubS, gradS / 8.0, decS);   // round six debug: bubble weight, |gradient| estimate, decay
@@ -1167,6 +1235,15 @@ void main() {
         }
         t += ds;
       }
+      #ifdef CL_MS5
+      // (round seven, clMsAt: a ray that never reached the evaluation depth: the network at its most visible sample)
+      if (msA > 0.0 && msBestW > 0.0) {
+        clMsWx = msWxS; clMsLod = uClR7b.x < 0.0 ? 1.0 : msLodS + uClR7b.x; clMsOff = msOffS; clMsOffR = msOffRS; clMsP0 = msPS;
+        vec3 ms = cloudMsLight(msTsS, msTcS, uClLightDir.y, cosT, cloudMsTapSegments(msPS, vec3(0.0, 1.0, 0.0)),
+                               cloudMsTapSegments(msPS, vec3(0.0, -1.0, 0.0)), cloudMsTapSegments(msPS, rd));
+        L += (msJ * ms.x + msA * (ambUp * ms.y + ambDn * ms.z)) * step(0.5, abs(uClDet3.x - 7.0));
+      }
+      #endif
     }
   }
 
@@ -1174,13 +1251,14 @@ void main() {
   // (one evaluation per pixel, [Schneider15]/[Hillaire16]).
   T = clSat((T - uClCost.x) / (1.0 - uClCost.x));
   float tMean = wSum > 0.0 ? tSum / wSum : tFallback;
-  vec4 ap = atmAerialPerspective(uCameraPos + rd * tMean);
+  vec4 ap = uClRef.x > 0.5 ? vec4(0.0, 0.0, 0.0, 1.0) : atmAerialPerspective(uCameraPos + rd * tMean);
   L = L * ap.a + ap.rgb * (1.0 - T);
   flash *= ap.a;
 
   // cirrus sheet: behind the low clouds when seen from below, in front when the camera is above it
   float tCi;
   vec4 ci = clCirrusLayer(rd, c, sceneD, tCi);
+  if (uClRef.x > 0.5) ci = vec4(0.0, 0.0, 0.0, 1.0);
   if (c < uClCirrus.x) { L += T * ci.rgb; if (wSum <= 0.0 && tCi > 0.0) tMean = tCi; T *= ci.a; }
   else { L = ci.rgb + ci.a * L; T *= ci.a; if (tCi > 0.0 && ci.a < 0.5) tMean = tCi; }
 

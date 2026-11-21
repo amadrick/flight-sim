@@ -94,3 +94,26 @@ test('createCloudMultiScatter: GLSL contract, uniforms, CPU twins, fast build', 
   assert.ok(!/\bNaN\b|Infinity/.test(ms.glsl));
   ms.dispose();
 });
+
+test('round-seven weights (game fields): JS forward pass == Python, same descriptor, sane, valid GLSL', async () => {
+  const { CLOUD_MS_MODEL_R7 } = await import('./cloud-ms-weights-r7.js');
+  const v7 = JSON.parse(readFileSync(fileURLToPath(new URL('./test-vectors-ms-r7.json', import.meta.url)), 'utf8'));
+  assert.deepEqual(CLOUD_MS_MODEL_R7.desc.dirs, CLOUD_MS_MODEL.desc.dirs);
+  assert.deepEqual(CLOUD_MS_MODEL_R7.desc.ends, CLOUD_MS_MODEL.desc.ends);
+  assert.ok(getCloudMsNet(CLOUD_MS_MODEL_R7).params < 1500);
+  let worst = 0;
+  for (let i = 0; i < v7.tauSun.length; i++) {
+    const taps = {};
+    for (const d of CLOUD_MS_MODEL_R7.desc.dirs) taps[d] = v7.taps[d][i];
+    const y = cloudMsLight(v7.tauSun[i], v7.tauCam[i], v7.muSun[i], v7.cosTheta[i], taps, CLOUD_MS_MODEL_R7);
+    for (let k = 0; k < 3; k++) worst = Math.max(worst, Math.abs(Math.log(y[k]) - Math.log(v7.out[i][k])));
+  }
+  assert.ok(worst < 1e-5, `max |ln y JS - Python| ${worst}`);
+  const full = (t) => new Array(CLOUD_MS_MODEL_R7.desc.ends.length).fill(t);
+  const top = cloudMsLight(1, 2, 0.7, 0, { up: full(0), down: full(30), fwd: full(5) }, CLOUD_MS_MODEL_R7);
+  const bot = cloudMsLight(40, 2, 0.7, 0, { up: full(30), down: full(0), fwd: full(5) }, CLOUD_MS_MODEL_R7);
+  assert.ok(top[1] > bot[1] && bot[2] > top[2], `V_sky ${top[1]}/${bot[1]}, V_gnd ${top[2]}/${bot[2]}`);
+  const ms = createCloudMultiScatter({ reff: 10, model: CLOUD_MS_MODEL_R7 });
+  assert.ok(!/\bNaN\b|Infinity/.test(ms.glsl));
+  ms.dispose();
+});

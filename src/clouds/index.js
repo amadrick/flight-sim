@@ -21,6 +21,7 @@ import {
   shadowBakeFragment, weatherBakeFragment, CIRRUS_BAKE_FRAG,
 } from './shaders.js';
 import { createCloudMultiScatter } from '../neural/cloud-ms.js';
+import { CLOUD_MS_MODEL_R7 } from '../neural/cloud-ms-weights-r7.js';
 
 const FALLBACK_ATMOSPHERE_GLSL = /* glsl */`
 vec3 atmSunIlluminance(vec3 p) { return uSunColor; }
@@ -106,7 +107,7 @@ export async function createClouds(ctx) {
   const U = {
     tClBase: { value: noise3.base }, tClDetail: { value: noise3.detail }, tClWeather: { value: weatherRT.texture },
     tClCurl: { value: noise2.curl }, tClBlue: { value: noise2.blue }, tClCirrus: { value: cirrusRT.texture },
-    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClNub: v4(), uClNub2: v4(), uClNub3: v4(), uClCost: v4(0.004, 0, 0, 0),
+    tClNoise2D: { value: noise2.noise2D }, tClCells: { value: cells.texture }, tClBubble: { value: noise3.bubble }, uClBub: v4(), uClBub2: v4(), uClBub3: v4(), uClBub4: v4(), uClBub5: v4(), uClRef: v4(), uClR7: v4(), uClR7b: v4(), uClNub: v4(), uClNub2: v4(), uClNub3: v4(), uClCost: v4(0.004, 0, 0, 0),
     uClCell: v4(1 / cells.period, 0, 0, 0), uClCell2: v4(cells.dMin, Math.log2(cells.dMax / cells.dMin), 0.6, 1.4), uClProf: v4(0.75, 0.85, 1, 0.6), uClProf2: v4(0.4, 0.7, 4, 0.4),
     uClDet: v4(1, 1, 1, 1), uClLife: v4(0, 1, 0, 0), uClPhys: v4(2e-3, 1, 0.6, 1), uClMie: v4(0.9946, 0.594, 27.1, 0.498), uClDet2: v4(0.5, 4, 0.004, 0.3), uClDet3: v4(), uClDet4: v4(), uClDet5: v4(),
     uClWx: v4(0, 0, 1 / WEATHER_MAP_SIZE_M, WX_RES / WEATHER_MAP_SIZE_M),
@@ -126,7 +127,9 @@ export async function createClouds(ctx) {
   if (raw.clMs !== '0' && raw.scatter !== 'classic') {
     try {
       const reff = Math.min(16, Math.max(6, 12 * Math.cbrt(150 / P.dropletN)));
-      msModel = createCloudMultiScatter({ reff });
+      // round seven (?clMs7=0: the round-five weights): refitted with the path-traced light of exported GAME fields
+      // (tools/neural/clouds gen.py --round 3), whose taps are the shader's own cheap density
+      msModel = createCloudMultiScatter({ reff, model: dbg('clMs7', 1) > 0 ? CLOUD_MS_MODEL_R7 : null });
     } catch (e) { console.warn('[clouds] learned multiple scattering unavailable', e); msModel = null; }
   }
   U.uClMs = v4(dbg('clMsN', 2), dbg('clMsDetail', 0.5), 0, 0);
@@ -544,7 +547,10 @@ export async function createClouds(ctx) {
     // entrainment skin of growing turrets (clSkin x round five's 20 m), lobe lighting in the learned-MS path and the
     // bubble-field lobe orientation (clLobe), the largest bubble octave in the cheap density (light march, shadow map: lobe
     // self-shadowing; clLobeSh), analytic sun path through the anvil slab (clAnvL: no contour arcs under the anvil)
-    U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 1), 0);
+    U.uClR7.value.set(dbg('clFarN', 1), dbg('clTauK', 1.25), dbg('clTapK', 1), dbg('clFarLod', 1));
+    U.uClR7b.value.set(dbg('clTapLod', 1.5), dbg('clTapWx', 0), dbg('clMsAt', 0.7), dbg('clMsAt2', 2.5));
+    U.uClRef.value.set(dbg('clRefL', 0), dbg('clRefS', 0.06), dbg('clRefG', 0.025), 0);
+    U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 0.5), dbg('clEdgeS', 0.75));
     U.uClBub4.value.set(dbg('clSph', 0), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
     // round six c (docs/clouds/SHAPE.md): profile erosion (clNub=0: round six b bubble cascade): profile depth (clNubP, x largest
     // bubble cell), erosion depth (clNubE, share of the profile), erosion noise tile (clNubT, x largest bubble cell), sharpening

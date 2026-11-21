@@ -167,6 +167,7 @@ async function boot() {
       uniforms: { ...U, uSl: { value: new THREE.Vector4() }, uSl2: { value: new THREE.Vector4() } }, vertexShader: FULLSCREEN_VERT,
       fragmentShader: `precision highp float; precision highp int; precision highp sampler3D; in vec2 vUv; out vec4 o;
         ${raw.slDbg === '1' ? '#define SL_DBG 1' : ''}
+        ${raw.slDbg === '2' ? '#define SL_DBG2 1' : ''}
         ${CLOUD_DENSITY_GLSL}
         uniform vec4 uSl, uSl2;
         void main() {
@@ -175,6 +176,11 @@ async function boot() {
           float ex = clShape(pa, clWeather(pa.xz, 0.0), 0.0, info);
           float d = ex > -0.6 ? clDensityFull(pa, ex, info, 2.0, 0.004) : 0.0;
           o = vec4(mix(vec3(ex > 0.0 ? 0.35 : 0.0, 0.0, 0.08), vec3(1.0), d), 1.0);
+          #ifdef SL_DBG2
+          // round seven: what the light march sees (cheap density at the light samples' lod, slLod) against the visible density
+          { vec4 inf2; float db = clDensityBase(pa, clWeather(pa.xz, 0.0), ${raw.slLod || '1.0'}, inf2);
+            o = vec4(db, d, ex > 0.0 ? 0.3 : 0.0, 1.0); }
+          #endif
           #ifdef SL_DBG
           float cv; float bd = clBubbles(pa, 3.0, cv);
           o = vec4(clThermal / 2000.0, 0.5 + bd * 3.0, ex > 0.0 ? 1.0 : 0.0, 1.0);
@@ -190,6 +196,18 @@ async function boot() {
     slicePass.render(ctx.renderer, null);
   }
   sim.exportDensity = (opts) => exportDensity(ctx, opts);
+  // round seven: the linear cloud output (premultiplied radiance, transmittance) of the last frame as base64 float16, and
+  // the camera / sun / layer state, for the reference comparison (tools/neural/clouds/game_compare.py)
+  sim.readClouds = () => {
+    const rt = ctx.clouds.debug.outRT, w = rt.width, h = rt.height, px = new Uint16Array(w * h * 4);   // (half float)
+    ctx.renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+    let s = ''; const u8 = new Uint8Array(px.buffer);
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    const c = ctx.camera, U = ctx.clouds.debug.U;
+    return { w, h, px: btoa(s), fov: c.fov, aspect: c.aspect, quat: c.quaternion.toArray(),
+      camAir: [ctx.world.origin.x + c.position.x - ctx.clouds.windOffset.x, c.position.y, ctx.world.origin.z + c.position.z - ctx.clouds.windOffset.y],
+      sun: U.uClLightDir.value.toArray(), layer: U.uClLayer.value.toArray() };
+  };
   if (useAircraft) ctx.session.start({});
   // Tour: several views in one run, tiled into one screenshot (software GL + a shared render queue make single
   // shots expensive):  tour=weather:scattered,tod:12,cy:2000,yaw:0|tod:17.5,clCav:0|...  tiles=3x2  tourFrames=20
@@ -267,7 +285,7 @@ boot().catch((err) => { console.error(err); sim.error = String(err?.stack || err
 // light march sees, before its 0.8 factor), both already multiplied by info.w; `ex8` = shape excess (clShape, before erosion) as (ex + 0.5) * 127.5; `top2d` = info.y per column (uint16 m).
 // Round four: `depth` limits the box to base .. base + depth; `detail: 1` adds surf8 = (depth below the eroded surface (km) + 0.1) * 510
 // and cav8 = crease pattern * 255 (the side outputs of clDensityFull the lighting uses) and leaves out base8.
-function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0.03, fp, depth, detail = 0 } = {}) {
+function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0.03, fp, depth, detail = 0, noBub0 = 0, dScale = 1 } = {}) {
   const r = ctx.renderer, U = ctx.clouds.debug.U, P = ctx.clouds.params;
   const L = U.uClLayer.value, base = L.x, th = Math.min(L.w, depth || 1e9), top = base + th;
   const nz = Math.ceil(th / (size / nxy));
@@ -289,7 +307,8 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
       vec3 pa = vec3(xz.x, uEx.w, xz.y); vec4 wx = clWeather(pa.xz, 0.0), info, info1;
       float ex = clShape(pa, wx, 0.0, info);
       float d = (uSide > 0.5 || ex + CL_EROSION_LO * CL_EROSION_MAXK * uClNoise.z > 0.0) ? clDensityFull(pa, ex, info, uFp, uEdge) * info.w : 0.0;
-      float db = clDensityBase(pa, wx, 1.0, info1) * info1.w;
+      clNoBub0 = ${noBub0 ? 'true' : 'false'};   // (round seven: noBub0 = the learned-MS taps' density, without the bubble octave)
+      float db = clDensityBase(pa, wx, 1.0, info1) * info1.w; clNoBub0 = false;
       o = uSide > 0.5 ? vec4(clSurf, clCav, clDecay, d) : vec4(d, db, info.y, ex);
     }`;
   const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
@@ -324,8 +343,10 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
   for (let k = 0; k < nz; k++) {
     const px = read(nxy, new THREE.Vector4(x0, z0, size, base + (k + 0.5) * dz));
     for (let i = 0; i < nxy * nxy; i++) {
-      full[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4] * 255));
-      if (!detail) b8[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4 + 1] * 255));
+      // (round seven: dScale > 1 keeps densities above 1, i.e. info.w > 1 in dense cumulus cores, which clipped at 255 before;
+      //  `sigma` in the result is multiplied by dScale so density x sigma stays the extinction)
+      full[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4] * 255 / dScale));
+      if (!detail) b8[k * nxy * nxy + i] = Math.min(255, Math.round(px[i * 4 + 1] * 255 / dScale));
       ex8[k * nxy * nxy + i] = Math.max(0, Math.min(255, Math.round((px[i * 4 + 3] + 0.5) * 127.5)));
       if (k === nz >> 1) top2d[i] = Math.round(px[i * 4 + 2]);
     }
@@ -341,6 +362,6 @@ function exportDensity(ctx, { size = 5760, nxy = 192, find = 1, cx, cz, edge = 0
   }
   r.setRenderTarget(prev); pass.dispose();
   const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
-  return { nx: nxy, ny: nxy, nz, dx: size / nxy, dz, x0, z0, base, top, sigma: U.uClNoise.value.w, erosion: U.uClNoise.value.z,
+  return { nx: nxy, ny: nxy, nz, dx: size / nxy, dz, x0, z0, base, top, sigma: U.uClNoise.value.w * dScale, dScale, erosion: U.uClNoise.value.z,
     pick, params: { ...P }, full: b64(full), base8: b64(b8), ex8: b64(ex8), ...(detail ? { surf8: b64(surf8), cav8: b64(cav8) } : {}), top2d: b64(new Uint8Array(top2d.buffer)) };
 }

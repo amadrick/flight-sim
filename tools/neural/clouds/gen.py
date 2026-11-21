@@ -76,6 +76,16 @@ SCENES2 = [
     ('game', dict(name='scattered3', scale=1.0), 'train'),
 ]
 SUN_ELEVS2 = [2.0, 4.0, 6.0, 9.0, 13.0, 30.0, 55.0]
+# round three (round seven of the cloud shapes): the game's eroded cauliflower fields with the base density the learned-MS
+# taps actually sample (harness exportDensity noBub0: 1, i.e. without the bubble octave), at a ~10 m footprint
+SCENES3 = [
+    ('game', dict(name='r7fair', scale=1.0), 'train'),
+    ('game', dict(name='r7scat', scale=1.0), 'train'),
+    ('game', dict(name='r7near', scale=1.0), 'train'),
+    ('game', dict(name='r7broken', scale=1.0), 'train'),
+    ('game', dict(name='r7scat2', scale=1.0), 'val'),
+]
+SUN_ELEVS3 = [4.0, 8.0, 15.0, 25.0, 40.0, 60.0, 75.0]
 
 
 def build(kind, kw):
@@ -203,6 +213,12 @@ def main():
         for i, (kind, kw, split) in enumerate(SCENES):
             rng = np.random.default_rng(1000 + i)
             el = rng.choice(SUN_ELEVS, size=args.suns, replace=False)
+            for e in el:
+                jobs.append((kind, kw, split, float(e), float(rng.random() * 360)))
+    elif args.round == 3:
+        for i, (kind, kw, split) in enumerate(SCENES3):
+            rng = np.random.default_rng(7000 + i)
+            el = rng.choice(SUN_ELEVS3, size=args.suns, replace=False)
             for e in el:
                 jobs.append((kind, kw, split, float(e), float(rng.random() * 360)))
     else:
