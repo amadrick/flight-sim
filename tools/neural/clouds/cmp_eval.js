@@ -1,0 +1,5 @@
+(() => { const c = sim.ctx.camera; const d = new c.position.constructor(); c.getWorldDirection(d); d.y = 0; d.normalize();
+  const r = sim.readClouds(); const S = +(new URLSearchParams(location.search).get('boxS') || 3000), D = +(new URLSearchParams(location.search).get('standoff') || 1500);
+  const cx = r.camAir[0] + d.x * (+(new URLSearchParams(location.search).get('boxNear') || -1) >= 0 ? +(new URLSearchParams(location.search).get('boxNear')) + 0.5 * S : D + 0.45 * S), cz = r.camAir[2] + d.z * (+(new URLSearchParams(location.search).get('boxNear') || -1) >= 0 ? +(new URLSearchParams(location.search).get('boxNear')) + 0.5 * S : D + 0.45 * S);
+  const e = sim.exportDensity({ size: S, nxy: +(new URLSearchParams(location.search).get('boxN') || 200), find: 0, cx, cz, edge: +(new URLSearchParams(location.search).get('boxE') || 0.012), fp: +(new URLSearchParams(location.search).get('boxFp') || 12), dScale: 4, noBub0: +(new URLSearchParams(location.search).get('boxNB') || 0) });
+  return JSON.stringify({ img: r, field: e, standoff: sim.standoff }); })()

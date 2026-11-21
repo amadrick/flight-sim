@@ -2,7 +2,10 @@
 
     node tools/shot.mjs --entry src/clouds/harness.js --html dist/clouds.html --out shots/x.png --size 320x180 --frames 24 \
         --params "weather=scattered&tod=15&cy=1500&yaw=200&pitch=4&standoff=1500&clRefL=1&boxS=3000&boxN=200" \
-        --eval "$(cat cmp_eval.js)" > cmp.log
+        --eval "$(cat tools/neural/clouds/cmp_eval.js)" > cmp.log
+    (round seven: add boxNear=<m> so the box starts that far in front of the camera and holds the whole cloud, a box wall
+     that cuts a cloud is lit as a surface; emulate the game's pixel size with fov 25-30 at 320x180; boxFp / boxE = the
+     game's footprint and edge there; --ref=<abs path of a cached _ref.npz> re-uses a reference, --ss / --ms split it)
     NUMBA_NUM_THREADS=3 $VENV tools/neural/clouds/game_compare.py cmp.log out_prefix [--spp 8]
 
 The harness log holds (a) the linear cloud output of the march + temporal resolve (premultiplied radiance, transmittance)
