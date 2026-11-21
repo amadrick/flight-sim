@@ -3,6 +3,29 @@
 Owner: neural-lighting engineer (`src/neural/cloud-ms*.js`, `src/neural/cloud-mie-weights.js`, `tools/neural/clouds/`).
 Status: wired into `src/clouds/shaders.js` by the cloud-shape engineer (default light model; `clMs=0` falls back).
 
+**Round seven (weights `cloud-ms-weights-r7.js`, `CLOUD_MS_MODEL_R7`, default; `?clMs7=0` = the round-two weights):**
+
+* Data: `gen.py --round 3` path-traces five exported fields of the round-six-c game (`r7fair`, `r7scat`, `r7near`,
+  `r7broken` train; `r7scat2` **held out**), exported with `noBub0` so the taps are exactly the shader's (`clMsSigma`
+  skips the bubble octave). 188 configurations, 282 k points. Same descriptor, same 14-16-16-3 network.
+* Held-out S (combined source, relative RMSE, brightness in brackets; `tools/neural/clouds` evaluation of both exported
+  models on the same points):
+
+  | held-out set | round two (v2) | round seven |
+  |---|---|---|
+  | r7 game field `r7scat2` (6 k points) | 0.270 (1.04) | **0.241** (1.03) |
+  | r7 game field, sun < 10 deg | 0.296 (1.06) | **0.276** (1.03) |
+  | r7 game field, backlit | 0.176 (1.09) | **0.145** (1.05) |
+  | round-one held-out (48 k) | 0.255 (1.02) | 0.257 (1.02) |
+  | round-two multi-cloud + r7 (18 k) | 0.235 (1.02) | 0.218 (1.01) |
+
+  An 11 % gain on the game's own clouds (one held-out scene, so read it as "better on game fields, equal elsewhere");
+  the seed spread is ~0.01.
+* **The bigger error was not the network but where the shader ran it** (SHAPE.md 0d): on the first two dense samples,
+  in the skin, whose taps saw almost no cloud. Fed the exported field's taps at the visible depth, both networks reproduce
+  the path tracer's top-to-base profile of J_ms; the shader now evaluates at camera optical depth 0.7 / 2.5 (`clMsAt`).
+  In-game against the path tracer on a side-lit game cloud: mean 0.54 -> 0.85 of the reference, log-RMSE 0.66 -> 0.29.
+
 **Round two, what changed for the shader (read this first):**
 
 | | before (descriptor v1) | now (descriptor v2) | shader action |
