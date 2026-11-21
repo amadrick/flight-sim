@@ -550,7 +550,7 @@ export async function createClouds(ctx) {
     U.uClR7.value.set(dbg('clFarN', 1), dbg('clTauK', 1), dbg('clTapK', 1), dbg('clFarLod', 1));
     U.uClR7b.value.set(dbg('clTapLod', 1.5), dbg('clTapWx', 0), dbg('clMsAt', 0.7), dbg('clMsAt2', 2.5));
     U.uClRef.value.set(dbg('clRefL', 0), dbg('clRefS', 0.06), dbg('clRefG', 0.025), 0);
-    U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 1), dbg('clEdgeS', 0.75));
+    U.uClBub5.value.set(dbg('clMsOffR', 2), dbg('clLOffR', 2), dbg('clSunK', 0.5), dbg('clEdgeS', 0.75));
     U.uClBub4.value.set(dbg('clSph', 0), dbg('clBubS', 1.6), dbg('clBubMu', 1), dbg('clLOff', 1));
     // round six c (docs/clouds/SHAPE.md): profile erosion (clNub=0: round six b bubble cascade): profile depth (clNubP, x largest
     // bubble cell), erosion depth (clNubE, share of the profile), erosion noise tile (clNubT, x largest bubble cell), sharpening

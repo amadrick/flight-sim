@@ -1159,7 +1159,7 @@ void main() {
           // multiple-scattering weights (msJ for E J_ms, msA for the sky / ground terms) and get the result when it is
           // known; a ray that never gets that deep (thin cloud) is evaluated at its most visible sample after the loop.
           // Same two evaluations per ray. uClR7b.z = 0: round six c.
-          bool msDefer = uClR7b.z > 0.0 && uClDet3.x < 0.5;
+          bool msDefer = uClR7b.z > 0.0 && (uClDet3.x < 0.5 || abs(uClDet3.x - 7.5) < 1.0);   // (also in the debug views 7 / 8: SS / MS only)
           float msTc = -log(max(T, 1e-30));
           float msW = T * (1.0 - exp(-sig * ds));
           if (msDefer ? (msEv < uClMs.x && msTc + 0.5 * sig * ds >= (msEv < 0.5 ? uClR7b.z : uClR7b.w)) : nDense <= uClMs.x) {
@@ -1168,7 +1168,7 @@ void main() {
             vec3 tF = cloudMsTapSegments(pa, rd);
             msLast = cloudMsLight(tauSun, msTc, uClLightDir.y, cosT, tU, tD, tF);
             clDbgTap = vec3(dot(tU, vec3(1.0)), dot(tD, vec3(1.0)), dot(tF, vec3(1.0)));
-            if (msEv < 0.5) { L += msJ * msLast.x + msA * (ambUp * msLast.y + ambDn * msLast.z); msJ = vec3(0.0); msA = 0.0; }
+            if (msEv < 0.5) { L += (msJ * msLast.x + msA * (ambUp * msLast.y + ambDn * msLast.z)) * step(0.5, abs(uClDet3.x - 7.0)); msJ = vec3(0.0); msA = 0.0; }
             msEv += 1.0;
           } else if (msDefer && msEv < 0.5 && msW > msBestW) {
             msBestW = msW; msPS = pa; msWxS = wx; msLodS = lod; msTsS = tauSun; msTcS = msTc; msOffS = clMsOff; msOffRS = clMsOffR;
@@ -1184,7 +1184,9 @@ void main() {
           // cloud-ms.js reference): its shading comes from the taps, so a sunlit bulge and the shaded flank beside it get the
           // same multiply scattered sunlight and near faces read as flat grey. Diffusion makes the sun's higher orders fall
           // off with the depth toward the sun (lit tops 5-10 x the shaded parts, research doc 5.6): J_ms x (1.6 e^(-tauSun/8)
-          // + 0.15), mean ~1 over the lit skin. clSunK = 0: round six.
+          // + 0.15), mean ~1 over the lit skin. clSunK = 0: round six. (Round seven: with the network run at the right depth,
+          // half strength fits the path tracer best on game clouds: log-RMSE 0.294 / 0.313 at clSunK 0.5 against 0.346 / 0.337 at
+          // 1 and 0.299 / 0.356 at 0; top / base 2.01 / 3.98 for 2.10 / 3.87 in the reference, side-lit / backlit view.)
           float jK = mix(1.0, 1.6 * exp(-tauSun * 0.125) + 0.15, uClBub5.z);
           vec3 S = E * (msPhase * exp(-tauSun) +  msFwd + msLast.x * jK) * occM.x
                  + (ambUp * msLast.y + ambDn * msLast.z) * occM.y;
@@ -1236,7 +1238,7 @@ void main() {
         clMsWx = msWxS; clMsLod = uClR7b.x < 0.0 ? 1.0 : msLodS + uClR7b.x; clMsOff = msOffS; clMsOffR = msOffRS; clMsP0 = msPS;
         vec3 ms = cloudMsLight(msTsS, msTcS, uClLightDir.y, cosT, cloudMsTapSegments(msPS, vec3(0.0, 1.0, 0.0)),
                                cloudMsTapSegments(msPS, vec3(0.0, -1.0, 0.0)), cloudMsTapSegments(msPS, rd));
-        L += msJ * ms.x + msA * (ambUp * ms.y + ambDn * ms.z);
+        L += (msJ * ms.x + msA * (ambUp * ms.y + ambDn * ms.z)) * step(0.5, abs(uClDet3.x - 7.0));
       }
       #endif
     }
